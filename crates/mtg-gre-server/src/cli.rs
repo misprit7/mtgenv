@@ -140,7 +140,7 @@ impl Cli {
 
     fn banner(&self) {
         self.say("mtgenv CLI — interactive play + scenario setup over the Agent boundary.");
-        self.say("Type 'help' for commands, or 'play' to start a lands-only game vs RandomAgent.");
+        self.say("Type 'help' for commands, or 'play' to start a game vs RandomAgent (creatures + combat).");
     }
 
     fn dispatch(&mut self, line: &str) -> Flow {
@@ -504,7 +504,7 @@ mod tests {
         );
         expect![[r#"
             mtgenv CLI — interactive play + scenario setup over the Agent boundary.
-            Type 'help' for commands, or 'play' to start a lands-only game vs RandomAgent.
+            Type 'help' for commands, or 'play' to start a game vs RandomAgent (creatures + combat).
             mtg> new 2 1
             new game: 2 players, seed 1 (P0 human, rest random)
             mtg> life 0 17
