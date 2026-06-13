@@ -122,6 +122,11 @@ MTGA client.
   engine's `(Phase, own_turn)` overrides). **MTGA keybindings**: Space = pass / take the sole forced
   action; Enter = pass through this turn's remaining priority stops (lapses next turn, badge shown);
   Esc cancels.
+  **Lobby (landing page `/`)**: a server-side game registry configures *both* seats per game — each
+  is a Human, a Random test agent, or RL (stubbed→random) — with create/join/list over a small REST
+  API (`/api/games`); the game client moved to `/play` and binds to `?game=&seat=` (one tab per
+  seat, so you can drive both sides). Rooms auto-start once every human seat connects; agent-vs-agent
+  runs headless on create (spectating is a stub). The legacy `?p0=&p1=` quick game still works.
   **Library peek is RL-safe** — a static starting decklist snapshotted server-side from `GameState`
   (never via `PlayerView`, so it can't leak draws to the RL agent). Ships as a no-build embedded
   client *and* a Vite/TS client (kept in sync). Also an expressive scriptable CLI (`mtg-cli`-style

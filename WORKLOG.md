@@ -5,6 +5,22 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **webui:** **lobby + per-seat agent assignment** (user request). New `lobby.rs`: a server-side
+  game registry (`Arc<Lobby>` axum state) where each `Room` configures *both* sides — every seat is
+  a `Human`, a `Random` test agent, or `Rl` (stubbed→random for now). REST `GET/POST /api/games`
+  (+`/api/games/:id`); the lobby landing page (`/`, new self-contained `lobby_client.html`) lists
+  games and creates them; the game client moved to `/play` and binds to `?game=<id>&seat=<n>` (one
+  browser tab per seat — open two to play both sides). Rooms **auto-start when every human seat has
+  connected** (agent-only games run on create). The rendezvous is one `Mutex<StartState>` (derived
+  fullness, drain-to-spawn, double-claim reject, pre-start slot-vacate on disconnect). Load-bearing
+  detail: `Box<dyn Agent>` isn't `Send`, so the room stores only `Send` channel *ingredients* per
+  seat and the spawned engine thread builds the agents itself (mirrors the legacy path). Added
+  `driver::room_engine` (per-seat stop handles) + `state_for_deck_names`; factored the socket loop
+  into `server::run_player_socket` shared by legacy + lobby. Legacy `/ws?p0=&p1=` path preserved
+  verbatim. Verified end-to-end (REST + WS + Playwright): agent-vs-agent finishes on create; a lone
+  seat does NOT start + vacates on disconnect; 2-human auto-starts only after both connect and both
+  drive it to GameOver; human+random plays like today; `/play?game=…&seat=0` shows "you are Player
+  0"; legacy path still works. 10 web tests green. Commits fd9a72b, ffb820b.
 - **gym:** **GYM_PLAN milestone 0 COMPLETE — PyO3 boundary + random self-play.** New crate
   `crates/mtg-py` (PyO3/maturin `cdylib`, depends only on `mtg-core`, abi3-py39 so it builds
   against the box's CPython 3.14): a `PyGame` handle + thread+channel `PyAgent` (port of
