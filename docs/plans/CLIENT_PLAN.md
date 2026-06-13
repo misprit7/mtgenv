@@ -124,8 +124,9 @@ Key points:
 ## 3. Why this is the same boundary as the gym (not a parallel system)
 
 GYM_PLAN already defines the `Agent` trait and a transport-agnostic philosophy: "the boundary
-is the **trait**, not the transport" (GYM_PLAN §2). It even names a `SocketAgent` for "the
-MTGA client and Forge-interim backends." This plan *is* that `SocketAgent`, specialized to:
+is the **trait**, not the transport" (GYM_PLAN §2). It even names a `SocketAgent` for an
+out-of-process backend. This plan *is* that `SocketAgent`, specialized to the web client and the
+real MTGA client:
 
 | Aspect | RL gym (GYM_PLAN) | Web/GRE client (this plan) |
 |---|---|---|
