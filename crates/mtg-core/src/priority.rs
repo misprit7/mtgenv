@@ -1359,6 +1359,30 @@ mod expect_tests {
     }
 
     #[test]
+    fn dies_trigger_draws_a_card() {
+        // Exultant Cultist: "When this creature dies, draw a card." A lethal-damage SBA
+        // destroys it → the SelfDies trigger fires (source found in the graveyard by grp_id)
+        // → resolves to a draw.
+        let mut state = cards::build_game(5, &[&[grp::GRIZZLY_BEARS], &[]]); // P0 lib: 1 card
+        let cultist = put(&mut state, PlayerId(0), grp::EXULTANT_CULTIST, Zone::Battlefield);
+        state.objects.get_mut(&cultist).unwrap().damage_marked = 2; // lethal for a 2/2
+        state.active_player = PlayerId(0);
+        state.phase = Phase::PrecombatMain;
+        let mut e = pass_engine(state);
+        e.record_events(true);
+        e.priority_round();
+
+        assert_eq!(e.state.object(cultist).zone, Zone::Graveyard, "Cultist died");
+        assert_eq!(e.state.player(PlayerId(0)).hand.len(), 1, "dies trigger drew a card");
+        expect![[r#"
+            ObjId(2) dies
+            ObjId(2) -> Graveyard
+            PlayerId(0) draws 1
+        "#]]
+        .assert_eq(&event_trace(&e.event_log));
+    }
+
+    #[test]
     fn enters_with_counters_replacement_keeps_a_0_0_alive() {
         // Servant of the Scale: a 0/0 that "enters with a +1/+1 counter". The whiteboard
         // rewrite pass turns its ETB into entering-with-a-counter, so it's a 1/1 that survives

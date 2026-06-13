@@ -39,6 +39,7 @@ pub mod grp {
     pub const FLAMETONGUE_KAVU: u32 = 31;
     pub const SERVANT_OF_THE_SCALE: u32 = 32;
     pub const FOG_BANK: u32 = 33;
+    pub const EXULTANT_CULTIST: u32 = 34;
 }
 
 /// A card definition: its printed characteristics + abilities (the Effect IR), plus the
@@ -334,6 +335,25 @@ pub fn starter_db() -> CardDb {
             rewrite: Rewrite::Prevent,
         }],
     ).with_text("Prevent all combat damage that would be dealt to this creature."));
+    // Exultant Cultist {2}{U} 2/2 — "When this creature dies, draw a card." (dies/LTB trigger.)
+    db.insert(creature(
+        grp::EXULTANT_CULTIST,
+        "Exultant Cultist",
+        "Human Wizard",
+        Color::Blue,
+        mana_cost(2, &[(Color::Blue, 1)]),
+        2,
+        2,
+        vec![Ability::Triggered {
+            event: EventPattern::SelfDies,
+            condition: None,
+            intervening_if: false,
+            effect: Effect::Draw {
+                who: PlayerRef::Controller,
+                count: ValueExpr::Fixed(1),
+            },
+        }],
+    ).with_text("When this creature dies, draw a card."));
     db
 }
 
@@ -416,7 +436,7 @@ mod tests {
     #[test]
     fn starter_db_has_expected_cards() {
         let db = starter_db();
-        assert_eq!(db.len(), 14);
+        assert_eq!(db.len(), 15);
         assert!(db.get(grp::FOREST).unwrap().is_mana_source());
         assert_eq!(db.get(grp::FOREST).unwrap().mana_colors, vec![Color::Green]);
         // Grizzly Bears is a vanilla 2/2 with no abilities.
