@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use crate::agent::{
     AttackerOption, BlockerOption, DamageSlot, DecisionRequest, DecisionResponse,
 };
-use crate::basics::{DamageKind, Target, Zone};
+use crate::basics::{CardType, DamageKind, Target, Zone};
 use crate::effects::ability::{Keyword, Qualification};
 use crate::effects::action::{Action, ResolutionCtx, Whiteboard, WbReason};
 use crate::ids::{ObjId, PlayerId};
@@ -127,11 +127,19 @@ impl Engine {
         if eligible_ids.is_empty() {
             return;
         }
+        // An attacker may attack the defending player or any planeswalker they control
+        // (CR 508.1a / 306.8). The defender list is the same for every eligible attacker.
+        let mut may_attack = vec![Target::Player(defender)];
+        for &id in &self.state.player(defender).battlefield {
+            if self.state.computed(id).card_types.contains(&CardType::Planeswalker) {
+                may_attack.push(Target::Object(id));
+            }
+        }
         let eligible: Vec<AttackerOption> = eligible_ids
             .iter()
             .map(|&id| AttackerOption {
                 creature: id,
-                may_attack: vec![Target::Player(defender)],
+                may_attack: may_attack.clone(),
                 required: false,
                 attack_cost: None,
                 may_exert: false,
@@ -745,6 +753,39 @@ mod tests {
         assert!(
             e2.state.combat.as_ref().unwrap().blocks.is_empty(),
             "a pacified creature can't block"
+        );
+    }
+
+    #[test]
+    fn a_planeswalker_can_be_attacked_and_loses_loyalty() {
+        // CR 508.1a/306.8/120.3: a creature may attack a planeswalker; combat damage to it
+        // removes that many loyalty counters, and 0 loyalty kills it (704.5i).
+        use crate::basics::{CardType, CounterKind};
+        let mut e = engine();
+        let giant = put_bf(&mut e.state, PlayerId(0), grp::HILL_GIANT); // 3/3
+        let chars = crate::state::Characteristics {
+            name: "Walker".into(),
+            card_types: vec![CardType::Planeswalker],
+            loyalty: Some(3),
+            ..Default::default()
+        };
+        let pw = e.state.add_card(PlayerId(1), chars, Zone::Battlefield);
+        e.state.active_player = PlayerId(0);
+        e.state.combat = Some(CombatState {
+            attackers: vec![Attack { attacker: giant, defender: Target::Object(pw) }],
+            blocks: Vec::new(),
+        });
+        e.combat_damage();
+        assert_eq!(
+            e.state.object(pw).counters.get(&CounterKind::Loyalty),
+            0,
+            "3 combat damage removed 3 loyalty"
+        );
+        assert!(
+            crate::sba::collect(&e.state)
+                .iter()
+                .any(|s| matches!(s, crate::sba::StateBasedAction::PlaneswalkerDies { pw: x } if *x == pw)),
+            "a 0-loyalty planeswalker is collected for death"
         );
     }
 }

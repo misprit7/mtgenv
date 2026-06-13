@@ -11,7 +11,7 @@
 //! `LoseLife`, `Sequence`. Other IR nodes are a graceful no-op until their cards arrive.
 
 use crate::agent::{DecisionRequest, DecisionResponse, GameEvent, ReplacementOption};
-use crate::basics::{DamageKind, Target, Zone};
+use crate::basics::{CardType, CounterKind, DamageKind, Target, Zone};
 use crate::effects::ability::{Ability, ActionPattern, Rewrite};
 use crate::effects::action::{Action, ResolutionCtx, Whiteboard, WbReason};
 use crate::effects::target::CardFilter;
@@ -454,18 +454,36 @@ impl Engine {
                 self.change_life(p, -(amount as i32));
             }
             Target::Object(o) => {
-                let is_bf_creature = self
+                let (is_bf_creature, is_bf_pw) = self
                     .state
                     .objects
                     .get(&o)
-                    .map(|x| x.zone == Zone::Battlefield && x.chars.is_creature())
-                    .unwrap_or(false);
+                    .map(|x| {
+                        let bf = x.zone == Zone::Battlefield;
+                        (
+                            bf && x.chars.is_creature(),
+                            bf && x.chars.card_types.contains(&CardType::Planeswalker),
+                        )
+                    })
+                    .unwrap_or((false, false));
                 if is_bf_creature {
                     if let Some(x) = self.state.objects.get_mut(&o) {
                         x.damage_marked += amount;
                         if deathtouch {
                             x.dealt_deathtouch = true; // CR 702.2 / 704.5h
                         }
+                    }
+                    self.broadcast(GameEvent::DamageDealt {
+                        target,
+                        amount,
+                        source,
+                    });
+                } else if is_bf_pw {
+                    // CR 120.3 / 306.8: damage to a planeswalker removes that many loyalty
+                    // counters; the 0-loyalty SBA (704.5i) handles its death.
+                    if let Some(x) = self.state.objects.get_mut(&o) {
+                        let cur = x.counters.counts.entry(CounterKind::Loyalty).or_insert(0);
+                        *cur = cur.saturating_sub(amount);
                     }
                     self.broadcast(GameEvent::DamageDealt {
                         target,
