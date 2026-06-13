@@ -36,9 +36,15 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
   `data/replays/<game-id>.json`, so the finished-game button plays a real game back. Both clients in
   sync; tsc/vite + 13 web tests green. Playwright-verified end-to-end on a real 276-frame counters
   game + on mocked/synthetic frames. Commits c651ec7 (viewer), 6592a08 (lobby), 5bf5fec (serving),
-  0dc9463 (auto-save). REMAINING (#33): **live god-view spectator** — blocked on an engine frame-sink
-  hook (SpectatorTee only sees PlayerView in `observe`; proposed `engine.set_replay_sink`). Flagged
-  frame size to engine (~18 MB / 15-turn game — per-event full-state frames).
+  0dc9463 (auto-save).
+- **webui:** **Live god-view spectating — replay/spectate feature COMPLETE (#31/#32/#33 done).** On
+  engine's `set_replay_sink` (9ec1fbf): `spawn_game` installs a sink forwarding each omniscient
+  `ReplayFrame` to the room `SpectateHub` (cached for late joiners; same frames feed the auto-save).
+  New `ServerMsg::GodFrame{state:GodView,label}`; removed the old PlayerView-mirroring `SpectatorTee`.
+  Spectator client runs `godMode` + renders god frames via the replay viewer's adapter (both hands
+  face-up, ordered libraries openable, live "what happened" label). Playwright-verified: a spectator
+  sees the opponent hand (7) + full ordered library (53, top-first) + live labels — zero hidden info.
+  13 web tests green. Commit e9237a7. Frame-size mitigation (gzip-on-serve) deferred until it bites.
 - **engine:** **Replay core landed (REPLAY_PLAN) — schema locked + recorder.** New `crate::replay`
   serde contract (posted to webui+gym first for parallel build): `GodView` (omniscient, every zone
   of every player face-up, libraries top-first) reusing `ObjView`/`CharacteristicsView`; `Replay`
