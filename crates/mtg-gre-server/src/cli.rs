@@ -88,7 +88,8 @@ enum Flow {
 /// The basic lands present in the starter card DB (round-robin deck building).
 const DB_BASICS: [&str; 4] = ["plains", "island", "mountain", "forest"];
 /// Help blurb of recognized card aliases for `add`/`deck`.
-const CARD_NAMES: &str = "plains island mountain forest bears giant shock divination salve bolt";
+const CARD_NAMES: &str =
+    "plains island mountain forest bears giant shock divination salve bolt visionary kavu servant fogbank";
 
 /// CLI session state: the scenario under construction + seat assignment.
 pub struct Cli {
@@ -174,6 +175,7 @@ Commands:
   life <player> <n>           set a player's life total
   add <player> <zone> <card>… place card(s) in a zone (zone: library|hand|battlefield|graveyard|exile)
                               cards: plains island mountain forest bears giant shock divination salve bolt
+                                     visionary kavu servant fogbank (triggers/counters/prevention)
   deck <player> <count> [name] add <count> cards to the library (round-robin basics, or all <name>)
   preset <seat> <burn|bears|demo>  load a named preset deck into a seat's library
   handsize <player> <n>       set maximum hand size
@@ -487,6 +489,10 @@ fn grp_for_name(name: &str) -> Option<u32> {
         "divination" | "div" => grp::DIVINATION,
         "salve" | "healing" => grp::HEALING_SALVE,
         "bolt" | "lightning" => grp::LIGHTNING_BOLT,
+        "visionary" | "elvish" => grp::ELVISH_VISIONARY,
+        "kavu" | "flametongue" | "ftk" => grp::FLAMETONGUE_KAVU,
+        "servant" | "scale" => grp::SERVANT_OF_THE_SCALE,
+        "fogbank" | "fog" => grp::FOG_BANK,
         _ => return None,
     })
 }

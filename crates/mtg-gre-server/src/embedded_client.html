@@ -182,8 +182,9 @@
 "use strict";
 (function () {
   const $ = (id) => document.getElementById(id);
-  let view = null, cur = null;
+  let view = null, cur = null, lastTurn = 0;
   const multi = new Set();
+  let orderSeq = [];
 
   const params = new URLSearchParams(location.search);
   $("decks").textContent = "P0=" + (params.get("p0") || "demo") + " · P1=" + (params.get("p1") || "demo");
@@ -195,10 +196,16 @@
   ws.onmessage = (e) => handle(JSON.parse(e.data));
 
   function handle(m) {
-    if (m.type === "event") { view = m.view; log(eventText(m.event)); render(); }
-    else if (m.type === "decide") { view = m.view; cur = m; multi.clear(); render(); }
+    if (m.type === "event") { view = m.view; logEvent(m.event); render(); }
+    else if (m.type === "decide") { view = m.view; cur = m; multi.clear(); orderSeq = []; render(); }
     else if (m.type === "gameOver") { cur = null; renderEnd(m.winner); }
     else if (m.type === "log") { log(m.text); }
+  }
+
+  function logEvent(ev) {
+    if (view && view.turn !== lastTurn) { lastTurn = view.turn; log("—— Turn " + lastTurn + " ——"); }
+    const t = eventText(ev);
+    if (t) log(t);
   }
 
   function send(payload) {
@@ -330,8 +337,7 @@
 
     d.appendChild(el("div", "c-art"));
     d.appendChild(el("div", "c-type", typeLine(chars)));
-    const kw = (chars.keywords || []);
-    d.appendChild(el("div", "c-rules", kw.join(", ")));
+    d.appendChild(el("div", "c-rules", chars.rules_text || (chars.keywords || []).join(", ")));
     if (chars.power != null) d.appendChild(el("div", "c-pt", chars.power + "/" + chars.toughness));
 
     // combat / damage badges
@@ -370,14 +376,25 @@
     return s || "—";
   }
 
+  const WUBRG = ["White", "Blue", "Black", "Red", "Green", "Colorless"];
+  const LET = { White: "w", Blue: "u", Black: "b", Red: "r", Green: "g", Colorless: "gen" };
   function manaPips(chars) {
     if (isLand(chars)) return [];
+    const out = [];
+    const mc = chars.mana_cost; // exact structured cost when the view carries it
+    if (mc) {
+      const colored = mc.colored || {};
+      const totalC = Object.values(colored).reduce((a, b) => a + b, 0);
+      if (mc.generic > 0 || (mc.generic === 0 && totalC === 0)) out.push(pipEl("gen", String(mc.generic)));
+      WUBRG.forEach(c => { const n = colored[c] || 0; for (let i = 0; i < n; i++) out.push(pipEl(LET[c], "")); });
+      return out;
+    }
+    // fallback approximation from CMC + colors (exact for the current pool)
     const cols = chars.colors || [];
     const cmc = chars.mana_value != null ? chars.mana_value : (chars.manaValue || 0);
     const generic = Math.max(0, cmc - cols.length);
-    const out = [];
     if (generic > 0 || cmc === 0) out.push(pipEl("gen", String(generic)));
-    cols.forEach(c => out.push(pipEl(({ White: "w", Blue: "u", Black: "b", Red: "r", Green: "g" })[c] || "gen", "")));
+    cols.forEach(c => out.push(pipEl(LET[c] || "gen", "")));
     return out;
   }
   function pipEl(cls, text) { const p = el("span", "pip " + cls, text); return p; }
@@ -410,9 +427,17 @@
     }
     if (p.mode === "order") {
       const opts = el("div", "opts");
-      p.options.forEach((label, i) => opts.appendChild(el("div", "opt", (i + 1) + ". " + label)));
+      p.options.forEach((label, i) => {
+        const pos = orderSeq.indexOf(i);
+        const b = el("button", "opt" + (pos >= 0 ? " sel" : ""), (pos >= 0 ? "[" + (pos + 1) + "] " : "") + label);
+        b.onclick = () => { if (pos >= 0) orderSeq.splice(pos, 1); else orderSeq.push(i); renderPrompt(); };
+        opts.appendChild(b);
+      });
       root.appendChild(opts);
-      addActions(root, [actBtn("Keep order", () => send({ order: p.options.map((_, i) => i) }))]);
+      root.appendChild(hint("Click in resolution order (first clicked resolves first)."));
+      const sub = actBtn("Submit order", () => send({ order: orderSeq.slice() }));
+      sub.disabled = orderSeq.length !== p.options.length;
+      addActions(root, [sub, passBtn("Reset", () => { orderSeq = []; renderPrompt(); })]);
       return;
     }
 
@@ -463,7 +488,36 @@
   $("modal").onclick = (e) => { if (e.target === $("modal")) $("modal").classList.remove("show"); };
 
   // ── misc ────────────────────────────────────────────────────────────────
-  function eventText(ev) { const k = Object.keys(ev)[0]; return k + " " + JSON.stringify(ev[k]); }
+  function nameOf(id) {
+    const all = [].concat(view.me.hand || [], view.battlefield || []);
+    (view.players || []).forEach(p => all.push(...(p.graveyard || []), ...(p.exile_public || p.exilePublic || [])));
+    for (const o of all) if (o.Visible && o.Visible.id === id) return o.Visible.chars.name;
+    for (const s of (view.stack || [])) if (s.source === id) return s.chars.name; // resolving spell/ability
+    return "#" + id;
+  }
+  function stackName(sid) { for (const s of (view.stack || [])) if (s.id === sid) return s.chars.name; return "spell #" + sid; }
+  function tgtName(t) {
+    if (t == null) return "?";
+    if (t.Player != null) return "P" + t.Player;
+    if (t.Object != null) return nameOf(t.Object);
+    if (t.Stack != null) return "spell #" + t.Stack;
+    return "?";
+  }
+  function eventText(ev) {
+    const k = Object.keys(ev)[0], v = ev[k];
+    switch (k) {
+      case "PhaseBegan": case "Revealed": return null; // (top bar already shows turn/phase)
+      case "DrewCards": return "P" + v.player + " draws " + v.count;
+      case "LifeChanged": return "P" + v.player + " life " + (v.delta >= 0 ? "+" : "") + v.delta + " → " + v.new_total;
+      case "DamageDealt": return "⚔ " + nameOf(v.source) + " deals " + v.amount + " to " + tgtName(v.target);
+      case "SpellCast": return "P" + v.controller + " casts " + stackName(v.spell);
+      case "ObjectMoved": return nameOf(v.obj) + " → " + v.to;
+      case "PermanentDied": return "💀 " + nameOf(v.obj) + " dies";
+      case "ValueChosen": return "P" + v.player + " " + v.label + " = " + v.value;
+      case "GameEnded": return "GAME OVER — winner " + (v.winner == null ? "draw" : "P" + v.winner);
+      default: return k + " " + JSON.stringify(v);
+    }
+  }
   function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
   function hint(t) { return el("div", "hint", t); }
   function clamp(n, lo, hi) { return Math.max(lo, Math.min(hi, isNaN(n) ? lo : n)); }
