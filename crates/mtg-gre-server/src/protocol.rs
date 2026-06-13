@@ -86,6 +86,7 @@ mod tests {
             battlefield: vec![],
             stack: vec![],
             combat: None,
+            stops: None,
         }
     }
 
@@ -135,7 +136,8 @@ mod tests {
                 },
                 "battlefield": [],
                 "stack": [],
-                "combat": null
+                "combat": null,
+                "stops": null
               }
             }"#]].assert_eq(&json);
     }

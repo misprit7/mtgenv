@@ -501,6 +501,7 @@ mod tests {
             battlefield: vec![],
             stack: vec![],
             combat: None,
+            stops: None,
         }
     }
 
