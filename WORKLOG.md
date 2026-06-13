@@ -5,6 +5,13 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **engine:** **Replay live frame sink** (9ec1fbf) — `Engine::set_replay_sink(Box<dyn FnMut(&ReplayFrame)>)`
+  streams each god-view frame to the caller the instant it's captured (in `push_replay_frame`, on the
+  game thread), unblocking webui's live god-view spectator (their `observe` only saw a masked
+  `PlayerView`, never `GameState`). Installing a sink turns recording on. Non-`Send` `FnMut` (matches
+  `Box<dyn Agent>`; engine is built+run on the game thread). Test streams a full game's frames live,
+  count/labels matching the kept replay. Frame-size (~18MB/276-frame game) flagged to webui w/ options
+  (gzip-on-serve / coarser-granularity knob / delta-frames). 110 mtg-core tests green.
 - **gym:** **`mtg-py` replay accessor (REPLAY_PLAN §3 prep)** — exposes the engine's freshly-landed
   replay recording (a533720) through Python so M2 can export training self-play replays. `PyGame`
   gains `record_replay`/`replay_step` ctor args (game thread calls `set_replay_source(AiTraining
