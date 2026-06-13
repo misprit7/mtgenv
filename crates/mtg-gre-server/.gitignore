@@ -1,0 +1,5 @@
+# Front-end toolchain artifacts (the production build is generated, not committed).
+web/node_modules/
+web/dist/
+web/.vite/
+*.tsbuildinfo

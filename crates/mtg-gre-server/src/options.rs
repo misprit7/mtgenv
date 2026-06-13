@@ -213,6 +213,16 @@ pub fn prompt_for(view: &PlayerView, req: &DecisionRequest) -> Prompt {
             Mode::SelectMany,
             eligible.iter().map(|e| name_of(view, e.creature)).collect(),
         ),
+        R::AssignCombatDamage {
+            recipients, total, ..
+        } => Prompt::new(
+            format!("Assign {total} combat damage"),
+            Mode::SelectOne,
+            recipients
+                .iter()
+                .map(|d| format!("{} (lethal {})", describe_target(view, &d.recipient), d.lethal))
+                .collect(),
+        ),
         R::OrderObjects { items, .. } => Prompt::new(
             "Order these objects (first = resolves first)",
             Mode::Order,

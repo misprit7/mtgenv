@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>mtgenv — web play</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <header>
+      <h1>mtgenv</h1>
+      <span class="status" id="conn">connecting…</span>
+      <span class="status">lands-only demo · you are Player 0 · opponent = RandomAgent</span>
+    </header>
+    <main>
+      <div class="col">
+        <div class="panel" id="opp"></div>
+        <div class="panel"><h2>Stack</h2><div class="zone" id="stack"></div></div>
+        <div class="panel" id="me"></div>
+      </div>
+      <div class="col">
+        <div class="panel" id="prompt"><div class="waiting">Waiting for the game to start…</div></div>
+        <div class="panel"><h2>Log</h2><div id="log"></div></div>
+      </div>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
