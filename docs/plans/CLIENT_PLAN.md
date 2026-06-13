@@ -147,13 +147,12 @@ moves are literally unrepresentable in the client.
 
 ## 4. Transport / framing / handshake / auth
 
-> **✅ RECOVERED BY DECOMPILE (task #2).** `decompile` decompiled
-> `Wizards.Arena.TcpConnection.dll` / `Wizards.Arena.MessageSerialization.dll` /
-> `SharedClientCore.dll` and recovered the full transport + the GRE message schema (254
-> messages / 135 enums in `../mtga-re/schema/gre_schema.json`, validated against a 2134-message
-> live log with zero mismatches). The facts below are from that decompile, not assumptions.
-> Source: `../mtga-re/decompiled/TcpConnection/.../TcpConnection.cs`,
-> `.../MessageSerialization/MessageEnvelopeExtensions.cs`, `.../SharedClientCore/FrontDoorConnectionAWS.cs`.
+> **✅ RECOVERED BY DECOMPILE (tasks #2 + #6).** `decompile` recovered the full GRE message
+> schema (254 messages / 135 enums in `../mtga-re/schema/gre_schema.json` + `../mtga-re/proto/`,
+> validated against a 2134-message live log, 0 mismatches) **and** the transport/framing/
+> handshake/auth — written up canonically in **`../mtga-re/docs/transport.md`** (+
+> `REQ_RESP_FIELDS.md`, `GRE_DECISIONS.md`). **That doc is the source of truth; §4 below
+> summarizes it for this plan's purposes.** The facts here are recovered, not assumptions.
 
 ### 4.1 Two transports, one message set
 Browsers cannot open raw TCP sockets, and the real MTGA client speaks raw TLS-over-TCP (below),
@@ -181,67 +180,77 @@ inside the TLS stream:
   in §8: because the client validates against the *host it was told to connect to*, and that
   host is supplied dynamically by the match push (§4.3), we can choose a hostname we hold a
   trusted cert for.)
-- **Frame = 6-byte header + body, written inside the TLS stream** (`SslStream.Write`). Header
-  (protocol version 4, the current `_sendVersion`):
+- **Frame = small header + body, written inside the TLS stream** (`SslStream.Write`); the reader
+  is length-delimited and reassembles across TCP segments (no newline/JSON delimiting). v4 frame
+  (current `_sendVersion`):
 
   ```
   byte 0      : version            (currently 4)
   byte 1      : (type & 0x0F) | ((format & 0x0F) << 4)
-                  low  nibble = message type  (IMsg.EType: Ping / Pong / Debug / Message)
-                  high nibble = serialization format (Protobuf / Json)
-  bytes 2..5  : int32 body length, little-endian (BitConverter on x86/Mono)
-  bytes 6..   : body (the serialized message envelope)
+                  low  nibble = IMsg.EType          (Msg=1, Ping=2, Pong=3)
+                  high nibble = SerializationFormat (Json=1, Protobuf=2)   ← match traffic = Protobuf
+  bytes 2..5  : int32 body length, little-endian
+  bytes 6..   : body (a `Msg` body = the top-level envelope below)
   ```
-  (`num2 = 6 + bodyLength`. v3 used `[version][type:1][len:4]` = also 6 bytes; we target v4.)
-- **Transport keepalive.** `Ping`/`Pong` are first-class frame *types* (not GRE messages): the
-  client pings on an interval and a v≥3 peer must `Pong` back; there's an inactivity timeout and
-  round-trip-time sampling. **Our server must answer pings** to hold the connection (a
-  transport-layer concern, below the `Agent` boundary).
-- **Message envelope (the body).** `IMessageEnvelope` carries `Format ∈ {Protobuf, Json}`, a
-  `Compressed` flag (JSON payloads may be `DtoCompressor`-compressed; protobuf isn't), a
-  `TransId` (request/response correlation at the transport layer), and the payload. For
-  protobuf, the payload is a `google.protobuf.Any` (TypeUrl + bytes) resolved via a
-  `MessageDescriptorRegistry` — i.e. the GRE messages (`GREToClientMessage`,
-  `ClientToMatchServiceMessage`, …) are packed as `Any`. **The wire supports both protobuf and
-  JSON**, which is convenient: our web client can use the JSON envelope form and the real client
-  the protobuf form over the same server.
+  (6-byte header. v3 = `[ver][type:1][len:4]`; v1 = `[ver][len:4]`, type implicitly Msg.)
+- **Transport keepalive.** `Ping`/`Pong` are frame *types* (bodies = a 4-byte tick echoed back),
+  not GRE messages: the client pings (~4×/inactivity-timeout) and the peer must `Pong`.
+  **Our server must answer pings + honor the inactivity timeout it advertises** — a
+  transport-layer concern below the `Agent` boundary.
+- **Top-level envelopes (the `Msg` body).** *Not* a generic `Any` wrapper — two concrete match-
+  service messages (`MatchServiceMessages.proto`), with the GRE stream nested inside:
+  - client→server **`ClientToMatchServiceMessage`** `{ requestId (monotonic++), type
+    (ClientToMatchServiceMessageType), timestamp, transactionId (GUID), bytes payload }` — `type`
+    selects what `payload` decodes to (`ClientToGREMessage`=2, `AuthenticateRequest`=4,
+    `ClientToMatchDoorConnectRequest`=1, …).
+  - server→client **`MatchServiceToClientMessage`** `{ transactionId, requestId, timestamp,
+    oneof { greToClientEvent=8, authenticateResponse=100, error=7, … } }`, where
+    **`GreToClientEvent { repeated GREToClientMessage greToClientMessages }`** is the gameplay
+    stream our `GreSessionAgent` produces.
 
 ### 4.3 Handshake, endpoint & session lifecycle (recovered)
-The GRE endpoint is **not hardcoded** — it is handed to the client by the matchmaking/front-door
-layer after a match is made, then the client opens the TLS link to it:
+The GRE endpoint is **not hardcoded** — the matchmaking/FrontDoor layer (HTTPS
+`api.platform.wizards.com`) provisions `MatchDoorHost:MatchDoorPort` + `mcFabricUri` + `matchId`
+per match; the client then opens the TLS link to it (`HeadlessClient.ConnectAndJoinMatch(...)` in
+`SharedClientCore` is a ready-made reference for this flow):
 
 ```
-matchmaking push (FrontDoorConnectionAWS):
-    MatchInfoV3 { MatchEndpointHost, MatchEndpointPort, MatchId }   ← server tells client WHERE
-    (auth SessionId comes from the auth-service wrapper, upstream)
-        │
-        ▼  client: _tcpConn.Connect(MatchEndpointHost, MatchEndpointPort)  + TLS 1.2 auth
-GRE session handshake (over the TLS link):
-    client → ConnectReq  { defaultSettings, protoVer, grpVersion, grpChangelist }   ← NO auth token
-    server → ConnectResp { status, protoVer, settings, deckMessage, gre/grpVersion, skins, changelists }
-        │
-        ▼  SubmitDeck ↔ confirmation · die roll / ChooseStartingPlayerReq · MulliganReq ↔ MulliganResp
-        ▼  steady state: GameStateMessage(Full) → Diffs + the *Req/*Resp decision loop (§5)
+1. TCP connect + TLS 1.2 handshake → MatchDoorHost:MatchDoorPort
+2. client → ClientToMatchServiceMessage{ AuthenticateRequest{ clientId, clientInfo,
+              playFabSessionTicket=<access token>, inactivityTimeoutMs } }
+3. server → MatchServiceToClientMessage{ AuthenticateResponse{ clientId, sessionId,
+              inactivityTimeoutMs, screenName } }
+4. client → ClientToMatchServiceMessage{ ClientToMatchDoorConnectRequest{ matchId, mcFabricUri,
+              clientToGreMessageBytes = <serialized ClientToGREMessage(ConnectReq)> } }
+5. server → MatchServiceToClientMessage{ GreToClientEvent{ GREToClientMessage{ connectResp } } }  (GRE live)
+6. steady state: ClientToGREMessage ↔ GreToClientEvent{ greToClientMessages[] }  + periodic Ping/Pong
+        → ConnectResp negotiates protoVer/grpVersion; then SubmitDeck · ChooseStartingPlayerReq ·
+          MulliganReq ↔ MulliganResp · GameStateMessage(Full→Diff) + the *Req/*Resp decision loop (§5)
 ```
 
 Key recovered facts that shape the drop-in:
-- **`ConnectReq` carries no auth/session token** — only version & settings negotiation. Auth and
-  match identity (`SessionId`, `MatchId`) are bound *upstream* at the match-service/front-door
-  layer (`ClientToMatchDoorConnectRequest`), **not** at the GRE TCP session. So the GRE server
-  itself does not need to validate a WotC-minted token — it only needs the client to *reach* it.
-- **The endpoint host:port is dynamic** (`MatchInfoV3.MatchEndpointHost/Port`). Redirecting the
-  client to our server is therefore a matter of controlling that push (§8 Strategy A), not
-  rewriting a baked-in address.
-- **Envelope correlation** is `TransId` at the transport layer and `msgId`→`respId` at the GRE
-  layer (server stamps `msgId`; client echoes it as `respId`). `GreSessionAgent` tracks these to
-  match a `DecisionResponse` to the request it answers.
+- **There IS an auth token, but our server owns auth and can ignore it.** `AuthenticateRequest`
+  carries a `playFabSessionTicket` (MTGA auth goes through PlayFab via `api.platform.wizards.com`).
+  Per `transport.md` §5, *there is no client-side proof to forge for our own server* — the token
+  only matters to Wizards' real backend; a self-hosted server returns an `AuthenticateResponse`
+  and proceeds. The GRE-level `ConnectReq` itself is tokenless (version/settings only).
+- **The endpoint is dynamic** (`MatchDoorHost/Port` + `mcFabricUri` + `matchId`, provisioned via
+  the FrontDoor HTTPS API). Redirecting the real client = controlling that provisioning response
+  (§8 Strategy A), not rewriting a baked-in address.
+- **Correlation, two layers:** transport `requestId`/`transactionId` per
+  `ClientToMatchServiceMessage`, and GRE `msgId`→`respId` (server stamps `msgId`; client echoes
+  `respId`). `GreSessionAgent` tracks `msgId`/`respId` to match a `DecisionResponse` to its request.
+- **`protoVer` is a capability ladder** (enum; current max `36 = PersistentAnnotations`). A
+  compatible server advertises `protoVer ≤ client` and gates optional fields accordingly.
 
 ### 4.4 Drop-in feasibility (now de-risked)
 With the above, the two former blockers resolve favorably:
 
-1. **Auth token at the GRE session: none.** Auth lives at the match-service layer; the GRE
-   `ConnectReq` is tokenless. We do **not** need to mint a WotC token to run the GRE session — we
-   need only to get the client to connect to us (control the match push, or patch — §8).
+1. **Auth: nothing to forge for *our* server.** There is a token (`AuthenticateRequest`'s
+   `playFabSessionTicket`) but it only matters to Wizards' real backend; a self-hosted server
+   owns auth and simply returns an `AuthenticateResponse` and proceeds (`transport.md` §5). The
+   GRE-level `ConnectReq` is itself tokenless. We do **not** need a WotC-minted credential — we
+   need only to get the client to connect to us (control the match provisioning, or patch — §8).
 2. **TLS cert: standard hostname/chain validation, not opaque pinning.** Because the client
    validates the cert against the *host the push told it to use*, and we supply that host, we can
    push a hostname we hold a locally-trusted cert for (dev CA installed in the Mono/system trust
@@ -418,11 +427,12 @@ The goal: get the **stock MTGA client** to render and play a game whose rules ar
 by `mtg-core`. MTGA being a **Mono** build (DECOMPILE_PLAN: managed CIL, decompilable and
 patchable) makes both strategies far more tractable than an IL2CPP target would.
 
-### Strategy A — Protocol-compatible server + match-push redirect (no binary modification)
+### Strategy A — Protocol-compatible server + endpoint redirect (no binary modification)
 Make `mtg-gre-server`'s TLS-over-TCP transport byte-compatible with MTGA's real GRE server
 (§4.2), then get the client to connect to us. Because the GRE endpoint is **dynamic** — the
-match/front-door push hands the client `MatchInfoV3.MatchEndpointHost/Port` + `MatchId` (§4.3) —
-redirection means controlling *that push*, not editing a baked-in address.
+FrontDoor HTTPS API provisions `MatchDoorHost:MatchDoorPort` + `mcFabricUri` + `matchId` per
+match (§4.3) — redirection means controlling *that provisioning response*, not editing a
+baked-in address.
 
 - **Pros:** client stays *stock* (no ToS-fraught binary modification); survives client updates
   as long as the GRE protocol is stable; the cleanest expression of "the seam is the protocol."
@@ -431,18 +441,19 @@ redirection means controlling *that push*, not editing a baked-in address.
     match service. So we don't need WotC's signing keys to open a GRE session — we need the
     client to *reach* our endpoint.
   - **TLS is solvable without a pinning bypass.** The client validates the server cert against
-    *the host the push told it to use* (standard hostname/chain validation, §4.2). Since we
-    supply that host, push a hostname we hold a cert for and install a local dev-CA root in the
+    *the host it was told to dial* (standard hostname/chain validation, §4.2). Since we supply
+    that host, provision a hostname we hold a cert for and install a local dev-CA root in the
     Mono/system trust store — default validation then passes, stock binary untouched.
 - **Cons / what we must stand up:**
-  - **A stand-in front-door/match service.** To originate the push, we run (or intercept) the
-    match-service handshake (`ClientToMatchDoorConnectRequest` → a push carrying our
-    `MatchEndpointHost/Port`). This is the real scope of Strategy A: a small fake matchmaking
-    shim, not just a GRE server. (Alternatively, a MITM proxy that rewrites the real push's
-    endpoint fields — but that re-introduces a TLS-interception problem on the match channel.)
+  - **A stand-in FrontDoor/match service.** To make the client dial us, we satisfy the FrontDoor
+    HTTPS provisioning (return a `CreateMatchGameRoomResponseV2`/connection-config pointing
+    `MatchDoorHost:MatchDoorPort` at our server), then accept its `AuthenticateRequest` +
+    `ClientToMatchDoorConnectRequest`. This is the real scope of Strategy A: a small fake
+    matchmaking/FrontDoor shim, not just a GRE server. (Alternatively a MITM proxy that rewrites
+    the real provisioning response — but that re-introduces TLS interception on the API channel.)
   - **Service-mesh isolation.** The client also talks to login/assets/telemetry; the shim must
-    satisfy enough of the pre-match flow to reach "match found" and emit the push.
-- **Net:** viable as a *local fake front-door + GRE server*; the former blockers (token, cert
+    satisfy enough of the pre-match flow to reach "match found" and provision our endpoint.
+- **Net:** viable as a *local fake FrontDoor + GRE server*; the former blockers (token, cert
   pinning) are no longer hard walls given §4.3/§4.4. The remaining effort is the matchmaking
   shim, not protocol forgery.
 
