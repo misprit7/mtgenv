@@ -26,6 +26,10 @@ use crate::state::{Characteristics, GameState};
 
 pub mod misc;
 
+// Per-first-printing-set folders (real card pool).
+pub mod dsk;
+pub mod lea;
+
 /// Oracle/printing ids (the `grp_id` linking an object to its [`CardDef`]). Per-set card ids move
 /// near their cards in the `<setcode>/` folders; the prototype/starter ids stay here.
 pub mod grp {
@@ -292,6 +296,9 @@ pub(crate) fn deal_to_any(amount: i64) -> Effect {
 pub fn starter_db() -> CardDb {
     let mut db = CardDb::default();
     misc::register(&mut db);
+    // Per-set real cards (Selesnya Landfall push).
+    lea::register(&mut db);
+    dsk::register(&mut db);
     db
 }
 
@@ -374,7 +381,7 @@ mod tests {
     #[test]
     fn starter_db_has_expected_cards() {
         let db = starter_db();
-        assert_eq!(db.len(), 38);
+        assert_eq!(db.len(), 40);
         assert!(db.get(grp::FOREST).unwrap().is_mana_source());
         assert_eq!(db.get(grp::FOREST).unwrap().mana_colors, vec![Color::Green]);
         // Grizzly Bears is a vanilla 2/2 with no abilities.
