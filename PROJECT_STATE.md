@@ -28,11 +28,11 @@ MTGA client.
 
 ## Short-term goals (next)
 
-1. Stand up the **Cargo workspace** + headless `mtg-core` skeleton; move GUI out of core
-   (ENGINE_PLAN milestone 1).
-2. **Turn engine + priority + stack + agenda loop** correct on a lands-only game (milestone 2).
+1. ✅ **Cargo workspace** + headless `mtg-core` skeleton; GUI out of core (milestone 1, done).
+2. ✅ **Turn engine + priority + stack + agenda loop** on a lands-only game (milestone 2, done
+   — `state/`/`turn/`/`stack.rs`/`sba.rs`/`priority.rs`; `mtg-cli` self-play harness).
 3. **Mana + casting + vanilla-creature combat** → first `RandomAgent` self-play games
-   (milestone 3).
+   (milestone 3) — builds on the milestone-2 priority loop / stack / agenda fixpoint.
 4. Spike the **MTGA decompile** in `../mtga-re` to recover the GRE protobuf schema
    (DECOMPILE_PLAN) — informs the `DecisionRequest` enum.
 
@@ -50,6 +50,13 @@ MTGA client.
   (axum+WS, depends only on `mtg-core`); a human is just a `GreSessionAgent` behind the one
   boundary; mapping reconciled to AGENT_INTERFACE §6.1/§1.1; real-client drop-in via
   endpoint-redirect or Mono patch. Transport/auth details blocked on decompile (#2).
+- **engine done with #1 + #7 (milestones 1–2):** the workspace builds a headless `mtg-core`
+  whose turn machine (CR 500s), stack (CR 405), priority loop and agenda fixpoint
+  (recompute→SBA→triggers→priority, CR 117.5/603.3/704.3) run a lands-only game to
+  completion — two `RandomAgent`s pass priority through full turns and deck each other out,
+  no panics. `mtg-cli` is the self-play harness. `state/`/`turn/`/`stack.rs`/`sba.rs`/
+  `priority.rs` implemented on top of design's `agent.rs`/`effects/`/`basics.rs`; whiteboard
+  commit/replacement, layers, mana/casting/combat still stubbed (M3–M5).
 - Existing `src/*.rs` is a ~500-line naming skeleton being **replaced** by the workspace
   (kept only as vocabulary reference); `egui`/`eframe` moving out of the core.
 - Docs in place: architecture (`docs/design/WHITEBOARD_MODEL.md`), rules

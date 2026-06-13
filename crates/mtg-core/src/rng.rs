@@ -1,11 +1,25 @@
 //! Seedable, replayable RNG. All shuffles / coin flips draw from this so that
 //! (same seed + same agent decisions) ⇒ an identical, replayable game.
 
+use serde::{Deserialize, Serialize};
+
 /// A small deterministic xorshift64* PRNG — platform-independent, cheap to clone
-/// alongside game state for search/branching.
-#[derive(Debug, Clone)]
+/// alongside game state for search/branching. Serializable (its single `u64` of state)
+/// so a full `GameState` snapshot replays identically (ENGINE_PLAN §7).
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Rng {
     state: u64,
+}
+
+impl Rng {
+    /// Fisher–Yates shuffle of `slice`, drawing from this RNG (deterministic for a seed).
+    pub fn shuffle<T>(&mut self, slice: &mut [T]) {
+        let n = slice.len();
+        for i in (1..n).rev() {
+            let j = self.below((i + 1) as u64) as usize;
+            slice.swap(i, j);
+        }
+    }
 }
 
 impl Rng {

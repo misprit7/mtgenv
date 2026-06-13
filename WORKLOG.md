@@ -5,6 +5,24 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **engine:** implemented task #7 (ENGINE_PLAN milestone 2) — a runnable lands-only game
+  loop. New code in `mtg-core`: `state/` (`GameState`/`Player`/`Object`/`Characteristics`/
+  `CardType`, `ObjId`-keyed arena, zones as `ObjId` vecs, `move_object`/`draw`/`shuffle`;
+  `state/view.rs` = the `view_for(seat)` hidden-info masking that builds design's
+  `PlayerView`), `turn/` (the CR-500s 12-step sequence + `step_grants_priority`/
+  `is_main_phase`), `stack.rs` (the LIFO stack + `StackObject`), `sba.rs` (the player-loss
+  SBAs 704.5a–c, esp. decking 704.5b), and `priority.rs` (the `Engine`: turn driver,
+  turn-based actions, the **priority loop** with hold-priority/APNAP pass counting, and the
+  **agenda fixpoint** recompute→SBA(loop)→triggers(APNAP)→priority per WHITEBOARD_MODEL §2.2).
+  Choices flow through design's `Agent` trait (`RandomAgent`); only legal action in M2 is
+  play-a-land (CR 116.2a), engine-masked. `mtg-cli` is now a lands-only self-play harness
+  (`mtg-cli [seed] [lib]`) — two `RandomAgent`s deck each other out with no panics. Added
+  `serde` to `Rng` so `GameState` snapshots/replays. 26 tests green incl. expect-test
+  snapshots (enumerated legal options at a decision point; the one-turn CR-500s trace);
+  `cargo build`/`test`/`clippy` all clean. Did NOT touch design-owned files
+  (`agent.rs`/`effects/`/`basics.rs`/`error.rs`); no `lib.rs` change needed (filled existing
+  module stubs). Deferred to M3+: mana/casting/combat declarations, the new-object rule on
+  zone change (400.7, irrelevant lands-only), mulligans.
 - **design:** implemented task #4 — the agent boundary + Effect IR are now real code in
   `mtg-core` (commit 360d3a6). New: `agent.rs` (the `Agent` trait, `DecisionRequest` 21-variant
   enum, `DecisionResponse`, `PlayerView` + view types, all supporting request types, `GameEvent`,

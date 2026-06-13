@@ -1,0 +1,32 @@
+[package]
+name = "mtg-gre-server"
+version.workspace = true
+edition.workspace = true
+description = "Web play interface + GRE-protocol bridge for mtg-core (CLIENT_PLAN M1–M2): a HumanAgent (stdio) and a GreSessionAgent (WebSocket) behind the one Agent boundary."
+
+# The bridge logic is the library; binaries are thin per repo conventions.
+[lib]
+path = "src/lib.rs"
+
+# M1 — terminal play: a human is just another Agent.
+[[bin]]
+name = "mtg-play"
+path = "src/bin/play.rs"
+
+# M2 — web board: axum + WebSocket, JSON projection of the boundary types.
+[[bin]]
+name = "mtg-serve"
+path = "src/bin/serve.rs"
+
+[dependencies]
+# Depends ONLY on mtg-core's public Agent API (architecture law: core stays headless).
+mtg-core = { path = "../mtg-core" }
+serde = { workspace = true }
+serde_json = "1.0"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "net", "time"] }
+axum = { version = "0.7", features = ["ws"] }
+tower-http = { version = "0.6", features = ["fs"] }
+futures-util = "0.3"
+
+[dev-dependencies]
+expect-test = { workspace = true }
