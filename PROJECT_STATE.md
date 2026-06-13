@@ -40,7 +40,13 @@ MTGA client.
 5. ✅ **Whiteboard rewrite pass + triggered abilities** (milestone 4) — prototype-validated
    (Visionary/Flametongue Kavu/Servant/Fog Bank) AND generalized: GLOBAL-scope replacements
    (Root Maze, Hardened Scales) via `CardFilter::ItSelf`/`ControlledBy`, CR 616.1f player
-   choice (`ChooseReplacement`), and dies/LTB triggers (Exultant Cultist). Next: M5 (layers).
+   choice (`ChooseReplacement`), and dies/LTB triggers (Exultant Cultist).
+6. ✅ **Layer system (CR 613)** (milestone 5) — `chars/` computes base ⊕ layered static
+   effects with timestamps + dirty→recompute cache; validated on layers 6 (keyword grants),
+   7b (set base), 7c (anthems + counters): Glorious Anthem, Levitation (flying → combat
+   evasion), Humility. Integrated into SBA/combat/view. Also shipped: Arena-profile auto-pass
+   + MTGA stops (#12). Layers 1–5 (copy/control/text/type/color) + CDAs + a genuine 613.8
+   dependency case are framework-present/deferred.
 
 ## Current state
 

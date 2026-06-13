@@ -5,6 +5,24 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **engine:** task #13 (ENGINE_PLAN milestone 5) — the **CR-613 layer system** (continuous
+  effects), prototype-first (4 snapshot commits). New `chars/`: `ComputedChars` +
+  `compute(state, id)` = base ⊕ layered static effects, the 7-layer framework with timestamps
+  (613.7: `Object.timestamp` assigned on battlefield entry; effects sorted within a sublayer).
+  Layers populated/validated: **6** (Grant/RemoveKeyword), **7b** (SetBasePT), **7c** (ModifyPT
+  + ±1/±1 counters); 4/5 (type/color) framework-present, 1–3 (copy/control/text) deferred;
+  613.8 dependency = timestamp ordering (genuine card-pair case deferred). Cards (Scryfall):
+  **Glorious Anthem** (7c +1/+1, stacks), **Levitation** (6 grant flying), **Humility** (7b set
+  base 1/1, modeling only the P/T clause). Dirty→recompute discipline: `GameState.chars_cache`
+  + `chars_dirty`, marked on zone/counter changes, rebuilt by the agenda's recompute step
+  (`recompute_continuous`); `computed(id)` reads the cache when fresh, else computes on demand
+  (always correct). Integrated into **SBA** (death uses computed toughness), **combat**
+  (computed power/lethal + **flying evasion** — a granted-flying creature is unblockable by
+  non-flyers), and the **view** (battlefield P/T/keywords shown computed, so the UI sees
+  anthems/counters). 58 mtg-core tests green (anthem stacking, grant-flying→combat, set-base
+  then anthem then counter sublayer order, dirty discipline); workspace green, clippy clean.
+  No effects/ change (built over design's `StaticContribution` IR). Deferred: layers 1–5 copy/
+  control/text, CDAs, a genuine 613.8 dependency case, RemoveAllAbilities (Humility's other half).
 - **engine:** task #12 — **Arena-profile priority auto-pass + MTGA-style stops** (decision
   elision, AGENT_INTERFACE §8.1) layered over the CR-correct priority loop. The engine still
   grants priority at every window; the policy elides the `Priority` prompt (treats it as a
