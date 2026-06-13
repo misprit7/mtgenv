@@ -467,9 +467,19 @@ This is **personal research and interoperability** only — the same posture as 
 - **Protocol drift.** MTGA updates can change the GRE schema/framing; pin the version
   (`2026.59.30.12801`, build-guid in DECOMPILE_PLAN) and treat the recovered schema as a
   snapshot. The web client (milestones 1–3) is insulated from drift; only milestone 4 isn't.
-- **Composite vs. atomic decisions.** How `mtg-core` decomposes a multi-step cast into
-  `decide()` calls (with `design`) sets how many GRE round-trips a single play costs and how
-  the UI sequences prompts — affects latency and UX. Resolve with AGENT_INTERFACE.md.
+- **Composite vs. atomic decisions — RESOLVED (with `design`).** A `Priority` selection of a
+  `PlayableAction::Cast` does **not** carry modes/targets/X/payment inline. The engine spawns
+  follow-up `DecisionRequest`s in CR 601.2 order — `ChooseModes` (601.2b) → `ChooseTargets`
+  (601.2c) → `Distribute` if needed (601.2d) → `ChooseNumber` for X (601.2b) → `PayCost`
+  (601.2f–h) — **each its own `decide()` call and thus its own GRE round-trip.** So a single
+  cast is a short *sequence* of prompts, not one mega-prompt; the web UI guides the player
+  through that sequence (and `GreSessionAgent` may auto-answer steps with a single legal
+  option to cut chatter). `CastingTimeOptions` exists so a backend can instead mirror GRE's
+  **batched** `CastingTimeOptionsReq`, collapsing the cast-time choices into one round-trip.
+  The adapter must therefore **handle both shapes** (sequence or batched) and map whichever
+  the engine emits. *Remaining knob:* the exact batched-vs-substepped granularity is one of
+  the shared §5/AGENT_INTERFACE §9 pending-decompile items
+  (`PayCostsReq`/`CastingTimeOptionsReq`) — lock it once the schema lands.
 - **State-diff fidelity.** Producing correct `GameStateMessage` *diffs* (not just `Full`) from
   `GameEvent`s is non-trivial; start `Full`-only for our web client, add diffs for the
   real-client transport (the real client likely expects diffs).
