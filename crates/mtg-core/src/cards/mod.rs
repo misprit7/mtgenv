@@ -15,8 +15,9 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use crate::basics::{CardType, Color, CounterKind, DamageKind, ManaCost, Zone};
-use crate::effects::ability::{Ability, ActionPattern, EventPattern, Rewrite};
-use crate::effects::target::{CardFilter, TargetKind, TargetSpec};
+use crate::effects::ability::{Ability, ActionPattern, EventPattern, Keyword, Rewrite, StaticContribution};
+use crate::effects::condition::Duration;
+use crate::effects::target::{CardFilter, SelectSpec, TargetKind, TargetSpec};
 use crate::effects::value::{PlayerRef, ValueExpr};
 use crate::effects::{Effect, EffectTarget};
 use crate::ids::PlayerId;
@@ -42,6 +43,25 @@ pub mod grp {
     pub const EXULTANT_CULTIST: u32 = 34;
     pub const ROOT_MAZE: u32 = 35;
     pub const HARDENED_SCALES: u32 = 36;
+    // M5 layer-system cards (continuous effects).
+    pub const GLORIOUS_ANTHEM: u32 = 40;
+    pub const LEVITATION: u32 = 41;
+    pub const HUMILITY: u32 = 42;
+}
+
+/// `SelectSpec` for a static affecting "creatures you control" (the anthem scope). min/max are
+/// unused for statics (they apply to every match).
+fn creatures_you_control() -> SelectSpec {
+    SelectSpec {
+        zone: Zone::Battlefield,
+        filter: CardFilter::All(vec![
+            CardFilter::HasCardType(CardType::Creature),
+            CardFilter::ControlledBy(PlayerRef::Controller),
+        ]),
+        chooser: PlayerRef::Controller,
+        min: ValueExpr::Fixed(0),
+        max: ValueExpr::Fixed(0),
+    }
 }
 
 /// A card definition: its printed characteristics + abilities (the Effect IR), plus the
@@ -406,6 +426,51 @@ pub fn starter_db() -> CardDb {
             rewrite: Rewrite::AddAmount(1),
         }],
     ).with_text("If one or more +1/+1 counters would be put on a creature you control, that many plus one +1/+1 counters are put on it instead."));
+    // Glorious Anthem {1}{W}{W} — "Creatures you control get +1/+1." (layer 7c ModifyPT.)
+    db.insert(enchantment(
+        grp::GLORIOUS_ANTHEM,
+        "Glorious Anthem",
+        Color::White,
+        mana_cost(1, &[(Color::White, 2)]),
+        vec![Ability::Static {
+            contribution: StaticContribution::ModifyPT { power: 1, toughness: 1 },
+            affects: creatures_you_control(),
+            duration: Duration::WhileSourcePresent,
+        }],
+    ).with_text("Creatures you control get +1/+1."));
+    // Levitation {2}{U}{U} — "Creatures you control have flying." (layer 6 GrantKeyword.)
+    db.insert(enchantment(
+        grp::LEVITATION,
+        "Levitation",
+        Color::Blue,
+        mana_cost(2, &[(Color::Blue, 2)]),
+        vec![Ability::Static {
+            contribution: StaticContribution::GrantKeyword(Keyword::Flying),
+            affects: creatures_you_control(),
+            duration: Duration::WhileSourcePresent,
+        }],
+    ).with_text("Creatures you control have flying."));
+    // Humility {2}{W}{W} — "All creatures lose all abilities and have base power and toughness
+    // 1/1." Prototype models the base-P/T clause (layer 7b SetBasePT) over ALL creatures; the
+    // lose-all-abilities clause (a layer-6 RemoveAllAbilities + its dependency tangle) is
+    // deferred — no RemoveAllAbilities contribution in the IR yet.
+    db.insert(enchantment(
+        grp::HUMILITY,
+        "Humility",
+        Color::White,
+        mana_cost(2, &[(Color::White, 2)]),
+        vec![Ability::Static {
+            contribution: StaticContribution::SetBasePT { power: 1, toughness: 1 },
+            affects: SelectSpec {
+                zone: Zone::Battlefield,
+                filter: CardFilter::HasCardType(CardType::Creature),
+                chooser: PlayerRef::Controller,
+                min: ValueExpr::Fixed(0),
+                max: ValueExpr::Fixed(0),
+            },
+            duration: Duration::WhileSourcePresent,
+        }],
+    ).with_text("All creatures have base power and toughness 1/1. (Lose-all-abilities clause not yet modeled.)"));
     db
 }
 
@@ -488,7 +553,7 @@ mod tests {
     #[test]
     fn starter_db_has_expected_cards() {
         let db = starter_db();
-        assert_eq!(db.len(), 17);
+        assert_eq!(db.len(), 20);
         assert!(db.get(grp::FOREST).unwrap().is_mana_source());
         assert_eq!(db.get(grp::FOREST).unwrap().mana_colors, vec![Color::Green]);
         // Grizzly Bears is a vanilla 2/2 with no abilities.

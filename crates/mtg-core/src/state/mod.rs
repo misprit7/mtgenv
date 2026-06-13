@@ -17,7 +17,7 @@ use std::sync::Arc;
 use crate::basics::{CardType, Color, CounterBag, CounterKind, ManaCost, ManaPool, Phase, Status, Zone};
 use crate::cards::{CardDb, CardDef};
 use crate::combat::CombatState;
-use crate::ids::{ObjId, PlayerId};
+use crate::ids::{ObjId, PlayerId, Timestamp};
 use crate::rng::Rng;
 use crate::stack::{Stack, StackObject};
 
@@ -100,11 +100,14 @@ pub struct Object {
     /// Summoning sickness (CR 302.6): can't attack / use `{T}` until controlled since the
     /// start of its controller's most recent turn (unless it has haste).
     pub summoning_sick: bool,
+    /// Timestamp for the layer system (CR 613.7): assigned when the object enters the
+    /// battlefield; orders continuous effects within a sublayer.
+    pub timestamp: Timestamp,
 }
 
 impl Object {
     /// Net `+1/+1` minus `-1/-1` counters (the only P/T-modifying counters; CR 122.1a).
-    fn counter_pt_delta(&self) -> i32 {
+    pub(crate) fn counter_pt_delta(&self) -> i32 {
         self.counters.get(&CounterKind::PlusOnePlusOne) as i32
             - self.counters.get(&CounterKind::MinusOneMinusOne) as i32
     }
@@ -206,6 +209,15 @@ pub struct GameState {
     pub card_db: Arc<CardDb>,
     next_obj: u64,
     next_stack: u64,
+    next_timestamp: u64,
+    /// Layer-system cache (CR 613): computed characteristics per battlefield object, rebuilt
+    /// on the dirty signal. Derived data — not serialized; recomputed on demand after load.
+    #[serde(skip)]
+    chars_cache: BTreeMap<ObjId, crate::chars::ComputedChars>,
+    /// Set when continuous-effect inputs change (zone/counter/ability/timestamp); the agenda's
+    /// recompute step rebuilds the cache and clears it (WHITEBOARD_MODEL §2.4).
+    #[serde(skip)]
+    chars_dirty: bool,
 }
 
 impl GameState {
@@ -233,6 +245,9 @@ impl GameState {
             card_db: Arc::new(CardDb::default()),
             next_obj: 1,
             next_stack: 1,
+            next_timestamp: 1,
+            chars_cache: BTreeMap::new(),
+            chars_dirty: true,
         }
     }
 
@@ -273,11 +288,56 @@ impl GameState {
         self.next_stack += 1;
         id
     }
+    /// A fresh layer-system timestamp (CR 613.7), assigned when an object enters the
+    /// battlefield.
+    fn mint_timestamp(&mut self) -> Timestamp {
+        let t = Timestamp(self.next_timestamp);
+        self.next_timestamp += 1;
+        t
+    }
+
+    /// Mark the continuous-effect cache stale (CR 613.5 dirty signal).
+    pub(crate) fn mark_chars_dirty(&mut self) {
+        self.chars_dirty = true;
+    }
+    pub(crate) fn chars_is_dirty(&self) -> bool {
+        self.chars_dirty
+    }
+    /// Computed characteristics for a battlefield object (CR 613). Reads the cache when fresh,
+    /// else computes on demand — so the result is always correct even between recomputes.
+    pub fn computed(&self, id: ObjId) -> crate::chars::ComputedChars {
+        if !self.chars_dirty {
+            if let Some(c) = self.chars_cache.get(&id) {
+                return c.clone();
+            }
+        }
+        crate::chars::compute(self, id)
+    }
+    /// Rebuild the layer-system cache for every battlefield object and clear the dirty flag
+    /// (the agenda's recompute step, WHITEBOARD_MODEL §2.4).
+    pub(crate) fn recompute_continuous(&mut self) {
+        let ids: Vec<ObjId> = self
+            .players
+            .iter()
+            .flat_map(|p| p.battlefield.iter().copied())
+            .collect();
+        let mut cache = BTreeMap::new();
+        for id in ids {
+            cache.insert(id, crate::chars::compute(self, id));
+        }
+        self.chars_cache = cache;
+        self.chars_dirty = false;
+    }
 
     /// Create an object owned by `owner` and place it (appended) into one of that player's
     /// zones. Returns its id. Used to build decks.
     pub fn add_card(&mut self, owner: PlayerId, chars: Characteristics, zone: Zone) -> ObjId {
         let id = self.mint_obj();
+        let timestamp = if zone == Zone::Battlefield {
+            self.mint_timestamp()
+        } else {
+            Timestamp(0)
+        };
         let obj = Object {
             id,
             owner,
@@ -288,10 +348,14 @@ impl GameState {
             counters: CounterBag::default(),
             damage_marked: 0,
             summoning_sick: false,
+            timestamp,
         };
         self.objects.insert(id, obj);
         if let Some(v) = self.player_mut(owner).zone_vec_mut(zone) {
             v.push(id);
+        }
+        if zone == Zone::Battlefield {
+            self.mark_chars_dirty();
         }
         id
     }
@@ -316,6 +380,12 @@ impl GameState {
                 v.remove(pos);
             }
         }
+        // A permanent entering the battlefield gets a fresh layer-system timestamp (613.7d).
+        let new_ts = if to == Zone::Battlefield {
+            Some(self.mint_timestamp())
+        } else {
+            None
+        };
         // Update the object, then append to the destination zone vector.
         if let Some(o) = self.objects.get_mut(&id) {
             o.zone = to;
@@ -328,6 +398,7 @@ impl GameState {
             if to == Zone::Battlefield {
                 o.controller = to_owner;
                 o.summoning_sick = o.chars.is_creature();
+                o.timestamp = new_ts.unwrap();
             } else {
                 o.controller = o.owner;
                 o.summoning_sick = false;
@@ -335,6 +406,10 @@ impl GameState {
         }
         if let Some(v) = self.player_mut(to_owner).zone_vec_mut(to) {
             v.push(id);
+        }
+        // Continuous effects change when a permanent enters or leaves the battlefield.
+        if to == Zone::Battlefield || from_zone == Zone::Battlefield {
+            self.mark_chars_dirty();
         }
         true
     }

@@ -910,7 +910,12 @@ impl Engine {
     }
 
     fn recompute_continuous_if_dirty(&mut self) {
-        // Milestone 5 (the layer system) lives here. Lands-only has no continuous effects.
+        // CR 613.5 / WHITEBOARD_MODEL §2.4: rebuild the layer-system characteristics cache
+        // when a dirty signal has fired (zone/counter/ability/timestamp change), before any
+        // SBA/trigger check or player decision reads computed characteristics.
+        if self.state.chars_is_dirty() {
+            self.state.recompute_continuous();
+        }
     }
 
     /// Apply a batch of state-based actions simultaneously (CR 704.3). Milestone 2 handles
