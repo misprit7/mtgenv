@@ -37,6 +37,7 @@
   .phasebar { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 6px 8px;
     font-size: 11px; color: var(--muted); }
   .phasebar b { color: var(--ink); }
+  .phasebar .stopline { color: var(--accent); font-size: 10px; }
 
   .center { grid-column: 2; grid-row: 2; display: flex; flex-direction: column; min-width: 0;
     background: radial-gradient(120% 80% at 50% 50%, var(--felt) 0%, var(--felt2) 100%); }

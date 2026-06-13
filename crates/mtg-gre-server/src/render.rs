@@ -12,7 +12,8 @@
 
 use std::fmt::Write as _;
 
-use mtg_core::agent::{ObjView, PlayerView};
+use mtg_core::agent::{ObjView, PlayerView, StopStateView};
+use mtg_core::basics::Phase;
 use mtg_core::ids::ObjId;
 use mtg_core::state::GameState;
 
@@ -28,6 +29,9 @@ pub fn render_view(view: &PlayerView) -> String {
         "Turn {} · {:?} · active P{} · priority {}",
         view.turn, view.phase, view.active_player.0, pp
     );
+    if let Some(st) = &view.stops {
+        let _ = writeln!(s, "  {}", stops_line(st));
+    }
     for p in &view.players {
         let you = if p.player == view.seat { " (you)" } else { "" };
         let _ = writeln!(
@@ -120,6 +124,48 @@ pub fn render_state(state: &GameState) -> String {
 }
 
 // ── helpers ─────────────────────────────────────────────────────────────────────────────────
+
+/// A one-line summary of the seat's active priority stops (MTGA-style), for the CLI view.
+fn stops_line(st: &StopStateView) -> String {
+    if st.full_control {
+        return "stops: full control".to_string();
+    }
+    let active: Vec<String> = st
+        .per_step
+        .iter()
+        .filter(|(_, on)| *on)
+        .map(|(p, _)| abbr_step(*p))
+        .collect();
+    let mut line = format!(
+        "stops: {}",
+        if active.is_empty() { "—".to_string() } else { active.join(", ") }
+    );
+    if st.smart_stops {
+        line += " · smart";
+    }
+    if !st.resolve_own_stack {
+        line += " · respond-self";
+    }
+    line
+}
+
+fn abbr_step(p: Phase) -> String {
+    match p {
+        Phase::PrecombatMain => "MP1",
+        Phase::PostcombatMain => "MP2",
+        Phase::DeclareAttackers => "ATK",
+        Phase::DeclareBlockers => "BLK",
+        Phase::Upkeep => "UP",
+        Phase::Draw => "DR",
+        Phase::BeginCombat => "BC",
+        Phase::CombatDamage => "CD",
+        Phase::EndCombat => "EC",
+        Phase::End => "END",
+        Phase::Untap => "UN",
+        Phase::Cleanup => "CL",
+    }
+    .to_string()
+}
 
 fn or_empty(s: &str) -> String {
     if s.is_empty() {

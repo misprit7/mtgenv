@@ -99,9 +99,28 @@ function renderRail(): void {
   rail.innerHTML = "";
   rail.appendChild(pinfoEl(pub(oppId()), false));
   const ph = el("div", "phasebar");
-  ph.innerHTML = `turn <b>${view.turn}</b><br>${view.phase}<br>active <b>P${view.active_player}</b>`;
+  let phHtml = `turn <b>${view.turn}</b><br>${view.phase}<br>active <b>P${view.active_player}</b>`;
+  // Live stops panel (the seat's actual stop config), once the engine populates view.stops.
+  if (view.stops) phHtml += `<br><span class="stopline">${stopsSummary(view.stops)}</span>`;
+  ph.innerHTML = phHtml;
   rail.appendChild(ph);
   rail.appendChild(pinfoEl(pub(meSeat()), true));
+}
+
+const STEP_ABBR: Any = {
+  PrecombatMain: "MP1", PostcombatMain: "MP2", DeclareAttackers: "ATK", DeclareBlockers: "BLK",
+  Upkeep: "UP", Draw: "DR", BeginCombat: "BC", CombatDamage: "CD", EndCombat: "EC", End: "END",
+  Untap: "UN", Cleanup: "CL",
+};
+function stopsSummary(ss: Any): string {
+  if (ss.full_control) return "🛑 full control";
+  const active = (ss.per_step || []).filter((s: Any) => s[1]).map((s: Any) => STEP_ABBR[s[0]] || s[0]);
+  let s = "stops: " + (active.length ? active.join(", ") : "—");
+  const flags: string[] = [];
+  if (ss.smart_stops) flags.push("smart");
+  if (!ss.resolve_own_stack) flags.push("respond-self");
+  if (flags.length) s += " · " + flags.join(", ");
+  return s;
 }
 
 function pinfoEl(p: Any, you: boolean): HTMLElement {
