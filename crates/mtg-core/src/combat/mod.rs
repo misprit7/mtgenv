@@ -17,6 +17,7 @@ use crate::agent::{
     AttackerOption, BlockerOption, DamageSlot, DecisionRequest, DecisionResponse,
 };
 use crate::basics::{DamageKind, Target};
+use crate::effects::action::{Action, ResolutionCtx, Whiteboard, WbReason};
 use crate::ids::{ObjId, PlayerId};
 use crate::priority::Engine;
 
@@ -248,9 +249,18 @@ impl Engine {
             }
         }
 
+        // Deal it through the whiteboard so replacement/prevention effects (e.g. Fog Bank)
+        // can rewrite the combat-damage event before it happens (CR 510.2 / 614/615).
+        let mut wb = Whiteboard::new(WbReason::CombatDamage, ResolutionCtx::default());
         for (target, amount, source) in pending {
-            self.apply_damage(target, amount, source, DamageKind::Combat);
+            wb.push(Action::Damage {
+                target,
+                amount,
+                source,
+                kind: DamageKind::Combat,
+            });
         }
+        self.commit(wb);
     }
 
     /// Decide how a blocked attacker assigns its `power` among `blockers`. A single blocker

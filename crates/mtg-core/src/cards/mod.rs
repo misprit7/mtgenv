@@ -302,6 +302,25 @@ pub fn starter_db() -> CardDb {
             },
         }],
     ));
+    // Fog Bank {1}{U} 0/2 — "Prevent all combat damage that would be dealt to and dealt by
+    // this creature." (Prototype models the "dealt to" prevention; Defender/Flying and the
+    // "dealt by" clause — moot at power 0 — are omitted.)
+    db.insert(creature(
+        grp::FOG_BANK,
+        "Fog Bank",
+        "Wall",
+        Color::Blue,
+        mana_cost(1, &[(Color::Blue, 1)]),
+        0,
+        2,
+        vec![Ability::Replacement {
+            pattern: ActionPattern::WouldBeDealtDamage {
+                to: CardFilter::Any,
+                kind: Some(DamageKind::Combat),
+            },
+            rewrite: Rewrite::Prevent,
+        }],
+    ));
     db
 }
 
@@ -384,7 +403,7 @@ mod tests {
     #[test]
     fn starter_db_has_expected_cards() {
         let db = starter_db();
-        assert_eq!(db.len(), 13);
+        assert_eq!(db.len(), 14);
         assert!(db.get(grp::FOREST).unwrap().is_mana_source());
         assert_eq!(db.get(grp::FOREST).unwrap().mana_colors, vec![Color::Green]);
         // Grizzly Bears is a vanilla 2/2 with no abilities.

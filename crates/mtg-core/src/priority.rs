@@ -1371,6 +1371,37 @@ mod expect_tests {
     }
 
     #[test]
+    fn prevention_replacement_stops_combat_damage() {
+        // Fog Bank (0/2) blocks a 2/2 Grizzly Bears. Its prevention replacement removes the
+        // combat-damage event to it, so it takes 0 (would otherwise die), and its own 0 power
+        // deals nothing to the attacker. No DamageDealt events occur.
+        use crate::combat::{Attack, Block, CombatState};
+        let mut state = cards::build_game(4, &[&[], &[]]);
+        let bears = put(&mut state, PlayerId(0), grp::GRIZZLY_BEARS, Zone::Battlefield);
+        let fog = put(&mut state, PlayerId(1), grp::FOG_BANK, Zone::Battlefield);
+        state.active_player = PlayerId(0);
+        state.combat = Some(CombatState {
+            attackers: vec![Attack {
+                attacker: bears,
+                defender: Target::Player(PlayerId(1)),
+            }],
+            blocks: vec![Block {
+                blocker: fog,
+                attacker: bears,
+            }],
+        });
+        let mut e = Engine::new(state, vec![Box::new(PassAgent), Box::new(PassAgent)]);
+        e.record_events(true);
+        e.combat_damage();
+
+        assert_eq!(e.state.object(fog).damage_marked, 0, "combat damage to Fog Bank prevented");
+        assert_eq!(e.state.object(bears).damage_marked, 0, "Fog Bank's 0 power deals nothing");
+        assert!(sba::collect(&e.state).is_empty(), "nothing dies");
+        // No damage was dealt (the only candidate event was prevented).
+        expect![[r#""#]].assert_eq(&event_trace(&e.event_log));
+    }
+
+    #[test]
     fn legal_priority_actions_are_enumerated_and_masked() {
         // Active player in their precombat main with two lands in hand, empty stack.
         let mut state = GameState::new(2, 1);
