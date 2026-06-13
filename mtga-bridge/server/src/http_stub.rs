@@ -230,7 +230,7 @@ fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
 }
 
 fn log(msg: &str) {
-    eprintln!("[https] {msg}");
+    crate::logging::log("https", msg);
 }
 
 /// Re-export so `main` can construct an acceptor without depending on tokio-rustls

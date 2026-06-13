@@ -72,6 +72,10 @@ fn print_usage() {
 async fn main() -> ExitCode {
     let cfg = parse_config();
 
+    // File logging (so the bridge can be tailed without capturing a TTY).
+    let log_path = std::env::var("MTGA_BRIDGE_LOG").unwrap_or_else(|_| "/tmp/mtga-bridge.log".to_string());
+    mtga_bridge::logging::init(&log_path);
+
     // The crate root holds the `.certs/` cache. `CARGO_MANIFEST_DIR` is set at
     // build time; fall back to the current dir for an installed binary.
     let base_dir = manifest_dir();
@@ -100,8 +104,9 @@ async fn main() -> ExitCode {
     let http_cfg = HttpConfig { https_port: cfg.https_port, frontdoor_port: cfg.fd_port };
     let fd_cfg = FrontdoorConfig { frontdoor_port: cfg.fd_port, gre_port: cfg.gre_port };
 
-    eprintln!("[main] starting: HTTPS :{}  FrontDoor :{}  (GRE endpoint :{})",
-        cfg.https_port, cfg.fd_port, cfg.gre_port);
+    mtga_bridge::logging::log("main", &format!(
+        "starting: HTTPS :{}  FrontDoor :{}  (GRE endpoint :{})  | logging to {}",
+        cfg.https_port, cfg.fd_port, cfg.gre_port, log_path));
 
     let https = tokio::spawn(async move {
         if let Err(e) = http_stub::run(https_acceptor, http_cfg).await {

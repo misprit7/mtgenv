@@ -26,3 +26,4 @@ pub mod cert;
 pub mod frontdoor;
 pub mod http_stub;
 pub mod jwt;
+pub mod logging;

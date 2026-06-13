@@ -211,7 +211,7 @@ fn first_four(b: &[u8]) -> [u8; 4] {
 }
 
 fn log(msg: &str) {
-    eprintln!("[frontdoor] {msg}");
+    crate::logging::log("frontdoor", msg);
 }
 
 /// Build a `TlsAcceptor` from a shared rustls config (same cert as the HTTPS stub).
