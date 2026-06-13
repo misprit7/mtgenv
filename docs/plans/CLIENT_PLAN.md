@@ -1,8 +1,9 @@
 # CLIENT_PLAN — Web Play Interface + GRE-Protocol Server (drop-in MTGA-client compatible)
 
 > Status: **PLAN ONLY.** No implementation yet. Implementation is **blocked on**
-> `mtg-core` (board task #1 / ENGINE_PLAN milestones 1–3) for a playable engine, and on the
-> recovered GRE schema (board task #2 / DECOMPILE_PLAN) for the protocol-compatible phase.
+> `mtg-core` (board task #1 / ENGINE_PLAN milestones 1–3) for a playable engine. The GRE schema
+> *and* transport are now **recovered + log-validated** (task #2 done; transport capture #6) in
+> `../mtga-re` — §4 and §5 reflect those facts, not assumptions.
 >
 > Read first: `docs/design/WHITEBOARD_MODEL.md` §2.6 (decisions carry constraints),
 > `docs/plans/ENGINE_PLAN.md` §6 (the decision boundary), `docs/plans/GYM_PLAN.md` §1–3
@@ -146,62 +147,109 @@ moves are literally unrepresentable in the client.
 
 ## 4. Transport / framing / handshake / auth
 
-> **⚠ BLOCKED ON DECOMPILE (task #2).** The exact transport, framing, handshake, and auth are
-> being recovered by the `decompile` workstream from `Wizards.Arena.TcpConnection.dll` /
-> `Wizards.Arena.MessageSerialization.dll` (DECOMPILE_PLAN Tier-1). The subsections below
-> state our **working assumptions** and what we need confirmed; replace with facts as they
-> land. Question sent to `decompile`; answers fold in here.
+> **✅ RECOVERED BY DECOMPILE (task #2).** `decompile` decompiled
+> `Wizards.Arena.TcpConnection.dll` / `Wizards.Arena.MessageSerialization.dll` /
+> `SharedClientCore.dll` and recovered the full transport + the GRE message schema (254
+> messages / 135 enums in `../mtga-re/schema/gre_schema.json`, validated against a 2134-message
+> live log with zero mismatches). The facts below are from that decompile, not assumptions.
+> Source: `../mtga-re/decompiled/TcpConnection/.../TcpConnection.cs`,
+> `.../MessageSerialization/MessageEnvelopeExtensions.cs`, `.../SharedClientCore/FrontDoorConnectionAWS.cs`.
 
 ### 4.1 Two transports, one message set
-Browsers cannot open raw TCP sockets, and the real MTGA client does not speak WebSocket. So we
-support **two transport adapters carrying the same GRE messages**:
+Browsers cannot open raw TCP sockets, and the real MTGA client speaks raw TLS-over-TCP (below),
+not WebSocket. So we support **two transport adapters carrying the same GRE message set**:
 
 - **WebSocket (our web client).** axum WebSocket endpoint. Carries either (a) GRE protobuf
-  bytes framed one-message-per-WS-binary-frame (decoded in-browser with `protobuf.js`/
-  `ts-proto`), or (b) early on, a **JSON projection** of the same messages (simpler to build
-  and debug). WS already gives us message framing, so no custom length-prefix is needed here.
-- **TCP/TLS (the real client).** Must replicate MTGA's exact framing so a stock or lightly
-  patched client accepts us. **Assumption** (pending decompile): length-prefixed Google
-  protobuf over a TCP stream, likely TLS-wrapped. The `GameStateType ∈ {Full,Diff,Binary}`
-  enum (DECOMPILE_PLAN) confirms full-vs-diff state messages exist.
+  bytes one-message-per-WS-binary-frame (decoded in-browser with `protobuf.js`/`ts-proto`), or
+  (b) early on, a **JSON projection** of the same messages. WS frames give us message
+  boundaries, so we don't reimplement MTGA's length-framing here.
+- **TLS-over-TCP (the real client).** Must replicate MTGA's exact framing (§4.2) so a stock or
+  lightly-patched client accepts us. This is the byte-compatible path for the drop-in (§8).
 
-### 4.2 Framing (assumption → confirm)
-Most Google.Protobuf TCP services use **length-delimited** framing (a varint or fixed-width
-length prefix per message). We assume that for the MTGA-compatible TCP transport and will
-confirm the exact prefix width/encoding from `Wizards.Arena.MessageSerialization.dll`. For the
-WebSocket transport we lean on WS frame boundaries and do not reinvent framing.
+### 4.2 Transport & framing (recovered — exact)
+MTGA's GRE link is a **raw TCP socket wrapped in mandatory TLS 1.2**, with a small custom frame
+inside the TLS stream:
 
-### 4.3 Handshake & session lifecycle (assumption → confirm)
-The recovered `GREMessageType` catalog includes `ConnectResp` and a setup handshake
-(`ChooseStartingPlayerReq`, `SubmitDeckReq`/`SubmitDeckConfirmation`, `MulliganReq`,
-`DieRollResultsResp`, `GetSettingsResp`/`SetSettingsResp`). Our server must implement this
-opening sequence:
+- **TCP + TLS 1.2.** `TcpConnection.Connect(host, port)` opens a `TcpClient`, wraps it in an
+  `SslStream`, and calls `BeginAuthenticateAsClient(host, <no client cert>, SslProtocols.Tls12,
+  checkCertificateRevocation: true)`. It then asserts the stream `IsEncrypted && IsSigned` or
+  drops the connection. **Server-authenticated TLS, no client certificate.**
+- **Cert validation is a constructor-injected `RemoteCertificateValidationCallback` (`certCb`).**
+  If `certCb == null` (the stock path) the `SslStream` uses **.NET default validation** — the
+  server cert must chain to a trusted root **and match the connect `host`** (+ revocation check).
+  This is *not* hard pinning; it's standard hostname/chain validation. (Implication for drop-in
+  in §8: because the client validates against the *host it was told to connect to*, and that
+  host is supplied dynamically by the match push (§4.3), we can choose a hostname we hold a
+  trusted cert for.)
+- **Frame = 6-byte header + body, written inside the TLS stream** (`SslStream.Write`). Header
+  (protocol version 4, the current `_sendVersion`):
+
+  ```
+  byte 0      : version            (currently 4)
+  byte 1      : (type & 0x0F) | ((format & 0x0F) << 4)
+                  low  nibble = message type  (IMsg.EType: Ping / Pong / Debug / Message)
+                  high nibble = serialization format (Protobuf / Json)
+  bytes 2..5  : int32 body length, little-endian (BitConverter on x86/Mono)
+  bytes 6..   : body (the serialized message envelope)
+  ```
+  (`num2 = 6 + bodyLength`. v3 used `[version][type:1][len:4]` = also 6 bytes; we target v4.)
+- **Transport keepalive.** `Ping`/`Pong` are first-class frame *types* (not GRE messages): the
+  client pings on an interval and a v≥3 peer must `Pong` back; there's an inactivity timeout and
+  round-trip-time sampling. **Our server must answer pings** to hold the connection (a
+  transport-layer concern, below the `Agent` boundary).
+- **Message envelope (the body).** `IMessageEnvelope` carries `Format ∈ {Protobuf, Json}`, a
+  `Compressed` flag (JSON payloads may be `DtoCompressor`-compressed; protobuf isn't), a
+  `TransId` (request/response correlation at the transport layer), and the payload. For
+  protobuf, the payload is a `google.protobuf.Any` (TypeUrl + bytes) resolved via a
+  `MessageDescriptorRegistry` — i.e. the GRE messages (`GREToClientMessage`,
+  `ClientToMatchServiceMessage`, …) are packed as `Any`. **The wire supports both protobuf and
+  JSON**, which is convenient: our web client can use the JSON envelope form and the real client
+  the protobuf form over the same server.
+
+### 4.3 Handshake, endpoint & session lifecycle (recovered)
+The GRE endpoint is **not hardcoded** — it is handed to the client by the matchmaking/front-door
+layer after a match is made, then the client opens the TLS link to it:
 
 ```
-client → ConnectReq(/handshake)         server → ConnectResp
-        (deck submit)  SubmitDeckReq  ↔  SubmitDeckConfirmation
-        die roll / choose starting player → ChooseStartingPlayerReq
-        opening hands → MulliganReq ↔ (mulligan resp)
-        → steady-state: GameStateMessage(Full) then Diffs + *Req/*Resp decision loop
+matchmaking push (FrontDoorConnectionAWS):
+    MatchInfoV3 { MatchEndpointHost, MatchEndpointPort, MatchId }   ← server tells client WHERE
+    (auth SessionId comes from the auth-service wrapper, upstream)
+        │
+        ▼  client: _tcpConn.Connect(MatchEndpointHost, MatchEndpointPort)  + TLS 1.2 auth
+GRE session handshake (over the TLS link):
+    client → ConnectReq  { defaultSettings, protoVer, grpVersion, grpChangelist }   ← NO auth token
+    server → ConnectResp { status, protoVer, settings, deckMessage, gre/grpVersion, skins, changelists }
+        │
+        ▼  SubmitDeck ↔ confirmation · die roll / ChooseStartingPlayerReq · MulliganReq ↔ MulliganResp
+        ▼  steady state: GameStateMessage(Full) → Diffs + the *Req/*Resp decision loop (§5)
 ```
 
-We need from decompile: the **exact first-message** the client sends, whether a
-**session token / match id** minted by the login+matchmaking services is required to open the
-GRE session, and whether the GRE connect is a *fresh* connection or an *upgrade* of the
-matchmaking channel. This determines whether endpoint redirect alone can work (§8).
+Key recovered facts that shape the drop-in:
+- **`ConnectReq` carries no auth/session token** — only version & settings negotiation. Auth and
+  match identity (`SessionId`, `MatchId`) are bound *upstream* at the match-service/front-door
+  layer (`ClientToMatchDoorConnectRequest`), **not** at the GRE TCP session. So the GRE server
+  itself does not need to validate a WotC-minted token — it only needs the client to *reach* it.
+- **The endpoint host:port is dynamic** (`MatchInfoV3.MatchEndpointHost/Port`). Redirecting the
+  client to our server is therefore a matter of controlling that push (§8 Strategy A), not
+  rewriting a baked-in address.
+- **Envelope correlation** is `TransId` at the transport layer and `msgId`→`respId` at the GRE
+  layer (server stamps `msgId`; client echoes it as `respId`). `GreSessionAgent` tracks these to
+  match a `DecisionResponse` to the request it answers.
 
-### 4.4 Auth & TLS (assumption → confirm; the drop-in blocker)
-The two questions that decide drop-in feasibility:
+### 4.4 Drop-in feasibility (now de-risked)
+With the above, the two former blockers resolve favorably:
 
-1. **Does the GRE session validate an auth/session token** issued by WotC's login/matchmaking
-   servers (which we cannot mint)? If yes, endpoint-redirect requires either also stubbing
-   login/matchmaking, or patching the client to skip the check (§8).
-2. **Does the client pin the server certificate** (or otherwise reject an unknown TLS cert)?
-   If yes, a hosts/DNS redirect to our TLS server fails handshake unless we patch out pinning.
+1. **Auth token at the GRE session: none.** Auth lives at the match-service layer; the GRE
+   `ConnectReq` is tokenless. We do **not** need to mint a WotC token to run the GRE session — we
+   need only to get the client to connect to us (control the match push, or patch — §8).
+2. **TLS cert: standard hostname/chain validation, not opaque pinning.** Because the client
+   validates the cert against the *host the push told it to use*, and we supply that host, we can
+   push a hostname we hold a locally-trusted cert for (dev CA installed in the Mono/system trust
+   store) — no cert-pinning bypass required. If a future build hard-pins, fall back to patching
+   `certCb` (§8 Strategy B). Either way TLS 1.2 is mandatory, so our server must terminate TLS.
 
-These are precisely the items requested from `decompile`. The whole web client (§5–7) can be
-built and is fully useful **without** resolving them — they gate only the *real-client
-drop-in* (§8), not our own web UI.
+The web client (§5–7) needs none of this — it talks to our own WebSocket endpoint. These facts
+gate only the *real-client drop-in* (§8).
 
 ### 4.5 What `mtg-gre-server` owns vs. what the client owns
 The server owns: framing/serialization, the connect handshake, mapping `DecisionRequest`↔GRE
@@ -235,29 +283,29 @@ each request, what the GRE server *sends down* and what `ClientToGREMessage` it 
 
 | Engine `DecisionRequest` (AGENT_INTERFACE §3) | Server→client GRE `*Req` | Client→server (ClientToGRE) |
 |---|---|---|
-| `Priority { actions, can_pass }` | `ActionsAvailableReq` | action w/ `ActionType` Pass/Play/Cast*/Activate/Activate_Mana/Special |
-| `ChooseStartingPlayer { candidates }` | `ChooseStartingPlayerReq` | choose-player response |
-| `Mulligan { .. }` (+ follow-up `SelectCards{BottomForMulligan}`) | `MulliganReq` | `MulliganResp` |
-| `ChooseTargets { for_action, slots }` | `SelectTargetsReq` | `SubmitTargetsResp` |
-| `ChooseModes { .. }` | part of `CastingTimeOptionsReq` | options response |
-| `CastingTimeOptions { for_action, options }` | `CastingTimeOptionsReq` (`CastingTimeOptionType`) | cast-options response |
-| `ChooseNumber { reason, min, max, forbidden }` | `NumericInputReq` | numeric response |
-| `Distribute { .. }` | `DistributionReq` | distribution response |
-| `PayCost { cost, mana_sources, non_mana }` | `PayCostsReq` | `Make_Payment`/`Activate_Mana`/`FloatMana`/`Special_Payment` |
-| `DeclareAttackers { eligible }` | `DeclareAttackersReq` | `SubmitAttackersResp` |
-| `DeclareBlockers { eligible, attackers }` | `DeclareBlockersReq` | `SubmitBlockersResp` |
-| `AssignCombatDamage { .. }` | `AssignDamageReq` (+ `OrderCombatDamageReq`) | `AssignDamageConfirmation` / `OrderDamageConfirmation` |
-| `OrderObjects { kind, items }` | `OrderReq` (combat: `OrderCombatDamageReq`) | `OrderResp` |
-| `SelectCards { reason, from, min, max, filter }` | `SelectNReq` / `SearchReq` / `RevealHandReq` | `SubmitN`/search response |
-| `SelectFromGroups { reason, groups }` | `SelectNGroupReq` / `SelectFromGroupsReq` / `GroupReq` | group response |
-| `ArrangeCards { reason, cards, destinations }` | scry/surveil prompt (pending decompile) | arrange response |
-| `ChooseReplacement { event, applicable }` | `SelectReplacementReq` | replacement response |
-| `ChooseCounterType { options }` | `SelectCountersReq` | counter-type response |
-| `ChooseOption { reason, options, min, max }` | `PromptReq` / `StringInputReq` | option response |
-| `ChooseColor { allowed, min, max }` | choose-option-from-list prompt | color response |
-| `Confirm { kind }` | `PromptReq` / `OptionalActionMessage` / `AllowForceDraw` | binary response |
-| (push, no response) state delta | `GameStateMessage{ Full \| Diff }` | — |
-| (push, no response) reveal / UI | `RevealHandReq` / `UIMessage` / `TimerStateMessage` | (none / ack) |
+| `Priority { actions, can_pass }` | `ActionsAvailableReq` | `PerformActionResp` (`Action[]` + `autoPassPriority`; `ActionType` Pass/Play/Cast*/Activate/Activate_Mana/Special) |
+| `ChooseStartingPlayer { candidates }` | `ChooseStartingPlayerReq` | `ChooseStartingPlayerResp` |
+| `Mulligan { .. }` (+ follow-up `SelectCards{BottomForMulligan}`) | `MulliganReq` (`mulliganType`,`freeMulliganCount`,`mulliganCount`) | `MulliganResp` (`MulliganOption`) |
+| `ChooseTargets { for_action, slots }` | `SelectTargetsReq` | `SelectTargetsResp` |
+| `ChooseModes { .. }` | inner `modalReq` of `CastingTimeOptionsReq` | `CastingTimeOptionsResp` |
+| `CastingTimeOptions { for_action, options }` | `CastingTimeOptionsReq` (`CastingTimeOptionType`; embeds `numericInputReq`/`modalReq`/`selectNReq`) | `CastingTimeOptionsResp` |
+| `ChooseNumber { reason, min, max, forbidden }` | `NumericInputReq` | `NumericInputResp` |
+| `Distribute { .. }` | `DistributionReq` (`minAmount`,`maxAmount`,`minPerTarget`,`targetIds`) | `DistributionResp` |
+| `PayCost { cost, mana_sources, non_mana }` | `PayCostsReq` | `PerformActionResp` / `EffectCostResp` (`Make_Payment`/`Activate_Mana`/`FloatMana`/`Special_Payment`) |
+| `DeclareAttackers { eligible }` | `DeclareAttackersReq` | `DeclareAttackersResp` |
+| `DeclareBlockers { eligible, attackers }` | `DeclareBlockersReq` | `DeclareBlockersResp` |
+| `AssignCombatDamage { .. }` | `AssignDamageReq` (order via `OrderReq`) | `AssignDamageResp` |
+| `OrderObjects { kind, items }` | `OrderReq` (`OrderCombatDamageReq` folds in here) | `OrderResp` (`ids[]`,`ordering`) |
+| `SelectCards { reason, from, min, max, filter }` | `SelectNReq` / `SearchReq` / `RevealHandReq` | `SelectNResp` (`ids[]`) / `SearchResp` / `RevealHandResp` |
+| `SelectFromGroups { reason, groups }` | `SelectNGroupReq` / `SelectFromGroupsReq` / `GroupReq` | `SelectNGroupResp` / `SelectFromGroupsResp` / `GroupResp` |
+| `ArrangeCards { reason, cards, destinations }` | scry/surveil (via `SelectN`/`Order`) | `SelectNResp` / `OrderResp` |
+| `ChooseReplacement { event, applicable }` | `SelectReplacementReq` | `SelectReplacementResp` |
+| `ChooseCounterType { options }` | `SelectCountersReq` | `SelectCountersResp` |
+| `ChooseOption { reason, options, min, max }` | `PromptReq` (via `Prompt` header) / `StringInputReq` | `StringInputResp` / option resp |
+| `ChooseColor { allowed, min, max }` | choose-option-from-list prompt | option resp |
+| `Confirm { kind }` | `OptionalActionMessage` / `PromptReq` | `OptionalResp` (`OptionResponse`) |
+| (push, no response) state delta | `GameStateMessage{ Full \| Diff }` / `BinaryGameState` | — |
+| (push, no response) reveal / UI | `UIMessage` / `TimerStateMessage` / `IntermissionReq` | (none / ack) |
 
 `DecisionResponse` is **selection-into-options** (AGENT_INTERFACE §4: `Pass`/`Index`/`Indices`/
 `Number`/`Bool`/`Pairs`/`Amounts`/`Order`/`Arrangement`/`Payment`/`Action`). The GRE server
@@ -266,12 +314,23 @@ translates those selections back into the concrete GRE response payloads the pro
 web client and the RL policy structurally identical on the answer side — both only ever pick
 among engine-enumerated legal options.
 
-**Field-level shapes still pending decompile** (shared open list with AGENT_INTERFACE §9):
-mulligan/London bottoming encoding, `NumericInputReq` min/max/forbidden, `SelectTargetsReq`
-target-map vs criteria, `AssignDamageReq`/`OrderCombatDamageReq` split, and
-`PayCostsReq`/`CastingTimeOptionsReq` batched-vs-substepped granularity (this last one sets how
-many GRE round-trips a single cast costs and how the web UI sequences its prompts). The
-*variant set* is settled; only field details remain.
+**Field-level shapes are now recovered & log-validated** (`../mtga-re/schema/gre_schema.json`:
+254 messages, 135 enums, 0 mismatches vs a 2134-message live log). The earlier open items are
+resolved:
+- *Mulligan/London bottoming:* `MulliganResp` carries only a `MulliganOption` decision →
+  bottoming is a follow-up selection, confirming `Mulligan` + `SelectCards{BottomForMulligan}`.
+- *Numeric:* `NumericInputReq` carries the bound/constraint fields (min/max + step/disallow) →
+  `ChooseNumber.forbidden` maps to `disallowedValues` (design enriched `ChooseNumber` to match).
+- *Cast granularity (the round-trip knob):* **resolved** — GRE's `CastingTimeOptionsReq`
+  *embeds* `numericInputReq`/`modalReq`/`selectNReq` as inner messages, i.e. the wire itself
+  decomposes a cast's options into our `ChooseNumber`/`ChooseModes`/`SelectCards` sub-steps. So
+  our CR 601.2 *sequence* model (§11) is exactly what GRE does; a cast is one
+  `CastingTimeOptionsReq` envelope whose inner reqs the UI walks through.
+- *Combat damage:* `AssignDamageReq` + ordering via `OrderReq` (no separate
+  `OrderCombatDamageReq` message in this build) → `AssignCombatDamage` + `OrderObjects`.
+
+The variant set was a correct superset all along; the mapping is now field-exact. (Tracked the
+same in AGENT_INTERFACE §9, which `design` marked RESOLVED against the recovered schema.)
 
 ---
 
@@ -359,25 +418,33 @@ The goal: get the **stock MTGA client** to render and play a game whose rules ar
 by `mtg-core`. MTGA being a **Mono** build (DECOMPILE_PLAN: managed CIL, decompilable and
 patchable) makes both strategies far more tractable than an IL2CPP target would.
 
-### Strategy A — Protocol-compatible server + endpoint redirect (no binary modification)
-Make `mtg-gre-server`'s TCP/TLS transport byte-compatible with MTGA's real GRE server, then
-redirect the client's GRE connection to us (hosts-file / DNS override, or a local proxy).
+### Strategy A — Protocol-compatible server + match-push redirect (no binary modification)
+Make `mtg-gre-server`'s TLS-over-TCP transport byte-compatible with MTGA's real GRE server
+(§4.2), then get the client to connect to us. Because the GRE endpoint is **dynamic** — the
+match/front-door push hands the client `MatchInfoV3.MatchEndpointHost/Port` + `MatchId` (§4.3) —
+redirection means controlling *that push*, not editing a baked-in address.
 
 - **Pros:** client stays *stock* (no ToS-fraught binary modification); survives client updates
-  as long as the GRE protocol is stable; the cleanest expression of "the seam is the
-  protocol."
-- **Cons / blockers (all pending decompile §4.4):**
-  - **Cert pinning** — if the client pins WotC's cert, a redirect to our TLS endpoint fails
-    the handshake. Mitigations all involve touching the client (→ Strategy B) or a system
-    trust-store + non-pinned build (unlikely).
-  - **Auth/session token** — if opening a GRE session requires a token minted by WotC
-    login/matchmaking, we must *also* stand in for those services (stub login + matchmaking so
-    they hand the client a token our GRE server accepts), substantially widening scope beyond
-    the GRE endpoint.
-  - **Service mesh** — the client talks to many services (login, matchmaking/MQTT, assets,
-    telemetry). A redirect must isolate *only* the GRE channel and let or stub the rest.
-- **Net:** cleanest if and only if (a) no cert pinning and (b) the GRE connect can be opened
-  without a WotC-minted token (or with one we can synthesize). Decompile findings decide this.
+  as long as the GRE protocol is stable; the cleanest expression of "the seam is the protocol."
+- **What the recovered transport facts (§4.3/§4.4) make tractable:**
+  - **No GRE-session token to forge.** `ConnectReq` is tokenless; auth binds upstream at the
+    match service. So we don't need WotC's signing keys to open a GRE session — we need the
+    client to *reach* our endpoint.
+  - **TLS is solvable without a pinning bypass.** The client validates the server cert against
+    *the host the push told it to use* (standard hostname/chain validation, §4.2). Since we
+    supply that host, push a hostname we hold a cert for and install a local dev-CA root in the
+    Mono/system trust store — default validation then passes, stock binary untouched.
+- **Cons / what we must stand up:**
+  - **A stand-in front-door/match service.** To originate the push, we run (or intercept) the
+    match-service handshake (`ClientToMatchDoorConnectRequest` → a push carrying our
+    `MatchEndpointHost/Port`). This is the real scope of Strategy A: a small fake matchmaking
+    shim, not just a GRE server. (Alternatively, a MITM proxy that rewrites the real push's
+    endpoint fields — but that re-introduces a TLS-interception problem on the match channel.)
+  - **Service-mesh isolation.** The client also talks to login/assets/telemetry; the shim must
+    satisfy enough of the pre-match flow to reach "match found" and emit the push.
+- **Net:** viable as a *local fake front-door + GRE server*; the former blockers (token, cert
+  pinning) are no longer hard walls given §4.3/§4.4. The remaining effort is the matchmaking
+  shim, not protocol forgery.
 
 ### Strategy B — Patch / runtime-hook the client (Mono)
 Use the Mono toolchain to change the client's behavior: point the GRE endpoint at us, accept
@@ -397,11 +464,15 @@ our cert / disable pinning, and bypass the token/matchmaking requirement.
   never redistribute a patched client or WotC binaries** (§10).
 
 ### Recommendation
-**Attempt Strategy A first** (it needs no client modification and is the cleanest); the moment
-cert pinning or a mandatory WotC token blocks it (likely), **fall back to Strategy B's runtime
-hook** as the least-invasive patch. Both consume the same protocol-compatible server — the
-only difference is whether the client is persuaded to talk to us by redirection or by hooking.
-Either way the server and engine are unchanged: drop-in = pointing the client at our endpoint.
+**Attempt Strategy A first** (no client modification; §4 shows it's no longer wall-blocked by
+token/pinning) — its real cost is a small fake front-door that emits the match push to our
+endpoint. If standing up the matchmaking shim proves fiddly, or a future build hard-pins the
+cert, **fall back to Strategy B's runtime hook** (a `BepInEx`/`MonoMod` plugin hooking
+`TcpConnection.Connect`/the cert callback) as the least-invasive patch — it sidesteps the shim
+entirely by pointing the client straight at our GRE server. Both consume the same
+protocol-compatible server; the only difference is whether the client is persuaded to talk to us
+by a fake push or by a hook. Either way the server and engine are unchanged: drop-in = getting
+the client to connect to our endpoint.
 
 ---
 
@@ -426,19 +497,24 @@ milestones 3–4 need the recovered schema / decompile findings.
    sessions.
 
 3. **Protocol-compatible server.** Replace the JSON projection with the **recovered GRE
-   protobuf** message set (`prost` from decompile's `.proto`); emit real
-   `GREToClientMessage`/`GameStateMessage`, consume `ClientToGREMessage`. Front end switches
-   to protobuf-over-WS (`ts-proto`). **Validate** by round-tripping captured Detailed-Logs GRE
-   streams (DECOMPILE_PLAN Phase 5) through our server. Exit: our web client plays a full game
-   speaking *real GRE messages*; recorded MTGA messages parse/serialize identically.
+   protobuf** message set — `prost` codegen straight from `../mtga-re/proto/*.proto` (already
+   recovered + log-validated); emit real `GREToClientMessage`/`GameStateMessage`, consume
+   `ClientToGREMessage`. Front end switches to protobuf-over-WS (`ts-proto`). Re-validate with
+   `../mtga-re/bin/validate-logs` against captured Detailed-Logs streams. Exit: our web client
+   plays a full game speaking *real GRE messages*; recorded MTGA messages parse/serialize
+   identically.
 
-4. **Attempt real-client drop-in.** Stand up the TCP/TLS transport with MTGA-compatible
-   framing + the connect handshake (§4.3). Try **Strategy A** (endpoint redirect); on
-   cert/token blockers fall back to **Strategy B** (runtime hook). Exit: the stock MTGA client
-   renders and plays at least the opening of a game driven by `mtg-core`.
+4. **Attempt real-client drop-in.** Stand up the TLS-over-TCP transport with MTGA's exact
+   6-byte framing + ping/pong keepalive + the `ConnectReq`/`ConnectResp` handshake (§4.2/§4.3),
+   plus a minimal fake front-door that emits the match push to our endpoint. Try **Strategy A**
+   (match-push redirect + locally-trusted cert); if the matchmaking shim is fiddly or a build
+   hard-pins, fall back to **Strategy B** (BepInEx/MonoMod hook of `TcpConnection.Connect`/the
+   cert callback). Exit: the stock MTGA client renders and plays at least the opening of a game
+   driven by `mtg-core`.
 
-Milestones 1–2 depend only on `mtg-core` (#1) + `AGENT_INTERFACE.md` (#3). Milestones 3–4
-additionally depend on the recovered schema + transport facts (#2 / DECOMPILE_PLAN).
+Milestones 1–2 depend only on `mtg-core` (#1) + `AGENT_INTERFACE.md` (#3). Milestone 3 needs
+the recovered schema (#2 — **done**: `../mtga-re/proto` + `schema`). Milestone 4 additionally
+needs the transport capture (#6) — most of which is already extracted into §4 here.
 
 ---
 
@@ -462,31 +538,22 @@ This is **personal research and interoperability** only — the same posture as 
 
 ## 11. Open questions / risks
 
-- **Auth & cert pinning (the drop-in gate).** Whether endpoint redirect (Strategy A) is even
-  possible hinges on decompile §4.4 findings; budget for falling back to Strategy B.
+- **Auth & cert pinning (the drop-in gate) — DE-RISKED (§4.3/§4.4).** Recovered facts: the GRE
+  `ConnectReq` is tokenless (auth binds upstream), and TLS uses standard hostname/chain
+  validation against the *push-supplied* host (not opaque pinning). So Strategy A's real cost is
+  a fake front-door/match shim, not token forgery or a pinning bypass; budget for falling back
+  to the Strategy B hook if the shim is fiddly.
 - **Protocol drift.** MTGA updates can change the GRE schema/framing; pin the version
-  (`2026.59.30.12801`, build-guid in DECOMPILE_PLAN) and treat the recovered schema as a
-  snapshot. The web client (milestones 1–3) is insulated from drift; only milestone 4 isn't.
-- **Composite vs. atomic decisions — RESOLVED (with `design`).** A `Priority` selection of a
-  `PlayableAction::Cast` does **not** carry modes/targets/X/payment inline. The engine spawns
-  follow-up `DecisionRequest`s in CR 601.2 order — `ChooseModes` (601.2b) → `ChooseTargets`
-  (601.2c) → `Distribute` if needed (601.2d) → `ChooseNumber` for X (601.2b) → `PayCost`
-  (601.2f–h) — **each its own `decide()` call and thus its own GRE round-trip.** So a single
-  cast is a short *sequence* of prompts, not one mega-prompt; the web UI guides the player
-  through that sequence. (`GreSessionAgent` may skip the **wire round-trip** for a step that
-  has a single legal option — answering `Index(0)` locally, identical to what
-  `PyAgent`/`ScriptedAgent` would return — but it must **not** *elide the decision itself*:
-  the engine still issues every `decide()` call, so all backends are consulted at the same
-  points. Whether a forced single-option decision is issued at all is an **engine / Arena-
-  profile** concern, like auto-pass "stops" (AGENT_INTERFACE §8, GYM_PLAN §4), kept out of the
-  per-agent layer so the decision log replays identically — required for differential-testing-
-  vs-Forge and exact replay, ENGINE_PLAN §8.) `CastingTimeOptions` exists so a backend can
-  instead mirror GRE's
-  **batched** `CastingTimeOptionsReq`, collapsing the cast-time choices into one round-trip.
-  The adapter must therefore **handle both shapes** (sequence or batched) and map whichever
-  the engine emits. *Remaining knob:* the exact batched-vs-substepped granularity is one of
-  the shared §5/AGENT_INTERFACE §9 pending-decompile items
-  (`PayCostsReq`/`CastingTimeOptionsReq`) — lock it once the schema lands.
+  (`2026.59.30.12801`, build-guid `7ad31cf…`) and treat the recovered schema (`../mtga-re`) as a
+  snapshot. Frame version is currently `4`. The web client (milestones 1–3) is insulated from
+  drift; only milestone 4 isn't.
+- **Composite vs. atomic decisions — RESOLVED.** See §5: GRE's `CastingTimeOptionsReq` embeds
+  `numericInputReq`/`modalReq`/`selectNReq`, so our CR 601.2 *sequence* of `decide()` calls is
+  exactly the wire's own decomposition (the adapter walks the inner reqs). `GreSessionAgent` may
+  skip the wire round-trip for a lone-option step (answer `Index(0)` locally) but must **not**
+  *elide the decision* — whether a forced single-option decision is issued at all is an
+  engine/Arena-profile concern (auto-pass "stops"), uniform across all backends so the decision
+  log replays identically (differential-testing + replay, ENGINE_PLAN §8, AGENT_INTERFACE §8.1).
 - **State-diff fidelity.** Producing correct `GameStateMessage` *diffs* (not just `Full`) from
   `GameEvent`s is non-trivial; start `Full`-only for our web client, add diffs for the
   real-client transport (the real client likely expects diffs).
