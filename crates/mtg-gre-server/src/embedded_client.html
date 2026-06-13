@@ -160,6 +160,9 @@
   .modal .box h3 { margin: 0 0 10px; }
   .modal .grid { display: flex; flex-wrap: wrap; gap: 8px; }
   .modal .close { float: right; cursor: pointer; color: var(--muted); }
+  /* hover full-card preview */
+  #preview { position: fixed; display: none; width: 320px; border-radius: 12px; z-index: 100;
+    box-shadow: 0 12px 44px rgba(0,0,0,.75); pointer-events: none; }
 </style>
 </head>
 <body>
@@ -175,7 +178,6 @@
       <a href="?">demo</a> ·
       <a href="?p0=burn&amp;p1=bears">burn</a> ·
       <a href="?p0=bears&amp;p1=burn">bears</a></span>
-    <span class="s">art &amp; symbols via <a href="https://scryfall.com" target="_blank" rel="noopener">Scryfall</a> · © Wizards of the Coast</span>
   </div>
 
   <div class="rail" id="rail"></div>
@@ -198,6 +200,7 @@
 </div>
 
 <div class="modal" id="modal"><div class="box"><span class="close" id="modalClose">✕ close</span><h3 id="modalTitle"></h3><div class="grid" id="modalGrid"></div></div></div>
+<img id="preview" alt="" />
 
 <script>
 "use strict";
@@ -206,6 +209,7 @@
   let view = null, cur = null, lastTurn = 0;
   const multi = new Set();
   let orderSeq = [];
+  let previewUrl = null;
 
   // Card art: a baked manifest (grp_id → art_crop/artist), batch-resolved from Scryfall once.
   // No runtime Scryfall API calls — we only load the cached CDN images.
@@ -397,10 +401,14 @@
     if (info && info.art) {
       art.style.backgroundImage = "url('" + info.art + "')";
       art.style.backgroundSize = "cover";
-      art.title = "Illustrated by " + (info.artist || "?");
-      if (info.artist) art.appendChild(el("div", "credit", "🖌 " + info.artist));
     }
     d.appendChild(art);
+    // Hover → full card image preview (follows the cursor).
+    if (info && info.img) {
+      d.addEventListener("mouseenter", (e) => showPreview(info.img, e));
+      d.addEventListener("mousemove", (e) => { if (previewUrl) positionPreview(e); });
+      d.addEventListener("mouseleave", hidePreview);
+    }
     d.appendChild(el("div", "c-type", typeLine(chars)));
     const rules = el("div", "c-rules");
     // Computed keywords (incl. layer-granted, e.g. Flying from Levitation) bold on top, then text.
@@ -588,6 +596,17 @@
     if (t.Stack != null) return "spell #" + t.Stack;
     return "?";
   }
+  // ── hover full-card preview ──────────────────────────────────────────────
+  function showPreview(url, ev) { previewUrl = url; const p = $("preview"); p.src = url; p.style.display = "block"; positionPreview(ev); }
+  function hidePreview() { previewUrl = null; $("preview").style.display = "none"; }
+  function positionPreview(ev) {
+    const p = $("preview"), w = 320, h = 446;
+    let x = ev.clientX + 22, y = ev.clientY - h / 2;
+    if (x + w > window.innerWidth) x = ev.clientX - w - 22;
+    y = Math.max(8, Math.min(y, window.innerHeight - h - 8));
+    p.style.left = x + "px"; p.style.top = y + "px";
+  }
+
   function eventText(ev) {
     const k = Object.keys(ev)[0], v = ev[k];
     switch (k) {

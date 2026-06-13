@@ -12,6 +12,7 @@ let cur: Any = null;
 let lastTurn = 0;
 const multi = new Set<number>();
 let orderSeq: number[] = [];
+let previewUrl: string | null = null;
 
 // Card art: a baked manifest (grp_id → art_crop/artist), batch-resolved from Scryfall once.
 // No runtime Scryfall API calls — we only load the cached CDN images.
@@ -202,10 +203,14 @@ function cardEl(c: Any, ctx: Any): HTMLElement {
   if (info && info.art) {
     art.style.backgroundImage = `url('${info.art}')`;
     art.style.backgroundSize = "cover";
-    art.title = "Illustrated by " + (info.artist || "?");
-    if (info.artist) art.appendChild(el("div", "credit", "🖌 " + info.artist));
   }
   d.appendChild(art);
+  // Hover → full card image preview (follows the cursor).
+  if (info && info.img) {
+    d.addEventListener("mouseenter", (e) => showPreview(info.img, e as MouseEvent));
+    d.addEventListener("mousemove", (e) => { if (previewUrl) positionPreview(e as MouseEvent); });
+    d.addEventListener("mouseleave", hidePreview);
+  }
   d.appendChild(el("div", "c-type", typeLine(chars)));
   const rules = el("div", "c-rules");
   // Computed keywords (incl. layer-granted, e.g. Flying from Levitation) bold on top, then text.
@@ -391,6 +396,21 @@ function tgtName(t: Any): string {
   if (t.Stack != null) return "spell #" + t.Stack;
   return "?";
 }
+// ── hover full-card preview ────────────────────────────────────────────────────
+function showPreview(url: string, ev: MouseEvent): void {
+  previewUrl = url;
+  const p = $("preview") as HTMLImageElement;
+  p.src = url; p.style.display = "block"; positionPreview(ev);
+}
+function hidePreview(): void { previewUrl = null; $("preview").style.display = "none"; }
+function positionPreview(ev: MouseEvent): void {
+  const p = $("preview"); const w = 320, h = 446;
+  let x = ev.clientX + 22; let y = ev.clientY - h / 2;
+  if (x + w > window.innerWidth) x = ev.clientX - w - 22;
+  y = Math.max(8, Math.min(y, window.innerHeight - h - 8));
+  p.style.left = `${x}px`; p.style.top = `${y}px`;
+}
+
 function eventText(ev: Any): string | null {
   const k = Object.keys(ev)[0]; const v = ev[k];
   switch (k) {
