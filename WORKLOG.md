@@ -5,6 +5,16 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **engine:** **Replay core landed (REPLAY_PLAN) — schema locked + recorder.** New `crate::replay`
+  serde contract (posted to webui+gym first for parallel build): `GodView` (omniscient, every zone
+  of every player face-up, libraries top-first) reusing `ObjView`/`CharacteristicsView`; `Replay`
+  = `meta` + `frames`; `ReplayFrame{GodView,label}`; `ReplaySource` `Human|AiTraining{step}`;
+  caller-stamped `created_at`/names/decks. `state::view::god_view(&GameState)` builds it (spectator-
+  feed entry point). `Engine::record_replay(true)` captures a labelled frame per public event;
+  `replay()`/`replay_frame_count()` expose it incrementally (live spectator) + final; `Outcome`/
+  `EndReason` gained serde. 3 tests (wire-shape lock, omniscient-frame capture, JSON round-trip).
+  Commit a533720; isolated from the lead's die-roll commit. (NB: a pre-existing failing test
+  `opening_hands…skips_first_draw` is the lead's 497df25 die-roll, not the replay core — flagged.)
 - **webui:** **3 card-UI fixes (user) + #30 badge closed on real data.** (1) **Stuck hover preview:**
   per-card mouseenter/leave listeners got orphaned when the board re-renders under the cursor (the
   hovered node is replaced, so mouseleave never fires → preview stuck). Replaced with a single global
