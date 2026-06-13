@@ -5,6 +5,20 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **engine:** **C19 — mana production as first-class IR** (engine side, lead's priority). New
+  `conditions.rs` — a pure `Condition` evaluator (`holds`: CountAtLeast/life/turn/All/AnyOf/Not).
+  `mana.rs` now derives a source's producible colours from its `Ability::Activated{is_mana:true}`
+  mana abilities (the `Effect::AddMana` ManaSpec), gated by `Restriction`/`Condition` — so a
+  conditional mana ability (Hushwood Verge {W} iff you control a Forest/Plains) is only offered
+  when legal; kept the `mana_colors` shortcut as a transitional fallback so existing lands don't
+  regress. `Effect::AddMana` → mana pool (produces + any_color via ChooseColor). 104 mtg-core
+  tests green, clippy clean. NEXT (design): add `ManaSpec.one_of` + `basic_mana_ability` builder +
+  migrate basics/Llanowar/lands to the IR mana ability; then I wire one_of + remove the fallback.
+- **engine:** **partial-card test purge (started).** Per lead, removing test refs to soon-deleted
+  partial cards. Done: chars/mod.rs — dropped the Humility test (layer 7b covered by Nature's
+  Revolt) and redirected the Rancor aura test to a synthetic aura. REMAINING (priority.rs, design
+  is holding the defs until I clear them): redirect Chandra loyalty + Fog Bank prevention to
+  synthetic test CardDefs (keep coverage), drop the Rancor cast/fall-off + Servant tests.
 - **webui:** **lobby + per-seat agent assignment** (user request). New `lobby.rs`: a server-side
   game registry (`Arc<Lobby>` axum state) where each `Room` configures *both* sides — every seat is
   a `Human`, a `Random` test agent, or `Rl` (stubbed→random for now). REST `GET/POST /api/games`
