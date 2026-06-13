@@ -5,6 +5,24 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **engine:** task #11 (ENGINE_PLAN milestone 4) — **prototype-first** validation of the
+  two architecture-defining subsystems, on 4 Scryfall-verified cards (4 snapshot commits):
+  (1) TRIGGERED ABILITIES (CR 603): commit emits events → `collect_triggers` queues matching
+  `Ability::Triggered` → agenda drains APNAP → `put_trigger_on_stack` chooses targets
+  (603.3d) → resolve via the interpreter. `StackObjectKind::Ability { index }` carries which
+  ability fired (looked up by grp_id, persists across zones). Validated: **Elvish Visionary**
+  (ETB draw, non-targeting) + **Flametongue Kavu** (ETB 4 to target creature → lethal SBA).
+  (2) WHITEBOARD REWRITE PASS (CR 614/616): real materialize→rewrite→commit replacing the M3
+  straight-through, with the once-per-replacement guard + fixpoint, wiring design's
+  `ActionPattern`/`Rewrite`. Validated: **Servant of the Scale** (Rewrite::EntersWithCounters —
+  a 0/0 enters as 1/1 and survives) + **Fog Bank** (WouldBeDealtDamage{Combat}+Prevent — combat
+  damage prevented). ETB + spell damage + combat damage now all flow through the whiteboard.
+  Added `Object::effective_power/toughness` (counters affect P/T — trivial layer-7c) so the
+  enters-with-counter is observable. Each interaction has an expect-test trace; 43 mtg-core
+  tests green, full workspace green, clippy clean. CR/design notes (for generalization): a
+  `CardFilter::ItSelf` + global-replacement consultation are needed beyond self-scoped
+  replacements; 616.1f player-choice among replacements deferred. Coordinated with design (no
+  effects/ change needed).
 - **webui:** task #8 follow-ups (interactive play deepened). (1) Swapped the temporary driver
   for engine's real `Engine::run_game` (removed duplicated rules logic). (2) Built an
   **expressive CLI** (`mtg-play`): scenario setup (`new`/`life`/`add`/`deck`/`handsize`/`seat`),
