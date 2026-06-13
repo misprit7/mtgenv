@@ -1014,6 +1014,24 @@ mod tests {
     }
 
     #[test]
+    fn burn_vs_bears_self_play_completes() {
+        // The user's hand-test matchup, under RandomAgents: must terminate, no panic, cards
+        // conserved. (Burn = 40 Bolt + 20 Mountain vs Bears = 40 Grizzly Bears + 20 Forest.)
+        for seed in 0..20u64 {
+            let state = crate::cards::burn_vs_bears_game(seed);
+            let total = state.objects.len();
+            let agents: Vec<Box<dyn Agent>> = vec![
+                Box::new(RandomAgent::new(seed ^ 0xB)),
+                Box::new(RandomAgent::new(seed ^ 0xE)),
+            ];
+            let mut engine = Engine::new(state, agents);
+            engine.run_game();
+            assert!(engine.state.game_over, "seed {seed}");
+            assert_eq!(engine.state.objects.len(), total, "card conservation (seed {seed})");
+        }
+    }
+
+    #[test]
     fn skip_opening_deal_leaves_a_built_scenario_untouched() {
         // The scenario hook (webui): no shuffle, no opening draw, so an exact hand/board can
         // be placed without decking out.
@@ -1288,6 +1306,19 @@ mod expect_tests {
         assert_eq!(e.state.object(shock).zone, Zone::Graveyard, "instant to graveyard");
         assert!(e.state.object(mountain).status.tapped, "land tapped to pay {{R}}");
         assert!(e.state.stack.is_empty());
+    }
+
+    /// Lightning Bolt {R}: deals 3 to any target (here, the opponent's face).
+    #[test]
+    fn cast_lightning_bolt_to_the_face() {
+        let mut state = cards::build_game(1, &[&[], &[]]);
+        put(&mut state, PlayerId(0), grp::MOUNTAIN, Zone::Battlefield);
+        put(&mut state, PlayerId(0), grp::LIGHTNING_BOLT, Zone::Hand);
+        state.active_player = PlayerId(0);
+        state.phase = Phase::PrecombatMain;
+        let mut e = Engine::new(state, vec![Box::new(AggroAgent), Box::new(PassAgent)]);
+        e.priority_round();
+        assert_eq!(e.state.player(PlayerId(1)).life, 17, "Bolt dealt 3 to the opponent");
     }
 
     /// A creature that has been under control since the turn began can attack; an unblocked

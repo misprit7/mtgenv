@@ -33,6 +33,7 @@ pub mod grp {
     pub const SHOCK: u32 = 20;
     pub const DIVINATION: u32 = 21;
     pub const HEALING_SALVE: u32 = 22;
+    pub const LIGHTNING_BOLT: u32 = 23;
 }
 
 /// A card definition: its printed characteristics + abilities (the Effect IR), plus the
@@ -189,6 +190,14 @@ pub fn starter_db() -> CardDb {
         deal_to_any(2),
     ));
     db.insert(spell(
+        grp::LIGHTNING_BOLT,
+        "Lightning Bolt",
+        CardType::Instant,
+        Color::Red,
+        mana_cost(0, &[(Color::Red, 1)]),
+        deal_to_any(3),
+    ));
+    db.insert(spell(
         grp::DIVINATION,
         "Divination",
         CardType::Sorcery,
@@ -227,9 +236,44 @@ pub fn demo_deck() -> Vec<u32> {
     deck
 }
 
+/// "Burn": 40 Lightning Bolt + 20 Mountain (CR — a mono-red burn deck). Exercises
+/// instant-speed casting, "any target" (face or creature), and the `DealDamage` runtime.
+pub fn burn_deck() -> Vec<u32> {
+    use std::iter::repeat;
+    let mut deck = Vec::new();
+    deck.extend(repeat(grp::LIGHTNING_BOLT).take(40));
+    deck.extend(repeat(grp::MOUNTAIN).take(20));
+    deck
+}
+
+/// "Bears": 40 Grizzly Bears + 20 Forest. Exercises sorcery-speed creature casting and
+/// combat (attack / block / damage / lethal-damage SBA).
+pub fn bears_deck() -> Vec<u32> {
+    use std::iter::repeat;
+    let mut deck = Vec::new();
+    deck.extend(repeat(grp::GRIZZLY_BEARS).take(40));
+    deck.extend(repeat(grp::FOREST).take(20));
+    deck
+}
+
+/// A preset deck by name (`"burn"`, `"bears"`, `"demo"`), case-insensitive. For the harness/CLI.
+pub fn preset_deck(name: &str) -> Option<Vec<u32>> {
+    match name.to_ascii_lowercase().as_str() {
+        "burn" => Some(burn_deck()),
+        "bears" => Some(bears_deck()),
+        "demo" => Some(demo_deck()),
+        _ => None,
+    }
+}
+
 /// Build a two-player game from the demo deck with the starter [`CardDb`] attached.
 pub fn two_player_demo_game(seed: u64) -> GameState {
     build_game(seed, &[&demo_deck(), &demo_deck()])
+}
+
+/// The user's hand-test matchup: seat 0 plays Burn, seat 1 plays Bears.
+pub fn burn_vs_bears_game(seed: u64) -> GameState {
+    build_game(seed, &[&burn_deck(), &bears_deck()])
 }
 
 /// Build a game: one library per seat from a list of `grp_id` decks, with `starter_db()`
@@ -257,7 +301,7 @@ mod tests {
     #[test]
     fn starter_db_has_expected_cards() {
         let db = starter_db();
-        assert_eq!(db.len(), 9);
+        assert_eq!(db.len(), 10);
         assert!(db.get(grp::FOREST).unwrap().is_mana_source());
         assert_eq!(db.get(grp::FOREST).unwrap().mana_colors, vec![Color::Green]);
         // Grizzly Bears is a vanilla 2/2 with no abilities.
@@ -265,12 +309,17 @@ mod tests {
         assert_eq!(bears.chars.power, Some(2));
         assert!(bears.abilities.is_empty());
         assert!(!bears.is_mana_source());
-        // Shock is an instant with a spell ability.
+        // Shock and Lightning Bolt are instants with a spell ability.
         assert!(db.get(grp::SHOCK).unwrap().spell_effect().is_some());
+        assert!(db.get(grp::LIGHTNING_BOLT).unwrap().spell_effect().is_some());
     }
 
     #[test]
-    fn demo_deck_is_thirty_cards() {
+    fn decks_are_the_expected_sizes() {
         assert_eq!(demo_deck().len(), 30);
+        assert_eq!(burn_deck().len(), 60);
+        assert_eq!(bears_deck().len(), 60);
+        assert_eq!(preset_deck("BURN").unwrap().len(), 60);
+        assert!(preset_deck("nonesuch").is_none());
     }
 }
