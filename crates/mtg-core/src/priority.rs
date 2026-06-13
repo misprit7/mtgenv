@@ -2262,11 +2262,14 @@ mod expect_tests {
     }
 
     #[test]
-    fn loyalty_ability_is_once_per_turn() {
-        // After one loyalty activation, no loyalty ability is legal again this turn (CR 606.3) —
-        // even +2, which needs no target and is otherwise always payable.
+    fn loyalty_ability_is_once_per_turn_across_all_abilities() {
+        // CR 606.3: the limit is PER PLANESWALKER across ALL its loyalty abilities — using +2
+        // also locks out −3 this turn (not just a second +2). A creature is on the board so −3
+        // would otherwise be legal (loyalty 7 ≥ 3, a target exists) — proving the flag blocks the
+        // OTHER ability, not merely re-use of the same one.
         let mut state = cards::build_game(1, &[&[], &[]]);
         put(&mut state, PlayerId(0), grp::CHANDRA_PYROGENIUS, Zone::Battlefield);
+        put(&mut state, PlayerId(1), grp::GRIZZLY_BEARS, Zone::Battlefield); // a legal −3 target
         state.active_player = PlayerId(0);
         state.phase = Phase::PrecombatMain;
         let mut e = Engine::new(state, vec![Box::new(ActivateAgent { want: 0 }), Box::new(PassAgent)]);
@@ -2275,7 +2278,7 @@ mod expect_tests {
             !e.legal_actions(PlayerId(0))
                 .iter()
                 .any(|a| matches!(a, PlayableAction::Activate { .. })),
-            "a planeswalker may activate only one loyalty ability per turn"
+            "after using +2, NO loyalty ability (incl. the otherwise-legal −3) is available this turn"
         );
     }
 
