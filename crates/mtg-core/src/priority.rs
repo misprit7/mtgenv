@@ -15,7 +15,7 @@ use crate::agent::{
     AbilityRef, ActionRef, Agent, CastVariant, DecisionRequest, DecisionResponse, GameEvent,
     PlayableAction, PlayerView, SelectReason, StopStateView, TargetSlot,
 };
-use crate::basics::{CardType, Phase, Target, Zone, ZonePos};
+use crate::basics::{CardType, CounterKind, Phase, Target, Zone, ZonePos};
 use crate::effects::ability::{Ability, Cost, CostComponent, EventPattern, Keyword, Restriction, Timing};
 use crate::effects::action::{Action, MoveCause, ResolutionCtx, Whiteboard, WbReason};
 use crate::effects::target::{CardFilter, TargetKind, TargetSpec};
@@ -727,6 +727,11 @@ impl Engine {
                 if matches!(restriction, Some(Restriction::OnlyYourTurn)) && p != s.active_player {
                     continue;
                 }
+                // Once-per-turn (CR 606.3, loyalty abilities): per planeswalker, across all its
+                // loyalty abilities — tracked by `Object.used_once_per_turn`.
+                if matches!(restriction, Some(Restriction::OncePerTurn)) && s.object(perm).used_once_per_turn {
+                    continue;
+                }
                 if !self.can_pay_cost(p, perm, cost) {
                     continue;
                 }
@@ -757,6 +762,13 @@ impl Engine {
                 CostComponent::TapSelf => {
                     self.state.objects.get(&source).is_some_and(|o| !o.status.tapped)
                 }
+                // Loyalty (CR 606.2): `+N`/`0` always payable; `−N` only if loyalty ≥ N.
+                CostComponent::Loyalty(n) => {
+                    *n >= 0
+                        || self.state.objects.get(&source).is_some_and(|o| {
+                            o.counters.get(&CounterKind::Loyalty) as i32 >= -*n
+                        })
+                }
                 _ => true,
             };
             if !ok {
@@ -782,12 +794,13 @@ impl Engine {
     /// (locked now, 602.2b), then pay the cost. It resolves via [`Engine::resolve_top`].
     fn activate_ability(&mut self, p: PlayerId, source: ObjId, ability: AbilityRef) {
         let idx = ability.0 as usize;
-        let (cost, effect) = match self.state.def_of(source).and_then(|d| d.abilities.get(idx)) {
-            Some(Ability::Activated { cost, effect, is_mana: false, .. }) => {
-                (cost.clone(), effect.clone())
-            }
-            _ => return,
-        };
+        let (cost, effect, restriction) =
+            match self.state.def_of(source).and_then(|d| d.abilities.get(idx)) {
+                Some(Ability::Activated { cost, effect, restriction, is_mana: false, .. }) => {
+                    (cost.clone(), effect.clone(), restriction.clone())
+                }
+                _ => return,
+            };
         let sid = self.state.mint_stack();
         self.state.stack.push(StackObject {
             id: sid,
@@ -818,6 +831,12 @@ impl Engine {
             }
         }
         self.pay_cost(p, source, &cost);
+        // Mark the once-per-turn limit (CR 606.3) as used on this permanent.
+        if matches!(restriction, Some(Restriction::OncePerTurn)) {
+            if let Some(o) = self.state.objects.get_mut(&source) {
+                o.used_once_per_turn = true;
+            }
+        }
     }
 
     /// Pay an ability/cost's components (CR 118). Mana is auto-tapped; the starter set also uses
@@ -827,10 +846,19 @@ impl Engine {
             mana::auto_pay(&mut self.state, p, m);
         }
         for c in &cost.components {
-            if let CostComponent::TapSelf = c {
-                if let Some(o) = self.state.objects.get_mut(&source) {
-                    o.status.tapped = true;
+            match c {
+                CostComponent::TapSelf => {
+                    if let Some(o) = self.state.objects.get_mut(&source) {
+                        o.status.tapped = true;
+                    }
                 }
+                CostComponent::Loyalty(n) => {
+                    if let Some(o) = self.state.objects.get_mut(&source) {
+                        let cur = o.counters.counts.entry(CounterKind::Loyalty).or_insert(0);
+                        *cur = (*cur as i32 + n).max(0) as u32;
+                    }
+                }
+                _ => {}
             }
         }
     }
@@ -1784,6 +1812,27 @@ mod expect_tests {
         }
     }
 
+    /// Activates the activated ability with a specific index (e.g. a chosen loyalty ability),
+    /// choosing target slot 0; otherwise passes. For the planeswalker tests.
+    struct ActivateAgent {
+        want: u32,
+    }
+    impl Agent for ActivateAgent {
+        fn decide(&mut self, _v: &PlayerView, req: &DecisionRequest) -> DecisionResponse {
+            match req {
+                DecisionRequest::Priority { actions, .. } => actions
+                    .iter()
+                    .position(|a| matches!(a, PlayableAction::Activate { ability, .. } if ability.0 == self.want))
+                    .map(|i| DecisionResponse::Action(i as u32))
+                    .unwrap_or(DecisionResponse::Pass),
+                DecisionRequest::ChooseTargets { slots, .. } => DecisionResponse::Pairs(
+                    slots.iter().enumerate().map(|(si, _)| (si as u32, 0u32)).collect(),
+                ),
+                _ => DecisionResponse::Pass,
+            }
+        }
+    }
+
     /// A deterministic, aggressive agent for casting/combat tests: at priority it casts the
     /// first castable spell, else plays the first land, else passes; it attacks with
     /// everything; never blocks; targets an opponent (player) when choosing a target.
@@ -2175,6 +2224,81 @@ mod expect_tests {
         );
         e.perform_sbas(&sbas);
         assert_eq!(e.state.object(pw).zone, Zone::Graveyard, "0-loyalty planeswalker dies");
+    }
+
+    #[test]
+    fn loyalty_plus_ability_adds_loyalty_and_resolves() {
+        use crate::basics::CounterKind;
+        let mut state = cards::build_game(1, &[&[], &[]]);
+        let chandra = put(&mut state, PlayerId(0), grp::CHANDRA_PYROGENIUS, Zone::Battlefield); // loyalty 5
+        state.active_player = PlayerId(0);
+        state.phase = Phase::PrecombatMain;
+        let mut e = Engine::new(state, vec![Box::new(ActivateAgent { want: 0 }), Box::new(PassAgent)]);
+        e.priority_round();
+        assert_eq!(
+            e.state.object(chandra).counters.get(&CounterKind::Loyalty),
+            7,
+            "+2 loyalty (5 → 7)"
+        );
+        assert_eq!(e.state.player(PlayerId(1)).life, 18, "+2 dealt 2 to the opponent");
+    }
+
+    #[test]
+    fn loyalty_minus_ability_pays_loyalty_and_deals_damage() {
+        use crate::basics::CounterKind;
+        let mut state = cards::build_game(1, &[&[], &[]]);
+        let chandra = put(&mut state, PlayerId(0), grp::CHANDRA_PYROGENIUS, Zone::Battlefield); // loyalty 5
+        let prey = put(&mut state, PlayerId(1), grp::GRIZZLY_BEARS, Zone::Battlefield); // 2/2
+        state.active_player = PlayerId(0);
+        state.phase = Phase::PrecombatMain;
+        let mut e = Engine::new(state, vec![Box::new(ActivateAgent { want: 1 }), Box::new(PassAgent)]);
+        e.priority_round();
+        assert_eq!(
+            e.state.object(chandra).counters.get(&CounterKind::Loyalty),
+            2,
+            "−3 loyalty (5 → 2)"
+        );
+        assert_eq!(e.state.object(prey).zone, Zone::Graveyard, "−3 dealt 4 to the 2/2, killing it");
+    }
+
+    #[test]
+    fn loyalty_ability_is_once_per_turn() {
+        // After one loyalty activation, no loyalty ability is legal again this turn (CR 606.3) —
+        // even +2, which needs no target and is otherwise always payable.
+        let mut state = cards::build_game(1, &[&[], &[]]);
+        put(&mut state, PlayerId(0), grp::CHANDRA_PYROGENIUS, Zone::Battlefield);
+        state.active_player = PlayerId(0);
+        state.phase = Phase::PrecombatMain;
+        let mut e = Engine::new(state, vec![Box::new(ActivateAgent { want: 0 }), Box::new(PassAgent)]);
+        e.priority_round();
+        assert!(
+            !e.legal_actions(PlayerId(0))
+                .iter()
+                .any(|a| matches!(a, PlayableAction::Activate { .. })),
+            "a planeswalker may activate only one loyalty ability per turn"
+        );
+    }
+
+    #[test]
+    fn cannot_activate_a_minus_ability_without_enough_loyalty() {
+        use crate::basics::CounterKind;
+        let mut state = cards::build_game(1, &[&[], &[]]);
+        let chandra = put(&mut state, PlayerId(0), grp::CHANDRA_PYROGENIUS, Zone::Battlefield);
+        put(&mut state, PlayerId(1), grp::GRIZZLY_BEARS, Zone::Battlefield); // a legal −3 target
+        state.objects.get_mut(&chandra).unwrap().counters.counts.insert(CounterKind::Loyalty, 2);
+        state.active_player = PlayerId(0);
+        state.phase = Phase::PrecombatMain;
+        let e = Engine::new(state, vec![Box::new(PassAgent), Box::new(PassAgent)]);
+        let abilities: Vec<u32> = e
+            .legal_actions(PlayerId(0))
+            .iter()
+            .filter_map(|a| match a {
+                PlayableAction::Activate { ability, .. } => Some(ability.0),
+                _ => None,
+            })
+            .collect();
+        assert!(abilities.contains(&0), "+2 is always payable");
+        assert!(!abilities.contains(&1), "−3 needs ≥3 loyalty (has 2)");
     }
 
     /// Put a card (by grp_id) directly into a player's zone, returning its id.

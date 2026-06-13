@@ -16,8 +16,8 @@ use std::sync::Arc;
 
 use crate::basics::{CardType, Color, CounterKind, DamageKind, ManaCost, Zone};
 use crate::effects::ability::{
-    Ability, ActionPattern, Cost, EventPattern, Keyword, Qualification, Rewrite,
-    StaticContribution, Timing,
+    Ability, ActionPattern, Cost, CostComponent, EventPattern, Keyword, Qualification, Restriction,
+    Rewrite, StaticContribution, Timing,
 };
 use crate::effects::condition::Duration;
 use crate::effects::target::{CardFilter, SelectSpec, TargetKind, TargetSpec};
@@ -68,6 +68,7 @@ pub mod grp {
     pub const RANCOR: u32 = 63;
     pub const BONESPLITTER: u32 = 64;
     pub const PACIFISM: u32 = 65;
+    pub const CHANDRA_PYROGENIUS: u32 = 66;
 }
 
 /// `SelectSpec` for a static affecting "creatures you control" (the anthem scope). min/max are
@@ -683,6 +684,53 @@ pub fn starter_db() -> CardDb {
             },
         ],
     ).with_text("Enchant creature. Enchanted creature can't attack or block."));
+    // Chandra, Pyrogenius {4}{R}{R} Planeswalker — loyalty 5. Two loyalty abilities (sorcery-
+    // speed, once per turn): +2 deals 2 to each opponent; −3 deals 4 to target creature. The
+    // −10 ultimate (multi-target sweep) is deferred.
+    db.insert(CardDef {
+        chars: Characteristics {
+            name: "Chandra, Pyrogenius".to_string(),
+            card_types: vec![CardType::Planeswalker],
+            supertypes: vec!["Legendary".to_string()],
+            subtypes: vec!["Chandra".to_string()],
+            colors: vec![Color::Red],
+            mana_cost: Some(mana_cost(4, &[(Color::Red, 2)])),
+            loyalty: Some(5),
+            grp_id: grp::CHANDRA_PYROGENIUS,
+            ..Default::default()
+        },
+        abilities: vec![
+            Ability::Activated {
+                cost: Cost { mana: None, components: vec![CostComponent::Loyalty(2)] },
+                effect: Effect::DealDamage {
+                    amount: ValueExpr::Fixed(2),
+                    to: EffectTarget::Player(PlayerRef::EachOpponent),
+                    kind: DamageKind::Noncombat,
+                },
+                timing: Timing::Sorcery,
+                restriction: Some(Restriction::OncePerTurn),
+                is_mana: false,
+            },
+            Ability::Activated {
+                cost: Cost { mana: None, components: vec![CostComponent::Loyalty(-3)] },
+                effect: Effect::DealDamage {
+                    amount: ValueExpr::Fixed(4),
+                    to: EffectTarget::Target(TargetSpec {
+                        kind: TargetKind::Creature(CardFilter::Any),
+                        min: 1,
+                        max: 1,
+                        distinct: true,
+                    }),
+                    kind: DamageKind::Noncombat,
+                },
+                timing: Timing::Sorcery,
+                restriction: Some(Restriction::OncePerTurn),
+                is_mana: false,
+            },
+        ],
+        mana_colors: Vec::new(),
+        text: String::new(),
+    }.with_text("+2: Chandra deals 2 damage to each opponent. −3: Chandra deals 4 damage to target creature. (−10 ultimate not yet modeled.)"));
     db
 }
 
@@ -765,7 +813,7 @@ mod tests {
     #[test]
     fn starter_db_has_expected_cards() {
         let db = starter_db();
-        assert_eq!(db.len(), 37);
+        assert_eq!(db.len(), 38);
         assert!(db.get(grp::FOREST).unwrap().is_mana_source());
         assert_eq!(db.get(grp::FOREST).unwrap().mana_colors, vec![Color::Green]);
         // Grizzly Bears is a vanilla 2/2 with no abilities.
