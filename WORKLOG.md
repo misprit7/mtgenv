@@ -35,6 +35,12 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
     `set_auto_pass_option(p, opt)` mapping it onto the seat's flags (vocabulary for the UI; finer
     Turn/EndStep/ResolveAll distinctions approximated, refined later vs byte-exact defaults).
     Deferred: yields/answers, transient stops, captured ConnectResp.settings defaults.
+  - **PlayerView.stops echo** (with design): design added `PlayerView.stops: Option<StopStateView
+    { full_control, smart_stops, resolve_own_stack, per_step: Vec<(Phase,bool)> }>` (settings-echo,
+    render-only, self-only); engine populates it via `Engine::view_for_seat` (per_step from
+    `is_stop` over priority-granting steps), so webui renders the real per-seat stop config
+    instead of hardcoded defaults. None when the profile is off. The SET half (live toggling)
+    stays deferred — it's the real settings sub-protocol, not game state.
 - **engine:** task #11 GENERALIZATION (milestone 4 cont.) — the rewrite pass + triggers are
   now beyond the self-scoped prototype (4 snapshot commits): (1) land plays routed through the
   whiteboard + `Rewrite::EntersTapped`/`Action::TapUntap`; (2) a **dies/LTB trigger** (Exultant
