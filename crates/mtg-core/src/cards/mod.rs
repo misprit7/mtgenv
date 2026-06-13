@@ -17,8 +17,8 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use crate::basics::{CardType, Color, DamageKind, ManaCost, Zone};
-use crate::effects::ability::{Ability, Keyword};
-use crate::effects::target::{CardFilter, SelectSpec, TargetKind, TargetSpec};
+use crate::effects::ability::{Ability, Cost, CostComponent, Keyword, Timing};
+use crate::effects::target::{CardFilter, ManaSpec, SelectSpec, TargetKind, TargetSpec};
 use crate::effects::value::{PlayerRef, ValueExpr};
 use crate::effects::{Effect, EffectTarget};
 use crate::ids::PlayerId;
@@ -148,6 +148,10 @@ impl CardDef {
     }
     pub fn is_mana_source(&self) -> bool {
         !self.mana_colors.is_empty()
+            || self
+                .abilities
+                .iter()
+                .any(|a| matches!(a, Ability::Activated { is_mana: true, .. }))
     }
 }
 
@@ -180,6 +184,30 @@ pub(crate) fn mana_cost(generic: u32, pips: &[(Color, u32)]) -> ManaCost {
         *colored.entry(c).or_insert(0) += n;
     }
     ManaCost { generic, colored, x: 0 }
+}
+
+/// A plain `{T}: Add {C}` mana ability (CR 605) as first-class Effect IR — the canonical way to
+/// give a land or dork its mana (replacing the legacy `mana_colors` shortcut). The engine reads
+/// `Ability::Activated{is_mana:true}` + `Effect::AddMana` to offer the colour and fill the pool.
+/// For conditional/any-color/choice mana, build the `Activated` directly with a `restriction` or
+/// a richer `ManaSpec` (`any_color` / `one_of`).
+pub(crate) fn mana_ability(color: Color) -> Ability {
+    Ability::Activated {
+        cost: Cost {
+            mana: None,
+            components: vec![CostComponent::TapSelf],
+        },
+        effect: Effect::AddMana {
+            who: PlayerRef::Controller,
+            mana: ManaSpec {
+                produces: vec![(color, ValueExpr::Fixed(1))],
+                any_color: None,
+            },
+        },
+        timing: Timing::Instant,
+        restriction: None,
+        is_mana: true,
+    }
 }
 
 pub(crate) fn basic_land(grp_id: u32, name: &str, color: Color) -> CardDef {
