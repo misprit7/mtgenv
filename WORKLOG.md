@@ -5,6 +5,15 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **engine:** **CR 305.6 — basic-land-type mana is intrinsic, derived from computed subtypes**
+  (C19/#28 follow-through, lead-flagged). `mana::mana_sources` now unions three colour sources:
+  IR mana abilities (`Ability::Activated{is_mana}`, condition-aware), the **intrinsic** basic-type
+  mana read from each permanent's COMPUTED subtypes (`Forest`→{G} … `Plains`→{W}, new
+  `basic_land_type_color`), and the legacy `mana_colors` fallback. Reads post-layer subtypes, so
+  animated lands / Spreading Seas / Urborg-style type changes carry mana for free; basics + typed
+  duals now author as just their type line (no `mana_ability`, no `mana_colors`). New test
+  `basic_land_type_mana_is_intrinsic_from_subtype`. 105 tests green, clippy clean. `mana_colors`
+  removal + `ManaSpec.one_of` wiring still pending design dropping the shortcut from basics/lands.
 - **gym:** **GYM_PLAN milestone 1 COMPLETE — obs encoder + factored action space + MaskablePPO
   beats random.** Replaced M0's flat obs/action with the real thing (gym-side only):
   `layout.rs` (shared entity ordering/sizes so obs row `i` ↔ action slot `i`), `obs.rs` (structured
