@@ -22,8 +22,16 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
   endpoint redirect, vs. patch/runtime-hook the Mono client). Milestones: CLI text client →
   minimal web board (JSON) → protocol-compatible server (recovered protobuf) → real-client
   drop-in. Reconciled the DecisionRequest⇄GRE mapping to `AGENT_INTERFACE.md` §6.1; the docs
-  now cross-reference (design added §1.1 GRE-server serialization contract). Transport/
-  framing/handshake/auth + cert-pinning marked **blocked on decompile** (questions sent).
+  now cross-reference (design added §1.1 GRE-server serialization contract).
+- **client (follow-up):** decompile #2 landed → folded the **recovered + log-validated GRE
+  transport + schema** into CLIENT_PLAN §4/§5/§8 (no longer assumptions): wire = TLS 1.2 over
+  TCP, custom **6-byte frame** `[ver=4][type|format][int32 LE len]` inside the TLS stream +
+  ping/pong keepalive; envelope = `IMessageEnvelope{Protobuf|Json, Compressed, TransId}` w/
+  protobuf payload as `Any`; **endpoint is dynamic** (match push `MatchInfoV3.MatchEndpointHost/
+  Port`+`MatchId`); GRE `ConnectReq` is **tokenless** (auth binds upstream). Net: real-client
+  drop-in **de-risked** — no GRE token to forge, TLS solvable via controlling the pushed
+  hostname + local dev-CA (no pinning bypass). Mapping table updated to exact recovered resp
+  names; sent transport facts to decompile for their #6.
 - **design:** wrote `docs/design/AGENT_INTERFACE.md` — the single `Agent` trait +
   `DecisionRequest`/`DecisionResponse` enums + `PlayerView` (info-filtered, hidden zones
   masked) + the Effect IR / whiteboard `Action` / `Native` hatch (Rust sketches). The
