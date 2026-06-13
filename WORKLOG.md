@@ -5,6 +5,27 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **engine:** implemented task #9 (ENGINE_PLAN milestone 3) — a minimal PLAYABLE game:
+  mana + casting + vanilla creatures + combat. New `cards/` module: `CardDef`
+  (Characteristics + design's `Ability` IR) + a `CardDb` registry keyed by `grp_id`; a
+  starter set (4 basic lands, Grizzly Bears 2/2, Hill Giant 3/3, Shock = 2 to any target,
+  Divination = draw 2, Healing Salve = gain 3) + an R/G demo deck. `GameState` gains
+  `card_db: Arc<CardDb>` (serde-skipped — card *data* out of snapshot state) + a `combat`
+  field. `mana.rs`: mana sources, affordability, engine auto-tap payment (CR 605/118).
+  Casting (CR 601, in `priority.rs`): `Cast` wired into the `Priority` decision with
+  sorcery-vs-instant timing, target choice (601.2c), auto-pay, the stack; resolution runs
+  the effect IR. `whiteboard.rs`: the **effect interpreter** over design's `Effect`
+  (DealDamage/Draw/GainLife/LoseLife/Sequence) → materialize `Action`s → commit + emit
+  events (replacement pass deferred to M4). `combat/`: declare attackers/blockers, combat
+  damage (single/multi-block w/ `AssignCombatDamage`), simultaneous dealing; `sba.rs` adds
+  creature death (704.5f/g). Two `RandomAgent`s now play lands→creatures→attack→damage to
+  0 life (mtg-cli demo). 35 mtg-core/cli tests green incl. expect-test snapshots (cast
+  Shock, unblocked attack, blocker trade, a full R/G combat-trace game); `cargo build`/
+  `test`/`clippy` clean for mtg-core+mtg-cli. Coordinated the interpreter boundary with
+  design (engine owns the interpreter over their IR); added `pub mod cards;` to lib.rs.
+  Flagged a `CardType` duplication (mine in `state` vs design's in `effects::target`) for
+  consolidation into `basics`. Deferred (M4+): keywords, layers, replacement/prevention,
+  mana-via-IR, PayCost agent decision (auto-tap for now), mulligans.
 - **webui:** implemented task #8 (CLIENT_PLAN M1–M2). New crate `crates/mtg-gre-server`
   (depends only on `mtg-core`): `human.rs` = **M1** stdio `HumanAgent` (a human is just another
   `Agent`); `session.rs` = **M2** `GreSessionAgent` bridging the boundary over a WebSocket via a

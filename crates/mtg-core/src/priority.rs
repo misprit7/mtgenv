@@ -11,13 +11,20 @@
 //! the loop is written generically (it resolves the stack, drains triggers, etc.) so those
 //! slot in without reshaping it.
 
-use crate::agent::{Agent, DecisionRequest, DecisionResponse, GameEvent, PlayableAction, SelectReason};
-use crate::basics::{Phase, Zone};
-use crate::ids::PlayerId;
+use crate::agent::{
+    ActionRef, Agent, CastVariant, DecisionRequest, DecisionResponse, GameEvent, PlayableAction,
+    SelectReason, TargetSlot,
+};
+use crate::basics::{Phase, Target, Zone};
+use crate::effects::action::{ResolutionCtx, WbReason};
+use crate::effects::target::{TargetKind, TargetSpec};
+use crate::effects::{Effect, EffectTarget};
+use crate::ids::{ObjId, PlayerId};
+use crate::mana;
 use crate::sba::{self, LossReason, StateBasedAction};
-use crate::stack::StackObjectKind;
+use crate::stack::{StackObject, StackObjectKind};
 use crate::state::view::view_for;
-use crate::state::GameState;
+use crate::state::{CardType, GameState};
 use crate::turn::{is_main_phase, step_grants_priority, TURN_STEPS};
 
 /// A hard cap on turns so a pathological game can never loop forever. Real games end far
@@ -179,9 +186,12 @@ impl Engine {
                     self.draw(ap, 1);
                 }
             }
-            // Combat declarations (508/509) and all other steps have no milestone-2
-            // turn-based actions: a lands-only game has no creatures to declare. (Combat
-            // lands in milestone 3 — see combat/.)
+            // Combat turn-based actions (CR 508/509/510/511 — see combat/).
+            Phase::DeclareAttackers => self.declare_attackers(),
+            Phase::DeclareBlockers => self.declare_blockers(),
+            Phase::CombatDamage => self.combat_damage(),
+            Phase::EndCombat => self.end_combat(),
+            // Untap/Upkeep/Begin/main phases/End have no further turn-based actions here.
             _ => {}
         }
     }
@@ -336,45 +346,189 @@ impl Engine {
     }
 
     /// Enumerate the legal actions `p` may take with priority right now (the engine's job:
-    /// masking, CR 117). Milestone 2: only playing a land (CR 116.2a / 505.6).
+    /// masking, CR 117): play a land (CR 116.2a) and cast a spell (CR 601), at the right
+    /// timing and only if affordable + (if it targets) has a legal target.
     fn legal_priority_actions(&self, p: PlayerId) -> Vec<PlayableAction> {
         let mut actions = Vec::new();
         let s = &self.state;
-        let can_play_land = p == s.active_player
-            && is_main_phase(s.phase)
-            && s.stack.is_empty()
-            && s.player(p).lands_played_this_turn < 1;
-        if can_play_land {
+        let sorcery_speed = p == s.active_player && is_main_phase(s.phase) && s.stack.is_empty();
+
+        // Play a land (CR 116.2a / 505.6b: one per turn, main phase, empty stack, your turn).
+        if sorcery_speed && s.player(p).lands_played_this_turn < 1 {
             for &card in &s.player(p).hand {
                 if s.object(card).chars.is_land() {
                     actions.push(PlayableAction::PlayLand { card });
                 }
             }
         }
+
+        // Cast a spell (CR 601). Instants any time you have priority; everything else at
+        // sorcery speed (CR 117.1a).
+        for &card in &s.player(p).hand {
+            let chars = &s.object(card).chars;
+            if chars.is_land() {
+                continue;
+            }
+            let cost = match &chars.mana_cost {
+                Some(c) => c,
+                None => continue,
+            };
+            let timing_ok = chars.has_type(CardType::Instant) || sorcery_speed;
+            if !timing_ok || !mana::can_pay(s, p, cost) {
+                continue;
+            }
+            // Must have a legal target for each "target" the spell requires (CR 601.2c).
+            let has_targets = match s.def_of(card).and_then(|d| d.spell_effect()) {
+                Some(eff) => collect_target_specs(eff)
+                    .iter()
+                    .all(|spec| self.target_candidates(spec, p).len() as u32 >= spec.min.max(1)),
+                None => true,
+            };
+            if has_targets {
+                actions.push(PlayableAction::Cast {
+                    spell: card,
+                    variant: CastVariant::Normal,
+                });
+            }
+        }
         actions
     }
 
-    // The action-dispatch point; gains Cast/Activate/Special arms in milestone 3, so it is
-    // kept as a `match` even though only one arm exists today.
-    #[allow(clippy::single_match)]
     fn perform_priority_action(&mut self, p: PlayerId, action: &PlayableAction) {
         match action {
             PlayableAction::PlayLand { card } => self.play_land(p, *card),
-            // Cast/Activate/Special: milestone 3+. Ignored defensively for now (they are
-            // never enumerated as legal in milestone 2, so this is unreachable in practice).
+            PlayableAction::Cast { spell, .. } => self.cast_spell(p, *spell),
+            // Activate / ActivateMana / Special: milestone 4+. Never enumerated yet.
             _ => {}
         }
     }
 
     /// Play a land: a special action (CR 116.2a), no stack. The land enters the battlefield
     /// under `p`'s control and counts against the one-land-per-turn limit.
-    fn play_land(&mut self, p: PlayerId, card: crate::ids::ObjId) {
+    fn play_land(&mut self, p: PlayerId, card: ObjId) {
         self.state.move_object(card, Zone::Battlefield, p);
         self.state.player_mut(p).lands_played_this_turn += 1;
         self.broadcast(GameEvent::ObjectMoved {
             obj: card,
             to: Zone::Battlefield,
         });
+    }
+
+    /// Cast a spell from `p`'s hand (CR 601, minimal): put it on the stack (601.2a), choose
+    /// targets (601.2c), auto-pay its mana cost (601.2f–h), and announce it cast (601.2i).
+    /// Affordability + target availability are pre-checked in `legal_priority_actions`, so no
+    /// rewind (CR 732) is needed. The caller keeps priority with the caster (CR 601.2i).
+    fn cast_spell(&mut self, p: PlayerId, card: ObjId) {
+        let cost = match self.state.object(card).chars.mana_cost.clone() {
+            Some(c) => c,
+            None => return,
+        };
+        let effect = self.state.def_of(card).and_then(|d| d.spell_effect().cloned());
+        let specs = effect.as_ref().map(collect_target_specs).unwrap_or_default();
+
+        // 601.2a: the card becomes a spell on top of the stack.
+        let sid = self.state.mint_stack();
+        self.move_to_stack(card, p);
+        self.state.stack.push(StackObject {
+            id: sid,
+            controller: p,
+            source: Some(card),
+            kind: StackObjectKind::Spell(card),
+            targets: Vec::new(),
+        });
+
+        // 601.2c: choose targets (locked now).
+        if !specs.is_empty() {
+            let slots: Vec<TargetSlot> = specs
+                .iter()
+                .map(|spec| TargetSlot {
+                    description: String::new(),
+                    legal: self.target_candidates(spec, p),
+                    min: spec.min,
+                    max: spec.max,
+                })
+                .collect();
+            let req = DecisionRequest::ChooseTargets {
+                for_action: ActionRef(sid),
+                slots: slots.clone(),
+            };
+            let resp = self.ask(p, &req);
+            let chosen = parse_targets(&slots, &resp);
+            if let Some(obj) = self.state.stack.items.iter_mut().find(|s| s.id == sid) {
+                obj.targets = chosen;
+            }
+        }
+
+        // 601.2f–h: pay the total cost (auto-tap lands).
+        mana::auto_pay(&mut self.state, p, &cost);
+
+        // 601.2i: the spell has been cast.
+        self.broadcast(GameEvent::SpellCast {
+            spell: sid,
+            controller: p,
+        });
+    }
+
+    /// Move a card from its owner's hand onto the stack zone (the object's `ObjId` is kept;
+    /// the [`StackObject`] wraps it with a `StackId`).
+    fn move_to_stack(&mut self, card: ObjId, controller: PlayerId) {
+        let owner = self.state.object(card).owner;
+        let hand = &mut self.state.player_mut(owner).hand;
+        if let Some(pos) = hand.iter().position(|&x| x == card) {
+            hand.remove(pos);
+        }
+        if let Some(o) = self.state.objects.get_mut(&card) {
+            o.zone = Zone::Stack;
+            o.controller = controller;
+        }
+    }
+
+    /// The legal target candidates for one target spec (the engine pre-filters; masking is
+    /// the engine's job). Milestone 3 supports "any target" (CR 115.4) and player/creature.
+    fn target_candidates(&self, spec: &TargetSpec, _caster: PlayerId) -> Vec<Target> {
+        let creatures = || {
+            self.state
+                .objects
+                .values()
+                .filter(|o| o.zone == Zone::Battlefield && o.chars.is_creature())
+                .map(|o| Target::Object(o.id))
+        };
+        let players = || {
+            self.state
+                .players
+                .iter()
+                .filter(|p| !p.has_lost)
+                .map(|p| Target::Player(p.id))
+        };
+        match &spec.kind {
+            TargetKind::Any => creatures().chain(players()).collect(),
+            TargetKind::Player => players().collect(),
+            TargetKind::Creature(_) | TargetKind::Permanent(_) => creatures().collect(),
+            // StackObject / CardInZone: not needed by the starter set.
+            _ => Vec::new(),
+        }
+    }
+
+    /// CR 608.2b: a spell/ability resolves unless *every* target is illegal. (Returns true if
+    /// it has no targets.)
+    fn targets_still_legal(&self, targets: &[Target]) -> bool {
+        targets.is_empty() || targets.iter().any(|t| self.target_legal(t))
+    }
+
+    fn target_legal(&self, t: &Target) -> bool {
+        match t {
+            Target::Player(p) => self
+                .state
+                .players
+                .get(p.0 as usize)
+                .is_some_and(|pl| !pl.has_lost),
+            Target::Object(o) => self
+                .state
+                .objects
+                .get(o)
+                .is_some_and(|x| x.zone == Zone::Battlefield),
+            Target::Stack(_) => false,
+        }
     }
 
     /// Resolve the top object of the stack (CR 608). Milestone 2 performs only the
@@ -391,12 +545,30 @@ impl Engine {
                 let owner = self.state.object(id).owner;
                 let is_perm = self.state.object(id).chars.is_permanent();
                 if is_perm {
+                    // Permanent spell → enters the battlefield (CR 608.3). Its ETB-time
+                    // effects (none in M3) would run here.
                     self.state.move_object(id, Zone::Battlefield, obj.controller);
                     self.broadcast(GameEvent::ObjectMoved {
                         obj: id,
                         to: Zone::Battlefield,
                     });
                 } else {
+                    // Instant/sorcery: recheck targets (608.2b), run the effect (608.2c),
+                    // then put it into its owner's graveyard (608.2n).
+                    let effect = self.state.def_of(id).and_then(|d| d.spell_effect().cloned());
+                    if let Some(effect) = effect {
+                        if self.targets_still_legal(&obj.targets) {
+                            let ctx = ResolutionCtx {
+                                controller: Some(obj.controller),
+                                source: Some(id),
+                                x: None,
+                                chosen_targets: obj.targets.clone(),
+                                chosen_modes: Vec::new(),
+                            };
+                            self.resolve_effect(&effect, &ctx, WbReason::Resolve(obj.id));
+                        }
+                        // else: all targets illegal ⇒ countered by game rules, no effect.
+                    }
                     self.state.move_object(id, Zone::Graveyard, owner);
                     self.broadcast(GameEvent::ObjectMoved {
                         obj: id,
@@ -465,6 +637,19 @@ impl Engine {
                         pl.drew_from_empty = false;
                     }
                 }
+                StateBasedAction::CreatureDies { creature, .. } => {
+                    let owner = match self.state.objects.get(creature) {
+                        Some(o) if o.zone == Zone::Battlefield => o.owner,
+                        _ => continue,
+                    };
+                    if self.state.move_object(*creature, Zone::Graveyard, owner) {
+                        self.broadcast(GameEvent::PermanentDied { obj: *creature });
+                        self.broadcast(GameEvent::ObjectMoved {
+                            obj: *creature,
+                            to: Zone::Graveyard,
+                        });
+                    }
+                }
             }
         }
         self.check_game_end();
@@ -515,7 +700,7 @@ impl Engine {
     /// Draw `count` cards for `p` from the top of their library (CR 120/121). A draw from an
     /// empty library sets the decking flag; the player loses on the next SBA check
     /// (CR 704.5b) — drawing-from-empty itself is not the loss.
-    fn draw(&mut self, p: PlayerId, count: u32) {
+    pub(crate) fn draw(&mut self, p: PlayerId, count: u32) {
         let mut drawn = 0;
         for _ in 0..count {
             let top = self.state.player_mut(p).library.pop();
@@ -550,13 +735,13 @@ impl Engine {
 
     /// Ask seat `p` to decide `req`, presenting its information-filtered view. The single
     /// place the engine consults an agent for a choice.
-    fn ask(&mut self, p: PlayerId, req: &DecisionRequest) -> DecisionResponse {
+    pub(crate) fn ask(&mut self, p: PlayerId, req: &DecisionRequest) -> DecisionResponse {
         let view = view_for(&self.state, p);
         self.agents[p.0 as usize].decide(&view, req)
     }
 
     /// Push a public event to every seat's `observe` channel (CR: the GRE diff stream).
-    fn broadcast(&mut self, ev: GameEvent) {
+    pub(crate) fn broadcast(&mut self, ev: GameEvent) {
         if self.record_events {
             self.event_log.push(ev.clone());
         }
@@ -566,6 +751,56 @@ impl Engine {
             self.agents[seat].observe(&view, &ev);
         }
     }
+}
+
+/// Collect the `TargetSpec`s an `Effect` requires, in declaration order (CR 601.2c). The
+/// milestone-3 starter set only needs the `DealDamage` target; `Sequence` recurses. Other
+/// targeted IR nodes are added as their cards arrive.
+fn collect_target_specs(effect: &Effect) -> Vec<TargetSpec> {
+    let mut out = Vec::new();
+    collect_specs_into(effect, &mut out);
+    out
+}
+
+fn collect_specs_into(effect: &Effect, out: &mut Vec<TargetSpec>) {
+    match effect {
+        Effect::DealDamage {
+            to: EffectTarget::Target(spec),
+            ..
+        } => out.push(spec.clone()),
+        Effect::Sequence(effects) => {
+            for e in effects {
+                collect_specs_into(e, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Turn a `ChooseTargets` response into the chosen concrete targets (in slot order). Defensive
+/// against a malformed/empty response: falls back to the first legal candidate of each
+/// required slot so a misbehaving agent can't produce an under-targeted spell.
+fn parse_targets(slots: &[TargetSlot], resp: &DecisionResponse) -> Vec<Target> {
+    let mut chosen = Vec::new();
+    if let DecisionResponse::Pairs(pairs) = resp {
+        for (slot_idx, cand_idx) in pairs {
+            if let Some(slot) = slots.get(*slot_idx as usize) {
+                if let Some(t) = slot.legal.get(*cand_idx as usize) {
+                    chosen.push(*t);
+                }
+            }
+        }
+    }
+    if chosen.is_empty() {
+        for slot in slots {
+            if slot.min > 0 {
+                if let Some(t) = slot.legal.first() {
+                    chosen.push(*t);
+                }
+            }
+        }
+    }
+    chosen
 }
 
 #[cfg(test)]
@@ -699,6 +934,29 @@ mod tests {
         assert!(engine.state.game_over);
         assert_eq!(engine.state.winner, Some(PlayerId(0)));
     }
+
+    #[test]
+    fn demo_deck_self_play_runs_to_completion() {
+        // The milestone-3 EXIT: a real game (lands → creatures → attack → damage → 0 life,
+        // or decking) plays to completion with RandomAgents, no panics, cards conserved.
+        for seed in 0..40u64 {
+            let state = crate::cards::two_player_demo_game(seed);
+            let total = state.objects.len();
+            let agents: Vec<Box<dyn Agent>> = vec![
+                Box::new(RandomAgent::new(seed ^ 0xA11CE)),
+                Box::new(RandomAgent::new(seed ^ 0xB0B)),
+            ];
+            let mut engine = Engine::new(state, agents);
+            engine.run_game();
+            assert!(engine.state.game_over, "game must end (seed {seed})");
+            // No tokens/copies in the starter set ⇒ object count is conserved.
+            assert_eq!(engine.state.objects.len(), total, "card conservation (seed {seed})");
+            assert!(
+                engine.state.living_players().len() <= 1,
+                "≤1 survivor (seed {seed})"
+            );
+        }
+    }
 }
 
 /// Inline snapshot ("expect") tests for milestone-2 behaviour: the enumerated legal options
@@ -707,7 +965,8 @@ mod tests {
 mod expect_tests {
     use super::*;
     use crate::agent::{DecisionResponse, PlayerView, RandomAgent};
-    use crate::basics::{Phase, Zone};
+    use crate::basics::{Phase, Target, Zone};
+    use crate::cards::{self, grp};
     use crate::ids::PlayerId;
     use crate::state::{Characteristics, GameState};
     use expect_test::expect;
@@ -726,8 +985,72 @@ mod expect_tests {
         }
     }
 
+    /// A deterministic, aggressive agent for casting/combat tests: at priority it casts the
+    /// first castable spell, else plays the first land, else passes; it attacks with
+    /// everything; never blocks; targets an opponent (player) when choosing a target.
+    struct AggroAgent;
+    impl Agent for AggroAgent {
+        fn decide(&mut self, view: &PlayerView, req: &DecisionRequest) -> DecisionResponse {
+            match req {
+                DecisionRequest::Priority { actions, .. } => {
+                    if let Some(i) = actions
+                        .iter()
+                        .position(|a| matches!(a, PlayableAction::Cast { .. }))
+                    {
+                        return DecisionResponse::Action(i as u32);
+                    }
+                    if let Some(i) = actions
+                        .iter()
+                        .position(|a| matches!(a, PlayableAction::PlayLand { .. }))
+                    {
+                        return DecisionResponse::Action(i as u32);
+                    }
+                    DecisionResponse::Pass
+                }
+                DecisionRequest::ChooseTargets { slots, .. } => {
+                    let me = view.seat;
+                    let mut pairs = Vec::new();
+                    for (si, slot) in slots.iter().enumerate() {
+                        let idx = slot
+                            .legal
+                            .iter()
+                            .position(|t| matches!(t, Target::Player(p) if *p != me))
+                            .or_else(|| {
+                                slot.legal.iter().position(|t| matches!(t, Target::Player(_)))
+                            })
+                            .unwrap_or(0);
+                        pairs.push((si as u32, idx as u32));
+                    }
+                    DecisionResponse::Pairs(pairs)
+                }
+                DecisionRequest::DeclareAttackers { eligible } => {
+                    let pairs = eligible
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, o)| !o.may_attack.is_empty())
+                        .map(|(i, _)| (i as u32, 0u32))
+                        .collect();
+                    DecisionResponse::Pairs(pairs)
+                }
+                DecisionRequest::AssignCombatDamage { total, .. } => {
+                    DecisionResponse::Amounts(vec![(0, *total)])
+                }
+                DecisionRequest::SelectCards { min, .. } => {
+                    DecisionResponse::Indices((0..*min).collect())
+                }
+                _ => DecisionResponse::Pass,
+            }
+        }
+    }
+
     fn pass_engine(state: GameState) -> Engine {
         Engine::new(state, vec![Box::new(PassAgent), Box::new(PassAgent)])
+    }
+
+    /// Put a card (by grp_id) directly into a player's zone, returning its id.
+    fn put(state: &mut GameState, owner: PlayerId, grp_id: u32, zone: Zone) -> crate::ids::ObjId {
+        let chars = state.card_db().get(grp_id).unwrap().chars.clone();
+        state.add_card(owner, chars, zone)
     }
 
     #[test]
@@ -859,6 +1182,174 @@ mod expect_tests {
               PlayerId(0) draws 1
             == turn 4 (active PlayerId(1)) ==
             game over, winner Some(PlayerId(0))
+        "#]]
+        .assert_eq(&out);
+    }
+
+    /// Casting an instant: P0 Shocks P1 (the opponent player) for 2. Exercises legal-action
+    /// enumeration of `Cast`, target choice (601.2c), auto-tap payment, the stack, resolution,
+    /// and the `DealDamage` interpreter.
+    #[test]
+    fn cast_shock_damages_opponent() {
+        let mut state = cards::build_game(1, &[&[], &[]]);
+        let mountain = put(&mut state, PlayerId(0), grp::MOUNTAIN, Zone::Battlefield);
+        let shock = put(&mut state, PlayerId(0), grp::SHOCK, Zone::Hand);
+        state.active_player = PlayerId(0);
+        state.phase = Phase::PrecombatMain;
+        let mut e = Engine::new(state, vec![Box::new(AggroAgent), Box::new(PassAgent)]);
+        e.priority_round();
+
+        assert_eq!(e.state.player(PlayerId(1)).life, 18, "Shock dealt 2 to the opponent");
+        assert_eq!(e.state.object(shock).zone, Zone::Graveyard, "instant to graveyard");
+        assert!(e.state.object(mountain).status.tapped, "land tapped to pay {{R}}");
+        assert!(e.state.stack.is_empty());
+    }
+
+    /// A creature that has been under control since the turn began can attack; an unblocked
+    /// attacker deals its power to the defending player and is tapped.
+    #[test]
+    fn creature_attacks_unblocked_for_damage() {
+        let mut state = cards::build_game(2, &[&[], &[]]);
+        let bears = put(&mut state, PlayerId(0), grp::GRIZZLY_BEARS, Zone::Battlefield);
+        state.objects.get_mut(&bears).unwrap().summoning_sick = false;
+        state.active_player = PlayerId(0);
+        let mut e = Engine::new(state, vec![Box::new(AggroAgent), Box::new(PassAgent)]);
+
+        e.run_step(Phase::DeclareAttackers);
+        e.run_step(Phase::DeclareBlockers);
+        e.run_step(Phase::CombatDamage);
+
+        assert_eq!(e.state.player(PlayerId(1)).life, 18, "2/2 dealt 2 to the defender");
+        assert!(e.state.object(bears).status.tapped, "attacker tapped (CR 508.1f)");
+    }
+
+    /// A 2/2 attacker blocked by a 2/2: both take 2 lethal damage and both are reported dead
+    /// by the SBA check (CR 510.1c/d, 704.5g).
+    #[test]
+    fn blocked_attacker_and_blocker_trade() {
+        use crate::combat::{Attack, Block, CombatState};
+        use crate::sba::{self, DeathReason, StateBasedAction};
+
+        let mut state = cards::build_game(3, &[&[], &[]]);
+        let attacker = put(&mut state, PlayerId(0), grp::GRIZZLY_BEARS, Zone::Battlefield);
+        let blocker = put(&mut state, PlayerId(1), grp::GRIZZLY_BEARS, Zone::Battlefield);
+        state.active_player = PlayerId(0);
+        state.combat = Some(CombatState {
+            attackers: vec![Attack {
+                attacker,
+                defender: Target::Player(PlayerId(1)),
+            }],
+            blocks: vec![Block { blocker, attacker }],
+        });
+        let mut e = Engine::new(state, vec![Box::new(PassAgent), Box::new(PassAgent)]);
+        e.combat_damage();
+
+        assert_eq!(e.state.object(attacker).damage_marked, 2);
+        assert_eq!(e.state.object(blocker).damage_marked, 2);
+        assert_eq!(e.state.player(PlayerId(1)).life, 20, "blocked: no damage to the player");
+        let sbas = sba::collect(&e.state);
+        for id in [attacker, blocker] {
+            assert!(sbas.contains(&StateBasedAction::CreatureDies {
+                creature: id,
+                reason: DeathReason::LethalDamage,
+            }));
+        }
+    }
+
+    /// A full deterministic R/G demo game (two `AggroAgent`s) rendered as a combat trace of
+    /// its decisive events — casts, combat/burn damage, deaths, the lethal blow, game end.
+    #[test]
+    fn demo_game_combat_trace() {
+        let state = cards::two_player_demo_game(11);
+        let mut e = Engine::new(state, vec![Box::new(AggroAgent), Box::new(AggroAgent)]);
+        e.record_events(true);
+        e.run_game();
+
+        let mut out = String::new();
+        let mut cur_turn = 0u32;
+        for ev in &e.event_log {
+            match ev {
+                GameEvent::PhaseBegan { turn, active, .. } if *turn != cur_turn => {
+                    cur_turn = *turn;
+                    out.push_str(&format!("T{turn} (active {active:?})\n"));
+                }
+                GameEvent::PhaseBegan { .. } | GameEvent::DrewCards { .. } => {}
+                GameEvent::SpellCast { spell, controller } => {
+                    out.push_str(&format!("  {controller:?} casts spell {spell:?}\n"))
+                }
+                GameEvent::DamageDealt { target, amount, .. } => {
+                    out.push_str(&format!("  {amount} damage to {target:?}\n"))
+                }
+                GameEvent::LifeChanged { player, new_total, .. } => {
+                    out.push_str(&format!("  {player:?} life -> {new_total}\n"))
+                }
+                GameEvent::PermanentDied { obj } => out.push_str(&format!("  {obj:?} dies\n")),
+                GameEvent::GameEnded { winner } => {
+                    out.push_str(&format!("game over, winner {winner:?}\n"))
+                }
+                _ => {}
+            }
+        }
+        expect![[r#"
+            T1 (active PlayerId(0))
+              PlayerId(0) casts spell StackId(1)
+              2 damage to Player(PlayerId(1))
+              PlayerId(1) life -> 18
+            T2 (active PlayerId(1))
+            T3 (active PlayerId(0))
+              PlayerId(0) casts spell StackId(2)
+            T4 (active PlayerId(1))
+            T5 (active PlayerId(0))
+              2 damage to Player(PlayerId(1))
+              PlayerId(1) life -> 16
+            T6 (active PlayerId(1))
+            T7 (active PlayerId(0))
+              2 damage to Player(PlayerId(1))
+              PlayerId(1) life -> 14
+            T8 (active PlayerId(1))
+              PlayerId(1) casts spell StackId(3)
+            T9 (active PlayerId(0))
+              2 damage to Player(PlayerId(1))
+              PlayerId(1) life -> 12
+            T10 (active PlayerId(1))
+              3 damage to Player(PlayerId(0))
+              PlayerId(0) life -> 17
+            T11 (active PlayerId(0))
+              2 damage to Player(PlayerId(1))
+              PlayerId(1) life -> 10
+            T12 (active PlayerId(1))
+              PlayerId(1) casts spell StackId(4)
+              3 damage to Player(PlayerId(0))
+              PlayerId(0) life -> 14
+            T13 (active PlayerId(0))
+              2 damage to Player(PlayerId(1))
+              PlayerId(1) life -> 8
+            T14 (active PlayerId(1))
+              PlayerId(1) casts spell StackId(5)
+              2 damage to Player(PlayerId(0))
+              PlayerId(0) life -> 12
+              3 damage to Player(PlayerId(0))
+              PlayerId(0) life -> 9
+              2 damage to Player(PlayerId(0))
+              PlayerId(0) life -> 7
+            T15 (active PlayerId(0))
+              2 damage to Player(PlayerId(1))
+              PlayerId(1) life -> 6
+            T16 (active PlayerId(1))
+              3 damage to Player(PlayerId(0))
+              PlayerId(0) life -> 4
+              2 damage to Player(PlayerId(0))
+              PlayerId(0) life -> 2
+            T17 (active PlayerId(0))
+              PlayerId(0) casts spell StackId(6)
+              2 damage to Player(PlayerId(1))
+              PlayerId(1) life -> 4
+            T18 (active PlayerId(1))
+              3 damage to Player(PlayerId(0))
+              PlayerId(0) life -> -1
+              2 damage to Player(PlayerId(0))
+              PlayerId(0) life -> -3
+            game over, winner Some(PlayerId(1))
         "#]]
         .assert_eq(&out);
     }

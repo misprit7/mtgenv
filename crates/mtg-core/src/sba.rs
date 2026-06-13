@@ -1,15 +1,16 @@
 //! State-based actions (CR 704), checked and applied to a fixpoint within the agenda
 //! loop before any player receives priority (CR 117.5, 704.3).
 //!
-//! Milestone 2 implements the three player-loss checks that a lands-only game can hit
-//! (most importantly decking, 704.5b); the permanent-related SBAs (lethal damage,
-//! toughness ≤ 0, the legend rule, …) arrive with creatures/combat in milestone 3.
+//! Implemented: the three player-loss checks (704.5a–c, esp. decking) and, since milestone
+//! 3, the two creature-death checks — toughness ≤ 0 (704.5f) and lethal marked damage
+//! (704.5g). The legend rule, planeswalker loyalty, auras, counters, etc. arrive later.
 //!
 //! [`collect`] is a pure read of the state — it never mutates. The engine performs the
 //! returned actions "simultaneously as a single event" (704.3) and repeats until none
 //! apply.
 
-use crate::ids::PlayerId;
+use crate::basics::Zone;
+use crate::ids::{ObjId, PlayerId};
 use crate::state::GameState;
 
 /// Why a player loses the game (CR 704.5a–c).
@@ -23,13 +24,27 @@ pub enum LossReason {
     TenPoison,
 }
 
-/// A state-based action that needs performing. Milestone 2 only models player losses; the
-/// enum is left open (non-exhaustive in spirit) so permanent SBAs slot in later.
+/// Why a creature is put into its owner's graveyard by an SBA (CR 704.5f/g).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeathReason {
+    /// 704.5f — toughness 0 or less.
+    ZeroToughness,
+    /// 704.5g — marked damage greater than or equal to (positive) toughness.
+    LethalDamage,
+}
+
+/// A state-based action that needs performing. The enum grows as more SBAs are implemented.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StateBasedAction {
     PlayerLoses {
         player: PlayerId,
         reason: LossReason,
+    },
+    /// A creature is put into its owner's graveyard (CR 704.5f/g). (Regeneration / "destroy"
+    /// vs "put into graveyard" distinctions are deferred — milestone 3 has no replacements.)
+    CreatureDies {
+        creature: ObjId,
+        reason: DeathReason,
     },
 }
 
@@ -59,6 +74,25 @@ pub fn collect(state: &GameState) -> Vec<StateBasedAction> {
             out.push(StateBasedAction::PlayerLoses {
                 player: p.id,
                 reason: LossReason::TenPoison,
+            });
+        }
+    }
+    // Creature-death SBAs (CR 704.5f/g). Iterating the arena is deterministic (BTreeMap by
+    // ObjId). Toughness/damage come from base characteristics (the layer system is M5).
+    for o in state.objects.values() {
+        if o.zone != Zone::Battlefield || !o.chars.is_creature() {
+            continue;
+        }
+        let toughness = o.chars.toughness.unwrap_or(0);
+        if toughness <= 0 {
+            out.push(StateBasedAction::CreatureDies {
+                creature: o.id,
+                reason: DeathReason::ZeroToughness,
+            });
+        } else if o.damage_marked >= toughness as u32 {
+            out.push(StateBasedAction::CreatureDies {
+                creature: o.id,
+                reason: DeathReason::LethalDamage,
             });
         }
     }

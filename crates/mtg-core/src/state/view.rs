@@ -111,6 +111,12 @@ pub fn view_for(state: &GameState, seat: PlayerId) -> PlayerView {
         .map(|s| stack_view(state, s))
         .collect();
 
+    // Combat is public information (CR 506) when a combat phase is in progress.
+    let combat = state.combat.as_ref().map(|c| CombatView {
+        attackers: c.attackers.iter().map(|a| (a.attacker, a.defender)).collect(),
+        blockers: c.blocks.iter().map(|b| (b.blocker, b.attacker)).collect(),
+    });
+
     PlayerView {
         seat,
         turn: state.turn_number,
@@ -121,6 +127,6 @@ pub fn view_for(state: &GameState, seat: PlayerId) -> PlayerView {
         me,
         battlefield,
         stack,
-        combat: None::<CombatView>,
+        combat,
     }
 }

@@ -12,8 +12,11 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use crate::basics::{Color, CounterBag, ManaCost, ManaPool, Phase, Status, Zone};
+use crate::cards::{CardDb, CardDef};
+use crate::combat::CombatState;
 use crate::ids::{ObjId, PlayerId};
 use crate::rng::Rng;
 use crate::stack::{Stack, StackObject};
@@ -205,9 +208,16 @@ pub struct GameState {
     /// priority (CR 603.3, APNAP-ordered). Empty until the effect runtime arrives (M4); the
     /// agenda loop already drains it so the wiring is correct from day one.
     pub pending_triggers: Vec<StackObject>,
+    /// Combat state during a combat phase (CR 506–511); `None` outside combat.
+    pub combat: Option<CombatState>,
     pub game_over: bool,
     pub winner: Option<PlayerId>,
     pub rng: Rng,
+    /// The card definitions (abilities = Effect IR) for cards in this game. Card *data*, not
+    /// snapshot state: shared via `Arc` (clone is O(1)) and **not serialized** (a snapshot
+    /// re-attaches the db on load). Looked up by object `grp_id`.
+    #[serde(skip)]
+    pub card_db: Arc<CardDb>,
     next_obj: u64,
     next_stack: u64,
 }
@@ -229,12 +239,28 @@ impl GameState {
             stack: Stack::default(),
             starting_player: PlayerId(0),
             pending_triggers: Vec::new(),
+            combat: None,
             game_over: false,
             winner: None,
             rng: Rng::new(seed),
+            card_db: Arc::new(CardDb::default()),
             next_obj: 1,
             next_stack: 1,
         }
+    }
+
+    /// Attach the card-definition registry (call once at game setup).
+    pub fn set_card_db(&mut self, db: Arc<CardDb>) {
+        self.card_db = db;
+    }
+    /// The card-definition registry (shared clone of the `Arc`).
+    pub fn card_db(&self) -> Arc<CardDb> {
+        Arc::clone(&self.card_db)
+    }
+    /// The definition of an object, looked up by its `grp_id`.
+    pub fn def_of(&self, id: ObjId) -> Option<&CardDef> {
+        let grp = self.objects.get(&id)?.chars.grp_id;
+        self.card_db.get(grp)
     }
 
     pub fn player(&self, p: PlayerId) -> &Player {

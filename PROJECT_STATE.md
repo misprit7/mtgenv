@@ -31,10 +31,13 @@ MTGA client.
 1. ✅ **Cargo workspace** + headless `mtg-core` skeleton; GUI out of core (milestone 1, done).
 2. ✅ **Turn engine + priority + stack + agenda loop** on a lands-only game (milestone 2, done
    — `state/`/`turn/`/`stack.rs`/`sba.rs`/`priority.rs`; `mtg-cli` self-play harness).
-3. **Mana + casting + vanilla-creature combat** → first `RandomAgent` self-play games
-   (milestone 3) — builds on the milestone-2 priority loop / stack / agenda fixpoint.
+3. ✅ **Mana + casting + vanilla-creature combat** (milestone 3, done) — `cards/` starter
+   set + `CardDb`; `mana.rs` (auto-tap payment); casting wired into the `Priority` decision;
+   `whiteboard.rs` effect interpreter; `combat/` attack/block/damage; creature-death SBAs.
+   `RandomAgent`s self-play to a life-total win; `mtg-cli` demo.
 4. Spike the **MTGA decompile** in `../mtga-re` to recover the GRE protobuf schema
    (DECOMPILE_PLAN) — informs the `DecisionRequest` enum.
+5. Effect IR v1 + whiteboard replacement/prevention pass + ETB triggers (milestone 4).
 
 ## Current state
 
@@ -50,13 +53,16 @@ MTGA client.
   (axum+WS, depends only on `mtg-core`); a human is just a `GreSessionAgent` behind the one
   boundary; mapping reconciled to AGENT_INTERFACE §6.1/§1.1; real-client drop-in via
   endpoint-redirect or Mono patch. Transport/auth details blocked on decompile (#2).
-- **engine done with #1 + #7 (milestones 1–2):** the workspace builds a headless `mtg-core`
-  whose turn machine (CR 500s), stack (CR 405), priority loop and agenda fixpoint
-  (recompute→SBA→triggers→priority, CR 117.5/603.3/704.3) run a lands-only game to
-  completion — two `RandomAgent`s pass priority through full turns and deck each other out,
-  no panics. `mtg-cli` is the self-play harness. `state/`/`turn/`/`stack.rs`/`sba.rs`/
-  `priority.rs` implemented on top of design's `agent.rs`/`effects/`/`basics.rs`; whiteboard
-  commit/replacement, layers, mana/casting/combat still stubbed (M3–M5).
+- **engine done with #1 + #7 + #9 (milestones 1–3):** the headless `mtg-core` now runs a
+  **minimal but real game** — turn machine (CR 500s), stack (CR 405), priority loop + agenda
+  fixpoint (CR 117.5/603.3/704.3), mana + casting (CR 601) with auto-tap, an Effect-IR
+  interpreter (whiteboard.rs: DealDamage/Draw/GainLife), vanilla-creature combat (CR 506–511),
+  and creature-death SBAs (704.5f/g). A `cards/` starter set (lands, 2 creatures, Shock,
+  Divination, Healing Salve) + R/G demo deck; `CardDb` rides in `GameState` as `Arc`
+  (serde-skipped). Two `RandomAgent`s self-play to a life-total win (`mtg-cli`). Built on
+  design's `agent.rs`/`effects/`/`basics.rs`; the interpreter lives in the engine over
+  design's IR. Deferred (M4–M5): whiteboard replacement/prevention pass, the layer system,
+  keywords, mana-via-IR, the PayCost agent decision, mulligans.
 - `mtg-core` is headless (no `egui`/`eframe`); the engine is built fresh under the workspace.
 - Docs in place: architecture (`docs/design/WHITEBOARD_MODEL.md`), rules
   (`docs/rules/RULES_SUMMARY.md` + PDF/text), plans (`docs/plans/`), `CLAUDE.md`.

@@ -21,6 +21,7 @@ pub mod events;
 pub mod sba;
 pub mod combat;
 pub mod mana;
+pub mod cards;
 pub mod rng;
 
 // Owned by the `design` workstream (task #4): the agent/decision boundary and the
