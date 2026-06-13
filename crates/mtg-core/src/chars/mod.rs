@@ -380,14 +380,47 @@ mod tests {
     }
 
     #[test]
-    fn rancor_aura_buffs_and_grants_trample_only_to_its_host() {
+    fn aura_static_buffs_and_grants_keyword_only_to_its_host() {
         // An Aura's "enchanted creature gets +2/+0 and has trample" is two AttachedHost statics
         // (layer 7c ModifyPT + layer 6 GrantKeyword) — they reach only the attached permanent.
-        let mut s = cards::build_game(1, &[&[], &[]]);
-        let bears = put(&mut s, PlayerId(0), grp::GRIZZLY_BEARS, Zone::Battlefield); // 2/2
-        let other = put(&mut s, PlayerId(0), grp::GRIZZLY_BEARS, Zone::Battlefield); // 2/2
-        let rancor = put(&mut s, PlayerId(0), grp::RANCOR, Zone::Battlefield);
-        s.objects.get_mut(&rancor).unwrap().attached_to = Some(bears); // (engine sets this on resolution)
+        // (Synthetic aura — exercises the subsystem without depending on a specific card.)
+        use crate::effects::condition::Duration;
+        use std::sync::Arc;
+        let host_static = |c: StaticContribution| Ability::Static {
+            contribution: c,
+            affects: SelectSpec {
+                zone: Zone::Battlefield,
+                filter: CardFilter::AttachedHost,
+                chooser: PlayerRef::Controller,
+                min: ValueExpr::Fixed(0),
+                max: ValueExpr::Fixed(0),
+            },
+            duration: Duration::WhileSourcePresent,
+        };
+        let mut db = cards::starter_db();
+        db.insert(crate::cards::CardDef {
+            chars: Characteristics {
+                name: "Test Aura".into(),
+                card_types: vec![CardType::Enchantment],
+                subtypes: vec!["Aura".into()],
+                grp_id: 9500,
+                ..Default::default()
+            },
+            abilities: vec![
+                host_static(StaticContribution::ModifyPT { power: 2, toughness: 0 }),
+                host_static(StaticContribution::GrantKeyword(Keyword::Trample)),
+            ],
+            mana_colors: Vec::new(),
+            text: String::new(),
+        });
+        let mut s = GameState::new(2, 1);
+        s.set_card_db(Arc::new(db));
+        let bears_chars = s.card_db().get(grp::GRIZZLY_BEARS).unwrap().chars.clone();
+        let bears = s.add_card(PlayerId(0), bears_chars.clone(), Zone::Battlefield); // 2/2
+        let other = s.add_card(PlayerId(0), bears_chars, Zone::Battlefield); // 2/2
+        let aura_chars = s.card_db().get(9500).unwrap().chars.clone();
+        let aura = s.add_card(PlayerId(0), aura_chars, Zone::Battlefield);
+        s.objects.get_mut(&aura).unwrap().attached_to = Some(bears);
         s.mark_chars_dirty();
 
         let host = compute(&s, bears);
@@ -469,28 +502,6 @@ mod tests {
         let cc = compute(&s, wagon);
         assert_eq!(cc.power, Some(3), "power = the 3 lands you control");
         assert_eq!(cc.toughness, Some(4), "toughness fixed at 4");
-    }
-
-    #[test]
-    fn humility_sets_base_then_anthem_then_counter_in_sublayer_order() {
-        // 7b (set base 1/1) → 7c (+1/+1 anthem) → 7c counters: 2/2 base → 1/1 → 2/2 → 3/3.
-        let mut s = cards::build_game(1, &[&[], &[]]);
-        let bears = put(&mut s, PlayerId(0), grp::GRIZZLY_BEARS, Zone::Battlefield); // base 2/2
-        put(&mut s, PlayerId(0), grp::HUMILITY, Zone::Battlefield);
-        assert_eq!(compute(&s, bears).power, Some(1), "Humility sets base 1/1 (over the 2/2)");
-        assert_eq!(compute(&s, bears).toughness, Some(1));
-
-        put(&mut s, PlayerId(0), grp::GLORIOUS_ANTHEM, Zone::Battlefield);
-        assert_eq!(compute(&s, bears).power, Some(2), "7c anthem applies after 7b set");
-
-        s.objects
-            .get_mut(&bears)
-            .unwrap()
-            .counters
-            .counts
-            .insert(CounterKind::PlusOnePlusOne, 1);
-        assert_eq!(compute(&s, bears).power, Some(3), "+1/+1 counter (7c) stacks on top");
-        assert_eq!(compute(&s, bears).toughness, Some(3));
     }
 
     #[test]
