@@ -62,6 +62,9 @@ pub enum CardFilter {
     Not(Box<CardFilter>),
     HasCardType(CardType),
     HasSubtype(String),
+    /// Matches a supertype on the object (CR 205.4) — `"Basic"`, `"Legendary"`, `"Snow"`, …
+    /// e.g. a basic land = `All([HasCardType(Land), Supertype("Basic".into())])`.
+    Supertype(String),
     HasColor(Color),
     Colorless,
     /// Mana value within `[min, max]` (inclusive); `None` = unbounded.

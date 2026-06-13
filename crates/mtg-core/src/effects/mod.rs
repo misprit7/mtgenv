@@ -107,6 +107,13 @@ pub enum Effect {
     Counter {
         what: EffectTarget,
     },
+    /// Two creatures fight (CR 701.12): each deals damage equal to its power to the other,
+    /// **simultaneously** (lowered to two `Damage` actions in one whiteboard so deathtouch /
+    /// lethal-damage interact correctly). e.g. a fight spell = `Fight{ ChosenIndex(0), ChosenIndex(1) }`.
+    Fight {
+        a: EffectTarget,
+        b: EffectTarget,
+    },
     Search {
         who: PlayerRef,
         zone: Zone,
@@ -114,6 +121,9 @@ pub enum Effect {
         min: u32,
         max: u32,
         to: ZoneDest,
+        /// When `to` is the battlefield, enter the found permanent(s) tapped (fetch lands like
+        /// Fabled Passage / Escape Tunnel). Ignored for non-battlefield destinations.
+        tapped: bool,
     },
     Tap {
         what: EffectTarget,
