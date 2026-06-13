@@ -11,3 +11,5 @@ thiserror.workspace = true
 [dev-dependencies]
 # Used only by tests to exercise the §1.1 serde contract on the boundary types.
 serde_json = "1.0"
+# Inline snapshot ("expect") tests; regenerate with `UPDATE_EXPECT=1 cargo test`.
+expect-test.workspace = true

@@ -183,3 +183,64 @@ impl Effect {
         Effect::Sequence(effects)
     }
 }
+
+/// Inline snapshot ("expect") tests pinning the shape of representative Effect IR trees. The IR
+/// carries `NativeFn` pointers and so is not `serde`-serializable; we snapshot its pretty
+/// `Debug` render, which reads as documentation of how a card lowers to the IR. Regenerate with
+/// `UPDATE_EXPECT=1 cargo test`.
+#[cfg(test)]
+mod tests {
+    use super::target::{TargetKind, TargetSpec};
+    use super::value::{PlayerRef, ValueExpr};
+    use super::{Effect, EffectTarget};
+    use crate::basics::DamageKind;
+    use expect_test::expect;
+
+    /// A "Lightning Bolt"-style burn spell: deal 3 damage to any target.
+    #[test]
+    fn burn_spell_ir() {
+        let bolt = Effect::DealDamage {
+            amount: ValueExpr::Fixed(3),
+            to: EffectTarget::Target(TargetSpec {
+                kind: TargetKind::Any,
+                min: 1,
+                max: 1,
+                distinct: true,
+            }),
+            kind: DamageKind::Noncombat,
+        };
+        expect![[r#"
+            DealDamage {
+                amount: Fixed(
+                    3,
+                ),
+                to: Target(
+                    TargetSpec {
+                        kind: Any,
+                        min: 1,
+                        max: 1,
+                        distinct: true,
+                    },
+                ),
+                kind: Noncombat,
+            }"#]]
+        .assert_eq(&format!("{bolt:#?}"));
+    }
+
+    /// A "Divination"-style draw: you draw two cards.
+    #[test]
+    fn draw_spell_ir() {
+        let draw = Effect::Draw {
+            who: PlayerRef::Controller,
+            count: ValueExpr::Fixed(2),
+        };
+        expect![[r#"
+            Draw {
+                who: Controller,
+                count: Fixed(
+                    2,
+                ),
+            }"#]]
+        .assert_eq(&format!("{draw:#?}"));
+    }
+}

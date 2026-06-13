@@ -933,3 +933,155 @@ mod tests {
         assert_eq!(format!("{req:?}"), format!("{back:?}"));
     }
 }
+
+/// Inline snapshot ("expect") tests that pin the **serialized wire shape** of representative
+/// boundary values — the §1.1 contract the GRE-server / socket backends serialize over. These
+/// double as documentation: the JSON below is exactly what crosses the boundary. Regenerate
+/// with `UPDATE_EXPECT=1 cargo test`.
+#[cfg(test)]
+mod wire_snapshots {
+    use super::*;
+    use expect_test::expect;
+
+    fn json(value: &impl Serialize) -> String {
+        serde_json::to_string_pretty(value).unwrap()
+    }
+
+    #[test]
+    fn priority_request_wire_shape() {
+        let req = DecisionRequest::Priority {
+            actions: vec![
+                PlayableAction::PlayLand { card: ObjId(11) },
+                PlayableAction::Cast {
+                    spell: ObjId(12),
+                    variant: CastVariant::Normal,
+                },
+            ],
+            can_pass: true,
+        };
+        expect![[r#"
+            {
+              "Priority": {
+                "actions": [
+                  {
+                    "PlayLand": {
+                      "card": 11
+                    }
+                  },
+                  {
+                    "Cast": {
+                      "spell": 12,
+                      "variant": "Normal"
+                    }
+                  }
+                ],
+                "can_pass": true
+              }
+            }"#]]
+        .assert_eq(&json(&req));
+    }
+
+    #[test]
+    fn choose_number_request_wire_shape() {
+        // X with forbidden values + parity — the WHITEBOARD §2.6 "forbidden X" / NumericInputReq
+        // constraint encoding, pinned.
+        let req = DecisionRequest::ChooseNumber {
+            reason: NumberReason::ChooseX,
+            min: 1,
+            max: 10,
+            step: 1,
+            forbidden: vec![7],
+            disallow_even: true,
+            disallow_odd: false,
+        };
+        expect![[r#"
+            {
+              "ChooseNumber": {
+                "reason": "ChooseX",
+                "min": 1,
+                "max": 10,
+                "step": 1,
+                "forbidden": [
+                  7
+                ],
+                "disallow_even": true,
+                "disallow_odd": false
+              }
+            }"#]]
+        .assert_eq(&json(&req));
+    }
+
+    #[test]
+    fn choose_targets_request_wire_shape() {
+        let req = DecisionRequest::ChooseTargets {
+            for_action: ActionRef(StackId(3)),
+            slots: vec![TargetSlot {
+                description: "target creature".into(),
+                legal: vec![Target::Object(ObjId(20)), Target::Player(PlayerId(1))],
+                min: 1,
+                max: 1,
+            }],
+        };
+        expect![[r#"
+            {
+              "ChooseTargets": {
+                "for_action": 3,
+                "slots": [
+                  {
+                    "description": "target creature",
+                    "legal": [
+                      {
+                        "Object": 20
+                      },
+                      {
+                        "Player": 1
+                      }
+                    ],
+                    "min": 1,
+                    "max": 1
+                  }
+                ]
+              }
+            }"#]]
+        .assert_eq(&json(&req));
+    }
+
+    #[test]
+    fn response_wire_shapes() {
+        expect![[r#"
+            {
+              "Action": 0
+            }"#]]
+        .assert_eq(&json(&DecisionResponse::Action(0)));
+
+        expect![[r#"
+            {
+              "Amounts": [
+                [
+                  0,
+                  2
+                ],
+                [
+                  1,
+                  1
+                ]
+              ]
+            }"#]]
+        .assert_eq(&json(&DecisionResponse::Amounts(vec![(0, 2), (1, 1)])));
+
+        expect![[r#"
+            {
+              "Payment": {
+                "mana": [
+                  0,
+                  1
+                ],
+                "non_mana": []
+              }
+            }"#]]
+        .assert_eq(&json(&DecisionResponse::Payment {
+            mana: vec![0, 1],
+            non_mana: vec![],
+        }));
+    }
+}
