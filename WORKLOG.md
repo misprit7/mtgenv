@@ -5,6 +5,18 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **engine:** **card-push capabilities, batch 2 (C5, C7, C8)**. C7 Modal: added an interactive
+  resolution interpreter — `resolve_effect` now drives `interpret()` (asks `ChooseModes`, resolves
+  the chosen modes) while still materializing pure leaves with the shared target cursor. C5 Search:
+  `interpret_search` (SelectCards → move picks to `ZoneDest` → shuffle a searched library); honors
+  `Effect::Search.tapped` (fetch lands enter tapped) + `CardFilter::Supertype` (basic-land filter) —
+  both added by design. C8 Fight: `Effect::Fight` → two simultaneous Noncombat `Damage` actions
+  (each creature's power to the other; deathtouch/lethal interact via the one whiteboard). 96
+  mtg-core tests green, clippy clean. CAVEAT noted to design: Modal chooses its mode at RESOLUTION;
+  a modal mode that TARGETS (Bushwhack's fight mode) needs cast-time mode+target selection (the
+  Fight effect itself works via locked targets) — a follow-up. Batch-1/2 capabilities C1–C9a + C6–C8
+  are ready for card authoring. Pending: C9b (dynamic P/T CDAs), C10 (X costs) — IR asks sent;
+  C11–C18 subsystems.
 - **webui:** **new default stop set** (user request): your Main 1 + Main 2 (engine Arena default,
   own-turn) PLUS the opponent's Begin-Combat + End step (the instant-speed windows). Made
   `driver::Stops.overrides` per-`(step, own_turn)` (`Vec<(Phase, bool, bool)>`), seeded the two
