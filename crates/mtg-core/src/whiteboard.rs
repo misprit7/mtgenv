@@ -14,10 +14,11 @@ use crate::agent::{DecisionRequest, DecisionResponse, GameEvent, ReplacementOpti
 use crate::basics::{CardType, CounterKind, DamageKind, Target, Zone};
 use crate::effects::ability::{Ability, ActionPattern, Rewrite};
 use crate::effects::action::{Action, ResolutionCtx, Whiteboard, WbReason};
-use crate::effects::target::CardFilter;
+use crate::effects::target::{CardFilter, TokenSpec};
 use crate::effects::value::{PlayerRef, ValueExpr};
 use crate::effects::{Effect, EffectTarget};
 use crate::ids::{ObjId, PlayerId};
+use crate::state::Characteristics;
 use crate::priority::Engine;
 
 /// A replacement effect that applies to a pending action (for the CR 616.1f choice).
@@ -123,6 +124,34 @@ impl Engine {
                 let target = self.resolve_target(to, ctx, cursor);
                 if let (Some(Target::Object(attachment)), Some(target)) = (attachment, target) {
                     wb.push(Action::AttachTo { attachment, target });
+                }
+            }
+            // C2: put N counters on a single object (e.g. "put a +1/+1 counter on this").
+            // `what` is usually SourceSelf; Select-based "each creature you control" comes with
+            // ForEach later.
+            Effect::PutCounters { what, kind, n } => {
+                let n = self.eval_value(n, ctx) as i32;
+                if let Some(Target::Object(obj)) = self.resolve_target(what, ctx, cursor) {
+                    wb.push(Action::AddCounters { obj, kind: kind.clone(), n });
+                }
+            }
+            // C3: mill — put the top N cards of a library into its owner's graveyard (CR 701.13).
+            Effect::Mill { who, count } => {
+                let count = self.eval_value(count, ctx).max(0) as u32;
+                wb.push(Action::Mill {
+                    player: self.eval_player(*who, ctx),
+                    count,
+                });
+            }
+            // C6: create N copies of a token (CR 111).
+            Effect::CreateToken { spec, count, controller } => {
+                let count = self.eval_value(count, ctx).max(0) as u32;
+                let controller = self.eval_player(*controller, ctx);
+                for _ in 0..count {
+                    wb.push(Action::CreateToken {
+                        spec: spec.clone(),
+                        controller,
+                    });
                 }
             }
             // Other IR nodes are not yet interpreted (minimal scope). They are a no-op rather
@@ -410,6 +439,8 @@ impl Engine {
                     });
                 }
             }
+            Action::Mill { player, count } => self.mill(player, count),
+            Action::CreateToken { spec, controller } => self.create_token(&spec, controller),
             Action::AttachTo { attachment, target: Target::Object(host) } => {
                 // Move `attachment` (an Aura/Equipment) onto `host` (CR 701.3). Re-attaching
                 // simply overwrites the old host. Marks chars dirty so the "while attached"
@@ -520,19 +551,85 @@ impl Engine {
         });
     }
 
+    /// C3: mill `count` cards from `player`'s library into their graveyard (CR 701.13). The top
+    /// of the library is the last element; milling an empty library simply stops (milling is not
+    /// drawing, so it never triggers the draw-from-empty loss).
+    pub(crate) fn mill(&mut self, player: PlayerId, count: u32) {
+        for _ in 0..count {
+            let top = match self.state.player(player).library.last().copied() {
+                Some(c) => c,
+                None => break,
+            };
+            if self.state.move_object(top, Zone::Graveyard, player) {
+                self.broadcast(GameEvent::ObjectMoved { obj: top, to: Zone::Graveyard });
+            }
+        }
+    }
+
+    /// C6: put a token onto the battlefield from its [`TokenSpec`] (CR 111.3). A token has no
+    /// printing (`grp_id` 0) — its characteristics live entirely on the object. (Token keyword
+    /// abilities aren't wired yet — `TokenSpec.keywords` is currently a vanilla-token no-op.)
+    fn create_token(&mut self, spec: &TokenSpec, controller: PlayerId) {
+        let chars = Characteristics {
+            name: spec.name.clone(),
+            card_types: spec.card_types.clone(),
+            subtypes: spec.subtypes.clone(),
+            colors: spec.colors.clone(),
+            power: Some(spec.power),
+            toughness: Some(spec.toughness),
+            ..Default::default()
+        };
+        let is_creature = chars.is_creature();
+        let id = self.state.add_card(controller, chars, Zone::Battlefield);
+        if let Some(o) = self.state.objects.get_mut(&id) {
+            // A token creature enters summoning sick (CR 302.6); `add_card` doesn't infer this.
+            o.summoning_sick = is_creature;
+            for (kind, n) in &spec.counters {
+                *o.counters.counts.entry(kind.clone()).or_insert(0) += n;
+            }
+        }
+        self.state.mark_chars_dirty();
+        self.broadcast(GameEvent::ObjectMoved { obj: id, to: Zone::Battlefield });
+    }
+
     // ── IR resolution helpers ─────────────────────────────────────────────────────────────
 
-    // `&self` is unused today beyond recursion, but `ValueExpr::Count` (M4) will read state.
-    #[allow(clippy::only_used_in_recursion)]
-    fn eval_value(&self, v: &ValueExpr, ctx: &ResolutionCtx) -> i64 {
+    pub(crate) fn eval_value(&self, v: &ValueExpr, ctx: &ResolutionCtx) -> i64 {
         match v {
             ValueExpr::Fixed(n) => *n,
             ValueExpr::X => ctx.x.unwrap_or(0) as i64,
             ValueExpr::XTimes(k) => k * ctx.x.unwrap_or(0) as i64,
             ValueExpr::NumTargets => ctx.chosen_targets.len() as i64,
             ValueExpr::Sum(a, b) => self.eval_value(a, ctx) + self.eval_value(b, ctx),
-            // Count and any future dynamic values: 0 until implemented (M4+).
-            ValueExpr::Count { .. } => 0,
+            // C9: count objects in a zone matching the filter, optionally restricted to a
+            // player's permanents (e.g. "the number of lands you control").
+            ValueExpr::Count { zone, filter, controller } => {
+                let who = controller.map(|r| self.eval_player(r, ctx));
+                self.state
+                    .objects
+                    .values()
+                    .filter(|o| o.zone == *zone)
+                    .filter(|o| who.is_none_or(|p| o.controller == p))
+                    .filter(|o| self.count_filter_matches(o.id, filter))
+                    .count() as i64
+            }
+        }
+    }
+
+    /// Evaluate a `CardFilter` against a single object's computed characteristics, for the subset
+    /// `ValueExpr::Count` needs (`ControlledBy` is handled by Count's `controller` restriction).
+    fn count_filter_matches(&self, id: ObjId, filter: &CardFilter) -> bool {
+        let cc = self.state.computed(id);
+        match filter {
+            CardFilter::Any => true,
+            CardFilter::HasCardType(t) => cc.card_types.contains(t),
+            CardFilter::HasSubtype(s) => cc.subtypes.contains(s),
+            CardFilter::HasColor(c) => cc.colors.contains(c),
+            CardFilter::Colorless => cc.colors.is_empty(),
+            CardFilter::All(fs) => fs.iter().all(|f| self.count_filter_matches(id, f)),
+            CardFilter::AnyOf(fs) => fs.iter().any(|f| self.count_filter_matches(id, f)),
+            CardFilter::Not(f) => !self.count_filter_matches(id, f),
+            _ => false,
         }
     }
 

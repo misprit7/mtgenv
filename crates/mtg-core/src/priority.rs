@@ -2475,6 +2475,105 @@ mod expect_tests {
         assert!(!abilities.contains(&1), "−3 needs ≥3 loyalty (has 2)");
     }
 
+    #[test]
+    fn put_counters_adds_a_plus_one_counter_c2() {
+        use crate::basics::CounterKind;
+        use crate::effects::action::{ResolutionCtx, WbReason};
+        use crate::effects::value::ValueExpr;
+        use crate::effects::{Effect, EffectTarget};
+        let mut state = cards::build_game(1, &[&[], &[]]);
+        let bears = put(&mut state, PlayerId(0), grp::GRIZZLY_BEARS, Zone::Battlefield); // 2/2
+        let mut e = pass_engine(state);
+        e.resolve_effect(
+            &Effect::PutCounters {
+                what: EffectTarget::SourceSelf,
+                kind: CounterKind::PlusOnePlusOne,
+                n: ValueExpr::Fixed(1),
+            },
+            &ResolutionCtx { controller: Some(PlayerId(0)), source: Some(bears), ..Default::default() },
+            WbReason::Resolve(crate::ids::StackId(0)),
+        );
+        assert_eq!(e.state.object(bears).counters.get(&CounterKind::PlusOnePlusOne), 1);
+        assert_eq!(e.state.computed(bears).power, Some(3), "+1/+1 counter boosts computed P/T");
+    }
+
+    #[test]
+    fn mill_moves_top_cards_to_graveyard_c3() {
+        use crate::effects::action::{ResolutionCtx, WbReason};
+        use crate::effects::value::{PlayerRef, ValueExpr};
+        use crate::effects::Effect;
+        let mut state = cards::build_game(1, &[&[grp::GRIZZLY_BEARS, grp::FOREST], &[]]);
+        assert_eq!(state.player(PlayerId(0)).library.len(), 2);
+        let mut e = pass_engine(state);
+        e.resolve_effect(
+            &Effect::Mill { who: PlayerRef::Controller, count: ValueExpr::Fixed(2) },
+            &ResolutionCtx { controller: Some(PlayerId(0)), ..Default::default() },
+            WbReason::Resolve(crate::ids::StackId(0)),
+        );
+        assert_eq!(e.state.player(PlayerId(0)).library.len(), 0, "milled both cards");
+        assert_eq!(e.state.player(PlayerId(0)).graveyard.len(), 2, "into the graveyard");
+    }
+
+    #[test]
+    fn create_token_puts_tokens_on_the_battlefield_c6() {
+        use crate::basics::Color;
+        use crate::effects::action::{ResolutionCtx, WbReason};
+        use crate::effects::target::TokenSpec;
+        use crate::effects::value::{PlayerRef, ValueExpr};
+        use crate::effects::Effect;
+        let mut state = cards::build_game(1, &[&[], &[]]);
+        let before = state.player(PlayerId(0)).battlefield.len();
+        let mut e = pass_engine(state);
+        e.resolve_effect(
+            &Effect::CreateToken {
+                spec: TokenSpec {
+                    name: "Bird".into(),
+                    card_types: vec![CardType::Creature],
+                    subtypes: vec!["Bird".into()],
+                    colors: vec![Color::White],
+                    power: 1,
+                    toughness: 1,
+                    keywords: Vec::new(),
+                    counters: Vec::new(),
+                },
+                count: ValueExpr::Fixed(2),
+                controller: PlayerRef::Controller,
+            },
+            &ResolutionCtx { controller: Some(PlayerId(0)), ..Default::default() },
+            WbReason::Resolve(crate::ids::StackId(0)),
+        );
+        assert_eq!(e.state.player(PlayerId(0)).battlefield.len(), before + 2, "two 1/1 Bird tokens");
+    }
+
+    #[test]
+    fn value_count_counts_lands_you_control_c9() {
+        use crate::basics::DamageKind;
+        use crate::effects::action::{ResolutionCtx, WbReason};
+        use crate::effects::target::CardFilter;
+        use crate::effects::value::{PlayerRef, ValueExpr};
+        use crate::effects::{Effect, EffectTarget};
+        let mut state = cards::build_game(1, &[&[], &[]]);
+        put(&mut state, PlayerId(0), grp::FOREST, Zone::Battlefield);
+        put(&mut state, PlayerId(0), grp::FOREST, Zone::Battlefield);
+        put(&mut state, PlayerId(0), grp::MOUNTAIN, Zone::Battlefield);
+        put(&mut state, PlayerId(1), grp::FOREST, Zone::Battlefield); // opponent's — doesn't count
+        let mut e = pass_engine(state);
+        e.resolve_effect(
+            &Effect::DealDamage {
+                amount: ValueExpr::Count {
+                    zone: Zone::Battlefield,
+                    filter: CardFilter::HasCardType(CardType::Land),
+                    controller: Some(PlayerRef::Controller),
+                },
+                to: EffectTarget::Player(PlayerRef::Opponent),
+                kind: DamageKind::Noncombat,
+            },
+            &ResolutionCtx { controller: Some(PlayerId(0)), ..Default::default() },
+            WbReason::Resolve(crate::ids::StackId(0)),
+        );
+        assert_eq!(e.state.player(PlayerId(1)).life, 17, "3 lands you control → 3 damage");
+    }
+
     /// Put a card (by grp_id) directly into a player's zone, returning its id.
     fn put(state: &mut GameState, owner: PlayerId, grp_id: u32, zone: Zone) -> crate::ids::ObjId {
         let chars = state.card_db().get(grp_id).unwrap().chars.clone();
