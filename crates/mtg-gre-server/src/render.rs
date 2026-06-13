@@ -203,11 +203,19 @@ fn join_objviews(objs: &[ObjView]) -> String {
     objs.iter()
         .map(|o| match o {
             ObjView::Visible { chars, status, .. } => {
-                if status.tapped {
-                    format!("{} (tapped)", chars.name)
-                } else {
-                    chars.name.clone()
+                // Computed (post-layer) characteristics: P/T includes anthems/counters, keywords
+                // include layer-granted ones (e.g. Flying from Levitation).
+                let mut s = chars.name.clone();
+                if let (Some(p), Some(t)) = (chars.power, chars.toughness) {
+                    s += &format!(" {p}/{t}");
                 }
+                if !chars.keywords.is_empty() {
+                    s += &format!(" [{}]", chars.keywords.join(", "));
+                }
+                if status.tapped {
+                    s += " (tapped)";
+                }
+                s
             }
             ObjView::Hidden { .. } => "(hidden)".into(),
         })

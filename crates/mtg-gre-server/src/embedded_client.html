@@ -403,7 +403,11 @@
     d.appendChild(art);
     d.appendChild(el("div", "c-type", typeLine(chars)));
     const rules = el("div", "c-rules");
-    rules.innerHTML = chars.rules_text ? renderText(chars.rules_text) : esc((chars.keywords || []).join(", "));
+    // Computed keywords (incl. layer-granted, e.g. Flying from Levitation) bold on top, then text.
+    const kw = chars.keywords || [];
+    let rulesHtml = kw.length ? "<b>" + esc(kw.join(", ")) + "</b>" : "";
+    if (chars.rules_text) rulesHtml += (rulesHtml ? "<br>" : "") + renderText(chars.rules_text);
+    rules.innerHTML = rulesHtml;
     d.appendChild(rules);
     if (chars.power != null) d.appendChild(el("div", "c-pt", chars.power + "/" + chars.toughness));
 
