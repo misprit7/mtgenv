@@ -35,6 +35,9 @@ pub struct StackObject {
     pub kind: StackObjectKind,
     /// Targets chosen at put-on-stack time (CR 601.2c); rechecked on resolution (608.2b).
     pub targets: Vec<Target>,
+    /// The value chosen for X at cast/activation (CR 601.2b) when the cost had `{X}`, carried to
+    /// resolution so the effect's `ValueExpr::X` reads it. `None` when there is no X.
+    pub x: Option<u32>,
 }
 
 /// The stack (CR 405). LIFO: the top is the **last** element; new objects push on top, and
@@ -79,6 +82,7 @@ mod tests {
             source: None,
             kind: StackObjectKind::Ability { index: 0 },
             targets: vec![],
+            x: None,
         });
         s.push(StackObject {
             id: StackId(2),
@@ -86,6 +90,7 @@ mod tests {
             source: None,
             kind: StackObjectKind::Ability { index: 0 },
             targets: vec![],
+            x: None,
         });
         assert_eq!(s.len(), 2);
         // Last-in (id 2) resolves first.

@@ -13,9 +13,9 @@
 
 use crate::agent::{
     AbilityRef, ActionRef, Agent, CastVariant, DecisionRequest, DecisionResponse, GameEvent,
-    PlayableAction, PlayerView, SelectReason, StopStateView, TargetSlot,
+    NumberReason, PlayableAction, PlayerView, SelectReason, StopStateView, TargetSlot,
 };
-use crate::basics::{CardType, CounterKind, Phase, Target, Zone, ZonePos};
+use crate::basics::{CardType, CounterKind, ManaCost, Phase, Target, Zone, ZonePos};
 use crate::effects::ability::{Ability, Cost, CostComponent, EventPattern, Keyword, Restriction, Timing};
 use crate::effects::action::{Action, MoveCause, ResolutionCtx, Whiteboard, WbReason};
 use crate::effects::target::{CardFilter, TargetKind, TargetSpec};
@@ -916,6 +916,7 @@ impl Engine {
             source: Some(source),
             kind: StackObjectKind::Ability { index: idx as u32 },
             targets: Vec::new(),
+            x: None,
         });
         let specs = collect_target_specs(&effect);
         if !specs.is_empty() {
@@ -1017,12 +1018,37 @@ impl Engine {
         // 601.2a: the card becomes a spell on top of the stack.
         let sid = self.state.mint_stack();
         self.move_to_stack(card, p);
+        // C10 / 601.2b: choose X if the cost has `{X}` (bounded by affordable mana).
+        let chosen_x = if cost.x > 0 {
+            let avail = mana::available_mana(&self.state, p);
+            let fixed = cost.generic + cost.colored.values().sum::<u32>();
+            let max_x = avail.saturating_sub(fixed) / cost.x;
+            let resp = self.ask(
+                p,
+                &DecisionRequest::ChooseNumber {
+                    reason: NumberReason::ChooseX,
+                    min: 0,
+                    max: max_x as i64,
+                    step: 1,
+                    forbidden: Vec::new(),
+                    disallow_even: false,
+                    disallow_odd: false,
+                },
+            );
+            match resp {
+                DecisionResponse::Number(n) => n.clamp(0, max_x as i64) as u32,
+                _ => 0,
+            }
+        } else {
+            0
+        };
         self.state.stack.push(StackObject {
             id: sid,
             controller: p,
             source: Some(card),
             kind: StackObjectKind::Spell(card),
             targets: Vec::new(),
+            x: if cost.x > 0 { Some(chosen_x) } else { None },
         });
 
         // 601.2c: choose targets (locked now).
@@ -1047,8 +1073,13 @@ impl Engine {
             }
         }
 
-        // 601.2f–h: pay the total cost (auto-tap lands).
-        mana::auto_pay(&mut self.state, p, &cost);
+        // 601.2f–h: pay the total cost (auto-tap lands), with {X} settled to `chosen_x`.
+        let pay = ManaCost {
+            generic: cost.generic + chosen_x * cost.x,
+            colored: cost.colored.clone(),
+            x: 0,
+        };
+        mana::auto_pay(&mut self.state, p, &pay);
 
         // 601.2i: the spell has been cast.
         self.broadcast(GameEvent::SpellCast {
@@ -1226,7 +1257,7 @@ impl Engine {
                             let ctx = ResolutionCtx {
                                 controller: Some(obj.controller),
                                 source: Some(id),
-                                x: None,
+                                x: obj.x,
                                 chosen_targets: obj.targets.clone(),
                                 chosen_modes: Vec::new(),
                             };
@@ -1590,6 +1621,7 @@ impl Engine {
                 source: Some(subject),
                 kind: StackObjectKind::Ability { index },
                 targets: Vec::new(),
+                x: None,
             });
         }
     }
@@ -1631,6 +1663,7 @@ impl Engine {
                         source: Some(watcher),
                         kind: StackObjectKind::Ability { index },
                         targets: Vec::new(),
+                        x: None,
                     });
                 }
             }
@@ -1892,6 +1925,7 @@ mod tests {
             source: Some(card),
             kind: StackObjectKind::Spell(card),
             targets: vec![],
+            x: None,
         });
         assert_eq!(StackId(1), sid);
         engine.resolve_top();
@@ -2074,6 +2108,39 @@ mod expect_tests {
                 DecisionRequest::ChooseTargets { slots, .. } => DecisionResponse::Pairs(
                     slots.iter().enumerate().map(|(si, _)| (si as u32, 0u32)).collect(),
                 ),
+                _ => DecisionResponse::Pass,
+            }
+        }
+    }
+
+    /// Casts the first castable spell, chooses a fixed X for `ChooseNumber`, and targets an
+    /// opponent player. For the X-cost test.
+    struct XCastAgent(i64);
+    impl Agent for XCastAgent {
+        fn decide(&mut self, view: &PlayerView, req: &DecisionRequest) -> DecisionResponse {
+            match req {
+                DecisionRequest::Priority { actions, .. } => actions
+                    .iter()
+                    .position(|a| matches!(a, PlayableAction::Cast { .. }))
+                    .map(|i| DecisionResponse::Action(i as u32))
+                    .unwrap_or(DecisionResponse::Pass),
+                DecisionRequest::ChooseNumber { .. } => DecisionResponse::Number(self.0),
+                DecisionRequest::ChooseTargets { slots, .. } => {
+                    let me = view.seat;
+                    let pairs = slots
+                        .iter()
+                        .enumerate()
+                        .map(|(si, slot)| {
+                            let idx = slot
+                                .legal
+                                .iter()
+                                .position(|t| matches!(t, Target::Player(p) if *p != me))
+                                .unwrap_or(0);
+                            (si as u32, idx as u32)
+                        })
+                        .collect();
+                    DecisionResponse::Pairs(pairs)
+                }
                 _ => DecisionResponse::Pass,
             }
         }
@@ -2319,6 +2386,7 @@ mod expect_tests {
             source: None,
             kind: StackObjectKind::Ability { index: 0 },
             targets: vec![],
+            x: None,
         });
 
         // P0's own object on top → auto-pass (even in MP1, even with an action available).
@@ -2767,6 +2835,67 @@ mod expect_tests {
                 .iter()
                 .any(|s| matches!(s, crate::sba::StateBasedAction::CreatureDies { creature, .. } if *creature == bears)),
             "the 2/2 is marked for death"
+        );
+    }
+
+    #[test]
+    fn x_cost_chooses_pays_and_flows_to_resolution_c10() {
+        use crate::basics::{CardType, Color, DamageKind, ManaCost};
+        use crate::effects::ability::Ability;
+        use crate::effects::target::{TargetKind, TargetSpec};
+        use crate::effects::value::ValueExpr;
+        use crate::effects::{Effect, EffectTarget};
+        use std::collections::BTreeMap;
+        use std::sync::Arc;
+        // A synthetic "{X}{R}: deal X damage to any target".
+        let mut db = cards::starter_db();
+        db.insert(cards::CardDef {
+            chars: Characteristics {
+                name: "X Bolt".into(),
+                card_types: vec![CardType::Instant],
+                colors: vec![Color::Red],
+                mana_cost: Some(ManaCost {
+                    generic: 0,
+                    colored: BTreeMap::from([(Color::Red, 1)]),
+                    x: 1,
+                }),
+                grp_id: 9300,
+                ..Default::default()
+            },
+            abilities: vec![Ability::Spell {
+                effect: Effect::DealDamage {
+                    amount: ValueExpr::X,
+                    to: EffectTarget::Target(TargetSpec {
+                        kind: TargetKind::Any,
+                        min: 1,
+                        max: 1,
+                        distinct: true,
+                    }),
+                    kind: DamageKind::Noncombat,
+                },
+            }],
+            mana_colors: Vec::new(),
+            text: String::new(),
+        });
+        let mut state = GameState::new(2, 1);
+        state.set_card_db(Arc::new(db));
+        let bolt = {
+            let c = state.card_db().get(9300).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, Zone::Hand)
+        };
+        let _ = bolt;
+        for _ in 0..3 {
+            let m = state.card_db().get(grp::MOUNTAIN).unwrap().chars.clone();
+            state.add_card(PlayerId(0), m, Zone::Battlefield); // pay {2}{R}
+        }
+        state.active_player = PlayerId(0);
+        state.phase = Phase::PrecombatMain;
+        let mut e = Engine::new(state, vec![Box::new(XCastAgent(2)), Box::new(PassAgent)]);
+        e.priority_round();
+        assert_eq!(e.state.player(PlayerId(1)).life, 18, "X=2 → 2 damage; cost {{2}}{{R}} = all 3 Mountains tapped");
+        assert!(
+            e.state.player(PlayerId(0)).battlefield.iter().all(|&id| e.state.object(id).status.tapped),
+            "all 3 Mountains tapped to pay {{X=2}}{{R}}"
         );
     }
 
