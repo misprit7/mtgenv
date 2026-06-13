@@ -565,7 +565,7 @@ pub struct ActionRef(pub StackId);   // the in-progress cast/activation a sub-de
 | `RevealHandReq` | `observe()` (push) / `SelectCards{Reveal}` if a choice is needed |
 | `GatherReq` | `SelectCards` / `SelectFromGroups` |
 | `PromptReq` | **not a decision** — `Prompt{promptId, parameters}` is localized display metadata attached to other reqs; never a standalone variant |
-| `IntermissionReq`/`TimeoutMessage`/`TimerStateMessage`/`UIMessage`/`PredictionResp` | not engine decisions — transport/UI; handled at the GRE-server/`MtgaClientAgent` layer, not in the enum |
+| `IntermissionReq`/`TimeoutMessage`/`TimerStateMessage`/`UIMessage`/`PredictionResp` | not engine decisions — transport/UI; handled at the GRE-server/`MtgaClientAgent` layer, not in the enum. (`Prediction` is MTGA's speculative-action feature with deliberately *reversed* naming — server slot `predictionResp=59`, client slot `predictionReq=46`, decompile-confirmed — and is **not** a player choice the engine surfaces.) |
 
 ### 6.2 Forge `PlayerController` (107 methods) → variant
 (Grouped; every decision-making method maps. Pure-notification methods map to `observe`.)
