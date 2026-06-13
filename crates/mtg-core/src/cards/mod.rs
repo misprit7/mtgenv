@@ -28,6 +28,7 @@ pub mod misc;
 
 // Per-first-printing-set folders (real card pool).
 pub mod dsk;
+pub mod eoe;
 pub mod fdn;
 pub mod fin;
 pub mod lea;
@@ -303,6 +304,7 @@ pub fn starter_db() -> CardDb {
     dsk::register(&mut db);
     fin::register(&mut db);
     fdn::register(&mut db);
+    eoe::register(&mut db);
     db
 }
 
@@ -385,7 +387,7 @@ mod tests {
     #[test]
     fn starter_db_has_expected_cards() {
         let db = starter_db();
-        assert_eq!(db.len(), 42);
+        assert_eq!(db.len(), 43);
         assert!(db.get(grp::FOREST).unwrap().is_mana_source());
         assert_eq!(db.get(grp::FOREST).unwrap().mana_colors, vec![Color::Green]);
         // Grizzly Bears is a vanilla 2/2 with no abilities.
