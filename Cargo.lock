@@ -460,6 +460,7 @@ dependencies = [
  "expect-test",
  "mtg-core",
  "pyo3",
+ "serde_json",
 ]
 
 [[package]]

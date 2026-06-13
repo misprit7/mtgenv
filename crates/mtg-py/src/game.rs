@@ -22,6 +22,7 @@ use mtg_core::agent::{Agent, DecisionRequest, DecisionResponse, PlayerView, Rand
 use mtg_core::basics::Zone;
 use mtg_core::ids::PlayerId;
 use mtg_core::priority::{EndReason, Engine};
+use mtg_core::replay::{Replay, ReplaySource};
 use mtg_core::state::{Characteristics, GameState};
 
 /// Which tiny built-in deck/matchup a game uses. The card pool grows in later milestones; for
@@ -74,14 +75,20 @@ fn lands_only_state(num_players: usize, seed: u64) -> GameState {
 }
 
 /// A message from the game thread to the Python side: either a decision to answer, or the game
-/// finished (with the conservation/outcome summary computed on the thread that owns the state).
+/// finished (with the conservation/outcome summary computed on the thread that owns the state, plus
+/// the recorded [`Replay`] when recording was enabled).
 pub enum FromGame {
     Decision {
         seat: PlayerId,
         view: PlayerView,
         req: DecisionRequest,
     },
-    GameOver(EndSummary),
+    GameOver {
+        summary: EndSummary,
+        /// The omniscient replay (`Some` iff the game ran with `record_replay`), with `created_at`
+        /// / player names+decks left for the caller to stamp (the core has no clock).
+        replay: Option<Replay>,
+    },
 }
 
 /// The terminal summary, computed in the game thread (it owns the final `GameState`). Carries the
@@ -180,7 +187,15 @@ pub struct GameConn {
 impl GameConn {
     /// Spawn a fresh game on its own thread. Both seats are `PyAgent`s feeding the returned
     /// `Receiver`; the caller pulls decisions from it and answers via [`respond`](GameConn::respond).
-    pub fn spawn(deck: Deck, seed: u64, auto_pass: bool) -> (GameConn, Receiver<FromGame>) {
+    /// With `record_replay`, the engine records an omniscient [`Replay`] tagged
+    /// `AiTraining { step: replay_step }`, shipped in `GameOver` at the end.
+    pub fn spawn(
+        deck: Deck,
+        seed: u64,
+        auto_pass: bool,
+        record_replay: bool,
+        replay_step: u64,
+    ) -> (GameConn, Receiver<FromGame>) {
         let (to_py, from_game) = mpsc::channel::<FromGame>();
         let (to_game, resp_rx) = mpsc::channel::<DecisionResponse>();
         let from_py = Arc::new(Mutex::new(resp_rx));
@@ -206,10 +221,15 @@ impl GameConn {
             if auto_pass {
                 engine.set_arena_auto_pass(true);
             }
+            if record_replay {
+                engine.set_replay_source(ReplaySource::AiTraining { step: replay_step });
+                engine.record_replay(true);
+            }
             engine.run_game();
             let summary = end_summary(&engine, initial_object_count);
+            let replay = record_replay.then(|| engine.replay());
             // Best-effort: the receiver is gone if the env already moved on.
-            let _ = to_py.send(FromGame::GameOver(summary));
+            let _ = to_py.send(FromGame::GameOver { summary, replay });
         });
 
         (
@@ -260,7 +280,7 @@ mod tests {
     // without Python. (The Python smoke test does the randomized, thousands-of-games version.)
     #[test]
     fn channel_bridge_plays_a_game_to_completion() {
-        let (conn, from_game) = GameConn::spawn(Deck::LandsOnly, 7, true);
+        let (conn, from_game) = GameConn::spawn(Deck::LandsOnly, 7, true, false, 0);
         let mut decisions = 0usize;
         let summary = loop {
             match from_game.recv().expect("game thread alive") {
@@ -277,7 +297,10 @@ mod tests {
                     };
                     assert!(conn.respond(resp));
                 }
-                FromGame::GameOver(s) => break s,
+                FromGame::GameOver { summary, replay } => {
+                    assert!(replay.is_none(), "no replay unless record_replay");
+                    break summary;
+                }
             }
         };
         assert!(decisions > 0, "a real game has decisions");
@@ -286,5 +309,32 @@ mod tests {
             "card conservation"
         );
         assert_eq!(summary.zone_sum, summary.object_count, "zone conservation");
+    }
+
+    // record_replay=true ⇒ GameOver carries a Replay with frames, the AiTraining source, and the
+    // engine-filled result. created_at stays 0 (caller stamps it) — validates the a533720 schema.
+    #[test]
+    fn records_replay_when_enabled() {
+        let (conn, from_game) = GameConn::spawn(Deck::LandsOnly, 3, true, true, 1234);
+        let replay = loop {
+            match from_game.recv().expect("game thread alive") {
+                FromGame::Decision { view, req, .. } => {
+                    let mut inter = crate::codec::Interaction::new(&view, &req);
+                    let resp = loop {
+                        let slot = inter.mask().iter().position(|b| *b).expect("non-empty mask");
+                        if let Some(r) = inter.apply(slot) {
+                            break r;
+                        }
+                    };
+                    conn.respond(resp);
+                }
+                FromGame::GameOver { replay, .. } => break replay.expect("replay recorded"),
+            }
+        };
+        assert!(replay.frames.len() > 1, "replay has frames");
+        assert_eq!(replay.frames[0].label, "game start");
+        assert_eq!(replay.meta.source, ReplaySource::AiTraining { step: 1234 });
+        assert!(replay.meta.result.is_some(), "engine fills result at game end");
+        assert_eq!(replay.meta.created_at, 0, "caller stamps the clock");
     }
 }

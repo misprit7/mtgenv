@@ -5,6 +5,16 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **gym:** **`mtg-py` replay accessor (REPLAY_PLAN §3 prep)** — exposes the engine's freshly-landed
+  replay recording (a533720) through Python so M2 can export training self-play replays. `PyGame`
+  gains `record_replay`/`replay_step` ctor args (game thread calls `set_replay_source(AiTraining
+  {step})` + `record_replay(true)` before `run_game`, ships the `Replay` in `GameOver`) and
+  `replay_json(created_at, names, decks) -> Optional[str]` (serde_json of `engine.replay()`, caller
+  stamps the clock/names per the core's no-clock split; `None` unless recorded). Validated the
+  locked schema end-to-end through Python: source `AiTraining{step}`, engine-filled `result`,
+  god-view `frames` with labels ("game start" → "Turn N — P0 PrecombatMain" → "Mountain →
+  Battlefield" …). 10 Rust + 12 pytest tests green. **The sampling/export LOOP stays in M2** (so
+  recorded games are real self-play); this is just the isolated, low-risk accessor (lead-approved).
 - **webui:** **Replay + omniscient-spectate feature (REPLAY_PLAN) — webui half mostly done.** Against
   engine's locked `crate::replay` schema: (1) **god-view viewer** — a new mode of the game client
   (`/play?replay=<id>`) that fetches `/api/replays/:id` and plays `frames[i].state` through the
