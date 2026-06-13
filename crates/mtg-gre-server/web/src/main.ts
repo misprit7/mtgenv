@@ -24,9 +24,13 @@ fetch("/card-art.json").then((r) => r.json()).then((m) => { artMap = m; render()
 
 const params = new URLSearchParams(location.search);
 const gameId = params.get("game");
-$("decks").textContent = gameId
-  ? `Game #${gameId} · you are Player ${params.get("seat") || "0"}`
-  : `P0=${params.get("p0") || "demo"} · P1=${params.get("p1") || "demo"}`;
+const spectating = params.get("spectate") === "1" || params.get("spectate") === "true";
+$("decks").textContent = spectating
+  ? `👁 Spectating Game #${gameId}`
+  : gameId
+    ? `Game #${gameId} · you are Player ${params.get("seat") || "0"}`
+    : `P0=${params.get("p0") || "demo"} · P1=${params.get("p1") || "demo"}`;
+if (spectating) $("prompt").innerHTML = '<div class="waiting">👁 Spectating — watching the game (you are not playing).</div>';
 // Stops control (top bar): LIVE toggles — send setOption; the server echoes the new config and
 // the running game's agent honours it at the next window (no reset). Rendered from stopsView.
 const OPT: Array<[string, string, string]> = [

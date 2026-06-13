@@ -72,11 +72,17 @@
         <label for="gname">Name (optional)</label>
         <input type="text" id="gname" placeholder="Game name…" />
       </div>
+      <div>
+        <label for="delay">AI decision delay (ms)</label>
+        <input type="number" id="delay" min="0" max="10000" step="100" value="0" style="width:140px" />
+      </div>
       <button id="createBtn">Create game</button>
     </div>
     <div id="newlinks"></div>
     <div class="hint">Tip: pick <b>Human</b> for both seats and open both seat links to play both
-      sides yourself. Pick a <b>Test agent</b> for an opponent that plays itself.</div>
+      sides yourself. Pick a <b>Test agent</b> for an opponent that plays itself. Set a
+      <b>decision delay</b> (e.g. 800ms) to slow non-human players down and <b>👁 Spectate</b> the
+      game at a watchable pace.</div>
   </div>
 
   <div class="panel">
@@ -124,6 +130,8 @@ async function createGame() {
   const name = $("gname").value.trim();
   const body = { seats };
   if (name) body.name = name;
+  const delay = parseInt($("delay").value || "0", 10);
+  if (delay > 0) body.delay_ms = delay;
   $("createBtn").disabled = true;
   try {
     const res = await fetch("/api/games", {
@@ -177,6 +185,7 @@ function gameRow(g) {
       "S" + i + ": " + kindLabel(s.kind) + " · " + s.deck + (open ? " · OPEN" : (s.human ? " · in" : "")));
     chips.appendChild(c);
   });
+  if (g.delay_ms > 0) chips.appendChild(el("div", "chip", "⏱ " + g.delay_ms + "ms"));
   row.appendChild(chips);
   row.appendChild(el("div", "spacer"));
   const acts = el("div", "acts");
@@ -190,9 +199,14 @@ function gameRow(g) {
       }
     });
   }
-  // Spectate stub (not implemented yet).
-  const spec = el("button", "ghost", "Spectate");
-  spec.disabled = true; spec.title = "Spectating running games is coming soon";
+  // Spectate (read-only viewer) — available for any game that isn't over.
+  const spec = el("button", "ghost", "👁 Spectate");
+  if (g.status.state === "finished") {
+    spec.disabled = true; spec.title = "Game is over";
+  } else {
+    spec.title = "Watch this game (read-only)";
+    spec.onclick = () => window.open("/play?game=" + g.id + "&spectate=1", "_blank");
+  }
   acts.appendChild(spec);
   // Remove this game from the lobby.
   const rm = el("button", "rm", "✕");

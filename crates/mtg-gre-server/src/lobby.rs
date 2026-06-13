@@ -17,23 +17,91 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use axum::extract::ws::{Message, WebSocket};
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
-use futures_util::StreamExt;
+use futures_util::stream::SplitSink;
+use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{broadcast, mpsc, oneshot};
 
-use mtg_core::agent::{Agent, RandomAgent};
+use mtg_core::agent::{Agent, DecisionRequest, DecisionResponse, GameEvent, PlayerView, RandomAgent};
 use mtg_core::ids::PlayerId;
 use mtg_core::priority::StopConfig;
 
 use crate::driver;
 use crate::protocol::ServerMsg;
 use crate::session::{ClientResponse, GreSessionAgent};
+
+// ── Spectating: a per-room fan-out of the seat-0 view stream ──────────────────────────────────
+
+/// A live broadcast of a game's frames to any number of read-only spectators, plus a cache of the
+/// latest board frame so a spectator who joins mid-game sees the current state immediately.
+struct SpectateHub {
+    tx: broadcast::Sender<ServerMsg>,
+    last_view: Mutex<Option<ServerMsg>>,
+}
+
+impl SpectateHub {
+    fn new() -> Arc<Self> {
+        let (tx, _) = broadcast::channel(256);
+        Arc::new(SpectateHub {
+            tx,
+            last_view: Mutex::new(None),
+        })
+    }
+    /// Publish a board frame (an `Event`): cache it for late joiners and fan it out live.
+    fn publish_view(&self, frame: ServerMsg) {
+        *self.last_view.lock().unwrap() = Some(frame.clone());
+        let _ = self.tx.send(frame); // Err just means "no spectators right now" — fine.
+    }
+    /// Publish a non-board frame (e.g. `GameOver`) live without disturbing the cached board.
+    fn publish(&self, frame: ServerMsg) {
+        let _ = self.tx.send(frame);
+    }
+}
+
+/// Wraps a seat's agent and **mirrors every `observe` to the room's [`SpectateHub`]** (the seat-0
+/// agent is wrapped so spectators watch the game from Player 0's perspective). Pure pass-through for
+/// decisions.
+struct SpectatorTee {
+    inner: Box<dyn Agent>,
+    hub: Arc<SpectateHub>,
+}
+
+impl Agent for SpectatorTee {
+    fn decide(&mut self, view: &PlayerView, req: &DecisionRequest) -> DecisionResponse {
+        self.inner.decide(view, req)
+    }
+    fn observe(&mut self, view: &PlayerView, ev: &GameEvent) {
+        self.hub.publish_view(ServerMsg::Event {
+            event: ev.clone(),
+            view: view.clone(),
+        });
+        self.inner.observe(view, ev);
+    }
+}
+
+/// Wraps a non-human agent and **sleeps before each decision** so a spectator can follow the game
+/// at a watchable pace (the engine is single-threaded, so this paces the whole game).
+struct DelayAgent {
+    inner: Box<dyn Agent>,
+    delay: Duration,
+}
+
+impl Agent for DelayAgent {
+    fn decide(&mut self, view: &PlayerView, req: &DecisionRequest) -> DecisionResponse {
+        std::thread::sleep(self.delay);
+        self.inner.decide(view, req)
+    }
+    fn observe(&mut self, view: &PlayerView, ev: &GameEvent) {
+        self.inner.observe(view, ev);
+    }
+}
 
 // ── Public configuration types (serde — the wire shape of the REST API) ──────────────────────
 
@@ -102,7 +170,10 @@ pub struct Room {
     pub id: u64,
     pub name: String,
     pub seats: Vec<RoomSeat>,
+    /// Per-decision delay (ms) applied to **non-human** seats, so spectators can follow along.
+    pub delay_ms: u32,
     start: Mutex<StartState>,
+    spectate: Arc<SpectateHub>,
 }
 
 impl Room {
@@ -129,6 +200,7 @@ impl Room {
             name: self.name.clone(),
             seats,
             status: st.status.clone(),
+            delay_ms: self.delay_ms,
         }
     }
 }
@@ -158,6 +230,7 @@ pub struct GameSummary {
     name: String,
     seats: Vec<SeatSummary>,
     status: Status,
+    delay_ms: u32,
 }
 
 #[derive(Serialize)]
@@ -173,6 +246,9 @@ pub struct CreateReq {
     #[serde(default)]
     name: Option<String>,
     seats: Vec<RoomSeat>,
+    /// Per-decision delay (ms) for non-human seats (spectator pacing); 0 = no delay.
+    #[serde(default)]
+    delay_ms: u32,
 }
 
 // ── REST handlers ──────────────────────────────────────────────────────────────────────────────
@@ -216,11 +292,13 @@ pub async fn create_game(State(lobby): State<Arc<Lobby>>, Json(req): Json<Create
         id,
         name,
         seats: req.seats,
+        delay_ms: req.delay_ms.min(10_000), // clamp so a typo can't wedge a game for minutes
         start: Mutex::new(StartState {
             slots: (0..nseats).map(|_| None).collect(),
             status: Status::Waiting,
             spawned: false,
         }),
+        spectate: SpectateHub::new(),
     });
     lobby.rooms.lock().unwrap().insert(id, Arc::clone(&room));
     // No human seats → nothing to wait for; run it now (agent-vs-agent).
@@ -318,6 +396,63 @@ pub async fn handle_lobby_socket(
     crate::server::run_player_socket(sink, stream, to_client_rx, from_client_tx, echo_tx, handle).await;
 }
 
+/// Serialize a frame and push it onto a spectator's socket. Returns `Err` if the socket is gone.
+async fn send_json(sink: &mut SplitSink<WebSocket, Message>, msg: &ServerMsg) -> Result<(), ()> {
+    match serde_json::to_string(msg) {
+        Ok(txt) => sink.send(Message::Text(txt)).await.map_err(|_| ()),
+        Err(_) => Ok(()),
+    }
+}
+
+/// Handle `GET /ws?game=<id>&spectate=1`: a **read-only** viewer of a game (seat-0 perspective).
+/// Subscribes to the room's broadcast, immediately replays the latest board frame (so a viewer who
+/// joins mid-game isn't blank), then forwards live frames until the game ends or the viewer leaves.
+/// All inbound frames are ignored — a spectator never controls anything.
+pub async fn handle_spectator_socket(socket: WebSocket, lobby: Arc<Lobby>, game: u64) {
+    let room = lobby.rooms.lock().unwrap().get(&game).cloned();
+    let Some(room) = room else {
+        return reject(socket, "no such game").await;
+    };
+    // Subscribe BEFORE snapshotting the cache so no live frame slips through the gap (a duplicate
+    // replayed frame is harmless — it just re-renders the same view).
+    let mut rx = room.spectate.tx.subscribe();
+    let last = room.spectate.last_view.lock().unwrap().clone();
+    let final_winner = match room.start.lock().unwrap().status {
+        Status::Finished { winner } => Some(winner),
+        _ => None,
+    };
+
+    let (mut sink, mut stream) = socket.split();
+    // Prime the viewer with the current board (+ a GameOver if it already ended).
+    if let Some(frame) = last {
+        if send_json(&mut sink, &frame).await.is_err() {
+            return;
+        }
+    }
+    if let Some(winner) = final_winner {
+        let _ = send_json(&mut sink, &ServerMsg::GameOver { winner: winner.map(PlayerId) }).await;
+        return;
+    }
+    // Forward live frames; stop on GameOver or disconnect.
+    loop {
+        tokio::select! {
+            r = rx.recv() => match r {
+                Ok(frame) => {
+                    let over = matches!(frame, ServerMsg::GameOver { .. });
+                    if send_json(&mut sink, &frame).await.is_err() { break; }
+                    if over { break; }
+                }
+                Err(broadcast::error::RecvError::Lagged(_)) => continue, // viewer fell behind → skip ahead
+                Err(broadcast::error::RecvError::Closed) => break,
+            },
+            incoming = stream.next() => match incoming {
+                Some(Ok(Message::Close(_))) | None | Some(Err(_)) => break,
+                _ => {} // ignore inbound (read-only)
+            }
+        }
+    }
+}
+
 // ── Game start ─────────────────────────────────────────────────────────────────────────────────
 
 /// Start the room's game **iff** every human seat is connected and it hasn't started yet. Idempotent
@@ -354,21 +489,36 @@ fn spawn_game(seed: u64, room: Arc<Room>, mut slots: Vec<Option<SeatIngredients>
         let mut senders: Vec<(PlayerId, mpsc::UnboundedSender<ServerMsg>)> = Vec::new();
         let mut stop_txs: Vec<(PlayerId, oneshot::Sender<Arc<Mutex<StopConfig>>>)> = Vec::new();
 
+        let delay = Duration::from_millis(room.delay_ms as u64);
         for (i, spec) in room.seats.iter().enumerate() {
             let pid = PlayerId(i as u32);
-            match spec.kind {
+            let mut agent: Box<dyn Agent> = match spec.kind {
                 SeatKind::Human => {
                     let ing = slots[i].take().expect("human seat ingredients present");
                     senders.push((pid, ing.to_client_tx.clone()));
                     stop_txs.push((pid, ing.stop_handle_tx));
                     humans.push((pid, ing.stops));
-                    agents.push(Box::new(GreSessionAgent::new(pid, ing.to_client_tx, ing.from_client_rx)));
+                    Box::new(GreSessionAgent::new(pid, ing.to_client_tx, ing.from_client_rx))
                 }
-                // Rl is stubbed to RandomAgent for now (no trained agent yet).
+                // Rl is stubbed to RandomAgent for now (no trained agent yet). Non-human seats get
+                // the spectator-pacing delay (humans pace themselves).
                 SeatKind::Random | SeatKind::Rl => {
-                    agents.push(Box::new(RandomAgent::new(seed ^ (i as u64 + 1))));
+                    let base: Box<dyn Agent> = Box::new(RandomAgent::new(seed ^ (i as u64 + 1)));
+                    if delay.is_zero() {
+                        base
+                    } else {
+                        Box::new(DelayAgent { inner: base, delay })
+                    }
                 }
+            };
+            // Seat 0's view stream is what spectators watch (wrap last, so it sees post-delay state).
+            if i == 0 {
+                agent = Box::new(SpectatorTee {
+                    inner: agent,
+                    hub: Arc::clone(&room.spectate),
+                });
             }
+            agents.push(agent);
         }
 
         // Build the state from each seat's deck; snapshot each human's starting decklist BEFORE the
@@ -399,6 +549,9 @@ fn spawn_game(seed: u64, room: Arc<Room>, mut slots: Vec<Option<SeatIngredients>
                 winner: outcome.winner,
             });
         }
+        room.spectate.publish(ServerMsg::GameOver {
+            winner: outcome.winner,
+        });
         room.start.lock().unwrap().status = Status::Finished {
             winner: outcome.winner.map(|p| p.0),
         };

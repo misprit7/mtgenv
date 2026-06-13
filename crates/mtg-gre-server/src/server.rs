@@ -222,8 +222,13 @@ async fn ws_handler(
         resolve_own_stack: flag("resolvestack", def.resolve_own_stack),
         overrides,
     };
-    // Lobby path: join a specific game's seat.
+    // Lobby paths: spectate (read-only) or join a specific game's seat.
     if let Some(game) = params.get("game").and_then(|g| g.parse::<u64>().ok()) {
+        if params.get("spectate").map(|v| truthy(v)).unwrap_or(false) {
+            return ws.on_upgrade(move |socket| {
+                crate::lobby::handle_spectator_socket(socket, lobby, game)
+            });
+        }
         let seat = params
             .get("seat")
             .and_then(|s| s.parse::<usize>().ok())
