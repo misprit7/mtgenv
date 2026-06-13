@@ -16,7 +16,8 @@ use std::sync::Arc;
 
 use crate::basics::{CardType, Color, CounterKind, DamageKind, ManaCost, Zone};
 use crate::effects::ability::{
-    Ability, ActionPattern, Cost, EventPattern, Keyword, Rewrite, StaticContribution, Timing,
+    Ability, ActionPattern, Cost, EventPattern, Keyword, Qualification, Rewrite,
+    StaticContribution, Timing,
 };
 use crate::effects::condition::Duration;
 use crate::effects::target::{CardFilter, SelectSpec, TargetKind, TargetSpec};
@@ -66,6 +67,7 @@ pub mod grp {
     pub const GLADECOVER_SCOUT: u32 = 62;
     pub const RANCOR: u32 = 63;
     pub const BONESPLITTER: u32 = 64;
+    pub const PACIFISM: u32 = 65;
 }
 
 /// `SelectSpec` for a static affecting "creatures you control" (the anthem scope). min/max are
@@ -661,6 +663,26 @@ pub fn starter_db() -> CardDb {
         mana_colors: Vec::new(),
         text: String::new(),
     }.with_text("Equipped creature gets +2/+0. Equip {1}"));
+    // Pacifism {1}{W} Aura — "Enchanted creature can't attack or block." Two AttachedHost
+    // statics painting the CantAttack/CantBlock qualifications (CR §2.4), read by combat.
+    db.insert(aura(
+        grp::PACIFISM,
+        "Pacifism",
+        Color::White,
+        mana_cost(1, &[(Color::White, 1)]),
+        vec![
+            Ability::Static {
+                contribution: StaticContribution::Qualification(Qualification::CantAttack),
+                affects: attached_host(),
+                duration: Duration::WhileSourcePresent,
+            },
+            Ability::Static {
+                contribution: StaticContribution::Qualification(Qualification::CantBlock),
+                affects: attached_host(),
+                duration: Duration::WhileSourcePresent,
+            },
+        ],
+    ).with_text("Enchant creature. Enchanted creature can't attack or block."));
     db
 }
 
@@ -743,7 +765,7 @@ mod tests {
     #[test]
     fn starter_db_has_expected_cards() {
         let db = starter_db();
-        assert_eq!(db.len(), 36);
+        assert_eq!(db.len(), 37);
         assert!(db.get(grp::FOREST).unwrap().is_mana_source());
         assert_eq!(db.get(grp::FOREST).unwrap().mana_colors, vec![Color::Green]);
         // Grizzly Bears is a vanilla 2/2 with no abilities.

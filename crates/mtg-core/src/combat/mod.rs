@@ -17,7 +17,7 @@ use crate::agent::{
     AttackerOption, BlockerOption, DamageSlot, DecisionRequest, DecisionResponse,
 };
 use crate::basics::{DamageKind, Target, Zone};
-use crate::effects::ability::Keyword;
+use crate::effects::ability::{Keyword, Qualification};
 use crate::effects::action::{Action, ResolutionCtx, Whiteboard, WbReason};
 use crate::ids::{ObjId, PlayerId};
 use crate::priority::Engine;
@@ -89,6 +89,10 @@ impl Engine {
     /// Whether `blocker` may legally block `attacker` given evasion (CR 509.1b). Milestone 5:
     /// flying — a creature with flying can only be blocked by creatures with flying or reach.
     fn can_block(&self, blocker: ObjId, attacker: ObjId) -> bool {
+        // "Can't block" (CR 509.1a, e.g. Pacifism) — never a legal blocker.
+        if self.state.computed(blocker).has_qualification(Qualification::CantBlock) {
+            return false;
+        }
         if self.state.computed(attacker).has_keyword(Keyword::Flying) {
             let bk = self.state.computed(blocker);
             bk.has_keyword(Keyword::Flying) || bk.has_keyword(Keyword::Reach)
@@ -115,6 +119,7 @@ impl Engine {
                 // (CR 702.3) can't attack. Haste (CR 702.10) ignores summoning sickness.
                 cc.is_creature()
                     && !cc.has_keyword(Keyword::Defender)
+                    && !cc.has_qualification(Qualification::CantAttack)
                     && !o.status.tapped
                     && (!o.summoning_sick || cc.has_keyword(Keyword::Haste))
             })
@@ -701,5 +706,45 @@ mod tests {
             .unwrap_or_default();
         assert!(atks.contains(&goblin), "haste attacks despite summoning sickness");
         assert!(!atks.contains(&bears), "a summoning-sick non-haste creature can't attack");
+    }
+
+    #[test]
+    fn pacifism_prevents_attacking_and_blocking() {
+        // "Enchanted creature can't attack or block" → the CantAttack/CantBlock qualifications
+        // remove the host from the attacker pool and from every blocker's eligibility.
+        let mut e = aggro_engine();
+        let free = put_bf(&mut e.state, PlayerId(0), grp::GRIZZLY_BEARS);
+        let pacified = put_bf(&mut e.state, PlayerId(0), grp::GRIZZLY_BEARS);
+        let pac = put_bf(&mut e.state, PlayerId(0), grp::PACIFISM);
+        e.state.objects.get_mut(&pac).unwrap().attached_to = Some(pacified);
+        e.state.mark_chars_dirty();
+        e.state.active_player = PlayerId(0);
+        e.declare_attackers();
+        let atks: Vec<ObjId> = e
+            .state
+            .combat
+            .as_ref()
+            .map(|c| c.attackers.iter().map(|a| a.attacker).collect())
+            .unwrap_or_default();
+        assert!(atks.contains(&free), "an unpacified creature can attack");
+        assert!(!atks.contains(&pacified), "a pacified creature can't attack");
+
+        // Blocking side: a pacified creature on defense can't be assigned as a blocker.
+        let mut e2 = aggro_engine();
+        let attacker = put_bf(&mut e2.state, PlayerId(0), grp::GRIZZLY_BEARS);
+        let blocker = put_bf(&mut e2.state, PlayerId(1), grp::GRIZZLY_BEARS);
+        let pac2 = put_bf(&mut e2.state, PlayerId(1), grp::PACIFISM);
+        e2.state.objects.get_mut(&pac2).unwrap().attached_to = Some(blocker);
+        e2.state.mark_chars_dirty();
+        e2.state.active_player = PlayerId(0);
+        e2.state.combat = Some(CombatState {
+            attackers: vec![Attack { attacker, defender: Target::Player(PlayerId(1)) }],
+            blocks: Vec::new(),
+        });
+        e2.declare_blockers();
+        assert!(
+            e2.state.combat.as_ref().unwrap().blocks.is_empty(),
+            "a pacified creature can't block"
+        );
     }
 }

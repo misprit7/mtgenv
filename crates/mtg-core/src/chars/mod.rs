@@ -17,7 +17,7 @@
 use std::collections::BTreeSet;
 
 use crate::basics::{CardType, Color};
-use crate::effects::ability::{Ability, Keyword, StaticContribution};
+use crate::effects::ability::{Ability, Keyword, Qualification, StaticContribution};
 use crate::effects::target::{CardFilter, SelectSpec};
 use crate::effects::value::PlayerRef;
 use crate::ids::{ObjId, PlayerId, Timestamp};
@@ -34,6 +34,9 @@ pub struct ComputedChars {
     pub subtypes: Vec<String>,
     pub colors: Vec<Color>,
     pub keywords: BTreeSet<Keyword>,
+    /// Qualification markers painted by static abilities (CR 613 layer 6 / §2.4) — the
+    /// "can't"/status flags the structural machinery reads (e.g. Pacifism's CantAttack/CantBlock).
+    pub qualifications: BTreeSet<Qualification>,
 }
 
 impl ComputedChars {
@@ -42,6 +45,9 @@ impl ComputedChars {
     }
     pub fn has_keyword(&self, k: Keyword) -> bool {
         self.keywords.contains(&k)
+    }
+    pub fn has_qualification(&self, q: Qualification) -> bool {
+        self.qualifications.contains(&q)
     }
 }
 
@@ -62,6 +68,7 @@ pub fn compute(state: &GameState, id: ObjId) -> ComputedChars {
         colors: base.colors.clone(),
         // Seed from printed keywords (CR 702); layer 6 grants/removes on top.
         keywords: base.keywords.iter().copied().collect(),
+        qualifications: BTreeSet::new(),
     };
 
     // Every static continuous effect on the battlefield, in timestamp order (CR 613.7). We do
@@ -109,6 +116,12 @@ pub fn compute(state: &GameState, id: ObjId) -> ComputedChars {
             StaticContribution::RemoveKeyword(k) => {
                 if affects_matches(state, e, id, &c.card_types) {
                     c.keywords.remove(k);
+                }
+            }
+            // Qualification markers (CR §2.4) are painted in the abilities layer too.
+            StaticContribution::Qualification(q) => {
+                if affects_matches(state, e, id, &c.card_types) {
+                    c.qualifications.insert(*q);
                 }
             }
             _ => {}
@@ -321,6 +334,21 @@ mod tests {
         let unenchanted = compute(&s, other);
         assert_eq!(unenchanted.power, Some(2), "another creature is unaffected");
         assert!(!unenchanted.has_keyword(Keyword::Trample));
+    }
+
+    #[test]
+    fn pacifism_paints_cant_attack_block_qualifications_on_its_host() {
+        let mut s = cards::build_game(1, &[&[], &[]]);
+        let bears = put(&mut s, PlayerId(0), grp::GRIZZLY_BEARS, Zone::Battlefield);
+        let other = put(&mut s, PlayerId(0), grp::GRIZZLY_BEARS, Zone::Battlefield);
+        let pac = put(&mut s, PlayerId(0), grp::PACIFISM, Zone::Battlefield);
+        s.objects.get_mut(&pac).unwrap().attached_to = Some(bears);
+        s.mark_chars_dirty();
+
+        let host = compute(&s, bears);
+        assert!(host.has_qualification(Qualification::CantAttack), "enchanted creature can't attack");
+        assert!(host.has_qualification(Qualification::CantBlock), "enchanted creature can't block");
+        assert!(!compute(&s, other).has_qualification(Qualification::CantAttack), "another creature is unaffected");
     }
 
     #[test]
