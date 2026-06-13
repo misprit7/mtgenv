@@ -137,9 +137,10 @@ fn print_trust_instructions(ca_path: &std::path::Path) {
     eprintln!(" Install this CA into your OS trust store so the client trusts our");
     eprintln!(" certs (do this once; the CA is cached across runs):");
     eprintln!();
-    eprintln!("  Linux (Debian/Ubuntu/Arch w/ update-ca-certificates):");
-    eprintln!("    sudo cp '{p}' /usr/local/share/ca-certificates/mtga-bridge-ca.crt");
-    eprintln!("    sudo update-ca-certificates");
+    eprintln!("  Linux (Arch/Fedora/openSUSE — p11-kit):");
+    eprintln!("    sudo trust anchor '{p}'");
+    eprintln!("  Linux (Debian/Ubuntu):");
+    eprintln!("    sudo cp '{p}' /usr/local/share/ca-certificates/mtga-bridge-ca.crt && sudo update-ca-certificates");
     eprintln!();
     eprintln!("  macOS:");
     eprintln!("    sudo security add-trusted-cert -d -r trustRoot \\");
@@ -147,5 +148,9 @@ fn print_trust_instructions(ca_path: &std::path::Path) {
     eprintln!();
     eprintln!("  Windows (Admin PowerShell/cmd):");
     eprintln!("    certutil -addstore -f Root \"{p}\"");
+    eprintln!();
+    eprintln!("  NOTE: running MTGA under Steam/Proton? This host CA propagates into");
+    eprintln!("  the Wine prefix's trust store, which is what the client's UnityTLS");
+    eprintln!("  validates the FrontDoor connection against. Fully restart MTGA after.");
     eprintln!("====================================================================");
 }
