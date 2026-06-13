@@ -9,6 +9,12 @@ engine**, intended to be the fast, headless simulation core of a **Gymnasium RL
 environment** for training an MTG AI in Python + PyTorch (self-play). Long-term it should
 implement the full ruleset; near-term it's a tiny card pool with a correct core.
 
+## Setup
+
+After cloning, run `./scripts/setup.sh` once (idempotent). It downloads Scryfall's
+`oracle_cards` bulk data into the gitignored `data/scryfall/` and installs the web client's
+npm deps. Then `cargo build` / `cargo test`.
+
 ## Read order (the docs are the spec & the plan)
 
 1. `docs/design/WHITEBOARD_MODEL.md` — **the architecture.** The engine is modeled on MTG
