@@ -2701,6 +2701,76 @@ mod expect_tests {
     }
 
     #[test]
+    fn search_fetches_a_basic_land_tapped_c5() {
+        use crate::basics::{CardType, ZonePos};
+        use crate::basics::ZoneDest;
+        use crate::effects::action::{ResolutionCtx, WbReason};
+        use crate::effects::target::CardFilter;
+        use crate::effects::value::PlayerRef;
+        use crate::effects::Effect;
+        // P0 library: a Forest (basic land) + a Grizzly Bears. Search for a basic land → battlefield tapped.
+        let state = cards::build_game(1, &[&[grp::FOREST, grp::GRIZZLY_BEARS], &[]]);
+        let mut e = Engine::new(state, vec![Box::new(PassAgent), Box::new(PassAgent)]); // PassAgent auto-picks min cards
+        e.resolve_effect(
+            &Effect::Search {
+                who: PlayerRef::Controller,
+                zone: Zone::Library,
+                filter: CardFilter::All(vec![
+                    CardFilter::HasCardType(CardType::Land),
+                    CardFilter::Supertype("Basic".into()),
+                ]),
+                min: 1,
+                max: 1,
+                to: ZoneDest { zone: Zone::Battlefield, pos: ZonePos::Any },
+                tapped: true,
+            },
+            &ResolutionCtx { controller: Some(PlayerId(0)), ..Default::default() },
+            WbReason::Resolve(crate::ids::StackId(0)),
+        );
+        let forest = e
+            .state
+            .player(PlayerId(0))
+            .battlefield
+            .iter()
+            .copied()
+            .find(|&id| e.state.object(id).chars.grp_id == grp::FOREST);
+        assert!(forest.is_some(), "fetched the basic land onto the battlefield");
+        assert!(e.state.object(forest.unwrap()).status.tapped, "the fetched land entered tapped");
+        assert_eq!(e.state.player(PlayerId(0)).library.len(), 1, "only the non-basic remains in library");
+    }
+
+    #[test]
+    fn fight_deals_mutual_damage_c8() {
+        use crate::basics::Target;
+        use crate::effects::action::{ResolutionCtx, WbReason};
+        use crate::effects::{Effect, EffectTarget};
+        // A 3/3 Hill Giant fights a 2/2 Grizzly Bears: the bears dies (3 ≥ 2), the giant survives
+        // with 2 marked damage.
+        let mut state = cards::build_game(1, &[&[], &[]]);
+        let giant = put(&mut state, PlayerId(0), grp::HILL_GIANT, Zone::Battlefield); // 3/3
+        let bears = put(&mut state, PlayerId(1), grp::GRIZZLY_BEARS, Zone::Battlefield); // 2/2
+        let mut e = pass_engine(state);
+        e.resolve_effect(
+            &Effect::Fight { a: EffectTarget::ChosenIndex(0), b: EffectTarget::ChosenIndex(1) },
+            &ResolutionCtx {
+                controller: Some(PlayerId(0)),
+                chosen_targets: vec![Target::Object(giant), Target::Object(bears)],
+                ..Default::default()
+            },
+            WbReason::Resolve(crate::ids::StackId(0)),
+        );
+        assert_eq!(e.state.object(giant).damage_marked, 2, "giant took 2 from the bears");
+        assert_eq!(e.state.object(bears).damage_marked, 3, "bears took 3 from the giant (lethal)");
+        // The lethal-damage SBA then kills the bears on the next agenda pass.
+        assert!(
+            crate::sba::collect(&e.state)
+                .iter()
+                .any(|s| matches!(s, crate::sba::StateBasedAction::CreatureDies { creature, .. } if *creature == bears)),
+            "the 2/2 is marked for death"
+        );
+    }
+
+    #[test]
     fn landfall_triggers_when_a_land_you_control_enters_c4() {
         // C4: a "whenever a land you control enters" trigger (modeled as PermanentEnters of a land
         // you control) fires when you play a land — here, putting a +1/+1 counter on the source.

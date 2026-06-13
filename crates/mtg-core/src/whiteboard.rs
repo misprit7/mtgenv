@@ -12,8 +12,9 @@
 
 use crate::agent::{
     ActionRef, DecisionRequest, DecisionResponse, GameEvent, ModeOption, ReplacementOption,
+    SelectReason,
 };
-use crate::basics::{CardType, CounterKind, DamageKind, Target, Zone};
+use crate::basics::{CardType, CounterKind, DamageKind, Target, Zone, ZoneDest};
 use crate::effects::ability::{Ability, ActionPattern, Rewrite};
 use crate::effects::action::{Action, ResolutionCtx, Whiteboard, WbReason};
 use crate::effects::target::{CardFilter, TokenSpec};
@@ -97,8 +98,86 @@ impl Engine {
                     }
                 }
             }
+            // C5: search a zone (asks the searcher which card(s)), move the picks to `to`, then
+            // shuffle a searched library. Done imperatively (search/shuffle aren't whiteboard
+            // actions); the `wb` for this resolution stays for any sibling leaves.
+            Effect::Search { who, zone, filter, min, max, to, tapped } => {
+                self.interpret_search(ctx, *who, *zone, filter, *min, *max, to, *tapped);
+            }
             // Pure leaves (and not-yet-interactive nodes) lower without agent interaction.
             _ => self.materialize(effect, ctx, wb, cursor),
+        }
+    }
+
+    /// C5: resolve a `Search` — enumerate the searcher's matching cards in `zone`, ask which to
+    /// take (`SelectCards`), move them to `to`, and shuffle a searched library (CR 701.19).
+    /// (Entering tapped is wired once `Effect::Search` carries the flag — pending design IR.)
+    #[allow(clippy::too_many_arguments)]
+    fn interpret_search(
+        &mut self,
+        ctx: &ResolutionCtx,
+        who: PlayerRef,
+        zone: Zone,
+        filter: &CardFilter,
+        min: u32,
+        max: u32,
+        to: &ZoneDest,
+        tapped: bool,
+    ) {
+        let searcher = self.eval_player(who, ctx);
+        let from: Vec<ObjId> = self
+            .zone_cards(searcher, zone)
+            .into_iter()
+            .filter(|&id| self.count_filter_matches(id, filter))
+            .collect();
+        let picks: Vec<ObjId> = if from.is_empty() {
+            Vec::new()
+        } else {
+            let resp = self.ask(
+                searcher,
+                &DecisionRequest::SelectCards {
+                    reason: SelectReason::Search,
+                    from: from.clone(),
+                    min,
+                    max,
+                    description: "Search".into(),
+                },
+            );
+            let idxs = match resp {
+                DecisionResponse::Indices(v) => v,
+                DecisionResponse::Index(i) => vec![i],
+                _ => Vec::new(),
+            };
+            idxs.iter()
+                .filter_map(|&i| from.get(i as usize).copied())
+                .take(max as usize)
+                .collect()
+        };
+        for card in &picks {
+            if self.state.move_object(*card, to.zone, searcher) {
+                // Fetch lands enter tapped (CR — Fabled Passage / Escape Tunnel).
+                if tapped && to.zone == Zone::Battlefield {
+                    if let Some(o) = self.state.objects.get_mut(card) {
+                        o.status.tapped = true;
+                    }
+                }
+                self.broadcast(GameEvent::ObjectMoved { obj: *card, to: to.zone });
+            }
+        }
+        if zone == Zone::Library {
+            self.state.shuffle_library(searcher);
+        }
+    }
+
+    /// The `ObjId`s in one of a player's zones (for selection enumeration).
+    fn zone_cards(&self, p: PlayerId, zone: Zone) -> Vec<ObjId> {
+        let pl = self.state.player(p);
+        match zone {
+            Zone::Library => pl.library.clone(),
+            Zone::Hand => pl.hand.clone(),
+            Zone::Graveyard => pl.graveyard.clone(),
+            Zone::Exile => pl.exile.clone(),
+            _ => Vec::new(),
         }
     }
 
@@ -227,6 +306,29 @@ impl Engine {
                     player: self.eval_player(*who, ctx),
                     count,
                 });
+            }
+            // C8: two creatures fight (CR 701.12) — each deals damage equal to its power to the
+            // other, simultaneously (both Damage actions in this one whiteboard, so deathtouch /
+            // lethal interact). `a`/`b` are usually ChosenIndex (the spell's two locked targets).
+            Effect::Fight { a, b } => {
+                let oa = self.resolve_target(a, ctx, cursor);
+                let ob = self.resolve_target(b, ctx, cursor);
+                if let (Some(Target::Object(ca)), Some(Target::Object(cb))) = (oa, ob) {
+                    let pa = self.state.computed(ca).power.unwrap_or(0).max(0) as u32;
+                    let pb = self.state.computed(cb).power.unwrap_or(0).max(0) as u32;
+                    wb.push(Action::Damage {
+                        target: Target::Object(cb),
+                        amount: pa,
+                        source: ca,
+                        kind: DamageKind::Noncombat,
+                    });
+                    wb.push(Action::Damage {
+                        target: Target::Object(ca),
+                        amount: pb,
+                        source: cb,
+                        kind: DamageKind::Noncombat,
+                    });
+                }
             }
             // C6: create N copies of a token (CR 111).
             Effect::CreateToken { spec, count, controller } => {
@@ -711,6 +813,10 @@ impl Engine {
             CardFilter::HasSubtype(s) => cc.subtypes.contains(s),
             CardFilter::HasColor(c) => cc.colors.contains(c),
             CardFilter::Colorless => cc.colors.is_empty(),
+            // Supertype (Basic/Legendary/Snow) reads base chars — not a layered characteristic.
+            CardFilter::Supertype(s) => {
+                self.state.objects.get(&id).is_some_and(|o| o.chars.supertypes.contains(s))
+            }
             CardFilter::All(fs) => fs.iter().all(|f| self.count_filter_matches(id, f)),
             CardFilter::AnyOf(fs) => fs.iter().any(|f| self.count_filter_matches(id, f)),
             CardFilter::Not(f) => !self.count_filter_matches(id, f),
