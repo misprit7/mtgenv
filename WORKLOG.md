@@ -5,6 +5,18 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **engine:** task #14 checkpoint 2 — **rest of the evergreen keywords**. Haste (combat
+  `declare_attackers` ignores summoning sickness when the creature has Haste); flash
+  (`legal_priority_actions` treats Flash as instant-speed timing); hexproof (`targetable_by` +
+  `target_candidates` exclude an opponent-controlled Hexproof permanent, but its own controller
+  may still target it); indestructible-vs-destroy confirmed (added `Effect::Destroy` IR →
+  `Action::Destroy`, whose `apply_action` skips Indestructible). New IR: only `Effect::Destroy`
+  (additive; coordinated mentally with the existing vocabulary — no breaking change). Scryfall-
+  verified single-keyword cards added: Raging Goblin (Haste), King Cheetah (Flash), Gladecover
+  Scout (Hexproof), Darksteel Myr (colorless Artifact Creature, Indestructible), Murder
+  ({1}{B}{B} "Destroy target creature"). starter_db 29→34. 71 mtg-core tests green, clippy
+  clean. **Deferred:** ward (needs a cost-payment IR — will ping `design` at checkpoint 3/4)
+  and shroud (niche, not in the Keyword enum). Next: (3) auras+equipment, (4) planeswalkers.
 - **engine:** task #14 checkpoint 1 — **evergreen COMBAT keywords**. Added PRINTED keywords
   (`Characteristics.keywords: Vec<Keyword>`, seeded into `chars::compute` so the layer system
   layers grants/removes on top). Implemented: first strike & double strike (combat damage now
