@@ -44,16 +44,31 @@ pub fn lands_only_state(num_players: usize, seed: u64) -> GameState {
     state
 }
 
-/// Run one lands-only game between `agents` (indexed by seat) through `mtg-core`'s engine.
-pub fn run_lands_game(agents: Vec<Box<dyn Agent>>, seed: u64) -> Outcome {
-    let state = lands_only_state(agents.len(), seed);
-    // The engine shuffles, deals opening hands, and runs the turn/priority loop to a result.
+/// A two-player demo game with the engine's starter card DB: a Gruul deck of lands, vanilla
+/// creatures, and burn — so casting, the stack, and combat are all exercised.
+pub fn demo_state(seed: u64) -> GameState {
+    mtg_core::cards::two_player_demo_game(seed)
+}
+
+/// Run a prepared `state` through `mtg-core`'s engine with `agents` (indexed by seat). The
+/// engine shuffles, deals opening hands, and runs the turn/priority/combat loop to a result.
+pub fn run_state(state: GameState, agents: Vec<Box<dyn Agent>>) -> Outcome {
     let mut engine = Engine::new(state, agents);
     let winner = engine.run_game();
     Outcome {
         winner,
         turns: engine.state.turn_number,
     }
+}
+
+/// Run one lands-only game between `agents` (indexed by seat) through `mtg-core`'s engine.
+pub fn run_lands_game(agents: Vec<Box<dyn Agent>>, seed: u64) -> Outcome {
+    run_state(lands_only_state(agents.len(), seed), agents)
+}
+
+/// Run one demo game (lands + creatures + burn) between `agents` through the engine.
+pub fn run_demo_game(agents: Vec<Box<dyn Agent>>, seed: u64) -> Outcome {
+    run_state(demo_state(seed), agents)
 }
 
 #[cfg(test)]

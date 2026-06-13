@@ -80,7 +80,8 @@ async fn handle_socket(socket: WebSocket) {
         let human = GreSessionAgent::new(PlayerId(0), to_client_tx, from_client_rx);
         let bot = RandomAgent::new(seed);
         let agents: Vec<Box<dyn Agent>> = vec![Box::new(human), Box::new(bot)];
-        let outcome = driver::run_lands_game(agents, seed);
+        // Demo deck = lands + creatures + burn, so the browser game exercises casting & combat.
+        let outcome = driver::run_demo_game(agents, seed);
         let _ = result_tx.send(ServerMsg::GameOver {
             winner: outcome.winner,
         });

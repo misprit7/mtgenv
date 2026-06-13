@@ -172,7 +172,7 @@ Commands:
   handsize <player> <n>       set maximum hand size
   deal on|off                 deal opening hands on 'run' (default on)
   show [player]               dump full state (no arg) or a seat's PlayerView
-  play [seed]                 quick: default lands-only game (you vs RandomAgent) and run it
+  play [lands] [seed]         quick game vs RandomAgent (demo deck = creatures+burn; 'lands' = lands-only)
   run                         run the configured scenario to completion
   quit                        exit
 Lines starting with '#' are comments. At a decision prompt: an index, 'p'/Enter to pass, '?' help, 'dump' to re-show.";
@@ -313,9 +313,16 @@ Lines starting with '#' are comments. At a decision prompt: an index, 'p'/Enter 
     // ── play ─────────────────────────────────────────────────────────────────────────────────
 
     fn cmd_play(&mut self, args: &[&str]) {
-        let seed = args.first().and_then(|s| s.parse().ok()).unwrap_or(self.seed);
+        // `play` → demo game (lands + creatures + burn); `play lands` → lands-only.
+        let lands = args.first() == Some(&"lands");
+        let rest: &[&str] = if lands { &args[1..] } else { args };
+        let seed = rest.first().and_then(|s| s.parse().ok()).unwrap_or(self.seed);
         self.seed = seed;
-        self.state = crate::driver::lands_only_state(2, seed);
+        self.state = if lands {
+            crate::driver::lands_only_state(2, seed)
+        } else {
+            crate::driver::demo_state(seed)
+        };
         self.seats = vec![SeatSpec::Human, SeatSpec::Random(seed ^ 0xB0B)];
         self.deal = true;
         self.cmd_run();
