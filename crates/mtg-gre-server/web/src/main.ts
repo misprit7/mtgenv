@@ -42,7 +42,8 @@ function norm(o: Any): Any {
   if (o.Hidden) return { hidden: true, id: o.Hidden.id, controller: o.Hidden.controller };
   const v = o.Visible;
   return { id: v.id, chars: v.chars, tapped: !!(v.status && v.status.tapped),
-    sick: v.summoning_sick, dmg: v.damage_marked || 0, controller: v.controller, owner: v.owner };
+    sick: v.summoning_sick, dmg: v.damage_marked || 0, counters: v.counters,
+    controller: v.controller, owner: v.owner };
 }
 const meSeat = (): number => view.seat;
 const oppId = (): number | null => { const p = view.players.find((p: Any) => p.player !== meSeat()); return p ? p.player : null; };
@@ -158,10 +159,19 @@ function cardEl(c: Any, ctx: Any): HTMLElement {
     if ((view.combat.blockers || []).some((b: Any) => b[0] === c.id)) d.appendChild(el("div", "badge blk", "BLK"));
   }
   if (c.dmg > 0) d.appendChild(el("div", "badge dmg", `${c.dmg}✶`));
+  const cc = (c.counters && c.counters.counts) || {};
+  const ck = Object.keys(cc);
+  if (ck.length) {
+    const wrap = el("div", "ctrs");
+    ck.forEach((k) => wrap.appendChild(el("span", "ctr", `${counterLabel(k)}×${cc[k]}`)));
+    d.appendChild(wrap);
+  }
 
   if (idx >= 0) d.onclick = () => onCardClick(idx);
   return d;
 }
+const CTR_LABEL: Any = { PlusOnePlusOne: "+1/+1", MinusOneMinusOne: "−1/−1" };
+function counterLabel(k: string): string { return CTR_LABEL[k] || k; }
 
 const LETTER: Any = { White: "w", Blue: "u", Black: "b", Red: "r", Green: "g" };
 function colorClass(chars: Any): string {

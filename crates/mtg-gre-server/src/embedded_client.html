@@ -124,6 +124,8 @@
     padding: 0 3px; border-radius: 4px; }
   .badge.atk { background: #d23b3b; color: #fff; } .badge.blk { background: #3b78d2; color: #fff; }
   .badge.dmg { background: #111; color: #ff7a7a; right: 3px; left: auto; bottom: 18px; }
+  .ctrs { position: absolute; top: 18px; left: 3px; display: flex; flex-direction: column; gap: 1px; }
+  .ctr { background: #2a8a52; color: #fff; font-size: 7px; font-weight: 800; padding: 0 2px; border-radius: 3px; border: 1px solid rgba(0,0,0,.4); }
   .card.sick .c-art::after { content: "˝"; }
   .card.sick { opacity: .82; }
   .hand .card { width: 104px; height: 146px; }
@@ -212,7 +214,8 @@
     if (o.Hidden) return { hidden: true, id: o.Hidden.id, controller: o.Hidden.controller };
     const v = o.Visible;
     return { id: v.id, chars: v.chars, tapped: !!(v.status && v.status.tapped),
-      sick: v.summoning_sick, dmg: v.damage_marked || 0, controller: v.controller, owner: v.owner };
+      sick: v.summoning_sick, dmg: v.damage_marked || 0, counters: v.counters,
+      controller: v.controller, owner: v.owner };
   }
   const me = () => view.seat;
   const oppId = () => { const p = view.players.find(p => p.player !== me()); return p ? p.player : null; };
@@ -337,10 +340,18 @@
       if ((view.combat.blockers || []).some(b => b[0] === c.id)) d.appendChild(el("div", "badge blk", "BLK"));
     }
     if (c.dmg > 0) d.appendChild(el("div", "badge dmg", c.dmg + "✶"));
+    const cc = (c.counters && c.counters.counts) || {};
+    const ck = Object.keys(cc);
+    if (ck.length) {
+      const wrap = el("div", "ctrs");
+      ck.forEach(k => wrap.appendChild(el("span", "ctr", counterLabel(k) + "×" + cc[k])));
+      d.appendChild(wrap);
+    }
 
     if (idx >= 0) d.onclick = () => onCardClick(idx);
     return d;
   }
+  function counterLabel(k) { return ({ PlusOnePlusOne: "+1/+1", MinusOneMinusOne: "−1/−1" })[k] || k; }
 
   function colorClass(chars) {
     if (isLand(chars)) return "land";
