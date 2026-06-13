@@ -7,13 +7,14 @@ use crate::agent::{
     CharacteristicsView, CombatView, ObjView, PlayerPrivateView, PlayerPublicView, PlayerView,
     StackObjView,
 };
+use crate::cards::CardDb;
 use crate::ids::ObjId;
 use crate::ids::PlayerId;
 use crate::stack::{StackObject, StackObjectKind};
 
 use super::{Characteristics, GameState, Object};
 
-fn chars_view(c: &Characteristics) -> CharacteristicsView {
+fn chars_view(c: &Characteristics, db: &CardDb) -> CharacteristicsView {
     CharacteristicsView {
         name: c.name.clone(),
         card_types: c.card_types.iter().map(|t| t.as_str().to_string()).collect(),
@@ -25,18 +26,18 @@ fn chars_view(c: &Characteristics) -> CharacteristicsView {
         power: c.power,
         toughness: c.toughness,
         keywords: Vec::new(),
-        // TODO(engine): populate from the card-data layer (a `text` field on
-        // `Characteristics`/`CardDef`) so the UI shows real oracle text.
-        rules_text: String::new(),
+        // Oracle text from the card-data layer (CardDef.text), keyed by grp_id — kept out of
+        // per-object state (it's static card data).
+        rules_text: db.get(c.grp_id).map(|d| d.text.clone()).unwrap_or_default(),
         grp_id: c.grp_id,
     }
 }
 
 /// A fully-perceived object (public zones + the viewer's own hand).
-fn visible(o: &Object) -> ObjView {
+fn visible(o: &Object, db: &CardDb) -> ObjView {
     ObjView::Visible {
         id: o.id,
-        chars: chars_view(&o.chars),
+        chars: chars_view(&o.chars, db),
         controller: o.controller,
         owner: o.owner,
         zone: o.zone,
@@ -51,7 +52,7 @@ fn visible(o: &Object) -> ObjView {
 fn obj_views<'a>(state: &'a GameState, ids: impl IntoIterator<Item = &'a ObjId>) -> Vec<ObjView> {
     ids.into_iter()
         .filter_map(|id| state.objects.get(id))
-        .map(visible)
+        .map(|o| visible(o, &state.card_db))
         .collect()
 }
 
@@ -60,7 +61,7 @@ fn stack_view(state: &GameState, s: &StackObject) -> StackObjView {
         StackObjectKind::Spell(id) => state
             .objects
             .get(&id)
-            .map(|o| chars_view(&o.chars))
+            .map(|o| chars_view(&o.chars, &state.card_db))
             .unwrap_or_default(),
         StackObjectKind::Ability { .. } => CharacteristicsView {
             name: "Ability".to_string(),

@@ -51,9 +51,18 @@ pub struct CardDef {
     /// Non-empty ⇒ this permanent has a "{T}: add one mana of one of these colours" ability
     /// (CR 605). Empty for non-mana cards.
     pub mana_colors: Vec<Color>,
+    /// Printed oracle/rules text for display (the view's `rules_text`). Reflects what the
+    /// engine actually implements (Scryfall-verified where the implementation matches).
+    pub text: String,
 }
 
 impl CardDef {
+    /// Builder: set the display rules text.
+    fn with_text(mut self, text: &str) -> Self {
+        self.text = text.to_string();
+        self
+    }
+
     /// The spell ability's effect (CR 113.3a), if this card has one (instants/sorceries).
     pub fn spell_effect(&self) -> Option<&Effect> {
         self.abilities.iter().find_map(|a| match a {
@@ -103,6 +112,7 @@ fn basic_land(grp_id: u32, name: &str, color: Color) -> CardDef {
         chars,
         abilities: Vec::new(),
         mana_colors: vec![color],
+        text: String::new(),
     }
 }
 
@@ -131,6 +141,7 @@ fn creature(
         },
         abilities,
         mana_colors: Vec::new(),
+        text: String::new(),
     }
 }
 
@@ -158,6 +169,7 @@ fn spell(grp_id: u32, name: &str, ty: CardType, color: Color, cost: ManaCost, ef
         },
         abilities: vec![Ability::Spell { effect }],
         mana_colors: Vec::new(),
+        text: String::new(),
     }
 }
 
@@ -178,10 +190,10 @@ fn deal_to_any(amount: i64) -> Effect {
 /// Build the starter card registry.
 pub fn starter_db() -> CardDb {
     let mut db = CardDb::default();
-    db.insert(basic_land(grp::PLAINS, "Plains", Color::White));
-    db.insert(basic_land(grp::ISLAND, "Island", Color::Blue));
-    db.insert(basic_land(grp::MOUNTAIN, "Mountain", Color::Red));
-    db.insert(basic_land(grp::FOREST, "Forest", Color::Green));
+    db.insert(basic_land(grp::PLAINS, "Plains", Color::White).with_text("({T}: Add {W}.)"));
+    db.insert(basic_land(grp::ISLAND, "Island", Color::Blue).with_text("({T}: Add {U}.)"));
+    db.insert(basic_land(grp::MOUNTAIN, "Mountain", Color::Red).with_text("({T}: Add {R}.)"));
+    db.insert(basic_land(grp::FOREST, "Forest", Color::Green).with_text("({T}: Add {G}.)"));
     db.insert(vanilla_creature(
         grp::GRIZZLY_BEARS,
         "Grizzly Bears",
@@ -207,7 +219,7 @@ pub fn starter_db() -> CardDb {
         Color::Red,
         mana_cost(0, &[(Color::Red, 1)]),
         deal_to_any(2),
-    ));
+    ).with_text("Shock deals 2 damage to any target."));
     db.insert(spell(
         grp::LIGHTNING_BOLT,
         "Lightning Bolt",
@@ -215,7 +227,7 @@ pub fn starter_db() -> CardDb {
         Color::Red,
         mana_cost(0, &[(Color::Red, 1)]),
         deal_to_any(3),
-    ));
+    ).with_text("Lightning Bolt deals 3 damage to any target."));
     db.insert(spell(
         grp::DIVINATION,
         "Divination",
@@ -226,7 +238,8 @@ pub fn starter_db() -> CardDb {
             who: PlayerRef::Controller,
             count: ValueExpr::Fixed(2),
         },
-    ));
+    ).with_text("Draw two cards."));
+    // Simplified to the gain-life mode (the printed card is modal "choose one").
     db.insert(spell(
         grp::HEALING_SALVE,
         "Healing Salve",
@@ -237,7 +250,7 @@ pub fn starter_db() -> CardDb {
             who: PlayerRef::Controller,
             amount: ValueExpr::Fixed(3),
         },
-    ));
+    ).with_text("You gain 3 life."));
     // Elvish Visionary {1}{G} 1/1 — "When this creature enters, draw a card." (ETB trigger.)
     db.insert(creature(
         grp::ELVISH_VISIONARY,
@@ -256,7 +269,7 @@ pub fn starter_db() -> CardDb {
                 count: ValueExpr::Fixed(1),
             },
         }],
-    ));
+    ).with_text("When this creature enters, draw a card."));
     // Flametongue Kavu {3}{R} 4/2 — "When this creature enters, it deals 4 damage to target
     // creature." (ETB trigger that targets — chosen as it goes on the stack, CR 603.3d.)
     db.insert(creature(
@@ -282,7 +295,7 @@ pub fn starter_db() -> CardDb {
                 kind: DamageKind::Noncombat,
             },
         }],
-    ));
+    ).with_text("When this creature enters, it deals 4 damage to target creature."));
     // Servant of the Scale {G} 0/0 — "This creature enters with a +1/+1 counter on it."
     // (ETB replacement; the dies-trigger clause is omitted for the prototype.) Without the
     // replacement it would be a 0/0 destroyed immediately by the toughness-0 SBA.
@@ -301,7 +314,7 @@ pub fn starter_db() -> CardDb {
                 n: 1,
             },
         }],
-    ));
+    ).with_text("This creature enters with a +1/+1 counter on it."));
     // Fog Bank {1}{U} 0/2 — "Prevent all combat damage that would be dealt to and dealt by
     // this creature." (Prototype models the "dealt to" prevention; Defender/Flying and the
     // "dealt by" clause — moot at power 0 — are omitted.)
@@ -320,7 +333,7 @@ pub fn starter_db() -> CardDb {
             },
             rewrite: Rewrite::Prevent,
         }],
-    ));
+    ).with_text("Prevent all combat damage that would be dealt to this creature."));
     db
 }
 
@@ -414,6 +427,12 @@ mod tests {
         // Shock and Lightning Bolt are instants with a spell ability.
         assert!(db.get(grp::SHOCK).unwrap().spell_effect().is_some());
         assert!(db.get(grp::LIGHTNING_BOLT).unwrap().spell_effect().is_some());
+        // Oracle text is carried for display (the view's rules_text); vanilla cards have none.
+        assert_eq!(
+            db.get(grp::LIGHTNING_BOLT).unwrap().text,
+            "Lightning Bolt deals 3 damage to any target."
+        );
+        assert!(db.get(grp::GRIZZLY_BEARS).unwrap().text.is_empty());
     }
 
     #[test]
