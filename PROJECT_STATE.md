@@ -82,6 +82,17 @@ MTGA client.
   design's `agent.rs`/`effects/`/`basics.rs`; the interpreter lives in the engine over
   design's IR. Deferred (M4–M5): whiteboard replacement/prevention pass, the layer system,
   keywords, mana-via-IR, the PayCost agent decision, mulligans.
+- **webui done with #8 (M1+M2):** `mtg-gre-server` plays a human (browser, seat 0) vs `RandomAgent`
+  through the one `Agent` boundary — axum + WebSocket, `GreSessionAgent`, a JSON projection of
+  `DecisionRequest`/`Response`/`PlayerView` with the engine's legal-option masking. An MTGO-style
+  board: real card frames (Scryfall art + official mana-symbol SVGs, baked manifest — no runtime
+  API), hand at the bottom, lands/creatures split, a 12-step phase bar, clickable GY/exile/decklist
+  zone viewers, hover→full-card preview, deck picker (Burn/Bears/demo). **MTGA auto-pass/stops live
+  client-side** in `GreSessionAgent` (engine auto-pass off): stops toggle mid-game with no reset.
+  **Library peek is RL-safe** — a static starting decklist snapshotted server-side from `GameState`
+  (never via `PlayerView`, so it can't leak draws to the RL agent). Ships as a no-build embedded
+  client *and* a Vite/TS client (kept in sync). Also an expressive scriptable CLI (`mtg-cli`-style
+  scenario setup/inspection). Blocked-on-decompile bits (real GRE transport/auth) remain M3.
 - `mtg-core` is headless (no `egui`/`eframe`); the engine is built fresh under the workspace.
 - Docs in place: architecture (`docs/design/WHITEBOARD_MODEL.md`), rules
   (`docs/rules/RULES_SUMMARY.md` + PDF/text), plans (`docs/plans/`), `CLAUDE.md`.

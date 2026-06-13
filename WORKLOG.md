@@ -5,6 +5,21 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **webui:** **live mid-game stop toggling** (fixed: was resetting the game) + **debug library
+  peek**. Stops: moved the MTGA auto-pass/stops POLICY client-side into `GreSessionAgent` over a
+  shared `Arc<Mutex<driver::Stops>>` the socket mutates on `SetStop`/`SetOption`; engine auto-pass
+  stays OFF so the agent elides windows per the live config — clicking a phase-bar step or top-bar
+  toggle now changes stops at the next priority window with **no reset** (verified browser +
+  Playwright). (Engine also landed a server-side `stops_handle`; webui doesn't consume it.) Library:
+  a player can't see their own library (hidden info; would leak draws to the RL agent if put in
+  `PlayerView` — design flagged), so the peek is a **static starting decklist snapshotted server-side
+  from `GameState` before run** (`ServerMsg::Decklist`, grouped by card, order discarded) → grouped
+  MTGO-style deck-view modal on the Lib pile. Also: removed artist credits, hover→full-card image,
+  MTGO phase bar (all 12 steps) above the hand, clickable GY/exile zone viewers. Mirrored across the
+  no-build embedded client + the Vite client (rebuilt dist; CSS synced). 10 mtg-gre-server tests green.
+  NOTE: `embedded_client.html` is baked via `include_str!` in server.rs — editing it only re-bakes
+  when server.rs's mtime changes (touch it before rebuild); and when `web/dist/` exists the server
+  serves the Vite build, not the embedded client (keep both in sync).
 - **engine:** task #14 checkpoint 3 — **auras + equipment** (the attachment subsystem), in three
   commits. **3a Auras:** `Object.attached_to` + detach-on-zone-change in `move_object`;
   `CardFilter::AttachedHost` matcher (source-relative, like ItSelf → resolves to the host) so a
