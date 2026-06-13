@@ -80,6 +80,12 @@ pub enum CardFilter {
     /// is what lets self-referential replacements live in a *global* rewrite scan (which checks
     /// every permanent's replacements against an event) without leaking onto other objects.
     ItSelf,
+    /// Matches iff the candidate object **is the permanent the matcher's SOURCE is attached to**
+    /// (its host) — the aura/equipment analogue of `ItSelf`. Lets an aura's/equipment's buff live
+    /// in the normal global static scan with no special-casing: e.g. Rancor's "enchanted creature
+    /// gets +2/+0 and has trample" = a static `affects` filter of `AttachedHost`. The engine
+    /// resolves it via the source's `attached_to`.
+    AttachedHost,
 }
 
 /// Mana an ability/effect produces (CR 605/106). A simple bag; one entry per produced color.

@@ -4,7 +4,7 @@
 //! continuous/static (which contribute to layers + qualifications).
 
 use super::condition::{Condition, Duration};
-use super::target::{CardFilter, SelectSpec};
+use super::target::{CardFilter, SelectSpec, TargetSpec};
 use super::value::ValueExpr;
 use super::Effect;
 use crate::basics::{CardType, Color, CounterKind, DamageKind, ManaCost};
@@ -211,5 +211,13 @@ pub enum Ability {
         contribution: StaticContribution,
         affects: SelectSpec,
         duration: Duration,
+    },
+    /// The Aura marker (CR 303/702.5): this permanent spell **targets** per `target` at cast
+    /// (115/601.2c) and **enters the battlefield attached** to that target on resolution
+    /// (608.3g) — rather than via a spell-ability `effect`. The engine reads this to require the
+    /// cast-time target and to set the resulting permanent's `attached_to`. The aura's actual
+    /// buff is expressed separately as `Static` abilities scoped with `CardFilter::AttachedHost`.
+    Enchant {
+        target: TargetSpec,
     },
 }
