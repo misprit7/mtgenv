@@ -5,6 +5,18 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **webui:** **lobby spectating + per-decision delay** (user request). Read-only spectating:
+  `/ws?game=<id>&spectate=1` subscribes to a per-room `SpectateHub` (a `tokio::broadcast` of seat-0
+  view frames, fed by a `SpectatorTee` agent wrapping seat 0 that mirrors every `observe` to the
+  hub) — late joiners get the cached current board immediately, then live frames, then GameOver. The
+  existing game client renders the stream read-only (`👁 Spectating` banner, no prompts). Per-game
+  **decision delay** (`delay_ms` in create form/REST): a `DelayAgent` wraps each non-human seat and
+  `sleep`s before each decision, pacing the single-threaded engine so AI-vs-AI games are watchable;
+  humans unaffected. Lobby Spectate button now live for non-finished games; ⏱ chip shows the delay;
+  also added a DELETE endpoint + ✕ remove / Clear-finished (prior commit). Verified (WS + Playwright):
+  delay=0 game finishes instantly → spectator gets cached final view + GameOver; delay=120 game
+  streams paced live frames (13 over 2.5s, spread in time); late-join gets the board at t=0. 10 web
+  tests green. Commits 197cfe0 (remove/clear), 7b204ab (spectate+delay).
 - **design:** **Effect-IR for batch-1 caps + first real cards (Selesnya Landfall push).** Additive
   IR: `CardFilter::Supertype` + `Effect::Search.tapped` + `Effect::Fight` (06ce436);
   `StaticContribution::SetBasePTValue` (7a CDA) + `ManaCost.x` (27879eb); `ValueExpr::CountersOnSelf`
