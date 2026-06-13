@@ -13,6 +13,11 @@ let lastTurn = 0;
 const multi = new Set<number>();
 let orderSeq: number[] = [];
 
+// Card art: a baked manifest (grp_id → art_crop/artist), batch-resolved from Scryfall once.
+// No runtime Scryfall API calls — we only load the cached CDN images.
+let artMap: Any = {};
+fetch("/card-art.json").then((r) => r.json()).then((m) => { artMap = m; render(); }).catch(() => {});
+
 const params = new URLSearchParams(location.search);
 $("decks").textContent = `P0=${params.get("p0") || "demo"} · P1=${params.get("p1") || "demo"}`;
 
@@ -157,9 +162,19 @@ function cardEl(c: Any, ctx: Any): HTMLElement {
   hdr.appendChild(mana);
   d.appendChild(hdr);
 
-  d.appendChild(el("div", "c-art"));
+  const art = el("div", "c-art");
+  const info = artMap[chars.grp_id];
+  if (info && info.art) {
+    art.style.backgroundImage = `url('${info.art}')`;
+    art.style.backgroundSize = "cover";
+    art.title = "Illustrated by " + (info.artist || "?");
+    if (info.artist) art.appendChild(el("div", "credit", "🖌 " + info.artist));
+  }
+  d.appendChild(art);
   d.appendChild(el("div", "c-type", typeLine(chars)));
-  d.appendChild(el("div", "c-rules", chars.rules_text || (chars.keywords || []).join(", ")));
+  const rules = el("div", "c-rules");
+  rules.innerHTML = chars.rules_text ? renderText(chars.rules_text) : esc((chars.keywords || []).join(", "));
+  d.appendChild(rules);
   if (chars.power != null) d.appendChild(el("div", "c-pt", `${chars.power}/${chars.toughness}`));
 
   if (view.combat) {
@@ -198,6 +213,15 @@ function typeLine(chars: Any): string {
   return s || "—";
 }
 const WUBRG = ["White", "Blue", "Black", "Red", "Green", "Colorless"];
+const CODE: Any = { White: "W", Blue: "U", Black: "B", Red: "R", Green: "G", Colorless: "C" };
+// A real Magic mana/cost symbol from Scryfall's official SVG set.
+function symImg(code: string, cls?: string): HTMLElement {
+  const i = el("img", "ms" + (cls ? " " + cls : "")) as HTMLImageElement;
+  i.src = "https://svgs.scryfall.io/card-symbols/" + code + ".svg";
+  i.alt = "{" + code + "}";
+  i.loading = "lazy";
+  return i;
+}
 function manaPips(chars: Any): HTMLElement[] {
   if (isLand(chars)) return [];
   const out: HTMLElement[] = [];
@@ -205,16 +229,26 @@ function manaPips(chars: Any): HTMLElement[] {
   if (mc) {
     const colored = mc.colored || {};
     const totalC = (Object.values(colored) as number[]).reduce((a, b) => a + b, 0);
-    if (mc.generic > 0 || (mc.generic === 0 && totalC === 0)) out.push(el("span", "pip gen", String(mc.generic)));
-    WUBRG.forEach((c) => { const n = colored[c] || 0; for (let i = 0; i < n; i++) out.push(el("span", "pip " + (LETTER[c] || "gen"), "")); });
+    if (mc.generic > 0 || (mc.generic === 0 && totalC === 0)) out.push(symImg(String(mc.generic)));
+    WUBRG.forEach((c) => { const n = colored[c] || 0; for (let i = 0; i < n; i++) out.push(symImg(CODE[c])); });
     return out;
   }
   const cols = chars.colors || [];
   const cmc = chars.mana_value ?? chars.manaValue ?? 0;
   const generic = Math.max(0, cmc - cols.length);
-  if (generic > 0 || cmc === 0) out.push(el("span", "pip gen", String(generic)));
-  cols.forEach((c: string) => out.push(el("span", "pip " + (LETTER[c] || "gen"), "")));
+  if (generic > 0 || cmc === 0) out.push(symImg(String(generic)));
+  cols.forEach((c: string) => out.push(symImg(CODE[c] || "C")));
   return out;
+}
+// Replace {T}/{G}/… tokens in oracle text with their Scryfall symbol SVGs.
+function renderText(text: string): string {
+  return esc(text).replace(/\{([^}]+)\}/g, (m, code) => {
+    const c = code.toUpperCase().replace(/\//g, "");
+    return '<img class="ms ms-text" src="https://svgs.scryfall.io/card-symbols/' + c + '.svg" alt="' + esc(m) + '">';
+  });
+}
+function esc(s: string): string {
+  return String(s).replace(/[&<>"]/g, (c) => (({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }) as Any)[c]);
 }
 
 // ── click-to-act ─────────────────────────────────────────────────────────────

@@ -31,13 +31,20 @@ use crate::session::{ClientResponse, GreSessionAgent};
 /// The self-contained, no-build client served when `web/dist/` is absent.
 const EMBEDDED_CLIENT: &str = include_str!("embedded_client.html");
 
+/// Batch-resolved Scryfall art manifest (grp_id → art_crop/normal/artist). Generated once by
+/// the resolver script and baked in, so the client never queries the Scryfall API at runtime —
+/// it only loads the images from Scryfall's CDN (cached). Regenerate when the card pool grows.
+const CARD_ART: &str = include_str!("../card-art.json");
+
 /// A per-connection seed, so successive games vary while staying replayable.
 static SEED: AtomicU64 = AtomicU64::new(1);
 
 /// Build the axum app: a `/ws` endpoint plus static serving of the front end.
 pub fn app() -> Router {
     let dist = Path::new(env!("CARGO_MANIFEST_DIR")).join("web/dist");
-    let mut router = Router::new().route("/ws", get(ws_handler));
+    let mut router = Router::new()
+        .route("/ws", get(ws_handler))
+        .route("/card-art.json", get(card_art));
     if dist.join("index.html").exists() {
         // Built Vite front end available — serve it, falling back to the embedded client only
         // for unmatched routes.
@@ -51,6 +58,11 @@ pub fn app() -> Router {
 /// Serve the embedded no-build client.
 async fn embedded() -> impl IntoResponse {
     Html(EMBEDDED_CLIENT)
+}
+
+/// Serve the baked-in Scryfall art manifest (grp_id → image URLs + artist).
+async fn card_art() -> impl IntoResponse {
+    ([(axum::http::header::CONTENT_TYPE, "application/json")], CARD_ART)
 }
 
 /// Bind `addr` and serve until the process exits.

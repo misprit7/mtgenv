@@ -92,14 +92,32 @@
 
   /* ── MTG card frame ───────────────────────────────────────────── */
   .card { width: 86px; height: 120px; border-radius: 7px; padding: 4px; position: relative;
-    background: var(--cColorless); color: #15110c; border: 1px solid rgba(0,0,0,.35);
+    background: var(--cColorless); color: #15110c; border: 2px solid rgba(0,0,0,.45);
     box-shadow: 0 2px 5px rgba(0,0,0,.4); display: flex; flex-direction: column; gap: 2px;
     flex: 0 0 auto; user-select: none; }
-  .card.w { background: var(--cW); } .card.u { background: var(--cU); } .card.b { background: var(--cB); }
-  .card.r { background: var(--cR); } .card.g { background: var(--cG); } .card.multi { background: var(--cMulti); }
-  .card.land { background: var(--cLand); } .card.colorless { background: var(--cColorless); }
+  /* Card colour is shown by a coloured 2px frame + a tinted title bar. */
+  .card.w { background: var(--cW); border-color: #cdbd6a; }
+  .card.u { background: var(--cU); border-color: #3b7cb3; }
+  .card.b { background: var(--cB); border-color: #6b6660; }
+  .card.r { background: var(--cR); border-color: #c4503c; }
+  .card.g { background: var(--cG); border-color: #3f8f46; }
+  .card.multi { background: var(--cMulti); border-color: #c9a227; }
+  .card.land { background: var(--cLand); border-color: #9a7b45; }
+  .card.colorless { background: var(--cColorless); border-color: #9aa0a6; }
   .card .c-hdr { display: flex; justify-content: space-between; align-items: center; gap: 3px;
-    background: rgba(255,255,255,.45); border-radius: 4px; padding: 1px 3px; }
+    background: rgba(255,255,255,.5); border-radius: 4px; padding: 1px 3px; }
+  .card.w .c-hdr { background: #ece3a8; } .card.u .c-hdr { background: #b7d8f0; }
+  .card.b .c-hdr { background: #c4bbb3; } .card.r .c-hdr { background: #f0b3a0; }
+  .card.g .c-hdr { background: #b2d6ac; } .card.multi .c-hdr { background: #ecd98a; }
+  .card.land .c-hdr { background: #d8c39a; } .card.colorless .c-hdr { background: #cdd0d4; }
+  /* Real MTG mana/tap symbols (Scryfall SVGs), in the cost row and inline in rules text. */
+  .ms { height: 13px; width: 13px; display: inline-block; vertical-align: middle; }
+  .c-rules .ms, .c-type .ms { height: 10px; width: 10px; vertical-align: -1px; }
+  .c-art { position: relative; background-position: center; }
+  .c-art .credit { position: absolute; bottom: 0; left: 0; right: 0; font-size: 5.5px; color: #fff;
+    background: rgba(0,0,0,.5); padding: 0 2px; text-align: right; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; }
+  .hand .c-art .credit { font-size: 7px; padding: 0 3px; }
   .card .c-name { font-size: 9px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .card .c-mana { display: flex; gap: 1px; flex: 0 0 auto; }
   .pip { width: 12px; height: 12px; border-radius: 50%; font-size: 8px; font-weight: 800; line-height: 12px;
@@ -155,6 +173,7 @@
       <a href="?">demo</a> ·
       <a href="?p0=burn&amp;p1=bears">burn</a> ·
       <a href="?p0=bears&amp;p1=burn">bears</a></span>
+    <span class="s">art &amp; symbols via <a href="https://scryfall.com" target="_blank" rel="noopener">Scryfall</a> · © Wizards of the Coast</span>
   </div>
 
   <div class="rail" id="rail"></div>
@@ -185,6 +204,11 @@
   let view = null, cur = null, lastTurn = 0;
   const multi = new Set();
   let orderSeq = [];
+
+  // Card art: a baked manifest (grp_id → art_crop/artist), batch-resolved from Scryfall once.
+  // No runtime Scryfall API calls — we only load the cached CDN images.
+  let artMap = {};
+  fetch("/card-art.json").then(r => r.json()).then(m => { artMap = m; render(); }).catch(() => {});
 
   const params = new URLSearchParams(location.search);
   $("decks").textContent = "P0=" + (params.get("p0") || "demo") + " · P1=" + (params.get("p1") || "demo");
@@ -335,9 +359,19 @@
     hdr.appendChild(mana);
     d.appendChild(hdr);
 
-    d.appendChild(el("div", "c-art"));
+    const art = el("div", "c-art");
+    const info = artMap[chars.grp_id];
+    if (info && info.art) {
+      art.style.backgroundImage = "url('" + info.art + "')";
+      art.style.backgroundSize = "cover";
+      art.title = "Illustrated by " + (info.artist || "?");
+      if (info.artist) art.appendChild(el("div", "credit", "🖌 " + info.artist));
+    }
+    d.appendChild(art);
     d.appendChild(el("div", "c-type", typeLine(chars)));
-    d.appendChild(el("div", "c-rules", chars.rules_text || (chars.keywords || []).join(", ")));
+    const rules = el("div", "c-rules");
+    rules.innerHTML = chars.rules_text ? renderText(chars.rules_text) : esc((chars.keywords || []).join(", "));
+    d.appendChild(rules);
     if (chars.power != null) d.appendChild(el("div", "c-pt", chars.power + "/" + chars.toughness));
 
     // combat / damage badges
@@ -377,7 +411,14 @@
   }
 
   const WUBRG = ["White", "Blue", "Black", "Red", "Green", "Colorless"];
-  const LET = { White: "w", Blue: "u", Black: "b", Red: "r", Green: "g", Colorless: "gen" };
+  const CODE = { White: "W", Blue: "U", Black: "B", Red: "R", Green: "G", Colorless: "C" };
+  // A real Magic mana/cost symbol from Scryfall's official SVG set.
+  function symImg(code, cls) {
+    const i = el("img", "ms" + (cls ? " " + cls : ""));
+    i.src = "https://svgs.scryfall.io/card-symbols/" + code + ".svg";
+    i.alt = "{" + code + "}"; i.loading = "lazy";
+    return i;
+  }
   function manaPips(chars) {
     if (isLand(chars)) return [];
     const out = [];
@@ -385,19 +426,26 @@
     if (mc) {
       const colored = mc.colored || {};
       const totalC = Object.values(colored).reduce((a, b) => a + b, 0);
-      if (mc.generic > 0 || (mc.generic === 0 && totalC === 0)) out.push(pipEl("gen", String(mc.generic)));
-      WUBRG.forEach(c => { const n = colored[c] || 0; for (let i = 0; i < n; i++) out.push(pipEl(LET[c], "")); });
+      if (mc.generic > 0 || (mc.generic === 0 && totalC === 0)) out.push(symImg(String(mc.generic)));
+      WUBRG.forEach(c => { const n = colored[c] || 0; for (let i = 0; i < n; i++) out.push(symImg(CODE[c])); });
       return out;
     }
     // fallback approximation from CMC + colors (exact for the current pool)
     const cols = chars.colors || [];
     const cmc = chars.mana_value != null ? chars.mana_value : (chars.manaValue || 0);
     const generic = Math.max(0, cmc - cols.length);
-    if (generic > 0 || cmc === 0) out.push(pipEl("gen", String(generic)));
-    cols.forEach(c => out.push(pipEl(LET[c] || "gen", "")));
+    if (generic > 0 || cmc === 0) out.push(symImg(String(generic)));
+    cols.forEach(c => out.push(symImg(CODE[c] || "C")));
     return out;
   }
-  function pipEl(cls, text) { const p = el("span", "pip " + cls, text); return p; }
+  // Replace {T}/{G}/… tokens in oracle text with their Scryfall symbol SVGs.
+  function renderText(text) {
+    return esc(text).replace(/\{([^}]+)\}/g, (m, code) => {
+      const c = code.toUpperCase().replace(/\//g, "");
+      return '<img class="ms ms-text" src="https://svgs.scryfall.io/card-symbols/' + c + '.svg" alt="' + esc(m) + '">';
+    });
+  }
+  function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
 
   // ── click-to-act ───────────────────────────────────────────────────────
   function onCardClick(idx) {

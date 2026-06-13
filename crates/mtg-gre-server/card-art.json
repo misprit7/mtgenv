@@ -1,0 +1,86 @@
+{
+ "1": {
+  "name": "Plains",
+  "art": "https://cards.scryfall.io/art_crop/front/2/4/24dc369c-020a-4115-a4bb-d60a44de64e3.jpg?1777658393",
+  "img": "https://cards.scryfall.io/normal/front/2/4/24dc369c-020a-4115-a4bb-d60a44de64e3.jpg?1777658393",
+  "artist": "WFlemming Illustration"
+ },
+ "2": {
+  "name": "Island",
+  "art": "https://cards.scryfall.io/art_crop/front/7/3/739aaaac-c424-4ea7-a084-62a6fc0438b0.jpg?1777658399",
+  "img": "https://cards.scryfall.io/normal/front/7/3/739aaaac-c424-4ea7-a084-62a6fc0438b0.jpg?1777658399",
+  "artist": "WFlemming Illustration"
+ },
+ "3": {
+  "name": "Mountain",
+  "art": "https://cards.scryfall.io/art_crop/front/5/1/51acfb01-4b0b-48fc-9704-a9b4a1e43a23.jpg?1777658413",
+  "img": "https://cards.scryfall.io/normal/front/5/1/51acfb01-4b0b-48fc-9704-a9b4a1e43a23.jpg?1777658413",
+  "artist": "WFlemming Illustration"
+ },
+ "4": {
+  "name": "Forest",
+  "art": "https://cards.scryfall.io/art_crop/front/5/f/5f533364-0f91-4e49-aaeb-83c4c1f6d316.jpg?1777658419",
+  "img": "https://cards.scryfall.io/normal/front/5/f/5f533364-0f91-4e49-aaeb-83c4c1f6d316.jpg?1777658419",
+  "artist": "WFlemming Illustration"
+ },
+ "10": {
+  "name": "Grizzly Bears",
+  "art": "https://cards.scryfall.io/art_crop/front/4/0/409f9b88-f03e-40b6-9883-68c14c37c0de.jpg?1562546736",
+  "img": "https://cards.scryfall.io/normal/front/4/0/409f9b88-f03e-40b6-9883-68c14c37c0de.jpg?1562546736",
+  "artist": "D. J. Cleland-Hura"
+ },
+ "11": {
+  "name": "Hill Giant",
+  "art": "https://cards.scryfall.io/art_crop/front/1/4/14c2be6a-9ca6-4d3a-8dd0-db4ea40799f8.jpg?1562544130",
+  "img": "https://cards.scryfall.io/normal/front/1/4/14c2be6a-9ca6-4d3a-8dd0-db4ea40799f8.jpg?1562544130",
+  "artist": "Kev Walker"
+ },
+ "20": {
+  "name": "Shock",
+  "art": "https://cards.scryfall.io/art_crop/front/b/2/b23900fb-efe9-43ab-9f67-4545dd01fb9c.jpg?1780919002",
+  "img": "https://cards.scryfall.io/normal/front/b/2/b23900fb-efe9-43ab-9f67-4545dd01fb9c.jpg?1780919002",
+  "artist": "Piotr Dura"
+ },
+ "21": {
+  "name": "Divination",
+  "art": "https://cards.scryfall.io/art_crop/front/c/b/cb3b35b8-f321-46d8-a441-6b9a6efa9021.jpg?1562304347",
+  "img": "https://cards.scryfall.io/normal/front/c/b/cb3b35b8-f321-46d8-a441-6b9a6efa9021.jpg?1562304347",
+  "artist": "Willian Murai"
+ },
+ "22": {
+  "name": "Healing Salve",
+  "art": "https://cards.scryfall.io/art_crop/front/0/f/0ff82aba-9022-4eff-a6dc-67365360d646.jpg?1561771079",
+  "img": "https://cards.scryfall.io/normal/front/0/f/0ff82aba-9022-4eff-a6dc-67365360d646.jpg?1561771079",
+  "artist": "Greg Hildebrandt & Tim Hildebrandt"
+ },
+ "23": {
+  "name": "Lightning Bolt",
+  "art": "https://cards.scryfall.io/art_crop/front/7/6/7673784e-db4b-43a1-8d55-1bb9fc1e284f.jpg?1780918974",
+  "img": "https://cards.scryfall.io/normal/front/7/6/7673784e-db4b-43a1-8d55-1bb9fc1e284f.jpg?1780918974",
+  "artist": "Milivoj Ćeran"
+ },
+ "30": {
+  "name": "Elvish Visionary",
+  "art": "https://cards.scryfall.io/art_crop/front/a/2/a2f174e6-9532-4fc3-815b-2dc3966c6523.jpg?1608910606",
+  "img": "https://cards.scryfall.io/normal/front/a/2/a2f174e6-9532-4fc3-815b-2dc3966c6523.jpg?1608910606",
+  "artist": "D. Alexander Gregory"
+ },
+ "31": {
+  "name": "Flametongue Kavu",
+  "art": "https://cards.scryfall.io/art_crop/front/1/b/1b3a5139-3341-409e-be33-184897c7398e.jpg?1675199972",
+  "img": "https://cards.scryfall.io/normal/front/1/b/1b3a5139-3341-409e-be33-184897c7398e.jpg?1675199972",
+  "artist": "Slawomir Maniak"
+ },
+ "32": {
+  "name": "Servant of the Scale",
+  "art": "https://cards.scryfall.io/art_crop/front/c/a/ca887c41-a8ee-4751-a902-87149c29a9df.jpg?1562793074",
+  "img": "https://cards.scryfall.io/normal/front/c/a/ca887c41-a8ee-4751-a902-87149c29a9df.jpg?1562793074",
+  "artist": "Winona Nelson"
+ },
+ "33": {
+  "name": "Fog Bank",
+  "art": "https://cards.scryfall.io/art_crop/front/1/8/18748b1d-4161-482c-a726-8762b4c1819c.jpg?1730490842",
+  "img": "https://cards.scryfall.io/normal/front/1/8/18748b1d-4161-482c-a726-8762b4c1819c.jpg?1730490842",
+  "artist": "Howard Lyon"
+ }
+}
