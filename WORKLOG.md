@@ -5,6 +5,32 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **webui:** **3 card-UI fixes (user) + #30 badge closed on real data.** (1) **Stuck hover preview:**
+  per-card mouseenter/leave listeners got orphaned when the board re-renders under the cursor (the
+  hovered node is replaced, so mouseleave never fires → preview stuck). Replaced with a single global
+  pointer tracker — cards carry their preview URL in `data-preview`; `refreshPreview()` re-derives the
+  hovered card via `elementFromPoint` on every move AND after every render, so nothing can orphan it.
+  (2) **Missing card art:** `card-art.json` was a stale 14-card list; regenerated for the full 38-card
+  `starter_db` (all resolved on Scryfall, zero missing) — generator dict synced to the pool. (3)
+  **Oversized card text:** `.c-rules` now line-clamps (4 lines board / 6 hand) so long oracle text
+  (Mossborn Hydra) shows more but ellipsis-clips instead of blowing out of the frame. Embedded+Vite
+  synced; tsc/vite clean. Playwright-verified live on a counters game: art 4/4, 0 frame-overflows
+  (Sazh's Chocobo truncates), hover never stuck off-card across re-renders + re-acquires. Commit
+  d9c7d43. **#30:** wire-level test (a99f23d) proves a real partial card (Lumbering Worldwagon)
+  serializes to `fully_implemented:false` through the exact `ServerMsg`, a complete card to `true` —
+  badge confirmed end-to-end on real data (render path already Playwright-verified). **#30 done.**
+- **webui:** **Replay/spectate feature (REPLAY_PLAN.md) — taken, planned, coordinated.** Owning
+  lobby+viewer+serving. Sent team-lead my plan + coordination asks (lock GodView/Replay serde field
+  names — esp. ordered-library + both-hands exposure; the `god_view` spectator hand-off API; gitignore
+  `data/replays/`). Scaffolding (lobby "AI Training Replays" section, `/play?replay=<id>` god-view
+  playback viewer) waits on the locked schema; Rust serving/auto-save/god-view-spectator wait on schema
+  + engine replay core. Tasks #31-33 filed.
+- **webui:** **New `"counters"` preset deck** (user) + badge wire-test. A G/W landfall + +1/+1-counters
+  midrange 60 built server-side (`driver::counters_deck`) from the implemented pool by `grp_id` —
+  exercises mana dorks, a conditional dual, ETB draw, three landfall payoffs, counter-doubling +
+  Hardened Scales, an anthem, equip/aura, a CDA search vehicle, and two tracked-incomplete cards (so
+  the ⚠ badge shows on a real deck). `driver::resolve_deck` routes it through the lobby (now default),
+  legacy `?p0/?p1`, and CLI. Commits ade8b5a, a99f23d.
 - **engine:** **Subtypes/supertypes flipped from strings → generated enums (CR 205.3/4).** Lead
   directive; I drove the whole no-fallback flag-day flip in one green commit (5b9f63d), design
   parked. `Characteristics`/`ComputedChars.subtypes → Vec<Subtype>`, `supertypes → Vec<Supertype>`;
