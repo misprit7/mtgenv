@@ -5,6 +5,23 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **webui:** big UI/UX pass on `mtg-gre-server` (many small commits). (1) **MTGO-style web board**:
+  real MTG card frames (name/mana/art/type/rules/PT), opponent-top/you-bottom layout, hand at the
+  bottom, left rail (life + Library/Graveyard/Exile piles → click to view zones), readable game-log
+  transcript, click-to-act legal-card highlighting; both the no-build embedded client and the TS/Vite
+  build kept in sync. (2) **Real card data from Scryfall**: batch-resolved art manifest
+  (`resolve-card-art.py` → `card-art.json`, served at `/card-art.json`, zero runtime API calls —
+  loads cached CDN images), official mana/tap **symbol SVGs** in costs + inline in oracle text,
+  artist + WotC attribution. Exact mana pips + oracle text from design's `mana_cost`/`rules_text`.
+  (3) **Deck picker** (demo/burn/bears) in CLI (`play burn bears`, `preset`) + web (top-bar links /
+  `?p0=&p1=`). (4) **#12 stops (MTGA auto-pass)**: auto-pass on by default for human play (prompts
+  ~5× fewer: 144→29 CLI / 181→70 web), CLI commands (`autopass`/`smartstops`/`fullcontrol`/
+  `resolvestack`/`stop <step>`/`stops`) + web toggle links, and a live per-step stops panel reading
+  engine's `PlayerView.stops` ("stops: MP1, MP2 · smart"). (5) **#13 layers**: computed P/T +
+  granted keywords render for free (Bears 2/2 →+Anthem 3/3 →+Levitation 3/3 [Flying]; Humility →1/1);
+  CLI board render now shows P/T+keywords; aliases for anthem/levitation/humility. Server runs on
+  :8080. All via the public Agent boundary (the formal client = `GreSessionAgent`/`HumanAgent`; the
+  browser is transport+presentation below the line). Full workspace green throughout.
 - **engine:** task #13 (ENGINE_PLAN milestone 5) — the **CR-613 layer system** (continuous
   effects), prototype-first (4 snapshot commits). New `chars/`: `ComputedChars` +
   `compute(state, id)` = base ⊕ layered static effects, the 7-layer framework with timestamps
