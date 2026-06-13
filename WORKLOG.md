@@ -5,6 +5,13 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **engine:** **per-turn-side stops** (webui request). `StopConfig.overrides` now keyed by
+  `(Phase, own_turn)` (`own_turn = seat == active_player`) so a seat can stop on its OWN draw step
+  but not the opponent's. New `StopConfig::stop_for(step, own_turn)` primitive; `set_override` +
+  `effective_steps` gain an `own_turn` arg; `Engine::set_stop` stays both-sides (back-compat, CLI
+  unchanged), new `Engine::set_stop_side` for one side. Arena default unchanged (MP1/MP2 stop only
+  on your own turn). 84 mtg-core tests green, clippy clean. mtg-gre-server callers (3 sites) are
+  webui's to adapt — flagged the signatures.
 - **webui:** **migrated the web stop policy onto the engine's `stops_handle`** (removes the
   duplicated client-side policy from the earlier entry). The game thread builds the engine via new
   `driver::engine_with_stops(state, agents, human, &Stops)` (auto-pass ON for the human seat) and
