@@ -5,6 +5,19 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **design:** **Effect-IR for batch-1 caps + first real cards (Selesnya Landfall push).** Additive
+  IR: `CardFilter::Supertype` + `Effect::Search.tapped` + `Effect::Fight` (06ce436);
+  `StaticContribution::SetBasePTValue` (7a CDA) + `ManaCost.x` (27879eb); `ValueExpr::CountersOnSelf`
+  (w/ engine, d95abe1). Authored 4 fidelity-clean cards (per-first-printing-set folders, each
+  expect-tested): **Sazh's Chocobo** (fin) + **Mossborn Hydra** (fdn) (95cd0c8), **Icetill Explorer**
+  (eoe) (8ce5ea1), **Lumbering Worldwagon** (dft `*`/4 CDA) (30d865a). **Fidelity standard (user):**
+  no silent approximations — incomplete clauses TRACKED in-file, never shipped wrong. Tracked: Icetill
+  land-play perms (C18), Lumbering **Crew 4**. **Held on engine caps:** Bushwhack (cast-time
+  modal-targets), Erode (`PlayerRef::ControllerOfTarget`), Dyadrine (mana-spent value + "you attack"
+  event). **NEXT:** the C19 mana migration engine handed off — `ManaSpec.one_of` + `basic_mana_ability`
+  builder + migrate basics/Llanowar/lands off `mana_colors`, incl. Hushwood Verge's conditional `{W}`
+  via the new `Condition::CountAtLeast`. **Purge:** holding the 6 card defs until engine clears the
+  priority.rs test refs.
 - **engine:** **C19 — mana production as first-class IR** (engine side, lead's priority). New
   `conditions.rs` — a pure `Condition` evaluator (`holds`: CountAtLeast/life/turn/All/AnyOf/Not).
   `mana.rs` now derives a source's producible colours from its `Ability::Activated{is_mana:true}`
