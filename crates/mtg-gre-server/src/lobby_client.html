@@ -98,7 +98,7 @@
 "use strict";
 const $ = (id) => document.getElementById(id);
 const KINDS = [["human", "Human"], ["random", "Test agent (random)"], ["rl", "RL AI (not trained — random)"]];
-const DECKS = ["demo", "burn", "bears"];
+const DECKS = ["counters", "demo", "burn", "bears"];
 const SEAT_COUNT = 2;
 
 // Build the per-seat create form.
@@ -116,7 +116,7 @@ function buildForm() {
     const dl = el("label", null, "Deck"); seat.appendChild(dl);
     const ds = el("select"); ds.id = "deck" + i;
     DECKS.forEach((d) => { const o = el("option", null, d); o.value = d; ds.appendChild(o); });
-    ds.value = i === 0 ? "burn" : "bears";
+    ds.value = "counters";
     seat.appendChild(ds);
     host.appendChild(seat);
   }

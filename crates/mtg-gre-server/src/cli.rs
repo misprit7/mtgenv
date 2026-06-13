@@ -301,20 +301,20 @@ Lines starting with '#' are comments. At a decision prompt: an index, 'p'/Enter 
         self.say(&format!("added {added} card(s) to P{p}'s library"));
     }
 
-    /// Load a named preset deck (`burn`/`bears`/`demo`) into a seat's library — composes with
-    /// `new`/`seat`/`add`/`deal`/`run` for building the user's matchups by hand.
+    /// Load a named preset deck (`counters`/`burn`/`bears`/`demo`) into a seat's library — composes
+    /// with `new`/`seat`/`add`/`deal`/`run` for building the user's matchups by hand.
     fn cmd_preset(&mut self, args: &[&str]) {
         let (Some(seat), Some(name)) = (
             args.first().and_then(|s| s.parse::<u32>().ok()),
             args.get(1),
         ) else {
-            return self.say("usage: preset <seat> <burn|bears|demo>");
+            return self.say("usage: preset <seat> <counters|burn|bears|demo>");
         };
         if !self.valid_player(seat) {
             return;
         }
-        let Some(deck) = cards::preset_deck(name) else {
-            return self.say(&format!("unknown preset '{name}' (burn|bears|demo)"));
+        let Some(deck) = crate::driver::resolve_deck(name) else {
+            return self.say(&format!("unknown preset '{name}' (counters|burn|bears|demo)"));
         };
         let db = self.state.card_db();
         let chars: Vec<Characteristics> = deck
@@ -540,12 +540,12 @@ fn build_play_state(names: &[&str], seed: u64) -> Option<GameState> {
         [] => Some(crate::driver::demo_state(seed)),
         ["lands"] => Some(crate::driver::lands_only_state(2, seed)),
         [a] => {
-            let d = mtg_core::cards::preset_deck(a)?;
+            let d = crate::driver::resolve_deck(a)?;
             Some(mtg_core::cards::build_game(seed, &[&d, &d]))
         }
         [a, b] => {
-            let d0 = mtg_core::cards::preset_deck(a)?;
-            let d1 = mtg_core::cards::preset_deck(b)?;
+            let d0 = crate::driver::resolve_deck(a)?;
+            let d1 = crate::driver::resolve_deck(b)?;
             Some(mtg_core::cards::build_game(seed, &[&d0, &d1]))
         }
         _ => None,

@@ -226,26 +226,104 @@ pub fn run_demo_game(agents: Vec<Box<dyn Agent>>, seed: u64) -> Outcome {
     run_state(demo_state(seed), agents)
 }
 
-/// Build a game from optional per-seat preset deck names (`"burn"`/`"bears"`/`"demo"`); any
+/// The deck names this server offers, in picker order. The first three are the engine's trivial
+/// starter piles (`mtg_core::cards::preset_deck`); `"counters"` is the richer server-local deck
+/// built by [`counters_deck`]. Shared source of truth for the lobby/CLI pickers.
+pub const DECK_NAMES: &[&str] = &["counters", "demo", "burn", "bears"];
+
+/// A *much* richer preset than the trivial burn/bears/demo piles: a **Selesnya (G/W) landfall +
+/// +1/+1-counters midrange** deck assembled from the implemented card pool. Where the three
+/// starter decks are one or two cards stamped 40–60 times, this one is built to exercise a broad
+/// slice of the engine in a single hand-played game:
+///
+/// - **Mana:** Llanowar Elves (a mana-dork activated ability + summoning sickness) and Hushwood
+///   Verge (a conditional dual land — its `{W}` only unlocks once you control a Forest/Plains).
+/// - **ETB / dies triggers:** Elvish Visionary ("draw a card" on enter).
+/// - **Landfall (three payoffs):** Sazh's Chocobo (+1/+1 counter per land), Mossborn Hydra
+///   (*doubles* its counters), Icetill Explorer (mill — a *tracked-incomplete* card → ⚠ badge).
+/// - **Counter synergy / replacement:** Hardened Scales (one extra +1/+1 counter each time) stacks
+///   with the hydra and chocobo; the hydra also enters-with-a-counter via a self-replacement.
+/// - **Layer system:** Glorious Anthem (a +1/+1 anthem static).
+/// - **Equipment + activated equip / Auras:** Bonesplitter (equip ability) and Pacifism
+///   (can't-attack/can't-block aura — soft removal).
+/// - **CDA + library search:** Lumbering Worldwagon (`*`/4 power-equals-lands vehicle that
+///   searches a basic onto the battlefield — also tracked-incomplete Crew → ⚠ badge).
+/// - **Keyword bodies:** trample / double strike / flash / vigilance / indestructible creatures.
+///
+/// Built from the public `grp_id` constants (this lives in the server crate, so it composes the
+/// engine's cards by id rather than adding a `preset_deck` entry in card-agnostic `mtg-core`).
+pub fn counters_deck() -> Vec<u32> {
+    use mtg_core::cards::dft::lumbering_worldwagon::LUMBERING_WORLDWAGON;
+    use mtg_core::cards::dsk::hushwood_verge::HUSHWOOD_VERGE;
+    use mtg_core::cards::eoe::icetill_explorer::ICETILL_EXPLORER;
+    use mtg_core::cards::fdn::mossborn_hydra::MOSSBORN_HYDRA;
+    use mtg_core::cards::fin::sazhs_chocobo::SAZHS_CHOCOBO;
+    use mtg_core::cards::grp::*;
+    use mtg_core::cards::lea::llanowar_elves::LLANOWAR_ELVES;
+
+    // (grp_id, copies) — 60 cards: 24 land / 26 creature / 10 noncreature.
+    let spec: &[(u32, usize)] = &[
+        // Lands (24): green-heavy with a white splash; Hushwood Verge is the conditional dual.
+        (FOREST, 10),
+        (PLAINS, 8),
+        (HUSHWOOD_VERGE, 6),
+        // Creatures (26).
+        (LLANOWAR_ELVES, 4),  // {G} mana dork (activated mana ability)
+        (SAZHS_CHOCOBO, 3),   // landfall: +1/+1 counter
+        (ELVISH_VISIONARY, 3), // ETB: draw a card
+        (GRIZZLY_BEARS, 2),   // vanilla beater
+        (MOSSBORN_HYDRA, 3),  // landfall: double counters; trample; enters with a counter
+        (ARGOTHIAN_SWINE, 2), // trample
+        (ICETILL_EXPLORER, 2), // landfall: mill (tracked-incomplete → ⚠)
+        (FENCING_ACE, 2),     // double strike
+        (KING_CHEETAH, 2),    // flash
+        (ALABORN_GRENADIER, 1), // vigilance
+        (DARKSTEEL_MYR, 1),   // indestructible artifact creature
+        (LUMBERING_WORLDWAGON, 1), // */4 CDA vehicle + basic-land search (Crew incomplete → ⚠)
+        // Noncreature (10).
+        (HARDENED_SCALES, 3), // replacement: +1 extra +1/+1 counter
+        (GLORIOUS_ANTHEM, 2), // static anthem (+1/+1)
+        (PACIFISM, 3),        // aura: can't attack or block
+        (BONESPLITTER, 2),    // equipment (+2/+0, equip {1})
+    ];
+    let mut deck = Vec::new();
+    for &(id, n) in spec {
+        deck.extend(std::iter::repeat(id).take(n));
+    }
+    deck
+}
+
+/// Resolve a web/CLI deck name to a `grp_id` list: the server-local complex decks first
+/// (`"counters"`), then the engine's [`mtg_core::cards::preset_deck`] (`burn`/`bears`/`demo`).
+/// `None` for an unknown name (callers fall back to the demo deck).
+pub fn resolve_deck(name: &str) -> Option<Vec<u32>> {
+    match name.to_ascii_lowercase().as_str() {
+        "counters" | "selesnya" => Some(counters_deck()),
+        other => mtg_core::cards::preset_deck(other),
+    }
+}
+
+/// Build a game from optional per-seat deck names (`"counters"`/`"burn"`/`"bears"`/`"demo"`); any
 /// unset/unknown seat falls back to the demo deck. Used by the web server's deck picker.
 pub fn state_for_decks(p0: Option<&str>, p1: Option<&str>, seed: u64) -> GameState {
     if p0.is_none() && p1.is_none() {
         return demo_state(seed);
     }
     let pick = |name: Option<&str>| {
-        name.and_then(mtg_core::cards::preset_deck)
+        name.and_then(resolve_deck)
             .unwrap_or_else(mtg_core::cards::demo_deck)
     };
     let (d0, d1) = (pick(p0), pick(p1));
     mtg_core::cards::build_game(seed, &[&d0, &d1])
 }
 
-/// Build a game from N per-seat preset deck names (`"burn"`/`"bears"`/`"demo"`); any unknown name
-/// falls back to the demo deck. Used by the lobby (arbitrary seat count). Decks are `grp_id` lists.
+/// Build a game from N per-seat deck names (`"counters"`/`"burn"`/`"bears"`/`"demo"`); any unknown
+/// name falls back to the demo deck. Used by the lobby (arbitrary seat count). Decks are `grp_id`
+/// lists.
 pub fn state_for_deck_names(seed: u64, names: &[&str]) -> GameState {
     let decks: Vec<Vec<u32>> = names
         .iter()
-        .map(|n| mtg_core::cards::preset_deck(n).unwrap_or_else(mtg_core::cards::demo_deck))
+        .map(|n| resolve_deck(n).unwrap_or_else(mtg_core::cards::demo_deck))
         .collect();
     let refs: Vec<&[u32]> = decks.iter().map(|d| d.as_slice()).collect();
     mtg_core::cards::build_game(seed, &refs)
@@ -274,5 +352,35 @@ mod tests {
         let a = run_lands_game(make(), 123);
         let b = run_lands_game(make(), 123);
         assert_eq!(a, b);
+    }
+
+    #[test]
+    fn counters_deck_is_60_and_every_card_is_known() {
+        // The richer server-local deck must be a legal 60 and every grp_id must resolve in the
+        // engine's starter DB (so `build_game` actually puts all of them in the library).
+        let deck = counters_deck();
+        assert_eq!(deck.len(), 60, "counters deck should be 60 cards");
+        let db = mtg_core::cards::starter_db();
+        for &g in &deck {
+            assert!(db.get(g).is_some(), "grp_id {g} not in starter_db");
+        }
+        // Resolves by name (server-local), and is distinct from the trivial demo deck.
+        assert_eq!(resolve_deck("counters").unwrap().len(), 60);
+        assert_eq!(resolve_deck("COUNTERS").unwrap().len(), 60);
+        assert_ne!(resolve_deck("counters"), resolve_deck("demo"));
+        // Falls through to the engine's presets for the simple names, None for nonsense.
+        assert_eq!(resolve_deck("burn").unwrap().len(), 60);
+        assert!(resolve_deck("nonesuch").is_none());
+    }
+
+    #[test]
+    fn counters_mirror_terminates_with_a_winner() {
+        // Two RandomAgents on the complex deck still drive to a result (the boundary only ever
+        // offers legal options), so the deck is engine-playable end-to-end.
+        let agents: Vec<Box<dyn Agent>> =
+            vec![Box::new(RandomAgent::new(1)), Box::new(RandomAgent::new(2))];
+        let state = state_for_deck_names(42, &["counters", "counters"]);
+        let outcome = run_state(state, agents);
+        assert!(outcome.winner.is_some(), "counters mirror should produce a winner");
     }
 }
