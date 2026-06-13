@@ -5,6 +5,22 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **webui:** **per-turn-side stops in the UI + MTGA keybindings.** Consumed the engine's new
+  per-`(Phase, own_turn)` stop API: `ServerMsg::Stops.per_step` now carries both sides as
+  `(step, on_my_turn, on_opp_turn)`; `ClientMsg::SetStop` gained an `own` flag;
+  `stops_msg` zips `effective_steps(true/false)`, `SetStop`→`set_override(step, own, …)`,
+  `engine_with_stops` seeds both sides. Phase bar renders **two stop dots per step** (top = your
+  turn, bottom = opponent's, dashed ring = opp, independently clickable) with a you/opp legend —
+  the user can stop on their own draw but not the opponent's. **Keybindings** (per
+  `../mtga-re/docs/priority_stops.md`): **Space** = pass priority / take the sole forced option;
+  **Enter** = pass through all of THIS turn's remaining priority stops (mirrors the GRE's
+  `autoPassPriority=Yes`/`AutoPassOption.Turn` — a per-turn hold shown by a badge, lapses next turn,
+  still surfaces real choices like targets/blocks); **Esc** cancels the hold. Mirrored across the
+  embedded + Vite clients (CSS re-synced, dist rebuilt). Verified end-to-end: WS shows 3-tuple
+  `per_step` + independent per-side toggles + Arena default (MP1 = your-turn only); a my-Upkeep stop
+  set over the socket actually yields an upkeep prompt (engine honors it); Playwright confirms 20
+  dots + legend, per-side dot toggle, Space→one `{pass:true}` frame, Enter→multi-stop pass-through +
+  badge. 10 web tests green, workspace builds. Commit 8699b79.
 - **engine:** **per-turn-side stops** (webui request). `StopConfig.overrides` now keyed by
   `(Phase, own_turn)` (`own_turn = seat == active_player`) so a seat can stop on its OWN draw step
   but not the opponent's. New `StopConfig::stop_for(step, own_turn)` primitive; `set_override` +

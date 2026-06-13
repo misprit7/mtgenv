@@ -105,7 +105,11 @@ MTGA client.
   zone viewers, hover→full-card preview, deck picker (Burn/Bears/demo). **MTGA auto-pass/stops are
   engine-owned**: the socket holds the seat's live `Engine::stops_handle` (`Arc<Mutex<StopConfig>>`,
   passed out of the game thread via a oneshot) and toggles it mid-game with no reset — web + CLI now
-  share the one engine policy (no duplicated client-side logic).
+  share the one engine policy (no duplicated client-side logic). **Stops are per turn-side**: the
+  phase bar shows two dots per step (your turn / opponent's turn, independently toggleable, over the
+  engine's `(Phase, own_turn)` overrides). **MTGA keybindings**: Space = pass / take the sole forced
+  action; Enter = pass through this turn's remaining priority stops (lapses next turn, badge shown);
+  Esc cancels.
   **Library peek is RL-safe** — a static starting decklist snapshotted server-side from `GameState`
   (never via `PlayerView`, so it can't leak draws to the RL agent). Ships as a no-build embedded
   client *and* a Vite/TS client (kept in sync). Also an expressive scriptable CLI (`mtg-cli`-style
