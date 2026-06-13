@@ -57,13 +57,28 @@ pub struct Outcome {
 /// A seat's MTGA-style "stops" configuration for the Arena-profile auto-pass policy
 /// (AGENT_INTERFACE §8.1 decision *elision*). The engine still grants priority at every
 /// window (CR-correct); this policy decides which windows the seat is actually *prompted* at.
-#[derive(Debug, Clone, Default)]
+/// Modeled on the recovered MTGA `SettingsMessage` (../mtga-re/docs/priority_stops.md).
+#[derive(Debug, Clone)]
 pub struct StopConfig {
-    /// "Full control": stop at every priority window (nothing auto-passed).
+    /// "Full control": stop at every priority window (overrides everything else).
     pub full_control: bool,
+    /// SmartStops (MTGA default ON): stop at any step where the seat has a legal play (so it
+    /// never auto-passes past a chance to act). When OFF, the seat auto-passes through
+    /// "unimportant" steps even with an action available.
+    pub smart_stops: bool,
     /// Per-step override of the Arena default: `Some(true)` = always stop here, `Some(false)`
     /// = never stop here, `None` = use the Arena default.
     overrides: std::collections::BTreeMap<Phase, bool>,
+}
+
+impl Default for StopConfig {
+    fn default() -> Self {
+        StopConfig {
+            full_control: false,
+            smart_stops: true, // MTGA default
+            overrides: std::collections::BTreeMap::new(),
+        }
+    }
 }
 
 impl StopConfig {
@@ -79,18 +94,17 @@ impl StopConfig {
     }
 }
 
-/// MTGA's default stop set: your main phases, declare-attackers on your turn, declare-blockers
-/// when you're defending.
+/// MTGA's persistent default stop set (../mtga-re/docs/priority_stops.md §1): only your own
+/// two main phases. Declare-attackers/blockers are forced turn-based actions (always
+/// presented), not priority stops; instant-speed windows are handled by SmartStops + the
+/// no-action rule. (The lead's task listed combat-declare stops; decompile's recovered
+/// behavior is MP1/MP2-only, which this matches.)
 fn arena_default_stop(p: PlayerId, step: Phase, active: PlayerId) -> bool {
-    match step {
-        Phase::PrecombatMain | Phase::PostcombatMain | Phase::DeclareAttackers => p == active,
-        Phase::DeclareBlockers => p != active,
-        _ => false,
-    }
+    matches!(step, Phase::PrecombatMain | Phase::PostcombatMain) && p == active
 }
 
-/// Steps the Arena profile passes through even when the player *has* an action (unless a stop
-/// is set). Untap/Cleanup grant no priority so never reach the policy.
+/// Steps the Arena profile passes through even when the player *has* an action, used only
+/// when SmartStops is OFF. Untap/Cleanup grant no priority so never reach the policy.
 fn is_unimportant_step(step: Phase) -> bool {
     matches!(
         step,
@@ -147,6 +161,11 @@ impl Engine {
     pub fn set_full_control(&mut self, p: PlayerId, on: bool) {
         self.stops[p.0 as usize].full_control = on;
     }
+    /// SmartStops for a seat (MTGA default ON): stop wherever the seat has a legal play. When
+    /// OFF, the seat auto-passes through unimportant steps even with an action.
+    pub fn set_smart_stops(&mut self, p: PlayerId, on: bool) {
+        self.stops[p.0 as usize].smart_stops = on;
+    }
     /// Override a seat's stop at `step`: `Some(true)` = always stop, `Some(false)` = never,
     /// `None` = revert to the Arena default.
     pub fn set_stop(&mut self, p: PlayerId, step: Phase, stop: Option<bool>) {
@@ -178,12 +197,20 @@ impl Engine {
             return false;
         }
         let step = self.state.phase;
-        if self.stops[p.0 as usize].stops_at(p, step, self.state.active_player) {
+        let cfg = &self.stops[p.0 as usize];
+        if cfg.stops_at(p, step, self.state.active_player) {
             return false; // a stop → prompt
         }
-        // Not a stop: auto-pass when there's nothing to do, or when it's an unimportant step
-        // even if something is available (CR-irrelevant windows the player rarely acts in).
-        !has_action || is_unimportant_step(step)
+        if !has_action {
+            return true; // nothing to do → auto-pass
+        }
+        // Has an action, not a stop. SmartStops (MTGA default) prompts wherever you can act;
+        // with SmartStops off, auto-pass through unimportant steps anyway.
+        if cfg.smart_stops {
+            false
+        } else {
+            is_unimportant_step(step)
+        }
     }
 
     /// Enable recording of broadcast events into [`Engine::event_log`] (for tracing/tests).
@@ -1438,21 +1465,35 @@ mod expect_tests {
 
         let set_phase = |e: &mut Engine, ph| e.state.phase = ph;
 
-        // Own precombat main is always a stop — never auto-passed, even with no action.
+        // Own main phases are persistent default stops — prompt even with no action.
         set_phase(&mut e, Phase::PrecombatMain);
         assert!(!e.should_auto_pass(p0, false), "own MP1 is a stop");
-        // Unimportant steps auto-pass whether or not there's an action.
+        set_phase(&mut e, Phase::PostcombatMain);
+        assert!(!e.should_auto_pass(p0, false), "own MP2 is a stop");
+
+        // No action at a non-stop step ⇒ auto-pass.
         set_phase(&mut e, Phase::Upkeep);
-        assert!(e.should_auto_pass(p0, false));
-        assert!(e.should_auto_pass(p0, true), "upkeep auto-passes even with an action");
-        // An important non-stop step (combat damage): auto-pass only when no action.
+        assert!(e.should_auto_pass(p0, false), "no action ⇒ auto-pass upkeep");
+        // SmartStops (default ON): a legal play at ANY non-stop step ⇒ prompt (even upkeep).
+        assert!(!e.should_auto_pass(p0, true), "SmartStops prompts where you can act");
         set_phase(&mut e, Phase::CombatDamage);
-        assert!(e.should_auto_pass(p0, false));
-        assert!(!e.should_auto_pass(p0, true), "act in combat damage ⇒ prompt");
-        // Defender stops at declare-blockers; the active player does not.
+        assert!(!e.should_auto_pass(p0, true), "SmartStops prompts in combat damage too");
+
+        // Declare-attackers/blockers are NOT persistent default stops (forced TBAs); with no
+        // action they auto-pass.
+        set_phase(&mut e, Phase::DeclareAttackers);
+        assert!(e.should_auto_pass(p0, false), "declare-attackers not a default priority stop");
         set_phase(&mut e, Phase::DeclareBlockers);
-        assert!(!e.should_auto_pass(p1, false), "defender stops at declare blockers");
-        assert!(e.should_auto_pass(p0, false), "active player auto-passes declare blockers");
+        assert!(e.should_auto_pass(p1, false), "declare-blockers not a default priority stop");
+
+        // SmartStops OFF: auto-pass unimportant steps even with an action; still prompt in
+        // important ones.
+        e.set_smart_stops(p0, false);
+        set_phase(&mut e, Phase::Upkeep);
+        assert!(e.should_auto_pass(p0, true), "SmartStops off: pass upkeep with an action");
+        set_phase(&mut e, Phase::CombatDamage);
+        assert!(!e.should_auto_pass(p0, true), "SmartStops off: still prompt in combat damage");
+        e.set_smart_stops(p0, true);
 
         // A manual stop forces a prompt at an otherwise-elided step.
         e.set_stop(p0, Phase::Upkeep, Some(true));
