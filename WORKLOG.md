@@ -5,6 +5,21 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **engine:** task #11 GENERALIZATION (milestone 4 cont.) — the rewrite pass + triggers are
+  now beyond the self-scoped prototype (4 snapshot commits): (1) land plays routed through the
+  whiteboard + `Rewrite::EntersTapped`/`Action::TapUntap`; (2) a **dies/LTB trigger** (Exultant
+  Cultist "when this dies, draw") via the existing SelfDies path (source found in graveyard by
+  grp_id); (3) **GLOBAL-scope replacements** — the pass now scans every battlefield permanent's
+  `Ability::Replacement` (not just the affected object's own), with `CardFilter::ItSelf` /
+  `ControlledBy(Controller)` evaluated against the replacement's source (design added ItSelf +
+  `WouldAddCounters{kind,to}`). Validated on **Root Maze** (global "lands enter tapped" taps an
+  opponent's land) and **Hardened Scales** (global "+1/+1 on a creature you control → +1 more"
+  modifies Servant of the Scale's own enters-with-a-counter — a replacement modifying another
+  replacement's output, resolved by the fixpoint → 0/0 enters as 2/2). Converted Servant/Fog
+  Bank from `Any` to `ItSelf` (else they'd leak globally). (4) **CR 616.1f** player choice — when
+  >1 replacement applies to one event, the affected object's controller picks via
+  `DecisionRequest::ChooseReplacement`, then re-check; validated with two Hardened Scales (1+1+1
+  ⇒ 3 counters, decision surfaced). 47 mtg-core tests green, workspace green, clippy clean.
 - **engine:** task #11 (ENGINE_PLAN milestone 4) — **prototype-first** validation of the
   two architecture-defining subsystems, on 4 Scryfall-verified cards (4 snapshot commits):
   (1) TRIGGERED ABILITIES (CR 603): commit emits events → `collect_triggers` queues matching

@@ -37,9 +37,10 @@ MTGA client.
    `RandomAgent`s self-play to a life-total win; `mtg-cli` demo.
 4. Spike the **MTGA decompile** in `../mtga-re` to recover the GRE protobuf schema
    (DECOMPILE_PLAN) — informs the `DecisionRequest` enum.
-5. ✅ **Whiteboard rewrite pass + triggered abilities** (milestone 4, prototype-validated on
-   Elvish Visionary / Flametongue Kavu / Servant of the Scale / Fog Bank). Next: generalize
-   (global replacements + `CardFilter::ItSelf`, 616.1f player choice, more event patterns).
+5. ✅ **Whiteboard rewrite pass + triggered abilities** (milestone 4) — prototype-validated
+   (Visionary/Flametongue Kavu/Servant/Fog Bank) AND generalized: GLOBAL-scope replacements
+   (Root Maze, Hardened Scales) via `CardFilter::ItSelf`/`ControlledBy`, CR 616.1f player
+   choice (`ChooseReplacement`), and dies/LTB triggers (Exultant Cultist). Next: M5 (layers).
 
 ## Current state
 
@@ -60,9 +61,11 @@ MTGA client.
   trigger targeting) and a real materialize→rewrite→commit pass (replacement/prevention) wired
   over design's `ActionPattern`/`Rewrite`. ETB, spell damage, and combat damage all flow
   through the whiteboard. Validated cards: Elvish Visionary, Flametongue Kavu, Servant of the
-  Scale (enters-with-counter), Fog Bank (prevent combat damage). Open for generalization:
-  global (non-self) replacements + `CardFilter::ItSelf`, 616.1f replacement choice, more
-  EventPatterns, the layer system (M5).
+  Scale (enters-with-counter), Fog Bank (prevent combat damage). **Now generalized:** GLOBAL
+  replacements scanned across the battlefield (Root Maze, Hardened Scales) via
+  `CardFilter::ItSelf`/`ControlledBy`, CR 616.1f player choice (`ChooseReplacement`), and
+  dies/LTB triggers (Exultant Cultist). Next: the layer system (M5), more event/action
+  patterns, regeneration/delayed triggers as cards need them.
 - **engine done with #1 + #7 + #9 (milestones 1–3):** the headless `mtg-core` now runs a
   **minimal but real game** — turn machine (CR 500s), stack (CR 405), priority loop + agenda
   fixpoint (CR 117.5/603.3/704.3), mana + casting (CR 601) with auto-tap, an Effect-IR
