@@ -57,6 +57,29 @@ fetch_scryfall_default_cards() {
   echo "    saved $out ($(du -h "$out" | cut -f1); $stats)."
 }
 
+# 1b. Build a queryable SQLite index from the bulk JSON ---------------------------------------
+# The 550MB JSON is too slow to scan per card lookup (~2 min/pass). We derive a single
+# indexed SQLite file (one row per printing, gameplay columns only) that card-authoring
+# queries by name in milliseconds. Rebuilt whenever the underlying JSON changes.
+build_card_index() {
+  need python3
+  local src="$DATA_DIR/default-cards.json"
+  local db="$DATA_DIR/cards.sqlite"
+  local stamp="$DATA_DIR/.default-cards.updated_at"
+  local dbstamp="$DATA_DIR/.cards-sqlite.updated_at"
+
+  if [[ ! -f "$src" ]]; then
+    echo "    note: $src missing — skipping card index." ; return 0
+  fi
+  if [[ -f "$db" && -f "$stamp" && -f "$dbstamp" && "$(cat "$stamp")" == "$(cat "$dbstamp")" ]]; then
+    echo "    cards.sqlite already current — skipping rebuild."
+    return 0
+  fi
+  echo "==> Building SQLite card index (data/scryfall/cards.sqlite)…"
+  python3 "$REPO_ROOT/scripts/build_card_index.py"
+  [[ -f "$stamp" ]] && cp "$stamp" "$dbstamp"
+}
+
 # 2. Web client deps (optional) -------------------------------------------------------------
 install_web_deps() {
   local web="$REPO_ROOT/crates/mtg-gre-server/web"
@@ -72,6 +95,7 @@ install_web_deps() {
 
 main() {
   fetch_scryfall_default_cards
+  build_card_index
   install_web_deps
   echo "==> Setup complete."
 }
