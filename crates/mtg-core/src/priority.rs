@@ -2891,6 +2891,33 @@ mod expect_tests {
     }
 
     #[test]
+    fn add_mana_fills_the_pool_c19() {
+        use crate::basics::Color;
+        use crate::effects::action::{ResolutionCtx, WbReason};
+        use crate::effects::target::ManaSpec;
+        use crate::effects::value::{PlayerRef, ValueExpr};
+        use crate::effects::Effect;
+        let state = cards::build_game(1, &[&[], &[]]);
+        let mut e = pass_engine(state);
+        e.resolve_effect(
+            &Effect::AddMana {
+                who: PlayerRef::Controller,
+                mana: ManaSpec {
+                    produces: vec![(Color::Green, ValueExpr::Fixed(2))],
+                    any_color: None,
+                },
+            },
+            &ResolutionCtx { controller: Some(PlayerId(0)), ..Default::default() },
+            WbReason::Resolve(crate::ids::StackId(0)),
+        );
+        assert_eq!(
+            e.state.player(PlayerId(0)).mana_pool.amounts.get(&Color::Green).copied().unwrap_or(0),
+            2,
+            "AddMana added {{G}}{{G}} to the pool"
+        );
+    }
+
+    #[test]
     fn counters_on_self_doubles_plus_one_counters_c9b() {
         use crate::basics::CounterKind;
         use crate::effects::action::{ResolutionCtx, WbReason};

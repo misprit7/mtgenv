@@ -14,10 +14,10 @@ use crate::agent::{
     ActionRef, DecisionRequest, DecisionResponse, GameEvent, ModeOption, ReplacementOption,
     SelectReason,
 };
-use crate::basics::{CardType, CounterKind, DamageKind, Target, Zone, ZoneDest};
+use crate::basics::{CardType, Color, CounterKind, DamageKind, Target, Zone, ZoneDest};
 use crate::effects::ability::{Ability, ActionPattern, Rewrite};
 use crate::effects::action::{Action, ResolutionCtx, Whiteboard, WbReason};
-use crate::effects::target::{CardFilter, TokenSpec};
+use crate::effects::target::{CardFilter, ManaSpec, TokenSpec};
 use crate::effects::value::{PlayerRef, ValueExpr};
 use crate::effects::{Effect, EffectTarget, Mode};
 use crate::ids::{ObjId, PlayerId, StackId};
@@ -104,6 +104,12 @@ impl Engine {
             Effect::Search { who, zone, filter, min, max, to, tapped } => {
                 self.interpret_search(ctx, *who, *zone, filter, *min, *max, to, *tapped);
             }
+            // C19: add mana to a player's pool (a mana ability resolving, or a ritual). Imperative
+            // (mana isn't a whiteboard action); `any_color` asks the player which colour.
+            Effect::AddMana { who, mana } => {
+                let player = self.eval_player(*who, ctx);
+                self.add_mana(player, mana, ctx);
+            }
             // Pure leaves (and not-yet-interactive nodes) lower without agent interaction.
             _ => self.materialize(effect, ctx, wb, cursor),
         }
@@ -166,6 +172,36 @@ impl Engine {
         }
         if zone == Zone::Library {
             self.state.shuffle_library(searcher);
+        }
+    }
+
+    /// C19: add a `ManaSpec`'s mana to `player`'s pool (CR 106.4). `produces` is fixed colours;
+    /// `any_color` asks the player to pick. (The simplified payment path taps sources directly,
+    /// so this is used by explicit mana-ability activation / ritual effects.)
+    fn add_mana(&mut self, player: PlayerId, mana: &ManaSpec, ctx: &ResolutionCtx) {
+        for (color, amount) in &mana.produces {
+            let amt = self.eval_value(amount, ctx).max(0) as u32;
+            if amt > 0 {
+                *self.state.player_mut(player).mana_pool.amounts.entry(*color).or_insert(0) += amt;
+            }
+        }
+        if let Some(amount) = &mana.any_color {
+            let amt = self.eval_value(amount, ctx).max(0) as u32;
+            if amt > 0 {
+                let all =
+                    vec![Color::White, Color::Blue, Color::Black, Color::Red, Color::Green];
+                let resp = self.ask(
+                    player,
+                    &DecisionRequest::ChooseColor { allowed: all.clone(), min: 1, max: 1 },
+                );
+                let color = match resp {
+                    DecisionResponse::Indices(v) => {
+                        v.first().and_then(|&i| all.get(i as usize)).copied().unwrap_or(Color::White)
+                    }
+                    _ => Color::White,
+                };
+                *self.state.player_mut(player).mana_pool.amounts.entry(color).or_insert(0) += amt;
+            }
         }
     }
 
