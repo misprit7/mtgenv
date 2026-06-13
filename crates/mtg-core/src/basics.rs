@@ -131,6 +131,11 @@ pub struct Status {
 pub struct ManaCost {
     pub generic: u32,
     pub colored: BTreeMap<Color, u32>,
+    /// The number of `{X}` symbols in the printed cost (CR 107.3) — usually 0, 1 for `{X}`-spells,
+    /// 2 for `{X}{X}`. The chosen value of X is picked at cast (`ChooseNumber`) and lives in the
+    /// resolution context, not here.
+    #[serde(default)]
+    pub x: u32,
 }
 
 /// A mana pool (CR 106.4): mana currently available to a player, by color. Empties as each

@@ -90,6 +90,12 @@ pub fn can_pay(state: &GameState, p: PlayerId, cost: &ManaCost) -> bool {
     select_payment(&sources, cost).is_some()
 }
 
+/// The total mana `p` could produce right now (one per untapped mana source). A loose upper
+/// bound used to bound the `{X}` choice (CR 107.3 — colour constraints aren't modeled here).
+pub fn available_mana(state: &GameState, p: PlayerId) -> u32 {
+    mana_sources(state, p).len() as u32
+}
+
 /// Pay `cost` by tapping a sufficient set of `p`'s mana sources (CR 605.3a / 601.2g-h).
 /// Returns false (tapping nothing) if the cost can't be paid. `{0}` is always payable
 /// (CR 118.3a).
@@ -121,7 +127,7 @@ mod tests {
         for &(c, n) in pips {
             colored.insert(c, n);
         }
-        ManaCost { generic, colored }
+        ManaCost { generic, colored, x: 0 }
     }
 
     fn game_with_lands(forests: usize, mountains: usize) -> GameState {

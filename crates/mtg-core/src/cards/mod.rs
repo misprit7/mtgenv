@@ -165,7 +165,7 @@ pub(crate) fn mana_cost(generic: u32, pips: &[(Color, u32)]) -> ManaCost {
     for &(c, n) in pips {
         *colored.entry(c).or_insert(0) += n;
     }
-    ManaCost { generic, colored }
+    ManaCost { generic, colored, x: 0 }
 }
 
 pub(crate) fn basic_land(grp_id: u32, name: &str, color: Color) -> CardDef {

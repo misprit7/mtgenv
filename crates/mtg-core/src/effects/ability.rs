@@ -133,6 +133,10 @@ pub enum StaticContribution {
     ModifyPT { power: i32, toughness: i32 },
     /// Layer 7b: set base power/toughness to specific values.
     SetBasePT { power: i32, toughness: i32 },
+    /// Layer 7a CDA (CR 604.3/613.4b): set base P/T from **dynamic** values, evaluated against the
+    /// object being computed — e.g. Lumbering Worldwagon `*/4` (`*` = lands you control), or a
+    /// creature whose P/T equals its +1/+1 counters (`CountersOnSelf`).
+    SetBasePTValue { power: ValueExpr, toughness: ValueExpr },
     /// Layer 6: grant a keyword ability.
     GrantKeyword(Keyword),
     /// Layer 6: remove a keyword ability.
