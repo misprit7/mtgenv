@@ -5,6 +5,16 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **webui:** **"not fully implemented" ⚠ card badge** (user/lead request, webui half). A yellow ⚠
+  corner badge renders on any card whose view `chars.fully_implemented === false`, with a hover
+  tooltip "Not fully implemented:\n<rules_text>" (the deferred clause the engine documents in
+  rules_text). No JSON-projection change needed — board `chars` are `CharacteristicsView` serialized
+  whole into `PlayerView`, so the field passes through automatically once engine adds it (rules_text
+  already present). Wired **forward-compatibly**: strict no-op until the field exists (`undefined`/
+  `true` show nothing — no false positives). Mirrored embedded + Vite (+ CSS re-sync). Verified via
+  Playwright with synthetic `fully_implemented:false` injection: flagged cards show ⚠ + the
+  deferred-clause tooltip; control (no field) shows zero badges. Auto-activates when
+  `CardDef.fully_implemented`→view lands (task #30 = real-data pass then). Commit 10a31bf.
 - **engine:** **C19 DONE (#28) — `mana_colors` shortcut fully retired; mana production is 100% IR.**
   With design's card-side migration complete (basics → intrinsic CR 305.6 subtype mana;
   Llanowar/Hushwood → `Activated{is_mana}`), removed the `mana_colors` field from `CardDef`, the
