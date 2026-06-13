@@ -27,8 +27,9 @@ use tokio::net::TcpListener;
 use tower_http::services::ServeDir;
 
 use crate::driver;
-use crate::protocol::{ClientMsg, ServerMsg};
+use crate::protocol::{ClientMsg, DeckCardView, DeckEntry, ServerMsg};
 use crate::session::{ClientResponse, GreSessionAgent};
+use mtg_core::state::GameState;
 
 /// The self-contained, no-build client served when `web/dist/` is absent.
 const EMBEDDED_CLIENT: &str = include_str!("embedded_client.html");
@@ -65,6 +66,53 @@ async fn embedded() -> impl IntoResponse {
 /// Serve the baked-in Scryfall art manifest (grp_id → image URLs + artist).
 async fn card_art() -> impl IntoResponse {
     ([(axum::http::header::CONTENT_TYPE, "application/json")], CARD_ART)
+}
+
+/// Snapshot a seat's **starting decklist** from the freshly-built `GameState` (before the engine
+/// draws opening hands), grouped by card with counts. This is for the human's debug zone viewer
+/// only — it is read straight from `GameState`, never via `PlayerView`, so it can't leak into the
+/// agent boundary. Library *order* is discarded (grouped), so nothing about draw order is exposed.
+fn decklist_for(state: &GameState, seat: PlayerId) -> Vec<DeckEntry> {
+    use std::collections::BTreeMap;
+    // grp_id → (count, representative chars). Group by printing so duplicates collapse to a count.
+    let mut groups: BTreeMap<u32, (u32, DeckCardView)> = BTreeMap::new();
+    for &id in &state.player(seat).library {
+        let c = &state.object(id).chars;
+        let mana_value = c
+            .mana_cost
+            .as_ref()
+            .map(|m| m.generic + m.colored.values().sum::<u32>())
+            .unwrap_or(0);
+        let entry = groups.entry(c.grp_id).or_insert_with(|| {
+            (
+                0,
+                DeckCardView {
+                    name: c.name.clone(),
+                    grp_id: c.grp_id,
+                    mana_cost: c.mana_cost.clone(),
+                    colors: c.colors.clone(),
+                    card_types: c.card_types.clone(),
+                    subtypes: c.subtypes.clone(),
+                    supertypes: c.supertypes.clone(),
+                    mana_value,
+                },
+            )
+        });
+        entry.0 += 1;
+    }
+    let mut cards: Vec<DeckEntry> = groups
+        .into_values()
+        .map(|(count, chars)| DeckEntry { count, chars })
+        .collect();
+    // Decklist order: nonland by mana value then name, lands last by name (the usual deck view).
+    cards.sort_by(|a, b| {
+        let land = |c: &DeckCardView| c.card_types.contains(&mtg_core::basics::CardType::Land);
+        land(&a.chars)
+            .cmp(&land(&b.chars))
+            .then(a.chars.mana_value.cmp(&b.chars.mana_value))
+            .then(a.chars.name.cmp(&b.chars.name))
+    });
+    cards
 }
 
 /// Build the `Stops` echo (current live stop config) the UI renders the phase bar/toggles from.
@@ -142,6 +190,7 @@ async fn handle_socket(
     let stops_handle = Arc::new(Mutex::new(stops));
     let echo_tx = to_client_tx.clone(); // socket task → client (stop-config echoes)
     let result_tx = to_client_tx.clone(); // game thread → client (final GameOver frame)
+    let deck_tx = to_client_tx.clone(); // game thread → client (starting-decklist peek)
     let agent_stops = stops_handle.clone();
     std::thread::spawn(move || {
         let human = GreSessionAgent::new(PlayerId(0), to_client_tx, from_client_rx, agent_stops);
@@ -150,6 +199,12 @@ async fn handle_socket(
         // Decks chosen by the client (default demo = lands + creatures + burn), so the browser
         // game exercises casting & combat — and the user can pick e.g. Burn vs Bears.
         let state = driver::state_for_decks(p0.as_deref(), p1.as_deref(), seed);
+        // Debug library peek: snapshot the human's starting decklist from GameState (RL-safe,
+        // not via PlayerView) before the engine draws opening hands, and push it to the client.
+        let _ = deck_tx.send(ServerMsg::Decklist {
+            seat: PlayerId(0),
+            cards: decklist_for(&state, PlayerId(0)),
+        });
         // Engine auto-pass stays OFF (prompts every window); the GreSessionAgent applies the
         // human's live stop policy itself, so the human can re-stop steps mid-game.
         let outcome = driver::run_state(state, agents);

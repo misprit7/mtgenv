@@ -172,6 +172,22 @@
   .modal .box h3 { margin: 0 0 10px; }
   .modal .grid { display: flex; flex-wrap: wrap; gap: 8px; }
   .modal .close { float: right; cursor: pointer; color: var(--muted); }
+  .pile.clk { box-shadow: inset 0 0 0 1px var(--accent); }
+  /* decklist peek (grouped, MTGO-style deck view) */
+  .decklist { display: flex; flex-direction: column; gap: 3px; min-width: 360px; }
+  .dlrow { display: flex; align-items: center; gap: 8px; padding: 3px 8px 3px 4px; border-radius: 6px;
+    background: var(--felt2); border-left: 3px solid var(--line); cursor: default; }
+  .dlrow:hover { background: var(--panel); }
+  .dlrow.w { border-left-color: #e9e3c8; } .dlrow.u { border-left-color: #6fb7e6; }
+  .dlrow.b { border-left-color: #9b8aa6; } .dlrow.r { border-left-color: #e08a6f; }
+  .dlrow.g { border-left-color: #74b06a; } .dlrow.multi { border-left-color: #d9b85a; }
+  .dlrow.land { border-left-color: #b08a5a; } .dlrow.colorless { border-left-color: #9aa0a6; }
+  .dlcount { font-weight: 700; font-size: 13px; width: 26px; text-align: right; color: var(--muted); }
+  .dlthumb { width: 34px; height: 24px; border-radius: 3px; background-size: cover; background-position: center 18%;
+    background-color: var(--felt); flex: none; }
+  .dlname { flex: 1; font-size: 13px; }
+  .dlpips { display: flex; gap: 1px; align-items: center; }
+  .dlpips .ms { width: 14px; height: 14px; }
   /* hover full-card preview */
   #preview { position: fixed; display: none; width: 320px; border-radius: 12px; z-index: 100;
     box-shadow: 0 12px 44px rgba(0,0,0,.75); pointer-events: none; }
@@ -224,6 +240,7 @@
   let orderSeq = [];
   let previewUrl = null;
   let stopsView = null; // live stop config echoed by the server (phase bar + toggles read this)
+  const deckView = {}; // seat → starting decklist (debug peek; RL-safe, pushed once at setup)
 
   // Card art: a baked manifest (grp_id → art_crop/artist), batch-resolved from Scryfall once.
   // No runtime Scryfall API calls — we only load the cached CDN images.
@@ -262,6 +279,7 @@
     else if (m.type === "gameOver") { cur = null; renderEnd(m.winner); }
     else if (m.type === "log") { log(m.text); }
     else if (m.type === "stops") { stopsView = m; renderStopsControl(); if (view) renderStepBar(); }
+    else if (m.type === "decklist") { deckView[m.seat] = m.cards; if (view) render(); }
   }
 
   function logEvent(ev) {
@@ -389,8 +407,11 @@
     const life = el("div", "life" + (p.life <= 5 ? " low" : ""), "♥ " + p.life);
     d.appendChild(life);
     const piles = el("div", "piles");
-    const myLib = (you && view.me && view.me.library) ? view.me.library : null;
-    piles.appendChild(pileEl("Lib", p.library_count != null ? p.library_count : p.libraryCount, myLib, "P" + p.player + " library", !myLib));
+    const libCount = p.library_count != null ? p.library_count : p.libraryCount;
+    const deck = you ? deckView[p.player] : null; // your starting decklist (debug peek)
+    const libPile = pileEl("Lib", libCount, null, "P" + p.player + " library", true);
+    if (deck) { libPile.classList.add("clk"); libPile.title = "Your starting decklist"; libPile.onclick = () => openDecklist("P" + p.player + " decklist", deck); }
+    piles.appendChild(libPile);
     piles.appendChild(pileEl("GY", (p.graveyard || []).length, p.graveyard || [], "P" + p.player + " graveyard", false));
     const ex = p.exile_public || p.exilePublic || [];
     piles.appendChild(pileEl("Exile", ex.length, ex, "P" + p.player + " exile", false));
@@ -647,6 +668,30 @@
       $("modalTitle").textContent = title + " (" + objs.length + ")";
       objs.map(norm).forEach(c => g.appendChild(cardEl(c, {})));
     }
+    $("modal").classList.add("show");
+  }
+  // Decklist peek (your library is hidden in real MTG; this is the static starting deck list,
+  // grouped, order discarded — a debug aid, never fed to the agent).
+  function openDecklist(title, entries) {
+    const g = $("modalGrid"); g.innerHTML = "";
+    const total = entries.reduce((a, e) => a + (e.count || 0), 0);
+    $("modalTitle").textContent = title + " — " + total + " cards (starting library, order hidden)";
+    const list = el("div", "decklist");
+    entries.forEach(e => {
+      const c = e.chars;
+      const row = el("div", "dlrow " + colorClass(c));
+      const art = artMap[c.grp_id];
+      const thumb = el("div", "dlthumb");
+      if (art && (art.art || art.img)) thumb.style.backgroundImage = "url('" + (art.art || art.img) + "')";
+      if (art && art.img) { row.onmouseenter = (ev) => showPreview(art.img, ev); row.onmousemove = positionPreview; row.onmouseleave = hidePreview; }
+      const cnt = el("div", "dlcount", (e.count || 1) + "×");
+      const nm = el("div", "dlname", c.name);
+      const pips = el("div", "dlpips");
+      manaPips(c).forEach(p => pips.appendChild(p));
+      row.appendChild(cnt); row.appendChild(thumb); row.appendChild(nm); row.appendChild(pips);
+      list.appendChild(row);
+    });
+    g.appendChild(list);
     $("modal").classList.add("show");
   }
   $("modalClose").onclick = () => $("modal").classList.remove("show");

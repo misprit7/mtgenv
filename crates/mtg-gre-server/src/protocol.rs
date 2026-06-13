@@ -12,9 +12,33 @@
 
 use crate::options::Prompt;
 use mtg_core::agent::{GameEvent, PlayerView};
-use mtg_core::basics::Phase;
+use mtg_core::basics::{CardType, Color, ManaCost, Phase};
 use mtg_core::ids::PlayerId;
 use serde::{Deserialize, Serialize};
+
+/// One grouped line of a seat's **starting decklist** (the debug library peek). This is the
+/// static deck composition snapshotted server-side at setup — deliberately NOT part of
+/// [`PlayerView`], so it never reaches the RL agent (a player can't see their own library order;
+/// leaking it would let a policy see its draws). Grouped by card, count only, no library order.
+#[derive(Debug, Clone, Serialize)]
+pub struct DeckEntry {
+    pub count: u32,
+    pub chars: DeckCardView,
+}
+
+/// The display characteristics of a decklist card — a subset of `CharacteristicsView` shaped to
+/// match what the client card renderer reads (`name`/`mana_cost`/`colors`/`card_types`/…).
+#[derive(Debug, Clone, Serialize)]
+pub struct DeckCardView {
+    pub name: String,
+    pub grp_id: u32,
+    pub mana_cost: Option<ManaCost>,
+    pub colors: Vec<Color>,
+    pub card_types: Vec<CardType>,
+    pub subtypes: Vec<String>,
+    pub supertypes: Vec<String>,
+    pub mana_value: u32,
+}
 
 /// Server → client. Two channels over one socket: pushes ([`Event`](ServerMsg::Event)) and
 /// prompts ([`Decide`](ServerMsg::Decide)), mirroring the engine's `observe()` / `decide()`.
@@ -48,6 +72,11 @@ pub enum ServerMsg {
         smart_stops: bool,
         resolve_own_stack: bool,
         per_step: Vec<(Phase, bool)>,
+    },
+    /// A seat's static starting decklist, for the debug library peek (RL-safe: not in the view).
+    Decklist {
+        seat: PlayerId,
+        cards: Vec<DeckEntry>,
     },
 }
 

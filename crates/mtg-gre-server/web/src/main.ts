@@ -14,6 +14,7 @@ const multi = new Set<number>();
 let orderSeq: number[] = [];
 let previewUrl: string | null = null;
 let stopsView: Any = null; // live stop config echoed by the server
+const deckView: Any = {}; // seat → starting decklist (debug peek; RL-safe, pushed once at setup)
 
 // Card art: a baked manifest (grp_id → art_crop/artist), batch-resolved from Scryfall once.
 // No runtime Scryfall API calls — we only load the cached CDN images.
@@ -55,6 +56,7 @@ function handle(m: Any): void {
   else if (m.type === "gameOver") { cur = null; renderEnd(m.winner); }
   else if (m.type === "log") { log(m.text); }
   else if (m.type === "stops") { stopsView = m; renderStopsControl(); if (view) renderStepBar(); }
+  else if (m.type === "decklist") { deckView[m.seat] = m.cards; if (view) render(); }
 }
 
 function logEvent(ev: Any): void {
@@ -181,8 +183,14 @@ function pinfoEl(p: Any, you: boolean): HTMLElement {
   d.appendChild(who);
   d.appendChild(el("div", "life" + (p.life <= 5 ? " low" : ""), `♥ ${p.life}`));
   const piles = el("div", "piles");
-  const myLib = you && view.me && view.me.library ? view.me.library : null;
-  piles.appendChild(pileEl("Lib", p.library_count ?? p.libraryCount, myLib, `P${p.player} library`, !myLib));
+  const deck = you ? deckView[p.player] : null; // your starting decklist (debug peek)
+  const libPile = pileEl("Lib", p.library_count ?? p.libraryCount, null, `P${p.player} library`, true);
+  if (deck) {
+    libPile.classList.add("clk");
+    libPile.title = "Your starting decklist";
+    libPile.onclick = () => openDecklist(`P${p.player} decklist`, deck);
+  }
+  piles.appendChild(libPile);
   piles.appendChild(pileEl("GY", (p.graveyard || []).length, p.graveyard || [], `P${p.player} graveyard`, false));
   const exile = p.exile_public || p.exilePublic || [];
   piles.appendChild(pileEl("Exile", exile.length, exile, `P${p.player} exile`, false));
@@ -433,6 +441,35 @@ function openZone(title: string, objs: Any[] | null): void {
     $("modalTitle").textContent = `${title} (${objs.length})`;
     objs.map(norm).forEach((c) => g.appendChild(cardEl(c, {})));
   }
+  $("modal").classList.add("show");
+}
+// Decklist peek (your library is hidden in real MTG; this is the static starting deck list,
+// grouped, order discarded — a debug aid, never fed to the agent).
+function openDecklist(title: string, entries: Any[]): void {
+  const g = $("modalGrid"); g.innerHTML = "";
+  const total = entries.reduce((a, e) => a + (e.count || 0), 0);
+  $("modalTitle").textContent = `${title} — ${total} cards (starting library, order hidden)`;
+  const list = el("div", "decklist");
+  entries.forEach((e) => {
+    const c = e.chars;
+    const row = el("div", "dlrow " + colorClass(c));
+    const art = artMap[c.grp_id];
+    const thumb = el("div", "dlthumb");
+    if (art && (art.art || art.img)) thumb.style.backgroundImage = `url('${art.art || art.img}')`;
+    if (art && art.img) {
+      row.addEventListener("mouseenter", (ev) => showPreview(art.img, ev as MouseEvent));
+      row.addEventListener("mousemove", (ev) => { if (previewUrl) positionPreview(ev as MouseEvent); });
+      row.addEventListener("mouseleave", hidePreview);
+    }
+    row.appendChild(el("div", "dlcount", `${e.count || 1}×`));
+    row.appendChild(thumb);
+    row.appendChild(el("div", "dlname", c.name));
+    const pips = el("div", "dlpips");
+    manaPips(c).forEach((p) => pips.appendChild(p));
+    row.appendChild(pips);
+    list.appendChild(row);
+  });
+  g.appendChild(list);
   $("modal").classList.add("show");
 }
 $("modalClose").onclick = () => $("modal").classList.remove("show");
