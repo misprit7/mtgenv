@@ -27,6 +27,7 @@ use crate::state::{Characteristics, GameState};
 pub mod misc;
 
 // Per-first-printing-set folders (real card pool).
+pub mod dft;
 pub mod dsk;
 pub mod eoe;
 pub mod fdn;
@@ -92,6 +93,16 @@ pub(crate) fn creatures_you_control() -> SelectSpec {
         min: ValueExpr::Fixed(0),
         max: ValueExpr::Fixed(0),
     }
+}
+
+/// `CardFilter` matching a basic land card (CR 205.4b) — `All([Land, Supertype("Basic")])`.
+/// Shared by every "search your library for a basic land card" effect (fetch lands, Bushwhack,
+/// Lumbering Worldwagon, …).
+pub(crate) fn basic_land_filter() -> CardFilter {
+    CardFilter::All(vec![
+        CardFilter::HasCardType(CardType::Land),
+        CardFilter::Supertype("Basic".to_string()),
+    ])
 }
 
 /// `SelectSpec` for a static affecting "the permanent this Aura/Equipment is attached to"
@@ -305,6 +316,7 @@ pub fn starter_db() -> CardDb {
     fin::register(&mut db);
     fdn::register(&mut db);
     eoe::register(&mut db);
+    dft::register(&mut db);
     db
 }
 
@@ -387,7 +399,7 @@ mod tests {
     #[test]
     fn starter_db_has_expected_cards() {
         let db = starter_db();
-        assert_eq!(db.len(), 43);
+        assert_eq!(db.len(), 44);
         assert!(db.get(grp::FOREST).unwrap().is_mana_source());
         assert_eq!(db.get(grp::FOREST).unwrap().mana_colors, vec![Color::Green]);
         // Grizzly Bears is a vanilla 2/2 with no abilities.
