@@ -5,6 +5,29 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **engine:** task #14 checkpoint 3 — **auras + equipment** (the attachment subsystem), in three
+  commits. **3a Auras:** `Object.attached_to` + detach-on-zone-change in `move_object`;
+  `CardFilter::AttachedHost` matcher (source-relative, like ItSelf → resolves to the host) so a
+  "enchanted creature gets …" static lives in the normal global gather scan; Aura spells target a
+  creature at cast and enter the battlefield attached on resolution (illegal target → graveyard);
+  CR 704.5 Aura fall-off SBA. Card: Rancor (+2/+0 & trample). **3b Equipment + the activated-ability
+  path:** `legal_priority_actions` now enumerates non-mana activated abilities (masked by timing /
+  restriction / cost / legal target); `activate_ability` puts it on the stack, chooses targets, pays
+  the cost (`pay_cost`); `resolve_top` runs Activated alongside Triggered; `Effect::Attach` →
+  `Action::AttachTo`; `target_candidates` now honours `ControlledBy` (equip's "creature you control");
+  CR 704.5q equipment-unattaches SBA. Card: Bonesplitter (Equip {1}, +2/+0). **3c Qualification
+  dimension:** `ComputedChars.qualifications` gathered through layer 6 (`StaticContribution::
+  Qualification`), read by combat — `CantAttack` (declare_attackers) + `CantBlock` (can_block). Card:
+  Pacifism. starter_db 34→37. 78 mtg-core tests green, clippy clean. IR (design): used
+  `Effect::Attach{what,to}`, `CardFilter::AttachedHost`. Deferred: Rancor's return-to-hand recursion
+  (needs ReturnToHand + dies-trigger for non-creatures); general enchant restrictions (Auras hardcode
+  "enchant creature"). Next: (4) planeswalkers.
+- **engine:** webui ask — **live mid-game stop toggling**. `Engine::stops_handle(p) ->
+  Arc<Mutex<StopConfig>>`: a UI session holds the handle and toggles a seat's stops from another
+  thread; the engine re-reads the shared config at every priority window (no game reset). Moved
+  `auto_pass` into per-seat `StopConfig` so the handle is self-contained (1:1 with webui's
+  `driver::Stops`); added `StopConfig::set_override`/`effective_steps`. `stop_config(p)` now returns
+  an owned clone. Lets webui delete its duplicated stop policy and let the engine own it.
 - **engine:** task #14 checkpoint 2 — **rest of the evergreen keywords**. Haste (combat
   `declare_attackers` ignores summoning sickness when the creature has Haste); flash
   (`legal_priority_actions` treats Flash as instant-speed timing); hexproof (`targetable_by` +
