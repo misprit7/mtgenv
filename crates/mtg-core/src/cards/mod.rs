@@ -48,6 +48,15 @@ pub mod grp {
     pub const LEVITATION: u32 = 41;
     pub const HUMILITY: u32 = 42;
     pub const NATURES_REVOLT: u32 = 43;
+    // Evergreen-keyword creatures (#14).
+    pub const ELVISH_ARCHERS: u32 = 50;
+    pub const FENCING_ACE: u32 = 51;
+    pub const ARGOTHIAN_SWINE: u32 = 52;
+    pub const TYPHOID_RATS: u32 = 53;
+    pub const CHILD_OF_NIGHT: u32 = 54;
+    pub const ALABORN_GRENADIER: u32 = 55;
+    pub const ALLEY_STRANGLER: u32 = 56;
+    pub const WALL_OF_STONE: u32 = 57;
 }
 
 /// `SelectSpec` for a static affecting "creatures you control" (the anthem scope). min/max are
@@ -179,6 +188,23 @@ fn vanilla_creature(
     toughness: i32,
 ) -> CardDef {
     creature(grp_id, name, subtype, color, cost, power, toughness, Vec::new())
+}
+
+/// A creature with printed keyword abilities (CR 702) and no other abilities.
+#[allow(clippy::too_many_arguments)]
+fn kw_creature(
+    grp_id: u32,
+    name: &str,
+    subtype: &str,
+    color: Color,
+    cost: ManaCost,
+    power: i32,
+    toughness: i32,
+    keywords: Vec<Keyword>,
+) -> CardDef {
+    let mut def = creature(grp_id, name, subtype, color, cost, power, toughness, Vec::new());
+    def.chars.keywords = keywords;
+    def
 }
 
 fn enchantment(grp_id: u32, name: &str, color: Color, cost: ManaCost, abilities: Vec<Ability>) -> CardDef {
@@ -501,6 +527,23 @@ pub fn starter_db() -> CardDb {
             },
         ],
     ).with_text("All lands are 2/2 creatures that are still lands."));
+    // Evergreen-keyword creatures (Scryfall-verified single-keyword bodies).
+    db.insert(kw_creature(grp::ELVISH_ARCHERS, "Elvish Archers", "Elf Archer", Color::Green,
+        mana_cost(1, &[(Color::Green, 1)]), 2, 1, vec![Keyword::FirstStrike]).with_text("First strike"));
+    db.insert(kw_creature(grp::FENCING_ACE, "Fencing Ace", "Human Soldier", Color::White,
+        mana_cost(1, &[(Color::White, 1)]), 1, 1, vec![Keyword::DoubleStrike]).with_text("Double strike"));
+    db.insert(kw_creature(grp::ARGOTHIAN_SWINE, "Argothian Swine", "Boar", Color::Green,
+        mana_cost(3, &[(Color::Green, 1)]), 3, 3, vec![Keyword::Trample]).with_text("Trample"));
+    db.insert(kw_creature(grp::TYPHOID_RATS, "Typhoid Rats", "Rat", Color::Black,
+        mana_cost(0, &[(Color::Black, 1)]), 1, 1, vec![Keyword::Deathtouch]).with_text("Deathtouch"));
+    db.insert(kw_creature(grp::CHILD_OF_NIGHT, "Child of Night", "Vampire", Color::Black,
+        mana_cost(1, &[(Color::Black, 1)]), 2, 1, vec![Keyword::Lifelink]).with_text("Lifelink"));
+    db.insert(kw_creature(grp::ALABORN_GRENADIER, "Alaborn Grenadier", "Human Soldier", Color::White,
+        mana_cost(0, &[(Color::White, 2)]), 2, 2, vec![Keyword::Vigilance]).with_text("Vigilance"));
+    db.insert(kw_creature(grp::ALLEY_STRANGLER, "Alley Strangler", "Human Assassin", Color::Black,
+        mana_cost(2, &[(Color::Black, 1)]), 2, 3, vec![Keyword::Menace]).with_text("Menace"));
+    db.insert(kw_creature(grp::WALL_OF_STONE, "Wall of Stone", "Wall", Color::Red,
+        mana_cost(1, &[(Color::Red, 2)]), 0, 8, vec![Keyword::Defender]).with_text("Defender"));
     db
 }
 
@@ -583,7 +626,7 @@ mod tests {
     #[test]
     fn starter_db_has_expected_cards() {
         let db = starter_db();
-        assert_eq!(db.len(), 21);
+        assert_eq!(db.len(), 29);
         assert!(db.get(grp::FOREST).unwrap().is_mana_source());
         assert_eq!(db.get(grp::FOREST).unwrap().mana_colors, vec![Color::Green]);
         // Grizzly Bears is a vanilla 2/2 with no abilities.

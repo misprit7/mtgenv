@@ -60,9 +60,8 @@ pub fn compute(state: &GameState, id: ObjId) -> ComputedChars {
         card_types: base.card_types.clone(),
         subtypes: base.subtypes.clone(),
         colors: base.colors.clone(),
-        // Printed keywords aren't carried on `Characteristics` yet; granted ones come from
-        // layer 6. (When a printed-keyword card lands, seed from base here.)
-        keywords: BTreeSet::new(),
+        // Seed from printed keywords (CR 702); layer 6 grants/removes on top.
+        keywords: base.keywords.iter().copied().collect(),
     };
 
     // Every static continuous effect on the battlefield, in timestamp order (CR 613.7). We do

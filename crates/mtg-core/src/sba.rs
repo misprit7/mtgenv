@@ -27,13 +27,15 @@ pub enum LossReason {
     TenPoison,
 }
 
-/// Why a creature is put into its owner's graveyard by an SBA (CR 704.5f/g).
+/// Why a creature is put into its owner's graveyard by an SBA (CR 704.5f/g/h).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DeathReason {
     /// 704.5f — toughness 0 or less.
     ZeroToughness,
     /// 704.5g — marked damage greater than or equal to (positive) toughness.
     LethalDamage,
+    /// 704.5h — dealt damage by a deathtouch source (any amount is lethal).
+    Deathtouch,
 }
 
 /// A state-based action that needs performing. The enum grows as more SBAs are implemented.
@@ -91,10 +93,20 @@ pub fn collect(state: &GameState) -> Vec<StateBasedAction> {
             continue;
         }
         let toughness = cc.toughness.unwrap_or(0);
+        // Indestructible (CR 702.12) prevents destruction by lethal damage / deathtouch, but
+        // NOT the toughness-0 SBA (704.5f).
+        let indestructible = cc.has_keyword(crate::effects::ability::Keyword::Indestructible);
         if toughness <= 0 {
             out.push(StateBasedAction::CreatureDies {
                 creature: o.id,
                 reason: DeathReason::ZeroToughness,
+            });
+        } else if indestructible {
+            // can't be destroyed
+        } else if o.dealt_deathtouch {
+            out.push(StateBasedAction::CreatureDies {
+                creature: o.id,
+                reason: DeathReason::Deathtouch,
             });
         } else if o.damage_marked >= toughness as u32 {
             out.push(StateBasedAction::CreatureDies {

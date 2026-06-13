@@ -393,6 +393,8 @@ impl Engine {
 
     /// Deal `amount` damage to `target` (CR 120). 0 damage is a non-event (CR 120.8). To a
     /// player: lose that much life. To a creature: mark damage (SBAs destroy it later).
+    /// Keyword hooks on the SOURCE (CR 702): deathtouch marks the target lethal (704.5h);
+    /// lifelink gains the source's controller that much life (702.15).
     pub(crate) fn apply_damage(
         &mut self,
         target: Target,
@@ -403,6 +405,10 @@ impl Engine {
         if amount == 0 {
             return;
         }
+        let src = crate::chars::compute(&self.state, source);
+        let deathtouch = src.has_keyword(crate::effects::ability::Keyword::Deathtouch);
+        let lifelink = src.has_keyword(crate::effects::ability::Keyword::Lifelink);
+
         match target {
             Target::Player(p) => {
                 self.broadcast(GameEvent::DamageDealt {
@@ -422,6 +428,9 @@ impl Engine {
                 if is_bf_creature {
                     if let Some(x) = self.state.objects.get_mut(&o) {
                         x.damage_marked += amount;
+                        if deathtouch {
+                            x.dealt_deathtouch = true; // CR 702.2 / 704.5h
+                        }
                     }
                     self.broadcast(GameEvent::DamageDealt {
                         target,
@@ -431,6 +440,12 @@ impl Engine {
                 }
             }
             Target::Stack(_) => {}
+        }
+        // Lifelink (CR 702.15): the source's controller gains life equal to the damage dealt.
+        if lifelink {
+            if let Some(controller) = self.state.objects.get(&source).map(|s| s.controller) {
+                self.change_life(controller, amount as i32);
+            }
         }
     }
 

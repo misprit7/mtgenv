@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use crate::agent::{
     AttackerOption, BlockerOption, DamageSlot, DecisionRequest, DecisionResponse,
 };
-use crate::basics::{DamageKind, Target};
+use crate::basics::{DamageKind, Target, Zone};
 use crate::effects::ability::Keyword;
 use crate::effects::action::{Action, ResolutionCtx, Whiteboard, WbReason};
 use crate::ids::{ObjId, PlayerId};
@@ -41,6 +41,17 @@ pub struct Block {
 pub struct CombatState {
     pub attackers: Vec<Attack>,
     pub blocks: Vec<Block>,
+}
+
+/// Which combat-damage substep is being dealt (CR 510.4).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum CombatStep {
+    /// No first/double strike present — a single damage step; everyone deals.
+    Single,
+    /// First-strike step: first-strikers + double-strikers.
+    FirstStrike,
+    /// Regular step (after a first-strike step): double-strikers again + non-first-strikers.
+    Regular,
 }
 
 impl CombatState {
@@ -99,8 +110,13 @@ impl Engine {
             .copied()
             .filter(|&id| {
                 let o = &self.state.objects[&id];
-                // Computed type (CR 613) — a land that became a creature can attack.
-                self.state.computed(id).is_creature() && !o.status.tapped && !o.summoning_sick
+                let cc = self.state.computed(id);
+                // Computed type (CR 613) — a land that became a creature can attack. Defender
+                // (CR 702.3) can't attack.
+                cc.is_creature()
+                    && !cc.has_keyword(Keyword::Defender)
+                    && !o.status.tapped
+                    && !o.summoning_sick
             })
             .collect();
         if eligible_ids.is_empty() {
@@ -142,8 +158,11 @@ impl Engine {
         if attacks.is_empty() {
             return;
         }
-        // Tap attackers (CR 508.1f — not a cost; vigilance deferred so all attackers tap).
+        // Tap attackers (CR 508.1f — not a cost). Vigilance (CR 702.20) doesn't tap.
         for a in &attacks {
+            if self.state.computed(a.attacker).has_keyword(Keyword::Vigilance) {
+                continue;
+            }
             if let Some(o) = self.state.objects.get_mut(&a.attacker) {
                 o.status.tapped = true;
             }
@@ -216,51 +235,133 @@ impl Engine {
                 }
             }
         }
+        // Menace (CR 702.111): a creature with menace can't be blocked except by two or more.
+        // An attacker blocked by exactly one is illegally blocked → that block is dropped (it
+        // becomes unblocked).
+        let menace_attackers: Vec<ObjId> = combat
+            .attackers
+            .iter()
+            .map(|a| a.attacker)
+            .filter(|&atk| self.state.computed(atk).has_keyword(Keyword::Menace))
+            .collect();
+        for atk in menace_attackers {
+            if blocks.iter().filter(|b| b.attacker == atk).count() == 1 {
+                blocks.retain(|b| b.attacker != atk);
+            }
+        }
+
         if let Some(c) = self.state.combat.as_mut() {
             c.blocks = blocks;
         }
     }
 
-    /// Combat Damage step (CR 510): assign and deal all combat damage simultaneously, then
-    /// the following priority round's SBAs destroy lethally-damaged creatures.
+    /// Combat Damage step (CR 510), with first/double strike substeps (510.4). If any
+    /// combatant has first or double strike there are two damage substeps: first-strikers +
+    /// double-strikers deal in step 1, then SBAs are applied (dead creatures don't deal in
+    /// step 2), then double-strikers (again) + the remaining normal creatures deal in step 2.
     pub(crate) fn combat_damage(&mut self) {
         let combat = match self.state.combat.clone() {
             Some(c) if !c.attackers.is_empty() => c,
             _ => return,
         };
+        let two_steps = self.any_first_or_double_strike(&combat);
+        if two_steps {
+            self.deal_combat_substep(&combat, CombatStep::FirstStrike);
+            self.apply_combat_deaths(); // CR 510.4 — SBAs between the two damage steps
+            self.deal_combat_substep(&combat, CombatStep::Regular);
+        } else {
+            self.deal_combat_substep(&combat, CombatStep::Single);
+        }
+    }
 
-        // (recipient, amount, source) — gathered, then applied all at once (CR 510.2).
+    fn any_first_or_double_strike(&self, combat: &CombatState) -> bool {
+        combat
+            .attackers
+            .iter()
+            .map(|a| a.attacker)
+            .chain(combat.blocks.iter().map(|b| b.blocker))
+            .any(|id| {
+                let k = self.state.computed(id);
+                k.has_keyword(Keyword::FirstStrike) || k.has_keyword(Keyword::DoubleStrike)
+            })
+    }
+
+    /// Whether `id` deals damage in this substep (CR 510.4).
+    fn deals_in(&self, id: ObjId, step: CombatStep) -> bool {
+        let k = self.state.computed(id);
+        let fs = k.has_keyword(Keyword::FirstStrike);
+        let ds = k.has_keyword(Keyword::DoubleStrike);
+        match step {
+            CombatStep::Single => true,
+            CombatStep::FirstStrike => fs || ds,
+            CombatStep::Regular => ds || !fs,
+        }
+    }
+
+    fn alive(&self, id: ObjId) -> bool {
+        self.state
+            .objects
+            .get(&id)
+            .is_some_and(|o| o.zone == Zone::Battlefield)
+    }
+
+    /// Gather and deal one combat-damage substep through the whiteboard (so prevention applies).
+    fn deal_combat_substep(&mut self, combat: &CombatState, step: CombatStep) {
         let mut pending: Vec<(Target, u32, ObjId)> = Vec::new();
 
         for atk in &combat.attackers {
-            let power = self.creature_power(atk.attacker);
-            let blockers = combat.blockers_of(atk.attacker);
+            if self.alive(atk.attacker) && self.deals_in(atk.attacker, step) {
+                let power = self.creature_power(atk.attacker);
+                let kc = self.state.computed(atk.attacker);
+                let trample = kc.has_keyword(Keyword::Trample);
+                let deathtouch = kc.has_keyword(Keyword::Deathtouch);
+                let was_blocked = combat.blocks.iter().any(|b| b.attacker == atk.attacker);
+                let live_blockers: Vec<ObjId> = combat
+                    .blockers_of(atk.attacker)
+                    .into_iter()
+                    .filter(|&b| self.alive(b))
+                    .collect();
 
-            if blockers.is_empty() {
-                // Unblocked: damage to what it is attacking (CR 510.1b).
-                if power > 0 {
-                    pending.push((atk.defender, power, atk.attacker));
-                }
-            } else {
-                // Blocked: assign the attacker's power among its blockers (CR 510.1c).
-                let assignment = self.assign_among_blockers(atk.attacker, power, &blockers);
-                for (blocker, amount) in assignment {
-                    if amount > 0 {
-                        pending.push((Target::Object(blocker), amount, atk.attacker));
+                if !was_blocked {
+                    // Unblocked (CR 510.1b).
+                    if power > 0 {
+                        pending.push((atk.defender, power, atk.attacker));
+                    }
+                } else if live_blockers.is_empty() {
+                    // Blocked but all blockers gone: only trample assigns (to the defender).
+                    if trample && power > 0 {
+                        pending.push((atk.defender, power, atk.attacker));
+                    }
+                } else {
+                    for (recip, amt) in self.assign_blocked_damage(
+                        atk.attacker,
+                        power,
+                        &live_blockers,
+                        deathtouch,
+                        if trample { Some(atk.defender) } else { None },
+                    ) {
+                        if amt > 0 {
+                            pending.push((recip, amt, atk.attacker));
+                        }
                     }
                 }
             }
-            // Each blocker deals its power to the attacker it blocks (CR 510.1d).
-            for &blocker in &blockers {
-                let bp = self.creature_power(blocker);
-                if bp > 0 {
-                    pending.push((Target::Object(atk.attacker), bp, blocker));
+            // Blockers deal to the attacker they block (CR 510.1d).
+            if self.alive(atk.attacker) {
+                for &blk in &combat.blockers_of(atk.attacker) {
+                    if self.alive(blk) && self.deals_in(blk, step) {
+                        let bp = self.creature_power(blk);
+                        if bp > 0 {
+                            pending.push((Target::Object(atk.attacker), bp, blk));
+                        }
+                    }
                 }
             }
         }
 
-        // Deal it through the whiteboard so replacement/prevention effects (e.g. Fog Bank)
-        // can rewrite the combat-damage event before it happens (CR 510.2 / 614/615).
+        if pending.is_empty() {
+            return;
+        }
         let mut wb = Whiteboard::new(WbReason::CombatDamage, ResolutionCtx::default());
         for (target, amount, source) in pending {
             wb.push(Action::Damage {
@@ -273,19 +374,64 @@ impl Engine {
         self.commit(wb);
     }
 
-    /// Decide how a blocked attacker assigns its `power` among `blockers`. A single blocker
-    /// gets it all; multiple blockers trigger an `AssignCombatDamage` decision (controller's
-    /// choice, CR 510.1c). Defensive against a malformed response (falls back to dumping all
-    /// on the first blocker).
-    fn assign_among_blockers(
+    /// Apply creature-death SBAs immediately (between the two combat-damage steps, CR 510.4):
+    /// move lethally-damaged creatures to the graveyard so they don't deal in the next step.
+    fn apply_combat_deaths(&mut self) {
+        use crate::sba::StateBasedAction;
+        let dead: Vec<ObjId> = crate::sba::collect(&self.state)
+            .into_iter()
+            .filter_map(|s| match s {
+                StateBasedAction::CreatureDies { creature, .. } => Some(creature),
+                _ => None,
+            })
+            .collect();
+        for id in dead {
+            let owner = match self.state.objects.get(&id) {
+                Some(o) => o.owner,
+                None => continue,
+            };
+            if self.state.move_object(id, Zone::Graveyard, owner) {
+                self.broadcast(crate::agent::GameEvent::PermanentDied { obj: id });
+                self.broadcast(crate::agent::GameEvent::ObjectMoved {
+                    obj: id,
+                    to: Zone::Graveyard,
+                });
+            }
+        }
+    }
+
+    /// Assign a blocked attacker's `power` among its (living) `blockers`. Deathtouch makes 1
+    /// lethal (CR 702.2); trample (CR 702.19) sends excess past lethal to `trample_to`.
+    /// Multi-block without trample uses an `AssignCombatDamage` decision (CR 510.1c).
+    fn assign_blocked_damage(
         &mut self,
         attacker: ObjId,
         power: u32,
         blockers: &[ObjId],
-    ) -> Vec<(ObjId, u32)> {
-        if blockers.len() == 1 {
-            return vec![(blockers[0], power)];
+        deathtouch: bool,
+        trample_to: Option<Target>,
+    ) -> Vec<(Target, u32)> {
+        let lethal = |s: &Self, b: ObjId| if deathtouch { 1 } else { s.creature_lethal(b).max(1) };
+
+        if let Some(defender) = trample_to {
+            // Assign lethal to each blocker (in order), excess to the defender.
+            let mut out = Vec::new();
+            let mut left = power;
+            for &b in blockers {
+                let need = lethal(self, b).min(left);
+                out.push((Target::Object(b), need));
+                left -= need;
+            }
+            if left > 0 {
+                out.push((defender, left));
+            }
+            return out;
         }
+
+        if blockers.len() == 1 {
+            return vec![(Target::Object(blockers[0]), power)];
+        }
+        // Multi-block, no trample: the attacker's controller divides the damage (CR 510.1c).
         let controller = self
             .state
             .objects
@@ -296,17 +442,17 @@ impl Engine {
             .iter()
             .map(|&b| DamageSlot {
                 recipient: Target::Object(b),
-                lethal: self.creature_lethal(b),
+                lethal: lethal(self, b),
             })
             .collect();
         let req = DecisionRequest::AssignCombatDamage {
             source: attacker,
             recipients,
             total: power,
-            deathtouch: false,
+            deathtouch,
             trample_to: None,
         };
-        let mut out: Vec<(ObjId, u32)> = blockers.iter().map(|&b| (b, 0)).collect();
+        let mut out: Vec<(Target, u32)> = blockers.iter().map(|&b| (Target::Object(b), 0)).collect();
         let mut assigned = 0u32;
         if let DecisionResponse::Amounts(amounts) = self.ask(controller, &req) {
             for (idx, amt) in amounts {
@@ -317,7 +463,6 @@ impl Engine {
                 }
             }
         }
-        // Dump any unassigned remainder on the first blocker (keeps total == power).
         if assigned < power {
             out[0].1 += power - assigned;
         }
@@ -334,13 +479,15 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent::{Agent, RandomAgent};
+    use crate::agent::{Agent, DecisionRequest, DecisionResponse, PlayerView, RandomAgent};
     use crate::basics::Zone;
     use crate::cards::{self, grp};
 
     fn put_bf(state: &mut crate::state::GameState, owner: PlayerId, grp_id: u32) -> ObjId {
         let chars = state.card_db().get(grp_id).unwrap().chars.clone();
-        state.add_card(owner, chars, Zone::Battlefield)
+        let id = state.add_card(owner, chars, Zone::Battlefield);
+        state.objects.get_mut(&id).unwrap().summoning_sick = false; // can attack/block
+        id
     }
 
     fn engine() -> Engine {
@@ -348,6 +495,58 @@ mod tests {
         let agents: Vec<Box<dyn Agent>> =
             vec![Box::new(RandomAgent::new(1)), Box::new(RandomAgent::new(2))];
         Engine::new(state, agents)
+    }
+
+    fn aggro_engine() -> Engine {
+        let state = cards::build_game(1, &[&[], &[]]);
+        let agents: Vec<Box<dyn Agent>> = vec![Box::new(Aggressive), Box::new(Aggressive)];
+        Engine::new(state, agents)
+    }
+
+    /// Attacks with everything; blocks each attacker with the first creature able to.
+    struct Aggressive;
+    impl Agent for Aggressive {
+        fn decide(&mut self, _v: &PlayerView, req: &DecisionRequest) -> DecisionResponse {
+            match req {
+                DecisionRequest::DeclareAttackers { eligible } => DecisionResponse::Pairs(
+                    eligible
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, o)| !o.may_attack.is_empty())
+                        .map(|(i, _)| (i as u32, 0))
+                        .collect(),
+                ),
+                DecisionRequest::DeclareBlockers { eligible, .. } => DecisionResponse::Pairs(
+                    eligible
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, o)| !o.may_block.is_empty())
+                        .map(|(i, _)| (i as u32, 0))
+                        .collect(),
+                ),
+                DecisionRequest::AssignCombatDamage { total, .. } => {
+                    DecisionResponse::Amounts(vec![(0, *total)])
+                }
+                DecisionRequest::SelectCards { min, .. } => {
+                    DecisionResponse::Indices((0..*min).collect())
+                }
+                _ => DecisionResponse::Pass,
+            }
+        }
+    }
+
+    fn solo_combat(e: &mut Engine, attacker: ObjId, blockers: &[ObjId]) {
+        e.state.active_player = PlayerId(0);
+        e.state.combat = Some(CombatState {
+            attackers: vec![Attack {
+                attacker,
+                defender: Target::Player(PlayerId(1)),
+            }],
+            blocks: blockers
+                .iter()
+                .map(|&b| Block { blocker: b, attacker })
+                .collect(),
+        });
     }
 
     #[test]
@@ -383,5 +582,105 @@ mod tests {
 
         put_bf(&mut e.state, PlayerId(1), grp::LEVITATION); // P1's creatures gain flying too
         assert!(e.can_block(blk, atk), "a flyer can block a flyer");
+    }
+
+    #[test]
+    fn double_strike_deals_twice() {
+        // Fencing Ace (1/1 double strike), unblocked → 1 (first-strike step) + 1 (regular) = 2.
+        let mut e = engine();
+        let ace = put_bf(&mut e.state, PlayerId(0), grp::FENCING_ACE);
+        solo_combat(&mut e, ace, &[]);
+        e.combat_damage();
+        assert_eq!(e.state.player(PlayerId(1)).life, 18);
+    }
+
+    #[test]
+    fn first_strike_kills_before_retaliation() {
+        // Elvish Archers (2/1 first strike) blocked by Grizzly Bears (2/2): Archers deals 2 in
+        // the first-strike step → Bears dies before it can deal back → Archers takes no damage.
+        let mut e = engine();
+        let archers = put_bf(&mut e.state, PlayerId(0), grp::ELVISH_ARCHERS);
+        let bears = put_bf(&mut e.state, PlayerId(1), grp::GRIZZLY_BEARS);
+        solo_combat(&mut e, archers, &[bears]);
+        e.combat_damage();
+        assert_eq!(e.state.object(bears).zone, Zone::Graveyard, "Bears died to first strike");
+        assert_eq!(e.state.object(archers).zone, Zone::Battlefield, "Archers survived");
+        assert_eq!(e.state.object(archers).damage_marked, 0, "took no damage back");
+    }
+
+    #[test]
+    fn trample_assigns_excess_to_player() {
+        // Argothian Swine (3/3 trample) blocked by a 2/2: 2 lethal to the blocker, 1 tramples.
+        let mut e = engine();
+        let swine = put_bf(&mut e.state, PlayerId(0), grp::ARGOTHIAN_SWINE);
+        let bears = put_bf(&mut e.state, PlayerId(1), grp::GRIZZLY_BEARS);
+        solo_combat(&mut e, swine, &[bears]);
+        e.combat_damage();
+        assert_eq!(e.state.player(PlayerId(1)).life, 19, "1 excess trampled over");
+        assert_eq!(e.state.object(bears).damage_marked, 2, "blocker took lethal");
+    }
+
+    #[test]
+    fn deathtouch_makes_any_damage_lethal() {
+        // Typhoid Rats (1/1 deathtouch) blocked by Hill Giant (3/3): the 1 damage is lethal.
+        let mut e = engine();
+        let rats = put_bf(&mut e.state, PlayerId(0), grp::TYPHOID_RATS);
+        let giant = put_bf(&mut e.state, PlayerId(1), grp::HILL_GIANT);
+        solo_combat(&mut e, rats, &[giant]);
+        e.combat_damage();
+        let dies = |id| {
+            crate::sba::collect(&e.state).iter().any(|s| matches!(
+                s,
+                crate::sba::StateBasedAction::CreatureDies { creature, .. } if *creature == id
+            ))
+        };
+        assert!(dies(giant), "Hill Giant dies to 1 deathtouch damage (704.5h)");
+        assert!(dies(rats), "Rats dies to the Giant's 3 (lethal)");
+    }
+
+    #[test]
+    fn lifelink_gains_controller_life() {
+        // Child of Night (2/1 lifelink) unblocked → 2 to opponent, +2 to its controller.
+        let mut e = engine();
+        let cn = put_bf(&mut e.state, PlayerId(0), grp::CHILD_OF_NIGHT);
+        solo_combat(&mut e, cn, &[]);
+        e.combat_damage();
+        assert_eq!(e.state.player(PlayerId(1)).life, 18, "2 damage dealt");
+        assert_eq!(e.state.player(PlayerId(0)).life, 22, "lifelink gained 2");
+    }
+
+    #[test]
+    fn defender_cant_attack() {
+        let mut e = aggro_engine();
+        put_bf(&mut e.state, PlayerId(0), grp::WALL_OF_STONE); // 0/8 defender
+        e.state.active_player = PlayerId(0);
+        e.declare_attackers();
+        assert!(e.state.combat.is_none(), "Defender cannot attack → no attackers declared");
+    }
+
+    #[test]
+    fn vigilance_attacks_without_tapping() {
+        let mut e = aggro_engine();
+        let grenadier = put_bf(&mut e.state, PlayerId(0), grp::ALABORN_GRENADIER); // vigilance
+        e.state.active_player = PlayerId(0);
+        e.declare_attackers();
+        assert!(e.state.combat.is_some(), "attacked");
+        assert!(!e.state.object(grenadier).status.tapped, "vigilance: not tapped");
+    }
+
+    #[test]
+    fn menace_needs_two_blockers() {
+        // Alley Strangler (menace) attacks; the defender's single blocker can't block it alone.
+        let mut e = aggro_engine();
+        let strangler = put_bf(&mut e.state, PlayerId(0), grp::ALLEY_STRANGLER);
+        put_bf(&mut e.state, PlayerId(1), grp::GRIZZLY_BEARS); // lone blocker
+        e.state.active_player = PlayerId(0);
+        e.declare_attackers();
+        e.declare_blockers();
+        let blocks = &e.state.combat.as_ref().unwrap().blocks;
+        assert!(
+            !blocks.iter().any(|b| b.attacker == strangler),
+            "menace: a single block is dropped (attacker stays unblocked)"
+        );
     }
 }

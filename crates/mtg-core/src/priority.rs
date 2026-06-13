@@ -455,6 +455,7 @@ impl Engine {
         for o in self.state.objects.values_mut() {
             if o.zone == Zone::Battlefield {
                 o.damage_marked = 0;
+                o.dealt_deathtouch = false;
             }
         }
         // CR 514.3 / 514.3a: check SBAs and triggers. If that puts something on the stack,

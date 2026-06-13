@@ -16,6 +16,7 @@ use std::sync::Arc;
 
 use crate::basics::{CardType, Color, CounterBag, CounterKind, ManaCost, ManaPool, Phase, Status, Zone};
 use crate::cards::{CardDb, CardDef};
+use crate::effects::ability::Keyword;
 use crate::combat::CombatState;
 use crate::ids::{ObjId, PlayerId, Timestamp};
 use crate::rng::Rng;
@@ -45,6 +46,9 @@ pub struct Characteristics {
     pub mana_cost: Option<ManaCost>,
     pub power: Option<i32>,
     pub toughness: Option<i32>,
+    /// Printed keyword abilities (CR 702). The layer system (`chars/`) seeds the computed
+    /// keyword set from these, then layers grants/removes (layer 6) on top.
+    pub keywords: Vec<Keyword>,
     /// Oracle/printing id for embedding-table lookups (RL) & rendering; 0 = unset.
     pub grp_id: u32,
 }
@@ -97,6 +101,9 @@ pub struct Object {
     pub status: Status,
     pub counters: CounterBag,
     pub damage_marked: u32,
+    /// Set when this creature has been dealt damage by a deathtouch source this turn; the SBA
+    /// (CR 704.5h) then destroys it regardless of amount. Cleared at cleanup with marked damage.
+    pub dealt_deathtouch: bool,
     /// Summoning sickness (CR 302.6): can't attack / use `{T}` until controlled since the
     /// start of its controller's most recent turn (unless it has haste).
     pub summoning_sick: bool,
@@ -347,6 +354,7 @@ impl GameState {
             status: Status::default(),
             counters: CounterBag::default(),
             damage_marked: 0,
+            dealt_deathtouch: false,
             summoning_sick: false,
             timestamp,
         };
@@ -395,6 +403,7 @@ impl GameState {
             o.status = Status::default();
             o.counters = CounterBag::default();
             o.damage_marked = 0;
+            o.dealt_deathtouch = false;
             if to == Zone::Battlefield {
                 o.controller = to_owner;
                 o.summoning_sick = o.chars.is_creature();
