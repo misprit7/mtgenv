@@ -10,15 +10,20 @@ _Last updated: 2026-06-13_
 A fast, correct, headless Rust implementation of the MTG rules engine — modeled on MTG
 Arena's "whiteboard" architecture — that drives an efficient Gymnasium environment for
 training an MTG AI in Python/PyTorch via self-play, with a pluggable decision boundary so
-the same engine can later be driven by the real MTGA client.
+the same engine can be driven by a Python RL agent, a human via a web client, or the real
+MTGA client.
 
 ## Long-term goals
 
 1. **Full ruleset** implementation (card-agnostic core + a large card pool as Effect-IR data).
 2. **Efficient Gymnasium env** (PyO3+maturin) for PyTorch RL self-play at high throughput.
-3. **Pluggable decision boundary** — scripted AI, Python RL agent, and the real MTGA client
-   are interchangeable `Agent` implementations ("the easy switch").
-4. **Expressive enough for MTGA-grade complex cards** (Zurgo/Sylvan Library class) even
+3. **Pluggable decision boundary** — scripted AI, Python RL agent, web-client human, and the
+   real MTGA client are interchangeable `Agent` implementations ("the easy switch").
+4. **Web play interface + GRE-protocol server** — a from-scratch web client to play against
+   mtg-core, built so closely to MTGA's client↔server interface that the real MTGA client
+   can be dropped in against our backend (endpoint redirect, or decompile/recompile). The
+   recovered GRE protocol is the client seam; see `docs/plans/CLIENT_PLAN.md`.
+5. **Expressive enough for MTGA-grade complex cards** (Zurgo/Sylvan Library class) even
    though they're not implemented near-term — the architecture must not foreclose them.
 
 ## Short-term goals (next)
@@ -33,19 +38,26 @@ the same engine can later be driven by the real MTGA client.
 
 ## Current state
 
-- **Phase: planning complete, implementation not started.** (User asked for plans first;
-  no engine code written yet.)
-- Existing `src/*.rs` is a ~500-line naming skeleton — **to be replaced** by the workspace
-  in ENGINE_PLAN (kept only as vocabulary reference). Core wrongly depends on `egui`/`eframe`.
+- **Phase: parallel build kicked off** via a tmux agent team (`mtgenv`, lead + 4 teammates).
+  Active workstreams (shared task board): **engine** scaffolding the Cargo workspace +
+  headless `mtg-core` (#1); **decompile** recovering the GRE schema **and transport** in
+  `../mtga-re` (#2); **design** authoring `AGENT_INTERFACE.md` then implementing
+  agent/effects (#3,#4); **client** planning the web client + GRE server (#5).
+- Existing `src/*.rs` is a ~500-line naming skeleton being **replaced** by the workspace
+  (kept only as vocabulary reference); `egui`/`eframe` moving out of the core.
 - Docs in place: architecture (`docs/design/WHITEBOARD_MODEL.md`), rules
-  (`docs/rules/RULES_SUMMARY.md` + PDF/text), three plans (`docs/plans/`), `CLAUDE.md`.
-- Decompile recon done: MTGA = Mono + protobuf, Steam install; plan ready, repo not created.
+  (`docs/rules/RULES_SUMMARY.md` + PDF/text), plans (`docs/plans/`), `CLAUDE.md`.
+- Decompile recon done: MTGA = Mono + protobuf, Steam install; full decompile in progress.
 
 ## Key decisions
 
 - **Whiteboard model** as the engine architecture (see WHITEBOARD_MODEL.md).
 - **Core is card-agnostic**; card behavior is data (Effect IR) + `Native` escape hatch.
-- **Single `Agent`/`DecisionRequest` boundary** with engine-provided legal-action masking.
+- **Single `Agent`/`DecisionRequest` boundary** with engine-provided legal-action masking;
+  ALL front-ends (RL, scripted, web, MTGA client) are backends of this one boundary.
+- **The GRE protocol is the client seam.** A GRE-protocol server wraps `mtg-core`; the web
+  client and the real MTGA client are both clients of it → decompile must capture transport,
+  not just message schemas.
 - **PyO3 + maturin** for the RL hot path; keep a socket transport option for MTGA/Forge.
 - Target **paper CR** as truth + an **Arena profile** for MTGA-specific behavior.
 - Use **Forge** (`../forge-ai`) as a differential-testing oracle and possible interim Gym backend.
