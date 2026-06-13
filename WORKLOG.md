@@ -5,6 +5,20 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **webui:** **New `"counters"` preset deck** (user request — "a more complicated deck that uses
+  more of the cards/functionality"). A G/W landfall + +1/+1-counters midrange 60 (24 land / 26
+  creature / 10 noncreature), built server-side in `driver::counters_deck()` from the implemented
+  pool by `grp_id` (kept in the server crate — composes engine cards by id rather than adding a
+  `preset_deck` in card-agnostic `mtg-core`). Exercises a broad slice of the engine in one game:
+  Llanowar Elves (mana dork) + Hushwood Verge (conditional dual), Elvish Visionary ETB-draw, three
+  landfall payoffs (Sazh's Chocobo +1/+1, Mossborn Hydra counter-double, Icetill Explorer mill),
+  Hardened Scales counter-replacement, Glorious Anthem static, Bonesplitter equip + Pacifism aura,
+  Lumbering Worldwagon `*`/4 CDA + basic search, and keyword bodies — incl. two tracked-incomplete
+  cards (Icetill, Worldwagon) so the ⚠ badge shows on a real deck. New `driver::resolve_deck` routes
+  the name through the lobby picker (now defaults to `counters`), legacy `?p0/?p1`, and the CLI
+  `preset`/`play`. Tests: deck is a legal 60, all ids resolve in `starter_db`, RandomAgent mirror
+  plays to a winner (12 web tests green). Verified live: lobby lists it, agent-vs-agent counters
+  game runs to `finished{winner:0}`. Commit ade8b5a.
 - **webui:** **"not fully implemented" ⚠ card badge** (user/lead request, webui half). A yellow ⚠
   corner badge renders on any card whose view `chars.fully_implemented === false`, with a hover
   tooltip "Not fully implemented:\n<rules_text>" (the deferred clause the engine documents in
