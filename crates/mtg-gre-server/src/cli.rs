@@ -16,9 +16,11 @@
 use std::cell::RefCell;
 use std::io::{BufRead, Write};
 use std::rc::Rc;
+use std::sync::Arc;
 
 use mtg_core::agent::{Agent, RandomAgent};
 use mtg_core::basics::Zone;
+use mtg_core::cards;
 use mtg_core::ids::PlayerId;
 use mtg_core::priority::Engine;
 use mtg_core::sba::LossReason;
@@ -83,8 +85,10 @@ enum Flow {
     Quit,
 }
 
-/// The five basic lands, used for round-robin deck building.
-const BASICS: [&str; 5] = ["Plains", "Island", "Swamp", "Mountain", "Forest"];
+/// The basic lands present in the starter card DB (round-robin deck building).
+const DB_BASICS: [&str; 4] = ["plains", "island", "mountain", "forest"];
+/// Help blurb of recognized card aliases for `add`/`deck`.
+const CARD_NAMES: &str = "plains island mountain forest bears giant shock divination salve bolt";
 
 /// CLI session state: the scenario under construction + seat assignment.
 pub struct Cli {
@@ -120,7 +124,7 @@ impl Cli {
         let seed = 0;
         Cli {
             io,
-            state: GameState::new(2, seed),
+            state: fresh_state(2, seed),
             seats: vec![SeatSpec::Human, SeatSpec::Random(seed ^ 0xB0B)],
             deal: true,
             seed,
@@ -168,8 +172,8 @@ Commands:
   seat <i> human|random[:sd]  set seat i's agent
   life <player> <n>           set a player's life total
   add <player> <zone> <card>… place card(s) in a zone (zone: library|hand|battlefield|graveyard|exile)
-                              card: a basic land name (Plains|Island|Swamp|Mountain|Forest)
-  deck <player> <count> [name] add <count> basics to the library (round-robin, or all <name>)
+                              cards: plains island mountain forest bears giant shock divination salve bolt
+  deck <player> <count> [name] add <count> cards to the library (round-robin basics, or all <name>)
   handsize <player> <n>       set maximum hand size
   deal on|off                 deal opening hands on 'run' (off = play the hand-built scenario as-is)
   show [player]               dump full state (no arg) or a seat's PlayerView
@@ -187,7 +191,7 @@ Lines starting with '#' are comments. At a decision prompt: an index, 'p'/Enter 
         let players = args.first().and_then(|s| s.parse().ok()).unwrap_or(2usize).max(1);
         let seed = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(self.seed);
         self.seed = seed;
-        self.state = GameState::new(players, seed);
+        self.state = fresh_state(players, seed);
         self.seats = (0..players)
             .map(|i| if i == 0 { SeatSpec::Human } else { SeatSpec::Random(seed ^ (0xB0B + i as u64)) })
             .collect();
@@ -240,12 +244,12 @@ Lines starting with '#' are comments. At a decision prompt: an index, 'p'/Enter 
         };
         let mut added = 0;
         for spec in &args[2..] {
-            match parse_card(spec) {
+            match self.card_by_name(spec) {
                 Some(chars) => {
                     self.state.add_card(PlayerId(p), chars, zone);
                     added += 1;
                 }
-                None => self.say(&format!("unknown card '{spec}' (basic land names only for now)")),
+                None => self.say(&format!("unknown card '{spec}' (try: {CARD_NAMES})")),
             }
         }
         self.say(&format!("added {added} card(s) to P{p}'s {zone:?}"));
@@ -261,14 +265,20 @@ Lines starting with '#' are comments. At a decision prompt: an index, 'p'/Enter 
         if !self.valid_player(p) {
             return;
         }
-        let fixed = args.get(2).and_then(|s| parse_card(s));
+        // Optional fixed card name; otherwise round-robin the basic lands in the card DB.
+        let fixed = args.get(2).map(|s| s.to_string());
+        let mut added = 0;
         for i in 0..count {
-            let chars = fixed
-                .clone()
-                .unwrap_or_else(|| Characteristics::basic_land(BASICS[i % BASICS.len()]));
-            self.state.add_card(PlayerId(p), chars, Zone::Library);
+            let name = fixed.as_deref().unwrap_or(DB_BASICS[i % DB_BASICS.len()]);
+            if let Some(chars) = self.card_by_name(name) {
+                self.state.add_card(PlayerId(p), chars, Zone::Library);
+                added += 1;
+            }
         }
-        self.say(&format!("added {count} land(s) to P{p}'s library"));
+        if added < count {
+            self.say(&format!("unknown card name (try: {CARD_NAMES})"));
+        }
+        self.say(&format!("added {added} card(s) to P{p}'s library"));
     }
 
     fn cmd_handsize(&mut self, args: &[&str]) {
@@ -379,6 +389,13 @@ Lines starting with '#' are comments. At a decision prompt: an index, 'p'/Enter 
 
     // ── helpers ──────────────────────────────────────────────────────────────────────────────
 
+    /// Look up a card by name/alias in the attached starter DB, returning its characteristics
+    /// (with the right `grp_id`, so it casts/taps correctly).
+    fn card_by_name(&self, name: &str) -> Option<Characteristics> {
+        let grp = grp_for_name(name)?;
+        self.state.card_db().get(grp).map(|d| d.chars.clone())
+    }
+
     fn valid_player(&self, p: u32) -> bool {
         if (p as usize) < self.state.players.len() {
             true
@@ -419,18 +436,30 @@ fn parse_zone(s: &str) -> Option<Zone> {
     }
 }
 
-/// Parse a card spec. For now only basic land names (case-insensitive); creature/spell specs
-/// arrive once engine #9 settles the card-type vocabulary.
-fn parse_card(spec: &str) -> Option<Characteristics> {
-    let name = match spec.to_ascii_lowercase().as_str() {
-        "plains" => "Plains",
-        "island" => "Island",
-        "swamp" => "Swamp",
-        "mountain" => "Mountain",
-        "forest" => "Forest",
+/// A fresh game state with the starter card DB attached, so scenario cards cast/tap correctly.
+fn fresh_state(num_players: usize, seed: u64) -> GameState {
+    let mut state = GameState::new(num_players, seed);
+    state.set_card_db(Arc::new(cards::starter_db()));
+    state
+}
+
+/// Map a card name/alias to its starter-DB `grp_id` (case-insensitive). Aliases are single
+/// tokens so multi-word names don't break whitespace-split arguments.
+fn grp_for_name(name: &str) -> Option<u32> {
+    use cards::grp;
+    Some(match name.to_ascii_lowercase().as_str() {
+        "plains" => grp::PLAINS,
+        "island" => grp::ISLAND,
+        "mountain" => grp::MOUNTAIN,
+        "forest" => grp::FOREST,
+        "bears" | "grizzly" => grp::GRIZZLY_BEARS,
+        "giant" | "hill" => grp::HILL_GIANT,
+        "shock" => grp::SHOCK,
+        "divination" | "div" => grp::DIVINATION,
+        "salve" | "healing" => grp::HEALING_SALVE,
+        "bolt" | "lightning" => grp::LIGHTNING_BOLT,
         _ => return None,
-    };
-    Some(Characteristics::basic_land(name))
+    })
 }
 
 #[cfg(test)]
@@ -485,7 +514,7 @@ mod tests {
             mtg> add 1 battlefield Mountain
             added 1 card(s) to P1's Battlefield
             mtg> deck 1 3
-            added 3 land(s) to P1's library
+            added 3 card(s) to P1's library
             mtg> show
             === Turn 1 · Untap · active P0 · stack 0 · game_over false · winner — ===
             P0: life 17 · poison 0 · lands_played 0
@@ -494,7 +523,7 @@ mod tests {
                 Battlefield(0): (empty)
             P1: life 20 · poison 0 · lands_played 0
                 Hand       (0): (empty)
-                Library    (3): Plains, Island, Swamp
+                Library    (3): Plains, Island, Mountain
                 Battlefield(1): Mountain
             mtg> quit
         "#]]
