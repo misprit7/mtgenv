@@ -54,8 +54,11 @@ basic functionality.
 ## Repo conventions
 
 - **Maintain a linear git history** (rebase, not merge; `--force-with-lease`).
-- **Auto-commit** meaningful progress (no need to ask). Keep messages to a short
-  one-line summary, human-style. **No `Co-Authored-By` trailer** (overrides global default).
+- **Auto-commit** meaningful progress (no need to ask) as a short one-line human-style
+  summary; **no `Co-Authored-By` trailer** (overrides global default). Commit *working
+  in-progress snapshots* at natural increments — a module compiles, a sub-feature works or
+  its tests pass — so there are several small commits between "nothing" and a finished
+  feature, never one giant commit. Keep it sparse (not every line), and every commit builds.
 - **Keep the trackers current, without being asked:** append to `WORKLOG.md` (short dated
   entries) and update `PROJECT_STATE.md` (goals + current state) whenever you make
   meaningful progress.
