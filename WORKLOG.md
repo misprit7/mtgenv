@@ -5,6 +5,20 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **gym:** **GYM_PLAN milestone 1 COMPLETE — obs encoder + factored action space + MaskablePPO
+  beats random.** Replaced M0's flat obs/action with the real thing (gym-side only):
+  `layout.rs` (shared entity ordering/sizes so obs row `i` ↔ action slot `i`), `obs.rs` (structured
+  `Dict` obs — globals + per-permanent/hand/stack rows with computed P/T, types/colors/keywords,
+  status, counters, combat role, **`grp_id` card-embedding ids**; `obs_spec()` so Python builds the
+  space, never hard-coded), `codec.rs` (factored `Discrete(98)` vocab `COMMIT/HAND/PERM/PLAYER/
+  STACK/MODE/COLOR/NUMBER/YES/NO` + an autoregressive `Interaction` state machine that decomposes
+  targets/combat/multi-select/ordering into single-index sub-steps env-side, committing the batched
+  `DecisionResponse` only at the end; rare value decisions use the engine's canonical default).
+  `lib.rs` drives sub-steps (one engine request → N gym steps). Python: `MtgEnv` is single-agent vs
+  a fixed (random) opponent so win-rate-vs-random is measurable; `policy.py` DeepSets extractor
+  (grp_id embedding → per-row MLP → masked mean-pool); `train.py` MaskablePPO. **Exit met:** demo
+  0.615→**0.770**, burn-vs-bears 0.052→**0.917** win-rate vs random. 9 Rust + 9 pytest tests green
+  (incl. a ~20s learning-sanity test). Obs/codec stay swappable for M2/M4; needs zero engine changes.
 - **webui:** **lobby spectating + per-decision delay** (user request). Read-only spectating:
   `/ws?game=<id>&spectate=1` subscribes to a per-room `SpectateHub` (a `tokio::broadcast` of seat-0
   view frames, fed by a `SpectatorTee` agent wrapping seat 0 that mirrors every `observe` to the

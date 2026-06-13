@@ -62,7 +62,17 @@ MTGA client.
   (axum+WS, depends only on `mtg-core`); a human is just a `GreSessionAgent` behind the one
   boundary; mapping reconciled to AGENT_INTERFACE §6.1/§1.1; real-client drop-in via
   endpoint-redirect or Mono patch. Transport/auth details blocked on decompile (#2).
-- **gym done with GYM_PLAN milestone 0 (#22): the RL env is alive.** New `crates/mtg-py` (PyO3 +
+- **gym done with GYM_PLAN milestone 1 (#29): a learning agent that beats random.** On top of the
+  M0 PyO3 boundary: a structured `gym.spaces.Dict` observation (globals + per-permanent/hand/stack
+  rows with computed P/T, types/colors/keywords, status, counters, combat role, and **`grp_id`
+  card-embedding ids**) and a **factored `Discrete` action space** with env-side autoregressive
+  decomposition of targets/combat/multi-select/ordering + a legality mask (`obs.rs`/`codec.rs`/
+  `layout.rs`, all swappable seams — Python reads shapes from the extension). `MtgEnv` is single-
+  agent vs a fixed (random) opponent; a DeepSets policy (grp_id embedding + masked-mean-pool) trains
+  via `MaskablePPO`. **Exit met:** win-rate vs random demo 0.615→0.77, burn-vs-bears 0.052→0.92;
+  9 Rust + 9 pytest tests green. Gym-side only, zero engine changes. Next (needs greenlight): M2 —
+  self-play league + snapshotting + vectorization (M3 resumable step API stays an `engine` item).
+- **gym did GYM_PLAN milestone 0 (#22): the RL env came alive.** New `crates/mtg-py` (PyO3 +
   maturin `cdylib`, depends only on `mtg-core`, abi3 so it builds on the box's CPython 3.14) wraps
   the `Agent` boundary with a thread+channel `PyAgent` (port of `GreSessionAgent`, GYM_PLAN §2.2-A,
   zero engine changes): the game runs on its own OS thread, `decide` ships `(view, req)` over a

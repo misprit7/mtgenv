@@ -1,41 +1,53 @@
 # mtgenv_gym — Python RL environment (GYM_PLAN L4)
 
-Milestone 0: a Gymnasium env over the `mtg-core` engine via the `mtg_py` PyO3 extension
-(`crates/mtg-py`). Random self-play runs thousands of legal games to termination with
-non-empty action masks and card/zone conservation.
+A Gymnasium env over the `mtg-core` engine via the `mtg_py` PyO3 extension (`crates/mtg-py`).
+
+- **Milestone 0:** PyO3 boundary + random self-play (thousands of legal games, conservation holds).
+- **Milestone 1:** structured per-entity observation (with `grp_id` card embeddings), a factored
+  fixed-width action space with env-side autoregressive decomposition + legality mask, sparse
+  terminal reward, and a `MaskablePPO` agent that **beats a random opponent**.
 
 ## Setup
 
 ```bash
 # from the repo root
 python3 -m venv .venv && source .venv/bin/activate
-pip install maturin numpy gymnasium pytest
+pip install maturin numpy gymnasium pytest sb3-contrib   # sb3-contrib pulls torch (M1 training)
 
 # build + install the Rust extension `mtg_py` into the venv
-# (PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1 lets the abi3 build target a newer-than-known CPython)
+# (abi3 forward-compat lets the build target the box's newer-than-known CPython 3.14)
 PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1 maturin develop --release -m crates/mtg-py/Cargo.toml
 ```
 
 ## Run
 
 ```bash
-# smoke test (fast, a few hundred games per deck)
-PYTHONPATH=python pytest python/tests -q
+# fast smoke (random self-play legality + conservation + env Dict obs)
+PYTHONPATH=python pytest python/tests/test_smoke.py -q
 
-# throughput / exit-criteria report (thousands of games)
+# learning-sanity (trains ~20s, asserts win-rate beats random)
+PYTHONPATH=python pytest python/tests/test_learning.py -q
+
+# throughput / conservation report
 PYTHONPATH=python python python/benchmark.py --deck demo --games 3000
+
+# train + report win-rate vs random (the M1 exit criterion)
+PYTHONPATH=python python python/train.py --deck burn_vs_bears --timesteps 60000 --eval-games 400
 ```
 
 ## Layout
 
-- `mtgenv_gym/env.py` — `MtgEnv(gym.Env)`: `reset`/`step`, obs from the Rust encoder, action
-  mask in `info["action_mask"]`. Observation width and action vocabulary are read from the
-  extension (`PyGame.obs_dim()` / `PyGame.action_dim()`), **not hard-coded** — the encoder and
-  codec are swappable on the Rust side (milestone 1) without changing this layer.
-- `mtgenv_gym/selfplay.py` — low-level random self-play driver (no Gym dep); the throughput +
-  conservation harness used by the smoke test and benchmark.
-- `tests/test_smoke.py` — the milestone-0 exit-criteria assertions.
-- `benchmark.py` — games/s + conservation report.
+- `mtgenv_gym/env.py` — `MtgEnv(gym.Env)`: single agent (`agent_seat`) vs a fixed opponent
+  (random by default; a frozen checkpoint plugs in for M2 self-play). `gym.spaces.Dict`
+  observation + `Discrete` action space, both **read from the extension** (`PyGame.obs_spec()` /
+  `PyGame.action_dim()`) so the Rust encoder/codec stay swappable. Factored mask in
+  `info["action_mask"]` / `action_masks()`.
+- `mtgenv_gym/policy.py` — `EntityExtractor`: a DeepSets features extractor that embeds each
+  entity's `grp_id`, runs a shared per-row MLP, and masked-mean-pools each table (permutation
+  invariant) before the actor/critic heads.
+- `mtgenv_gym/selfplay.py` — low-level random self-play driver (no Gym dep) for the smoke/benchmark.
+- `train.py` — MaskablePPO training + greedy win-rate eval vs random (`train_and_eval` is reusable).
+- `tests/` — `test_smoke.py` (legality/conservation/env), `test_learning.py` (beats random).
 
-The decision boundary, observation encoding, and action codec are all in Rust
-(`crates/mtg-py/src/{game,obs,codec}.rs`); this package is plumbing.
+The observation encoder (`obs.rs` + `layout.rs`) and action codec (`codec.rs`) live in Rust; this
+package is plumbing + the policy network.

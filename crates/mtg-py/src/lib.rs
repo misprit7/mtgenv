@@ -4,51 +4,53 @@
 //! each through the swappable observation encoder ([`obs`]) and action codec ([`codec`]).
 //!
 //! Python surface (GYM_PLAN §2.3), all on `PyGame`:
-//! - `reset(seed) -> StepTuple` — start a fresh game, advance to the first decision
-//! - `step_to_decision() -> StepTuple` — advance to the next decision (call AFTER `apply`)
-//! - `apply(action)` — submit the decoded `DecisionResponse` for the current decision
-//! - `legal_mask() -> list[bool]` — constant-width mask for the current decision
+//! - `reset(seed) -> StepTuple` — start a fresh game, advance to the first decision (sub-step)
+//! - `step_to_decision() -> StepTuple` — advance to the next decision sub-step (call AFTER `apply`)
+//! - `apply(action)` — feed one factored action; the engine request is answered only when the
+//!   autoregressive sub-steps commit (multi-target / combat / multi-select decompose into several
+//!   `apply`s; GYM_PLAN §4.2)
+//! - `legal_mask() -> list[bool]` — constant-width mask for the current sub-step
+//! - `obs_spec()` — the structured-observation layout (Python builds its `gym.spaces.Dict` from it)
 //! - `outcome() -> int | None`, `summary()`, `is_terminal()` — terminal readouts
 //! - `snapshot`/`restore`/`clone` — stubbed (need the milestone-3 resumable step API)
 //!
-//! A `StepTuple` is `(obs, mask, seat, request, num_legal, terminal)`:
-//! `(list[float], list[bool], int, str, int, bool)`. The Python `MtgEnv` (python/mtgenv_gym)
-//! turns it into Gym `obs`/`info`.
+//! A `StepTuple` is `(obs, mask, seat, request, num_legal, terminal)` where `obs` is a dict of
+//! lists (the [`obs::Obs`] arrays). The Python `MtgEnv` turns it into Gym `obs`/`info`.
 
 mod codec;
 mod game;
+mod layout;
 mod obs;
 
 use pyo3::exceptions::{PyNotImplementedError, PyRuntimeError};
 use pyo3::prelude::*;
+use pyo3::types::PyDict;
 
 use mtg_core::agent::DecisionRequest;
 
+use codec::Interaction;
 use game::{Deck, FromGame, GameConn};
 
-/// `(obs, mask, seat, request_name, num_legal, terminal)`.
-type StepTuple = (Vec<f32>, Vec<bool>, i64, String, usize, bool);
+/// `(obs_dict, mask, seat, request_name, num_legal, terminal)`.
+type StepTuple = (PyObject, Vec<bool>, i64, String, usize, bool);
 
-/// What the engine is currently asking this game — cached so `apply`/`legal_mask` answer the
-/// *same* enumeration the observation was built from.
-struct Pending {
-    options: Vec<mtg_core::agent::DecisionResponse>,
-}
-
-/// A single in-process game, driven pull-style from Python. Owns the game thread (via `conn`) and
-/// the request receiver (`from_game`, owned here so it can be moved into the GIL-released blocking
-/// recv — `std`'s `Receiver`/`Sender` are `Send` but `!Sync`).
+/// A single in-process game, driven pull-style from Python. Owns the game thread (`conn`), the
+/// request receiver (`from_game`, owned here so it can be moved into the GIL-released blocking
+/// recv — `std`'s channels are `Send` but `!Sync`), and the in-flight decision's autoregressive
+/// [`Interaction`].
 ///
-/// `unsendable`: this handle owns OS threads + channel ends (`!Sync`), so it is pinned to the
-/// thread that created it — PyO3 raises if it's touched from another thread. That matches how a
-/// Gym env is used (one env per thread / per subprocess); it never crosses threads silently.
+/// `unsendable`: this handle owns OS threads + channel ends, so it is pinned to its creating thread
+/// (PyO3 raises if touched from another) — the normal one-env-per-thread / per-subprocess Gym use.
 #[pyclass(unsendable)]
 pub struct PyGame {
     deck: Deck,
     auto_pass: bool,
     conn: Option<GameConn>,
     from_game: Option<std::sync::mpsc::Receiver<FromGame>>,
-    pending: Option<Pending>,
+    /// The current engine decision, decomposed into factored sub-steps. `Some` while a decision is
+    /// in flight (possibly mid-autoregression); cleared when its response is committed.
+    interaction: Option<Interaction>,
+    seat: i64,
     terminal: bool,
     summary: Option<game::EndSummary>,
 }
@@ -67,20 +69,20 @@ impl PyGame {
             auto_pass,
             conn: None,
             from_game: None,
-            pending: None,
+            interaction: None,
+            seat: -1,
             terminal: false,
             summary: None,
         })
     }
 
-    /// Tear down any running game, start a fresh one for `seed`, and advance to the first
-    /// decision. Returns the first `StepTuple`.
+    /// Tear down any running game, start a fresh one for `seed`, and advance to the first decision
+    /// sub-step.
     fn reset(&mut self, py: Python<'_>, seed: u64) -> PyResult<StepTuple> {
-        // Dropping the old `GameConn` joins its thread (the fallback agent finishes it); replacing
-        // `from_game` discards any buffered messages from the old game.
         self.conn = None;
         self.from_game = None;
-        self.pending = None;
+        self.interaction = None;
+        self.seat = -1;
         self.terminal = false;
         self.summary = None;
 
@@ -90,38 +92,54 @@ impl PyGame {
         self.advance(py)
     }
 
-    /// Advance the game to its next decision (or terminal). Call this AFTER [`apply`](PyGame::apply)
-    /// — calling it with an un-applied decision pending would block forever (the game thread is
-    /// waiting on the response).
+    /// Advance to the next decision sub-step (or terminal). Call AFTER [`apply`](PyGame::apply).
     fn step_to_decision(&mut self, py: Python<'_>) -> PyResult<StepTuple> {
         self.advance(py)
     }
 
-    /// Submit the action for the current decision: decode it through the codec into a
-    /// `DecisionResponse` and hand it to the waiting game thread.
+    /// Feed one factored action for the current sub-step. If it completes the engine decision
+    /// (commit), the assembled `DecisionResponse` is sent to the game thread; otherwise the
+    /// interaction keeps accumulating and the next `step_to_decision` returns the next sub-step.
     fn apply(&mut self, action: usize) -> PyResult<()> {
-        let pending = self.pending.take().ok_or_else(|| {
+        let inter = self.interaction.as_mut().ok_or_else(|| {
             PyRuntimeError::new_err(
                 "apply() with no pending decision (reset/step_to_decision first, or game is over)",
             )
         })?;
-        let resp = codec::decode(&pending.options, action);
-        match &self.conn {
-            Some(conn) => {
-                conn.respond(resp);
-                Ok(())
+        if let Some(resp) = inter.apply(action) {
+            // Decision complete — answer the engine and clear so the next advance pulls anew.
+            match &self.conn {
+                Some(conn) => {
+                    conn.respond(resp);
+                }
+                None => return Err(PyRuntimeError::new_err("apply() before reset()")),
             }
-            None => Err(PyRuntimeError::new_err("apply() before reset()")),
+            self.interaction = None;
+        }
+        Ok(())
+    }
+
+    /// The constant-width legality mask for the current sub-step (all-false when terminal).
+    fn legal_mask(&self) -> Vec<bool> {
+        match &self.interaction {
+            Some(i) => i.mask(),
+            None => vec![false; codec::ACTION_DIM],
         }
     }
 
-    /// The constant-width legality mask for the current decision (all-false when terminal / no
-    /// decision pending).
-    fn legal_mask(&self) -> Vec<bool> {
-        match &self.pending {
-            Some(p) => codec::mask_from_options(&p.options),
-            None => vec![false; codec::ACTION_DIM],
-        }
+    /// The structured-observation layout: a list of `(name, rows, cols, is_int)`. Python builds its
+    /// `gym.spaces.Dict` from this, so shapes are never hard-coded on the Python side.
+    #[staticmethod]
+    fn obs_spec() -> Vec<(String, usize, usize, bool)> {
+        obs::spec()
+            .into_iter()
+            .map(|(n, r, c, i)| (n.to_string(), r, c, i))
+            .collect()
+    }
+
+    #[staticmethod]
+    fn action_dim() -> usize {
+        codec::ACTION_DIM
     }
 
     /// Winning seat index, or `None` (draw / not finished).
@@ -129,8 +147,7 @@ impl PyGame {
         self.summary.and_then(|s| s.winner.map(|w| w as i64))
     }
 
-    /// `(winner, turns, reason, initial_object_count, object_count, zone_sum)` once terminal —
-    /// the conservation invariants for the smoke test. `None` before the game ends.
+    /// `(winner, turns, reason, initial_object_count, object_count, zone_sum)` once terminal.
     fn summary(&self) -> Option<(Option<i64>, u32, String, usize, usize, usize)> {
         self.summary.map(|s| {
             (
@@ -148,21 +165,10 @@ impl PyGame {
         self.terminal
     }
 
-    #[staticmethod]
-    fn obs_dim() -> usize {
-        obs::OBS_DIM
-    }
-
-    #[staticmethod]
-    fn action_dim() -> usize {
-        codec::ACTION_DIM
-    }
-
     // ── milestone-3 stubs (need the resumable step API; not in approach-A) ──────────────────
     fn snapshot(&self) -> PyResult<Vec<u8>> {
         Err(PyNotImplementedError::new_err(
-            "snapshot/restore/clone require the resumable step API (GYM_PLAN milestone 3); \
-             the thread+channel bridge keeps state on the game thread",
+            "snapshot/restore/clone require the resumable step API (GYM_PLAN milestone 3)",
         ))
     }
     fn restore(&mut self, _data: Vec<u8>) -> PyResult<()> {
@@ -178,10 +184,14 @@ impl PyGame {
 }
 
 impl PyGame {
-    /// Block (GIL released) until the game thread yields the next decision or finishes, then build
-    /// the `StepTuple`. The `Receiver` is moved into the closure and back out, because `std`'s
-    /// `Receiver` is `Send` but `!Sync` — it can't be *borrowed* across the `allow_threads` seam.
+    /// Either continue the in-flight decision's next sub-step (no game-thread round-trip) or, when
+    /// the previous decision committed, block (GIL released) for the next engine request.
     fn advance(&mut self, py: Python<'_>) -> PyResult<StepTuple> {
+        // Continuation: an interaction is in flight and not yet committed → next sub-step.
+        if self.interaction.is_some() {
+            return Ok(self.decision_tuple(py));
+        }
+
         let rx = self
             .from_game
             .take()
@@ -194,43 +204,74 @@ impl PyGame {
 
         match msg {
             Ok(FromGame::Decision { seat, view, req }) => {
-                let options = codec::legal_options(&req);
-                let mask = codec::mask_from_options(&options);
-                let num_legal = options.len();
-                let obs = obs::encode(&view, &req, num_legal);
-                let name = request_name(&req).to_string();
-                self.pending = Some(Pending { options });
-                Ok((obs, mask, seat.0 as i64, name, num_legal, false))
+                self.seat = seat.0 as i64;
+                self.interaction = Some(Interaction::new(&view, &req));
+                Ok(self.decision_tuple(py))
             }
             Ok(FromGame::GameOver(summary)) => {
                 self.terminal = true;
                 self.summary = Some(summary);
-                self.pending = None;
-                Ok(terminal_tuple("GameOver"))
+                self.interaction = None;
+                Ok(self.terminal_tuple(py, "GameOver"))
             }
             Err(_) => {
-                // Game thread vanished without a GameOver (shouldn't happen in practice).
                 self.terminal = true;
-                self.pending = None;
-                Ok(terminal_tuple("Closed"))
+                self.interaction = None;
+                Ok(self.terminal_tuple(py, "Closed"))
             }
         }
     }
+
+    /// Build the `StepTuple` for the current interaction's sub-step.
+    fn decision_tuple(&self, py: Python<'_>) -> StepTuple {
+        let inter = self.interaction.as_ref().expect("interaction present");
+        let num_legal = inter.num_legal();
+        let mask = inter.mask();
+        let o = obs::encode(inter.view(), inter.req(), num_legal);
+        let obs_dict = obs_to_py(py, &o);
+        let name = request_name(inter.req()).to_string();
+        (obs_dict, mask, self.seat, name, num_legal, false)
+    }
+
+    fn terminal_tuple(&self, py: Python<'_>, name: &str) -> StepTuple {
+        (
+            zeros_obs(py),
+            vec![false; codec::ACTION_DIM],
+            -1,
+            name.to_string(),
+            0,
+            true,
+        )
+    }
 }
 
-fn terminal_tuple(name: &str) -> StepTuple {
-    (
-        vec![0.0; obs::OBS_DIM],
-        vec![false; codec::ACTION_DIM],
-        -1,
-        name.to_string(),
-        0,
-        true,
-    )
+/// Convert the structured observation into a Python dict of lists (Python reshapes per `obs_spec`).
+fn obs_to_py(py: Python<'_>, o: &obs::Obs) -> PyObject {
+    let d = PyDict::new(py);
+    d.set_item("globals", &o.globals).unwrap();
+    d.set_item("bf_feat", &o.bf_feat).unwrap();
+    d.set_item("bf_ids", &o.bf_ids).unwrap();
+    d.set_item("hand_feat", &o.hand_feat).unwrap();
+    d.set_item("hand_ids", &o.hand_ids).unwrap();
+    d.set_item("stack_feat", &o.stack_feat).unwrap();
+    d.set_item("stack_ids", &o.stack_ids).unwrap();
+    d.into_any().unbind()
 }
 
-/// Short stable name of a request variant (for the Python `info` / debugging). Mirrors
-/// [`obs::request_index`]'s ordering.
+/// A zero observation (correct shapes) for terminal steps.
+fn zeros_obs(py: Python<'_>) -> PyObject {
+    let d = PyDict::new(py);
+    for (name, rows, cols, is_int) in obs::spec() {
+        if is_int {
+            d.set_item(name, vec![0i64; rows * cols]).unwrap();
+        } else {
+            d.set_item(name, vec![0f32; rows * cols]).unwrap();
+        }
+    }
+    d.into_any().unbind()
+}
+
+/// Short stable name of a request variant (for the Python `info` / debugging).
 fn request_name(req: &DecisionRequest) -> &'static str {
     use DecisionRequest as Q;
     match req {
@@ -262,7 +303,6 @@ fn request_name(req: &DecisionRequest) -> &'static str {
 #[pymodule]
 fn mtg_py(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyGame>()?;
-    m.add("OBS_DIM", obs::OBS_DIM)?;
     m.add("ACTION_DIM", codec::ACTION_DIM)?;
     Ok(())
 }

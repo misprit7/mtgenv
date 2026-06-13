@@ -1,16 +1,17 @@
-"""``MtgEnv`` — the milestone-0 Gymnasium wrapper over ``mtg_py.PyGame`` (GYM_PLAN L4).
+"""``MtgEnv`` — the milestone-1 Gymnasium environment over ``mtg_py.PyGame`` (GYM_PLAN L4).
 
-The heavy lifting lives in Rust: the engine runs on its own thread, the observation encoder and
-action codec are Rust modules behind a stable FFI seam (``mtg_py``). This file is deliberately
-thin and **representation-agnostic** — the observation width and action vocabulary are read from
-the extension (``PyGame.obs_dim()`` / ``PyGame.action_dim()``), never hard-coded — so milestone 1
-can swap the encoder/codec on the Rust side without touching this env or the training loop.
+Single-agent vs a fixed opponent: the learning policy plays ``agent_seat``; every decision for the
+other seat is answered internally by ``opponent`` (a random legal policy by default — a frozen
+checkpoint can be plugged in for M2 self-play) and is **not** surfaced as a Gym step. So one
+``step`` always corresponds to one of the agent's own factored sub-steps, and the terminal reward
+(+1 win / −1 loss / 0 draw) is unambiguously from ``agent_seat``'s perspective — which makes
+"win-rate vs random" directly measurable (the M1 exit criterion).
 
-Self-play shape: the env holds **both seats**. Every decision (whichever seat must act) surfaces
-through the same ``step`` interface with its own legal-action mask in ``info["action_mask"]``; the
-caller's policy answers it. Terminal reward is from ``agent_seat``'s perspective (+1 win / -1 loss
-/ 0 draw). A real opponent-routing / two-policy split is milestone 1+; for the random self-play
-smoke a single random policy answers both seats.
+Representation-agnostic seam: the observation is a ``gym.spaces.Dict`` whose shapes are read from
+the Rust extension (``PyGame.obs_spec()``) and the action space is ``Discrete(PyGame.action_dim())``
+— nothing is hard-coded here, so the Rust encoder/codec can be revised without touching this env.
+The factored action mask for the current sub-step is always in ``info["action_mask"]`` (and via
+``action_masks()`` for sb3-contrib's ``ActionMasker``).
 """
 
 from __future__ import annotations
@@ -22,7 +23,7 @@ try:
     from gymnasium import spaces
 
     _GymEnv = gym.Env
-except Exception:  # pragma: no cover - gym is required for the env but not the low-level driver
+except Exception:  # pragma: no cover
     gym = None
     spaces = None
     _GymEnv = object
@@ -30,78 +31,95 @@ except Exception:  # pragma: no cover - gym is required for the env but not the 
 import mtg_py
 
 _U64 = (1 << 64) - 1
+_INT_HIGH = (1 << 31) - 1
 
 
 class MtgEnv(_GymEnv):
-    """A single mtg-core game as a Gymnasium environment.
-
-    Parameters
-    ----------
-    deck: one of ``"lands"``, ``"demo"``, ``"burn_vs_bears"``.
-    auto_pass: enable the engine's Arena-profile auto-pass (fewer trivial priority windows).
-    agent_seat: which seat the terminal reward is scored for (0 or 1).
-    max_decisions: truncation cap on decisions per episode (mirror-stall backstop).
-    """
-
     metadata = {"render_modes": []}
 
-    def __init__(self, deck="demo", auto_pass=True, agent_seat=0, max_decisions=200_000):
+    def __init__(self, deck="demo", auto_pass=True, agent_seat=0, opponent="random",
+                 max_decisions=200_000):
         super().__init__()
         if spaces is None:
-            raise ImportError("gymnasium is required for MtgEnv; install it or use the low-level driver")
+            raise ImportError("gymnasium is required for MtgEnv")
         self.deck = deck
         self.auto_pass = auto_pass
         self.agent_seat = int(agent_seat)
+        self.opponent = opponent
         self.max_decisions = int(max_decisions)
 
         self._game = mtg_py.PyGame(deck, auto_pass)
-        self.obs_dim = mtg_py.PyGame.obs_dim()
         self.action_dim = mtg_py.PyGame.action_dim()
-        self.observation_space = spaces.Box(
-            low=-np.inf, high=np.inf, shape=(self.obs_dim,), dtype=np.float32
+        self._spec = mtg_py.PyGame.obs_spec()  # [(name, rows, cols, is_int)]
+
+        self.observation_space = spaces.Dict(
+            {name: self._box(rows, cols, is_int) for (name, rows, cols, is_int) in self._spec}
         )
         self.action_space = spaces.Discrete(self.action_dim)
 
         self._decisions = 0
         self._terminal = True
-        self._pending_mask = None
+        self._mask = np.zeros(self.action_dim, dtype=bool)
+        self._opp_rng = np.random.default_rng(0)
 
     # ── Gym API ─────────────────────────────────────────────────────────────────────────────
     def reset(self, *, seed=None, options=None):
         super().reset(seed=seed)
         if seed is None:
             seed = int(self.np_random.integers(0, _U64, dtype=np.uint64))
+        self._opp_rng = np.random.default_rng((int(seed) ^ 0x5DEECE66D) & _U64)
         self._decisions = 0
         step = self._game.reset(int(seed) & _U64)
-        return self._unpack(step)
+        return self._advance_to_agent(step)
 
     def step(self, action):
         if self._terminal:
-            raise RuntimeError("step() called on a terminated episode; call reset() first")
+            raise RuntimeError("step() on a terminated episode; call reset() first")
         self._game.apply(int(action))
         self._decisions += 1
         step = self._game.step_to_decision()
-        obs, info = self._unpack(step)
+        obs, info = self._advance_to_agent(step)
         terminated = self._terminal
         truncated = (not terminated) and self._decisions >= self.max_decisions
         reward = self._terminal_reward() if terminated else 0.0
         return obs, reward, terminated, truncated, info
 
-    # ── helpers ─────────────────────────────────────────────────────────────────────────────
-    def _unpack(self, step):
-        obs, mask, seat, request, num_legal, terminal = step
+    # ── opponent skipping + obs assembly ────────────────────────────────────────────────────
+    def _advance_to_agent(self, step):
+        """Answer every non-agent decision internally until it is the agent's turn (or terminal)."""
+        obs_dict, mask, seat, request, num_legal, terminal = step
+        while (not terminal) and seat != self.agent_seat:
+            a = self._opponent_action(mask)
+            self._game.apply(int(a))
+            self._decisions += 1
+            obs_dict, mask, seat, request, num_legal, terminal = self._game.step_to_decision()
         self._terminal = bool(terminal)
-        mask = np.asarray(mask, dtype=bool)
-        self._pending_mask = mask
+        self._mask = np.asarray(mask, dtype=bool)
         info = {
-            "action_mask": mask,
+            "action_mask": self._mask,
             "seat": int(seat),
             "request": request,
             "num_legal": int(num_legal),
         }
         if self._terminal:
             info["summary"] = self.summary()
-        return np.asarray(obs, dtype=np.float32), info
+        return self._to_obs(obs_dict), info
+
+    def _opponent_action(self, mask):
+        legal = np.flatnonzero(np.asarray(mask, dtype=bool))
+        assert legal.size >= 1, "empty mask for opponent decision"
+        if self.opponent == "random":
+            return int(self._opp_rng.choice(legal))
+        # A callable opponent(obs_dict, mask) -> action index (for frozen-checkpoint self-play, M2).
+        raise ValueError(f"unknown opponent {self.opponent!r}")
+
+    def _to_obs(self, obs_dict):
+        out = {}
+        for (name, rows, cols, is_int) in self._spec:
+            dtype = np.int64 if is_int else np.float32
+            arr = np.asarray(obs_dict[name], dtype=dtype)
+            out[name] = arr.reshape((cols,) if rows == 1 else (rows, cols))
+        return out
 
     def _terminal_reward(self):
         winner = self._game.outcome()
@@ -109,12 +127,21 @@ class MtgEnv(_GymEnv):
             return 0.0
         return 1.0 if winner == self.agent_seat else -1.0
 
-    def action_mask(self):
-        """The current legal-action mask (bool array of width ``action_dim``)."""
-        return np.asarray(self._game.legal_mask(), dtype=bool)
+    # ── sb3-contrib MaskablePPO hooks ───────────────────────────────────────────────────────
+    def action_masks(self):
+        return self._mask.copy()
+
+    def action_mask(self):  # alias
+        return self._mask.copy()
+
+    @staticmethod
+    def _box(rows, cols, is_int):
+        shape = (cols,) if rows == 1 else (rows, cols)
+        if is_int:
+            return spaces.Box(low=0, high=_INT_HIGH, shape=shape, dtype=np.int64)
+        return spaces.Box(low=-np.inf, high=np.inf, shape=shape, dtype=np.float32)
 
     def summary(self):
-        """Terminal ``(winner, turns, reason, initial_objects, objects, zone_sum)`` or ``None``."""
         s = self._game.summary()
         if s is None:
             return None
@@ -130,7 +157,7 @@ class MtgEnv(_GymEnv):
 
 
 def random_action(mask, rng) -> int:
-    """Uniformly pick a legal action index from a boolean ``mask`` (the trivial M0 policy)."""
+    """Uniformly pick a legal action index from a boolean ``mask`` (trivial policy / opponent)."""
     legal = np.flatnonzero(np.asarray(mask, dtype=bool))
     if legal.size == 0:
         raise AssertionError("empty action mask — engine surfaced a decision with no legal option")

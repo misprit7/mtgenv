@@ -264,12 +264,18 @@ mod tests {
         let mut decisions = 0usize;
         let summary = loop {
             match from_game.recv().expect("game thread alive") {
-                FromGame::Decision { req, .. } => {
-                    decisions += 1;
-                    let opts = crate::codec::legal_options(&req);
-                    assert!(!opts.is_empty(), "non-empty mask at every decision");
-                    // Always pick option 0 (the first legal response).
-                    assert!(conn.respond(crate::codec::decode(&opts, 0)));
+                FromGame::Decision { view, req, .. } => {
+                    // Drive the factored sub-steps to a commit by always taking the first legal slot.
+                    let mut inter = crate::codec::Interaction::new(&view, &req);
+                    let resp = loop {
+                        decisions += 1;
+                        let mask = inter.mask();
+                        let slot = mask.iter().position(|b| *b).expect("non-empty mask");
+                        if let Some(r) = inter.apply(slot) {
+                            break r;
+                        }
+                    };
+                    assert!(conn.respond(resp));
                 }
                 FromGame::GameOver(s) => break s,
             }
