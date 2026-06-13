@@ -37,6 +37,12 @@ pub enum CostComponent {
     RemoveCounters { kind: CounterKind, n: ValueExpr },
     /// An additional mana payment beyond the base cost.
     AdditionalMana(ManaCost),
+    /// A planeswalker loyalty-ability cost (CR 606.2): `+N` adds N loyalty counters, `−N`
+    /// removes N, `0` neither. Payable iff `n >= 0` or the source has at least `-n` loyalty
+    /// counters (you can't pay a `−N` you don't have). The once-per-turn limit on loyalty
+    /// abilities is **per planeswalker, across all its loyalty abilities** (606.3) — enforced
+    /// by the engine, not by this cost.
+    Loyalty(i32),
 }
 
 /// Timing restriction for casting/activating (CR 117.1a, 602.5d/e).
