@@ -1,0 +1,29 @@
+[package]
+name = "mtg-py"
+version.workspace = true
+edition.workspace = true
+description = "PyO3 bindings: a thin Python handle over the mtg-core Agent boundary (GYM_PLAN L3)."
+
+[lib]
+# `cdylib` is the Python extension module maturin packages; `rlib` lets `cargo test`
+# build the in-crate Rust unit tests (codec/obs) and lets Rust consumers link it.
+name = "mtg_py"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# The ONLY engine dependency — this crate is pure plumbing, no rules logic (repo law).
+mtg-core = { path = "../mtg-core" }
+# abi3-py39: build against the CPython *stable ABI*, so one wheel runs on any 3.9+
+# (incl. the 3.14 on this box) without per-version bindings. `extension-module` is a
+# feature (below) so plain `cargo test`/`cargo build` link libpython instead of leaving
+# Python symbols undefined.
+pyo3 = { version = "0.23", default-features = false, features = ["abi3-py39", "macros"] }
+
+[features]
+# maturin enables this (see pyproject.toml) so the packaged cdylib does NOT link
+# libpython (the interpreter provides the symbols at import time). `cargo test` builds
+# WITHOUT it, so the test harness links libpython and runs.
+extension-module = ["pyo3/extension-module"]
+
+[dev-dependencies]
+expect-test.workspace = true

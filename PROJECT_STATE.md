@@ -62,6 +62,18 @@ MTGA client.
   (axum+WS, depends only on `mtg-core`); a human is just a `GreSessionAgent` behind the one
   boundary; mapping reconciled to AGENT_INTERFACE §6.1/§1.1; real-client drop-in via
   endpoint-redirect or Mono patch. Transport/auth details blocked on decompile (#2).
+- **gym done with GYM_PLAN milestone 0 (#22): the RL env is alive.** New `crates/mtg-py` (PyO3 +
+  maturin `cdylib`, depends only on `mtg-core`, abi3 so it builds on the box's CPython 3.14) wraps
+  the `Agent` boundary with a thread+channel `PyAgent` (port of `GreSessionAgent`, GYM_PLAN §2.2-A,
+  zero engine changes): the game runs on its own OS thread, `decide` ships `(view, req)` over a
+  channel and blocks, Python pulls/answers via `PyGame.step_to_decision`/`apply` (GIL released on
+  the blocking recv). Observation encoder (`obs.rs`) and action codec (`codec.rs`, every request →
+  flat `Discrete(64)` + legality mask) are behind clean swappable seams; the Python `MtgEnv` reads
+  shapes from the extension so M1 can replace both without touching plumbing. **Exit criteria met:**
+  11k random self-play games across 3 decks (auto-pass on+off), no panics, non-empty mask at every
+  one of ~2.2M decisions, 100% card+zone conservation. Next (needs lead/user greenlight): M1 — real
+  per-entity obs + factored action space + MaskablePPO; M3 resumable step API is an `engine`
+  coordination item (snapshot/clone stubbed until then).
 - **engine done with #12 + #13 + #14 (Arena stops, layer system, breadth).** **#12:** MTGA-style
   auto-pass / stops (`Engine`'s per-seat `StopConfig`, decision elision) per decompile's
   `priority_stops.md`; plus a live `Engine::stops_handle(p) -> Arc<Mutex<StopConfig>>` so a UI can

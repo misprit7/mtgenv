@@ -1,0 +1,24 @@
+# maturin build config for the `mtg_py` PyO3 extension (GYM_PLAN L3). Build/install into a venv
+# with `maturin develop` (from this dir, venv active). The pure-Python Gym layer lives separately
+# in `python/mtgenv_gym/` and imports the `mtg_py` module this produces.
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "mtg_py"
+description = "PyO3 bindings over the mtg-core MTG engine Agent boundary (RL gym, milestone 0)."
+requires-python = ">=3.9"
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: Implementation :: CPython",
+]
+dynamic = ["version"]
+
+[tool.maturin]
+# Enable the cdylib's extension-module feature so the wheel doesn't link libpython (the
+# interpreter supplies the symbols at import). Plain `cargo test`/`cargo build` omit it and link
+# libpython, so the Rust unit tests still run.
+features = ["extension-module"]
+module-name = "mtg_py"
+# abi3 wheel (set in Cargo.toml's pyo3 features) → one wheel runs on any CPython 3.9+.

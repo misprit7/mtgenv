@@ -5,6 +5,20 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **gym:** **GYM_PLAN milestone 0 COMPLETE — PyO3 boundary + random self-play.** New crate
+  `crates/mtg-py` (PyO3/maturin `cdylib`, depends only on `mtg-core`, abi3-py39 so it builds
+  against the box's CPython 3.14): a `PyGame` handle + thread+channel `PyAgent` (port of
+  `GreSessionAgent` — game runs on its own OS thread, each seat's `decide` ships `(view, req)` over
+  a channel and blocks; Python pulls via `step_to_decision`, answers via `apply`; GIL released
+  around the blocking recv). Swappable seams kept minimal but real: `obs.rs` (PlayerView→f32 global
+  scalars, `OBS_DIM=54`) and `codec.rs` (every `DecisionRequest`→non-empty canonical legal-response
+  list→flat `Discrete(ACTION_DIM=64)` + bool mask; decode clamps — illegal action impossible). Thin
+  `python/mtgenv_gym/` (`MtgEnv(gym.Env)` reading dims from the extension, low-level self-play
+  driver, smoke test, benchmark). **Exit criteria PASS**: 11k random games (lands/demo/burn-vs-bears,
+  auto-pass on+off), 0 panics, **0 empty masks across ~2.2M decisions**, 100% card+zone conservation;
+  ~10k–24k decisions/s/thread single-threaded. 6 Rust + 8 pytest tests green. M1 (real obs encoder +
+  factored action space + PPO) swaps `obs.rs`/`codec.rs` with no plumbing change; snapshot/clone
+  stubbed pending the M3 resumable step API (needs `engine` coordination).
 - **engine:** **card-push batch 1 COMPLETE (C9b + C10)** — all of C1–C10 now landed. C9b dynamic
   P/T: `ValueExpr::CountersOnSelf` in eval_value (Mossborn Hydra "double the +1/+1 counters" =
   `PutCounters{SourceSelf, n: CountersOnSelf(+1/+1)}`); `StaticContribution::SetBasePTValue` as a
