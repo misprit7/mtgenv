@@ -144,6 +144,12 @@ pub struct CharacteristicsView {
     pub rules_text: String,
     /// Oracle id / printing id for embedding-table lookups (RL) and rendering.
     pub grp_id: u32,
+    /// Engine-fidelity flag from the card definition (CR-agnostic): `Some(true)` = every clause is
+    /// faithfully implemented, `Some(false)` = a clause is deferred (documented in `rules_text`),
+    /// `None` = no card data (engine-generated objects: abilities, tokens). The client renders a ⚠
+    /// marker iff this is `Some(false)`; `None`/`Some(true)` show nothing.
+    #[serde(default)]
+    pub fully_implemented: Option<bool>,
 }
 
 /// A spell or ability on the stack, as perceived.

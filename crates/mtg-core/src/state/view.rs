@@ -30,6 +30,9 @@ fn chars_view(c: &Characteristics, db: &CardDb) -> CharacteristicsView {
         // per-object state (it's static card data).
         rules_text: db.get(c.grp_id).map(|d| d.text.clone()).unwrap_or_default(),
         grp_id: c.grp_id,
+        // Engine-fidelity flag (CardDef.fully_implemented), keyed by grp_id. `None` for objects
+        // with no card data (engine-generated abilities/tokens) → the client shows no ⚠ marker.
+        fully_implemented: db.get(c.grp_id).map(|d| d.fully_implemented),
     }
 }
 
@@ -147,5 +150,39 @@ pub fn view_for(state: &GameState, seat: PlayerId) -> PlayerView {
         // Settings-echo, filled per-seat by `Engine::view_for_seat` (which has the StopConfig);
         // the bare masking function leaves it `None`.
         stops: None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cards::CardDef;
+
+    fn def(grp_id: u32, name: &str, fully_implemented: bool) -> CardDef {
+        CardDef {
+            chars: Characteristics { name: name.into(), grp_id, ..Default::default() },
+            abilities: Vec::new(),
+            text: String::new(),
+            fully_implemented,
+        }
+    }
+
+    #[test]
+    fn fully_implemented_flag_flows_into_the_view() {
+        // The CardDef fidelity flag is surfaced per-object in the view the client reads, keyed by
+        // grp_id: `Some(true)`/`Some(false)` for real cards, `None` for engine-generated objects
+        // (abilities/tokens) with no card data. The client renders ⚠ iff `Some(false)`.
+        let mut db = CardDb::default();
+        db.insert(def(1, "Faithful", true));
+        db.insert(def(2, "Deferred", false));
+
+        let full = chars_view(&db.get(1).unwrap().chars.clone(), &db);
+        let partial = chars_view(&db.get(2).unwrap().chars.clone(), &db);
+        // A characteristics whose grp_id isn't in the db (e.g. an engine token) → None.
+        let no_card = chars_view(&Characteristics { grp_id: 9999, ..Default::default() }, &db);
+
+        assert_eq!(full.fully_implemented, Some(true), "implemented card → Some(true), no marker");
+        assert_eq!(partial.fully_implemented, Some(false), "deferred-clause card → Some(false), ⚠");
+        assert_eq!(no_card.fully_implemented, None, "no card data → None, no marker");
     }
 }
