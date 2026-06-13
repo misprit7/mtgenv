@@ -77,9 +77,11 @@ pub struct StopConfig {
     /// respond to its own spell/ability. OFF lets the seat respond to itself (like full
     /// control, but only over the stack).
     pub resolve_own_stack: bool,
-    /// Per-step override of the Arena default: `Some(true)` = always stop here, `Some(false)`
-    /// = never stop here, `None` = use the Arena default.
-    overrides: std::collections::BTreeMap<Phase, bool>,
+    /// Per-step override of the Arena default, keyed by `(step, own_turn)` so the two sides of a
+    /// step are independent (e.g. stop on *my* draw but not the opponent's). `own_turn` =
+    /// `seat == active_player`. `Some(true)` = always stop here, `Some(false)` = never, absent =
+    /// the Arena default.
+    overrides: std::collections::BTreeMap<(Phase, bool), bool>,
 }
 
 impl Default for StopConfig {
@@ -116,48 +118,48 @@ pub enum AutoPassOption {
 }
 
 impl StopConfig {
-    /// Whether seat `p` stops (is prompted) at `step`, given who is `active`.
-    fn stops_at(&self, p: PlayerId, step: Phase, active: PlayerId) -> bool {
-        if self.full_control {
-            return true;
-        }
-        match self.overrides.get(&step) {
-            Some(&o) => o,
-            None => arena_default_stop(p, step, active),
-        }
+    /// Whether the seat stops (is prompted) at `step` on the given side of the turn
+    /// (`own_turn` = it's the seat's own turn). `full_control` forces a stop; otherwise the
+    /// per-side override, else the Arena default. This is the side-explicit primitive the UI
+    /// reads for the phase bar without needing the live active player.
+    pub fn stop_for(&self, step: Phase, own_turn: bool) -> bool {
+        self.full_control
+            || self
+                .overrides
+                .get(&(step, own_turn))
+                .copied()
+                .unwrap_or_else(|| arena_default_stop(step, own_turn))
     }
 
-    /// Set/clear a per-step stop override: `Some(true)` = always stop, `Some(false)` = never,
-    /// `None` = revert to the Arena default. Public so a UI session holding a [`Engine::stops_handle`]
-    /// can toggle a stop mid-game (the engine re-reads the config at the next window).
-    pub fn set_override(&mut self, step: Phase, stop: Option<bool>) {
+    /// Whether seat `p` stops at `step` given who is `active` (the live, turn-aware query).
+    fn stops_at(&self, p: PlayerId, step: Phase, active: PlayerId) -> bool {
+        self.stop_for(step, p == active)
+    }
+
+    /// Set/clear a per-side stop override (`own_turn` = the seat's own turn): `Some(true)` =
+    /// always stop, `Some(false)` = never, `None` = revert to the Arena default. Public so a UI
+    /// session holding an [`Engine::stops_handle`] can toggle one side of a stop mid-game (the
+    /// engine re-reads the config at the next window).
+    pub fn set_override(&mut self, step: Phase, own_turn: bool, stop: Option<bool>) {
         match stop {
             Some(v) => {
-                self.overrides.insert(step, v);
+                self.overrides.insert((step, own_turn), v);
             }
             None => {
-                self.overrides.remove(&step);
+                self.overrides.remove(&(step, own_turn));
             }
         }
     }
 
-    /// The effective stop state of each priority-granting step for *display* (the phase bar):
-    /// `full_control || override || the persistent Arena default` (your own two main phases),
-    /// independent of whose turn it currently is. For the live, turn-aware "would I stop right
-    /// now" the engine uses [`Engine::is_stop`] instead.
-    pub fn effective_steps(&self) -> Vec<(Phase, bool)> {
+    /// The effective stop state of each priority-granting step for *display* (the phase bar) on
+    /// one side of the turn: `full_control || override || the persistent Arena default`. The UI
+    /// calls this once per side (`own_turn = true` and `false`) to render both columns.
+    pub fn effective_steps(&self, own_turn: bool) -> Vec<(Phase, bool)> {
         TURN_STEPS
             .iter()
             .copied()
             .filter(|&s| step_grants_priority(s))
-            .map(|s| {
-                let on = self.full_control
-                    || self.overrides.get(&s).copied().unwrap_or(matches!(
-                        s,
-                        Phase::PrecombatMain | Phase::PostcombatMain
-                    ));
-                (s, on)
-            })
+            .map(|s| (s, self.stop_for(s, own_turn)))
             .collect()
     }
 }
@@ -167,8 +169,8 @@ impl StopConfig {
 /// presented), not priority stops; instant-speed windows are handled by SmartStops + the
 /// no-action rule. (The lead's task listed combat-declare stops; decompile's recovered
 /// behavior is MP1/MP2-only, which this matches.)
-fn arena_default_stop(p: PlayerId, step: Phase, active: PlayerId) -> bool {
-    matches!(step, Phase::PrecombatMain | Phase::PostcombatMain) && p == active
+fn arena_default_stop(step: Phase, own_turn: bool) -> bool {
+    matches!(step, Phase::PrecombatMain | Phase::PostcombatMain) && own_turn
 }
 
 /// Steps the Arena profile passes through even when the player *has* an action, used only
@@ -262,18 +264,18 @@ impl Engine {
             }
         }
     }
-    /// Override a seat's stop at `step`: `Some(true)` = always stop, `Some(false)` = never,
-    /// `None` = revert to the Arena default.
+    /// Override a seat's stop at `step` on **both** sides of the turn (own + opponent's): a
+    /// turn-agnostic stop. `Some(true)` = always stop, `Some(false)` = never, `None` = revert to
+    /// the Arena default. (Back-compat convenience over [`Engine::set_stop_side`].)
     pub fn set_stop(&mut self, p: PlayerId, step: Phase, stop: Option<bool>) {
         let mut cfg = self.stops[p.0 as usize].lock().unwrap();
-        match stop {
-            Some(v) => {
-                cfg.overrides.insert(step, v);
-            }
-            None => {
-                cfg.overrides.remove(&step);
-            }
-        }
+        cfg.set_override(step, true, stop);
+        cfg.set_override(step, false, stop);
+    }
+    /// Override a seat's stop at `step` on a single side of the turn (`own_turn` = the seat's own
+    /// turn) — e.g. stop on *my* draw but not the opponent's.
+    pub fn set_stop_side(&mut self, p: PlayerId, step: Phase, own_turn: bool, stop: Option<bool>) {
+        self.stops[p.0 as usize].lock().unwrap().set_override(step, own_turn, stop);
     }
     /// A live handle to a seat's stop configuration. A UI session holds the clone and mutates
     /// it (e.g. on a `SetStop` from the client) while the game runs on another thread; the
@@ -2089,11 +2091,16 @@ mod expect_tests {
         // Upkeep is not a default stop.
         assert!(!e.is_stop(PlayerId(0), Phase::Upkeep));
         let handle = e.stops_handle(PlayerId(0));
-        // Mutate through the handle (what the socket task does on a `SetStop`).
-        handle.lock().unwrap().set_override(Phase::Upkeep, Some(true));
-        assert!(e.is_stop(PlayerId(0), Phase::Upkeep), "engine sees the live toggle");
-        // Revert.
-        handle.lock().unwrap().set_override(Phase::Upkeep, None);
+        // Mutate through the handle (what the socket task does on a `SetStop`): stop on MY upkeep
+        // only (own_turn = true).
+        handle.lock().unwrap().set_override(Phase::Upkeep, true, Some(true));
+        assert!(e.is_stop(PlayerId(0), Phase::Upkeep), "engine sees the live toggle (own turn)");
+        // The override is per side: on the OPPONENT's turn this seat still passes upkeep.
+        e.state.active_player = PlayerId(1);
+        assert!(!e.is_stop(PlayerId(0), Phase::Upkeep), "opponent-turn upkeep is unaffected");
+        e.state.active_player = PlayerId(0);
+        // Revert the own-turn override.
+        handle.lock().unwrap().set_override(Phase::Upkeep, true, None);
         assert!(!e.is_stop(PlayerId(0), Phase::Upkeep), "revert restores the Arena default");
 
         // The handle aliases the engine's own config (same Arc), and each seat is independent.
@@ -2102,13 +2109,16 @@ mod expect_tests {
         assert!(handle.lock().unwrap().full_control, "engine setter is visible through the handle");
         assert!(!e.stops_handle(PlayerId(1)).lock().unwrap().full_control, "seats are independent");
 
-        // effective_steps (the display echo) shows MP1/MP2 as the persistent defaults.
+        // effective_steps (the display echo): own-turn shows MP1/MP2 as the persistent defaults;
+        // the opponent-turn side defaults to no stops.
         let cfg = e.stop_config(PlayerId(1));
-        let eff = cfg.effective_steps();
-        let on = |ph: Phase| eff.iter().find(|(p, _)| *p == ph).map(|(_, b)| *b);
-        assert_eq!(on(Phase::PrecombatMain), Some(true));
-        assert_eq!(on(Phase::PostcombatMain), Some(true));
-        assert_eq!(on(Phase::Upkeep), Some(false));
+        let own = cfg.effective_steps(true);
+        let onside = |eff: &[(Phase, bool)], ph: Phase| eff.iter().find(|(p, _)| *p == ph).map(|(_, b)| *b);
+        assert_eq!(onside(&own, Phase::PrecombatMain), Some(true));
+        assert_eq!(onside(&own, Phase::PostcombatMain), Some(true));
+        assert_eq!(onside(&own, Phase::Upkeep), Some(false));
+        let opp = cfg.effective_steps(false);
+        assert_eq!(onside(&opp, Phase::PrecombatMain), Some(false), "no default stops on the opponent's turn");
     }
 
     #[test]
