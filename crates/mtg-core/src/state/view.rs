@@ -155,6 +155,52 @@ pub fn view_for(state: &GameState, seat: PlayerId) -> PlayerView {
     }
 }
 
+/// An omniscient, no-hidden-information view of the whole game (REPLAY_PLAN) — for spectators and
+/// replays. **Every zone of every player is fully visible**: hands face-up, libraries IN ORDER
+/// (top-first), graveyards/exile, the battlefield and stack — all face-up. Reuses the same
+/// `ObjView` machinery as [`view_for`], so the web board code renders a `GodView` directly.
+/// Spectators aren't players, so showing them everything can't leak to a competitor.
+pub fn god_view(state: &GameState) -> crate::replay::GodView {
+    use crate::replay::GodPlayerView;
+    let players = state
+        .players
+        .iter()
+        .map(|p| GodPlayerView {
+            player: p.id,
+            life: p.life,
+            poison: p.poison,
+            mana_pool: p.mana_pool.clone(),
+            counters: p.counters.clone(),
+            hand: obj_views(state, &p.hand),
+            // The library is stored with the top at the END (a draw is a `pop`); reverse so the
+            // contract holds: `library[0]` is the top of the library.
+            library: obj_views(state, p.library.iter().rev()),
+            graveyard: obj_views(state, &p.graveyard),
+            exile: obj_views(state, &p.exile),
+        })
+        .collect();
+    let battlefield = state
+        .players
+        .iter()
+        .flat_map(|p| obj_views(state, &p.battlefield))
+        .collect();
+    let stack = state.stack.items.iter().map(|s| stack_view(state, s)).collect();
+    let combat = state.combat.as_ref().map(|c| CombatView {
+        attackers: c.attackers.iter().map(|a| (a.attacker, a.defender)).collect(),
+        blockers: c.blocks.iter().map(|b| (b.blocker, b.attacker)).collect(),
+    });
+    crate::replay::GodView {
+        turn: state.turn_number,
+        active_player: state.active_player,
+        phase: state.phase,
+        priority_player: state.priority_player,
+        players,
+        battlefield,
+        stack,
+        combat,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

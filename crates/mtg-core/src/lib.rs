@@ -23,6 +23,8 @@ pub mod turn;
 pub mod priority;
 pub mod whiteboard;
 pub mod events;
+/// Replay + omniscient-spectating contract (GodView/Replay serde types). See REPLAY_PLAN.md.
+pub mod replay;
 pub mod sba;
 pub mod combat;
 pub mod mana;

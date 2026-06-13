@@ -24,11 +24,13 @@ use crate::effects::value::PlayerRef;
 use crate::effects::{Effect, EffectTarget};
 use crate::ids::{ObjId, PlayerId};
 use crate::mana;
+use crate::replay::{Replay, ReplayFrame, ReplayMeta, ReplaySource};
 use crate::sba::{self, LossReason, StateBasedAction};
 use crate::stack::{StackObject, StackObjectKind};
-use crate::state::view::view_for;
+use crate::state::view::{god_view, view_for};
 use crate::state::GameState;
 use crate::turn::{is_main_phase, step_grants_priority, TURN_STEPS};
+use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 
 /// A hard cap on turns so a pathological game can never loop forever. Real games end far
@@ -37,7 +39,7 @@ use std::sync::{Arc, Mutex};
 const MAX_TURNS: u32 = 2000;
 
 /// Why the game ended.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EndReason {
     /// A player reached 0 or less life (CR 704.5a).
     ZeroLife,
@@ -50,7 +52,7 @@ pub enum EndReason {
 }
 
 /// The result of a finished game (a convenience read of the final state).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Outcome {
     pub winner: Option<PlayerId>,
     pub turns: u32,
@@ -183,6 +185,12 @@ pub struct Engine {
     /// to agents' `observe`). Handy for a CLI trace and for snapshot tests. Off by default.
     pub event_log: Vec<GameEvent>,
     record_events: bool,
+    /// When on, capture an omniscient [`ReplayFrame`] (a [`crate::replay::GodView`] + label) at
+    /// each public event — the recorded replay stream (REPLAY_PLAN). Off by default.
+    record_replay: bool,
+    replay_frames: Vec<ReplayFrame>,
+    /// Provenance stamped into the emitted [`Replay`]'s metadata (caller-set). Default `Human`.
+    replay_source: ReplaySource,
     started: bool,
     /// One [`StopConfig`] per seat (incl. its `auto_pass` flag), behind `Arc<Mutex<…>>` so a UI session can hold a live
     /// handle ([`Engine::stops_handle`]) and toggle a seat's stops *mid-game* from another
@@ -207,6 +215,9 @@ impl Engine {
             agents,
             event_log: Vec::new(),
             record_events: false,
+            record_replay: false,
+            replay_frames: Vec::new(),
+            replay_source: ReplaySource::Human,
             started: false,
             stops,
         }
@@ -327,6 +338,99 @@ impl Engine {
     /// Enable recording of broadcast events into [`Engine::event_log`] (for tracing/tests).
     pub fn record_events(&mut self, on: bool) {
         self.record_events = on;
+    }
+
+    // ── Replay recording (REPLAY_PLAN — omniscient snapshots) ────────────────────────────────
+
+    /// Enable/disable replay recording. When turned on, the engine captures an omniscient
+    /// [`ReplayFrame`] (a [`crate::replay::GodView`] + label) at every public event, so a live
+    /// spectator can be fed the same frames and a finished game can be saved. Enabling captures an
+    /// initial "game start" frame of the current state.
+    pub fn record_replay(&mut self, on: bool) {
+        self.record_replay = on;
+        if on && self.replay_frames.is_empty() {
+            self.push_replay_frame("game start".to_string());
+        }
+    }
+
+    /// Set the provenance stamped into the emitted [`Replay`] metadata (default `Human`).
+    pub fn set_replay_source(&mut self, source: ReplaySource) {
+        self.replay_source = source;
+    }
+
+    /// Capture one omniscient frame of the *current* state, labelled with what just happened.
+    /// No-op unless replay recording is on.
+    fn push_replay_frame(&mut self, label: String) {
+        if self.record_replay {
+            let state = god_view(&self.state);
+            self.replay_frames.push(ReplayFrame { state, label });
+        }
+    }
+
+    /// The replay accumulated so far — callable incrementally (e.g. to feed a live spectator) and
+    /// after the game. The engine fills the seats and, once the game is over, the [`Outcome`];
+    /// the caller overwrites `source`/`created_at`/player names+decks (stamped from outside).
+    pub fn replay(&self) -> Replay {
+        let mut meta = ReplayMeta::new(self.state.players.len(), self.replay_source.clone());
+        if self.state.game_over {
+            meta.result = Some(self.outcome());
+        }
+        Replay { meta, frames: self.replay_frames.clone() }
+    }
+
+    /// How many replay frames have been captured so far (for incremental spectator streaming).
+    pub fn replay_frame_count(&self) -> usize {
+        self.replay_frames.len()
+    }
+
+    /// A short human label for the replay frame produced by `ev` ("what just happened").
+    fn event_label(&self, ev: &GameEvent) -> String {
+        let name = |id: ObjId| -> String {
+            self.state
+                .objects
+                .get(&id)
+                .map(|o| o.chars.name.clone())
+                .filter(|n| !n.is_empty())
+                .unwrap_or_else(|| format!("{id:?}"))
+        };
+        match ev {
+            GameEvent::PhaseBegan { turn, phase, active } => {
+                format!("Turn {turn} — P{} {phase:?}", active.0)
+            }
+            GameEvent::DrewCards { player, count } => format!("P{} draws {count}", player.0),
+            GameEvent::LifeChanged { player, delta, new_total } => {
+                format!("P{} life {delta:+} → {new_total}", player.0)
+            }
+            GameEvent::DamageDealt { target, amount, source } => {
+                format!("{} deals {amount} damage to {target:?}", name(*source))
+            }
+            GameEvent::SpellCast { spell, controller } => {
+                let sname = self
+                    .state
+                    .stack
+                    .items
+                    .iter()
+                    .find(|s| s.id == *spell)
+                    .and_then(|s| match s.kind {
+                        StackObjectKind::Spell(obj) => Some(name(obj)),
+                        _ => None,
+                    })
+                    .unwrap_or_else(|| "a spell".to_string());
+                format!("P{} casts {sname}", controller.0)
+            }
+            GameEvent::ObjectMoved { obj, to } => format!("{} → {to:?}", name(*obj)),
+            GameEvent::PermanentDied { obj } => format!("{} dies", name(*obj)),
+            GameEvent::Revealed { to, objects } => {
+                format!("P{} is shown {} card(s)", to.0, objects.len())
+            }
+            GameEvent::ValueChosen { player, label, value } => {
+                format!("P{} {label} = {value}", player.0)
+            }
+            GameEvent::GameEnded { winner } => match winner {
+                Some(w) => format!("Game over — P{} wins", w.0),
+                None => "Game over — draw".to_string(),
+            },
+        }
     }
 
     /// Skip the pre-game opening-hand deal: a later `run_game`/`start_game` will not shuffle
@@ -1582,6 +1686,11 @@ impl Engine {
         if self.record_events {
             self.event_log.push(ev.clone());
         }
+        // Capture an omniscient replay frame of the post-event state, labelled by the event.
+        if self.record_replay {
+            let label = self.event_label(&ev);
+            self.push_replay_frame(label);
+        }
         for seat in 0..self.state.players.len() {
             let pid = self.state.players[seat].id;
             let view = self.view_for_seat(pid);
@@ -1778,6 +1887,39 @@ mod tests {
     use crate::ids::{PlayerId, StackId};
     use crate::stack::{StackObject, StackObjectKind};
     use crate::state::{Characteristics, GameState};
+
+    #[test]
+    fn record_replay_captures_omniscient_frames() {
+        use crate::replay::{Replay, ReplaySource};
+        let mut e = lands_only_game(12, 7);
+        e.record_replay(true);
+        e.set_replay_source(ReplaySource::AiTraining { step: 42 });
+        let _ = e.run_game();
+        let replay = e.replay();
+
+        // An initial "game start" frame plus one per public event → a frame stream.
+        assert!(replay.frames.len() > 5, "frame stream ({} frames)", replay.frames.len());
+        assert_eq!(replay.frames[0].label, "game start");
+        assert_eq!(replay.frames[0].state.players.len(), 2, "both seats present");
+
+        // God view = NO hidden info: the library (which PlayerView masks to a count) is visible.
+        let saw_library = replay
+            .frames
+            .iter()
+            .any(|f| f.state.players.iter().any(|p| !p.library.is_empty()));
+        assert!(saw_library, "libraries are visible in the omniscient view");
+
+        // Caller-set source survived; result is filled now the game is over; clock left to caller.
+        assert_eq!(replay.meta.source, ReplaySource::AiTraining { step: 42 });
+        assert!(replay.meta.result.is_some(), "result filled once game_over");
+        assert_eq!(replay.meta.created_at, 0, "created_at left for the caller to stamp");
+
+        // The whole replay round-trips through JSON — the shared wire contract webui/gym consume.
+        let json = serde_json::to_string(&replay).unwrap();
+        let back: Replay = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.frames.len(), replay.frames.len());
+        assert_eq!(back.meta.source, ReplaySource::AiTraining { step: 42 });
+    }
 
     /// Build a two-player lands-only game: `lib` basic lands each, two `RandomAgent`s.
     fn lands_only_game(lib: usize, seed: u64) -> Engine {
