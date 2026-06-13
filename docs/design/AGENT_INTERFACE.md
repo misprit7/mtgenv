@@ -32,12 +32,21 @@ These four properties define the boundary. Everything below is in service of the
    seat: hidden zones masked, opponent hand as a count, library order hidden, face-down
    cards hidden from players who may not see them. This is the *only* correct place to
    enforce hidden information (rules-correctness) and it is required for RL (no info leak).
-4. **The request set is a superset of both proven granularities.** It covers every Forge
-   `PlayerController` decision method (the battle-tested 107-method interface) **and** every
-   MTGA GRE `*Req` in the recovered catalog. Keeping the enum aligned to both means a
-   `PyAgent` and a `ScriptedAgent` implement `decide` directly, while a future
-   `MtgaClientAgent` is a thin `DecisionRequest ↔ GREToClientMessage` (de)serialization
-   adapter — an implementation swap, no engine changes. (§6 proves the coverage.)
+4. **The request set is a superset of both proven granularities, and is 1:1-translatable to
+   the GRE wire.** It covers every Forge `PlayerController` decision method (the battle-tested
+   107-method interface) **and** every MTGA GRE `*Req` in the recovered catalog (§6 proves the
+   coverage). The three concrete non-engine backends are therefore all *implementation swaps,
+   no engine changes*:
+   - **`PyAgent`** (Gym/RL) and **`ScriptedAgent`** implement `decide` directly.
+   - **A GRE-protocol server** fronting (a) a from-scratch **web client** and (b) the **real
+     MTGA client** (task #5 / `docs/plans/CLIENT_PLAN.md`). It maps `DecisionRequest →
+     GreToClientMessage` and `DecisionResponse/GameAction → ClientToGreMessage`, and streams
+     `PlayerView` deltas as `GameStateMessage` (via `observe`, §1.1). Because every variant is
+     a superset of a GRE `*Req` and the types serialize cleanly (§1.1), this mapping is
+     **lossless** — the server is a translation layer, not a reinterpretation.
+
+   See §1.1 for the serialization/translatability contract that makes the GRE server a pure
+   adapter.
 
 ---
 
@@ -70,6 +79,37 @@ Notes:
 - `&mut self`: agents may hold internal state (RNG, policy handle, socket, search tree).
 - The engine passes a fresh `&PlayerView` each call because the view changes between
   decisions; agents must not cache it across calls.
+
+### 1.1 Serialization & 1:1 GRE translatability (the GRE-server contract)
+
+`DecisionRequest`, `DecisionResponse`, `PlayerView`, `GameEvent`, and every supporting type
+in §5 **derive `serde::{Serialize, Deserialize}`**. This is what lets a non-in-process backend
+(the GRE-protocol server fronting the web client and the real MTGA client; also a Forge-style
+`SocketAgent`) sit behind the trait without the engine knowing. The contract the GRE server
+relies on:
+
+- **Lossless, mechanical mapping in both directions.** Each `DecisionRequest` variant maps
+  onto exactly one GRE `*Req` (table §6.1); each `DecisionResponse` maps onto the matching
+  GRE `*Resp` / submitted `GameAction` (`ActionType` + payload). The mapping is *table-driven*
+  (no game logic in the adapter) and the variant set is a strict superset, so no engine
+  decision is unrepresentable on the wire.
+- **Indices resolve back to concrete GRE object refs via the request's option vectors.** Our
+  `DecisionResponse` is index-based (§4) while GRE submits concrete object/zone ids. The
+  adapter reconstructs the GRE payload by indexing into the *same enumerated option vectors*
+  the request carried (e.g. `Indices([0,2])` over `DeclareAttackers.eligible` → the GRE
+  attacker→defender map). This is lossless precisely because the engine pre-enumerated the
+  legal set (law #2) — the option vectors are the shared vocabulary both sides index.
+- **`PlayerView` deltas ↔ `GameStateMessage`.** `observe(view, ev)` is the push channel the
+  server turns into GRE `GameStateMessage` (Full/Diff) frames; `PlayerView`'s object/zone
+  shape (§2) is designed to carry what a `GameObject`/`ZoneInfo`/`PlayerInfo` diff needs.
+- **Field-exactness is pinned against decompile's schema.** The *variant set* is fixed (it is
+  already a superset of the recovered `GREMessageType` catalog); the remaining work when
+  `mtga-re/schema/gre_schema.json` lands is to confirm field-level names/numbers so the
+  adapter's per-variant struct mapping is exact (§9 tracks the open field-shape questions).
+
+> Net: the web client and the real MTGA client are **the same backend** — clients of one GRE
+> server that is a thin, table-driven (de)serialization adapter over this boundary. No engine
+> change distinguishes "human at a web UI", "RL policy", or "real MTGA client".
 
 ---
 
