@@ -57,6 +57,11 @@ pub mod grp {
     pub const ALABORN_GRENADIER: u32 = 55;
     pub const ALLEY_STRANGLER: u32 = 56;
     pub const WALL_OF_STONE: u32 = 57;
+    pub const MURDER: u32 = 58;
+    pub const DARKSTEEL_MYR: u32 = 59;
+    pub const RAGING_GOBLIN: u32 = 60;
+    pub const KING_CHEETAH: u32 = 61;
+    pub const GLADECOVER_SCOUT: u32 = 62;
 }
 
 /// `SelectSpec` for a static affecting "creatures you control" (the anthem scope). min/max are
@@ -544,6 +549,34 @@ pub fn starter_db() -> CardDb {
         mana_cost(2, &[(Color::Black, 1)]), 2, 3, vec![Keyword::Menace]).with_text("Menace"));
     db.insert(kw_creature(grp::WALL_OF_STONE, "Wall of Stone", "Wall", Color::Red,
         mana_cost(1, &[(Color::Red, 2)]), 0, 8, vec![Keyword::Defender]).with_text("Defender"));
+    db.insert(kw_creature(grp::RAGING_GOBLIN, "Raging Goblin", "Goblin", Color::Red,
+        mana_cost(0, &[(Color::Red, 1)]), 1, 1, vec![Keyword::Haste]).with_text("Haste"));
+    db.insert(kw_creature(grp::KING_CHEETAH, "King Cheetah", "Cat", Color::Green,
+        mana_cost(3, &[(Color::Green, 1)]), 3, 2, vec![Keyword::Flash]).with_text("Flash"));
+    db.insert(kw_creature(grp::GLADECOVER_SCOUT, "Gladecover Scout", "Elf Scout", Color::Green,
+        mana_cost(0, &[(Color::Green, 1)]), 1, 1, vec![Keyword::Hexproof]).with_text("Hexproof"));
+    // Darksteel Myr — colorless Artifact Creature, indestructible.
+    let mut myr = kw_creature(grp::DARKSTEEL_MYR, "Darksteel Myr", "Myr", Color::White,
+        mana_cost(3, &[]), 0, 1, vec![Keyword::Indestructible]);
+    myr.chars.card_types = vec![CardType::Artifact, CardType::Creature];
+    myr.chars.colors = Vec::new();
+    db.insert(myr.with_text("Indestructible"));
+    // Murder {1}{B}{B} — "Destroy target creature." (Effect::Destroy.)
+    db.insert(spell(
+        grp::MURDER,
+        "Murder",
+        CardType::Instant,
+        Color::Black,
+        mana_cost(1, &[(Color::Black, 2)]),
+        Effect::Destroy {
+            what: EffectTarget::Target(TargetSpec {
+                kind: TargetKind::Creature(CardFilter::Any),
+                min: 1,
+                max: 1,
+                distinct: true,
+            }),
+        },
+    ).with_text("Destroy target creature."));
     db
 }
 
@@ -626,7 +659,7 @@ mod tests {
     #[test]
     fn starter_db_has_expected_cards() {
         let db = starter_db();
-        assert_eq!(db.len(), 29);
+        assert_eq!(db.len(), 34);
         assert!(db.get(grp::FOREST).unwrap().is_mana_source());
         assert_eq!(db.get(grp::FOREST).unwrap().mana_colors, vec![Color::Green]);
         // Grizzly Bears is a vanilla 2/2 with no abilities.

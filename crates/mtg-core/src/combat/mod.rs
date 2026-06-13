@@ -112,11 +112,11 @@ impl Engine {
                 let o = &self.state.objects[&id];
                 let cc = self.state.computed(id);
                 // Computed type (CR 613) — a land that became a creature can attack. Defender
-                // (CR 702.3) can't attack.
+                // (CR 702.3) can't attack. Haste (CR 702.10) ignores summoning sickness.
                 cc.is_creature()
                     && !cc.has_keyword(Keyword::Defender)
                     && !o.status.tapped
-                    && !o.summoning_sick
+                    && (!o.summoning_sick || cc.has_keyword(Keyword::Haste))
             })
             .collect();
         if eligible_ids.is_empty() {
@@ -682,5 +682,24 @@ mod tests {
             !blocks.iter().any(|b| b.attacker == strangler),
             "menace: a single block is dropped (attacker stays unblocked)"
         );
+    }
+
+    #[test]
+    fn haste_ignores_summoning_sickness() {
+        let mut e = aggro_engine();
+        let goblin = put_bf(&mut e.state, PlayerId(0), grp::RAGING_GOBLIN); // haste
+        e.state.objects.get_mut(&goblin).unwrap().summoning_sick = true;
+        let bears = put_bf(&mut e.state, PlayerId(0), grp::GRIZZLY_BEARS); // no haste
+        e.state.objects.get_mut(&bears).unwrap().summoning_sick = true;
+        e.state.active_player = PlayerId(0);
+        e.declare_attackers();
+        let atks: Vec<ObjId> = e
+            .state
+            .combat
+            .as_ref()
+            .map(|c| c.attackers.iter().map(|a| a.attacker).collect())
+            .unwrap_or_default();
+        assert!(atks.contains(&goblin), "haste attacks despite summoning sickness");
+        assert!(!atks.contains(&bears), "a summoning-sick non-haste creature can't attack");
     }
 }

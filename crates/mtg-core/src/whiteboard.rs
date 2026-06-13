@@ -109,8 +109,16 @@ impl Engine {
                     amount,
                 });
             }
-            // Other IR nodes are not yet interpreted (milestone 3 minimal scope). They are a
-            // no-op rather than a panic so a card carrying them degrades gracefully.
+            Effect::Destroy { what } => {
+                if let Some(Target::Object(obj)) = self.resolve_target(what, ctx, cursor) {
+                    wb.push(Action::Destroy {
+                        obj,
+                        source: ctx.source,
+                    });
+                }
+            }
+            // Other IR nodes are not yet interpreted (minimal scope). They are a no-op rather
+            // than a panic so a card carrying them degrades gracefully.
             _ => {}
         }
     }
@@ -374,6 +382,14 @@ impl Engine {
                 }
             }
             Action::Destroy { obj, .. } => {
+                // Indestructible (CR 702.12): can't be destroyed.
+                if self
+                    .state
+                    .computed(obj)
+                    .has_keyword(crate::effects::ability::Keyword::Indestructible)
+                {
+                    return;
+                }
                 let owner = match self.state.objects.get(&obj) {
                     Some(o) => o.owner,
                     None => return,

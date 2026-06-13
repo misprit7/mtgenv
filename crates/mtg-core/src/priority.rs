@@ -16,7 +16,7 @@ use crate::agent::{
     PlayerView, SelectReason, StopStateView, TargetSlot,
 };
 use crate::basics::{CardType, Phase, Target, Zone, ZonePos};
-use crate::effects::ability::{Ability, EventPattern};
+use crate::effects::ability::{Ability, EventPattern, Keyword};
 use crate::effects::action::{Action, MoveCause, ResolutionCtx, Whiteboard, WbReason};
 use crate::effects::target::{TargetKind, TargetSpec};
 use crate::effects::{Effect, EffectTarget};
@@ -627,7 +627,9 @@ impl Engine {
                 Some(c) => c,
                 None => continue,
             };
-            let timing_ok = chars.has_type(CardType::Instant) || sorcery_speed;
+            // Instants and Flash (CR 702.8) cast at instant speed; everything else sorcery-speed.
+            let instant_speed = chars.has_type(CardType::Instant) || chars.keywords.contains(&Keyword::Flash);
+            let timing_ok = instant_speed || sorcery_speed;
             if !timing_ok || !mana::can_pay(s, p, cost) {
                 continue;
             }
@@ -748,12 +750,16 @@ impl Engine {
 
     /// The legal target candidates for one target spec (the engine pre-filters; masking is
     /// the engine's job). Milestone 3 supports "any target" (CR 115.4) and player/creature.
-    fn target_candidates(&self, spec: &TargetSpec, _caster: PlayerId) -> Vec<Target> {
+    fn target_candidates(&self, spec: &TargetSpec, caster: PlayerId) -> Vec<Target> {
         let creatures = || {
             self.state
                 .objects
                 .values()
-                .filter(|o| o.zone == Zone::Battlefield && o.chars.is_creature())
+                .filter(|o| {
+                    o.zone == Zone::Battlefield
+                        && self.state.computed(o.id).is_creature()
+                        && self.targetable_by(o.id, caster)
+                })
                 .map(|o| Target::Object(o.id))
         };
         let players = || {
@@ -770,6 +776,19 @@ impl Engine {
             // StackObject / CardInZone: not needed by the starter set.
             _ => Vec::new(),
         }
+    }
+
+    /// Whether `obj` may be targeted by a spell/ability `caster` controls (CR 115 + hexproof,
+    /// CR 702.11): hexproof can't be targeted by the controller's opponents. (Shroud/ward are
+    /// deferred — niche / need a cost.)
+    fn targetable_by(&self, obj: ObjId, caster: PlayerId) -> bool {
+        let Some(o) = self.state.objects.get(&obj) else {
+            return false;
+        };
+        if self.state.computed(obj).has_keyword(Keyword::Hexproof) && o.controller != caster {
+            return false;
+        }
+        true
     }
 
     /// CR 608.2b: a spell/ability resolves unless *every* target is illegal. (Returns true if
@@ -1171,6 +1190,9 @@ fn collect_specs_into(effect: &Effect, out: &mut Vec<TargetSpec>) {
         Effect::DealDamage {
             to: EffectTarget::Target(spec),
             ..
+        }
+        | Effect::Destroy {
+            what: EffectTarget::Target(spec),
         } => out.push(spec.clone()),
         Effect::Sequence(effects) => {
             for e in effects {
@@ -2260,5 +2282,102 @@ mod expect_tests {
             game over, winner Some(PlayerId(1))
         "#]]
         .assert_eq(&out);
+    }
+
+    #[test]
+    fn flash_lets_a_creature_be_cast_at_instant_speed() {
+        // King Cheetah has flash → castable on the opponent's turn; a vanilla creature is not.
+        let mut state = cards::build_game(1, &[&[], &[]]);
+        for _ in 0..4 {
+            put(&mut state, PlayerId(0), grp::FOREST, Zone::Battlefield); // pay {3}{G} / {1}{G}
+        }
+        put(&mut state, PlayerId(0), grp::KING_CHEETAH, Zone::Hand); // flash
+        put(&mut state, PlayerId(0), grp::GRIZZLY_BEARS, Zone::Hand); // no flash
+        state.active_player = PlayerId(1); // NOT P0's turn ⇒ sorcery speed unavailable to P0
+        state.phase = Phase::PrecombatMain;
+        let e = pass_engine(state);
+        let casts: Vec<u32> = e
+            .legal_priority_actions(PlayerId(0))
+            .iter()
+            .filter_map(|a| match a {
+                PlayableAction::Cast { spell, .. } => Some(e.state.object(*spell).chars.grp_id),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            casts.contains(&grp::KING_CHEETAH),
+            "flash creature is castable at instant speed (opponent's turn)"
+        );
+        assert!(
+            !casts.contains(&grp::GRIZZLY_BEARS),
+            "a non-flash creature is not castable on the opponent's turn"
+        );
+    }
+
+    #[test]
+    fn hexproof_blocks_opponent_targeting_only() {
+        use crate::effects::target::{CardFilter, TargetKind, TargetSpec};
+        let mut state = cards::build_game(1, &[&[], &[]]);
+        let scout = put(&mut state, PlayerId(1), grp::GLADECOVER_SCOUT, Zone::Battlefield); // hexproof
+        let foe_bears = put(&mut state, PlayerId(1), grp::GRIZZLY_BEARS, Zone::Battlefield);
+        let my_bears = put(&mut state, PlayerId(0), grp::GRIZZLY_BEARS, Zone::Battlefield);
+        let e = pass_engine(state);
+        let spec = TargetSpec {
+            kind: TargetKind::Creature(CardFilter::Any),
+            min: 1,
+            max: 1,
+            distinct: true,
+        };
+        // P0 (the opponent) cannot target the hexproof scout, but can target everything else.
+        let cands = e.target_candidates(&spec, PlayerId(0));
+        assert!(!cands.contains(&Target::Object(scout)), "opponent can't target hexproof");
+        assert!(cands.contains(&Target::Object(foe_bears)), "opponent can target non-hexproof");
+        assert!(cands.contains(&Target::Object(my_bears)), "own creature is targetable");
+        // The controller of the hexproof creature can still target it.
+        let own = e.target_candidates(&spec, PlayerId(1));
+        assert!(own.contains(&Target::Object(scout)), "controller can target own hexproof");
+    }
+
+    #[test]
+    fn indestructible_survives_destroy() {
+        use crate::effects::action::{ResolutionCtx, WbReason};
+        use crate::effects::{Effect, EffectTarget};
+        let mut state = cards::build_game(1, &[&[], &[]]);
+        let myr = put(&mut state, PlayerId(0), grp::DARKSTEEL_MYR, Zone::Battlefield); // indestructible
+        let bears = put(&mut state, PlayerId(0), grp::GRIZZLY_BEARS, Zone::Battlefield);
+        let mut e = pass_engine(state);
+        let destroy = Effect::Destroy { what: EffectTarget::ChosenIndex(0) };
+
+        // "Destroy" the indestructible artifact creature → it stays on the battlefield.
+        e.resolve_effect(
+            &destroy,
+            &ResolutionCtx {
+                controller: Some(PlayerId(0)),
+                chosen_targets: vec![Target::Object(myr)],
+                ..Default::default()
+            },
+            WbReason::Resolve(crate::ids::StackId(0)),
+        );
+        assert_eq!(
+            e.state.object(myr).zone,
+            Zone::Battlefield,
+            "indestructible creature survives a destroy effect"
+        );
+
+        // The same effect destroys a normal creature.
+        e.resolve_effect(
+            &destroy,
+            &ResolutionCtx {
+                controller: Some(PlayerId(0)),
+                chosen_targets: vec![Target::Object(bears)],
+                ..Default::default()
+            },
+            WbReason::Resolve(crate::ids::StackId(0)),
+        );
+        assert_eq!(
+            e.state.object(bears).zone,
+            Zone::Graveyard,
+            "a creature without indestructible is destroyed"
+        );
     }
 }
