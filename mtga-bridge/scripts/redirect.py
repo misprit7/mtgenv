@@ -35,10 +35,18 @@ import sys
 #     learns it as *data* from the (stubbed) FrontDoor response, so we point that
 #     by value, not via DNS. ---
 HOSTNAMES = [
-    "api.platform.wizards.com",       # PlayFab / platform auth broker (login)
-    "api.platform-ref.wizards.com",   # platform ref/staging variant
-    # FrontDoor + assets/telemetry hosts get appended here as we confirm them.
+    # --- boot-blocking (login can't proceed without these) ---
+    "api.platform.wizards.com",        # WAS OAuth: POST /auth/oauth/token + GET /profile
+    "doorbellprod.w2.mtgarena.com",    # "doorbell": resolves the FrontDoor host (FdURI) + asset hashes
+    "assets.mtgarena.wizards.com",     # asset-bundle CDN; post-login waits on bundles (see note below)
+    # --- non-blocking, redirected so test traffic doesn't reach Wizards ---
+    "bike.w2.mtgarena.com",            # BI / telemetry (fire-and-forget)
 ]
+
+# NOTE on assets.mtgarena.wizards.com: the client may block the home screen on
+# asset bundles. The plan is to have the doorbell echo the content hash the client
+# already has cached locally (MTGA_Data/Downloads/) so it skips the download. If
+# that doesn't hold, this host is where boot will wedge first.
 
 MARKER_BEGIN = "# >>> mtga-bridge redirect (managed) >>>"
 MARKER_END = "# <<< mtga-bridge redirect (managed) <<<"
