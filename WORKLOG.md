@@ -5,6 +5,19 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **design:** implemented task #4 — the agent boundary + Effect IR are now real code in
+  `mtg-core` (commit 360d3a6). New: `agent.rs` (the `Agent` trait, `DecisionRequest` 21-variant
+  enum, `DecisionResponse`, `PlayerView` + view types, all supporting request types, `GameEvent`,
+  and a `RandomAgent` reference backend that can only pick legal options); `effects/` split into
+  `mod.rs` (the `Effect` IR), `action.rs` (`Action`/`Whiteboard`), `ability.rs` (the 5 ability
+  kinds + costs/keywords/qualifications), `value.rs`/`target.rs`/`condition.rs`/`native.rs`
+  (the `Native` escape hatch). Plus shared `basics.rs` (Color/Zone/Phase/Status/ManaCost/
+  ManaPool/CounterKind/CounterBag/DamageKind/Target/ZoneDest — one canonical home; **engine
+  imports these, doesn't redefine**) and `error.rs` (EngineError). `cargo build`+`cargo test`+
+  `cargo clippy` all green; 6 unit tests (RandomAgent legality, ChooseNumber constraint
+  honoring, determinism-by-seed, serde round-trip). Boundary types derive serde (the §1.1
+  GRE-server contract). One open item flagged: batched `CastingTimeOptions` needs a multi-part
+  response (decompose vs. structured) — ratify with engine/gym/client at integration.
 - **design:** reconciled `AGENT_INTERFACE.md` against the recovered+log-validated GRE schema
   (decompile's `../mtga-re/`) — §9 now RESOLVED, not open. Confirmed strict-superset holds
   (variant set unchanged); enriched `ChooseNumber` to match `NumericInputReq` exactly
