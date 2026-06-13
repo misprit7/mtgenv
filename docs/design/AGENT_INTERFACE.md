@@ -125,7 +125,7 @@ pub struct PlayerView {
     pub seat: PlayerId,               // whose view this is
     pub turn: u32,
     pub active_player: PlayerId,
-    pub phase: Phase,                 // reuse the skeleton's Phase vocabulary (types.rs)
+    pub phase: Phase,                 // current phase/step
     pub step_has_priority: bool,
     pub priority_player: Option<PlayerId>,
 
@@ -418,14 +418,13 @@ action mask for free (GYM_PLAN §3).
 ## 5. Supporting types (sketches)
 
 Concrete enough to implement against; field-exact details settle in task #4 alongside the
-real `GameState`. These reuse the skeleton vocabulary (`PlayerId`, `Color`, `Phase`,
-`ManaPool` from `src/types.rs`) and introduce the stable-identity types the whiteboard model
-calls for.
+real `GameState`. These build on the shared vocabulary primitives (`PlayerId`, `Color`,
+`Phase`, `ManaPool`) and the stable-identity types the whiteboard model calls for.
 
 ```rust
 /// Stable per-object identity (WHITEBOARD_MODEL §2.5). A zone change generally mints a NEW
 /// ObjId (CR 400.7); continuous effects/counters do not follow unless a rule says so.
-/// This supersedes the skeleton's split CardId/PermanentId with one identity space.
+/// One unified identity space (permanents, cards, spells, abilities all share `ObjId`).
 pub struct ObjId(pub u32);
 pub struct StackId(pub u32);     // position-independent handle to a stack object
 

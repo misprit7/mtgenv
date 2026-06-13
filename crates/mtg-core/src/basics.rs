@@ -1,5 +1,5 @@
-//! Cross-cutting MTG vocabulary primitives — the "keep the vocabulary" types carried over
-//! from the old skeleton (`src/types.rs`). These are shared by the agent boundary (`agent`),
+//! Cross-cutting MTG vocabulary primitives — the foundational colors, zones, phases, status,
+//! mana, counters, damage, and reference types shared by the agent boundary (`agent`),
 //! the Effect IR (`effects`), and the engine's `state`/`turn`/`mana`/`chars` modules, so there
 //! is **one canonical home** for each (CLAUDE.md: one import path per item). Import from
 //! `crate::basics::*` rather than redefining.

@@ -76,8 +76,8 @@ pub enum CardFilter {
     Named(String),
 }
 
-/// Card types (CR 300s). Mirrors the old skeleton's `CardType` vocabulary; lives here as the
-/// type the IR filters on. (Supertypes/subtypes are strings on the object.)
+/// Card types (CR 300s). Lives here as the type the IR filters on. (Supertypes/subtypes are
+/// strings on the object.)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum CardType {
     Artifact,
