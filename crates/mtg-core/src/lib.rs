@@ -8,6 +8,9 @@
 //! interpreted by the effect runtime (`effects`).
 
 pub mod ids;
+// Shared cross-cutting vocabulary + errors (owned by `design`/task #4; imported widely).
+pub mod basics;
+pub mod error;
 pub mod state;
 pub mod chars;
 pub mod stack;

@@ -1,0 +1,116 @@
+//! Target/selection criteria and object "spec" types for the Effect IR. These are the
+//! *criteria* (predicates) the engine resolves into concrete `basics::Target`s / object sets
+//! when it builds a `DecisionRequest` (the engine enumerates the legal options — masking is
+//! the engine's job, see `docs/design/AGENT_INTERFACE.md`). Distinct from `basics::Target`,
+//! which is a *concrete* reference.
+
+use super::value::{PlayerRef, ValueExpr};
+use crate::basics::{Color, CounterKind, Zone};
+use serde::{Deserialize, Serialize};
+
+/// What kind of thing a "target" word accepts (CR 115). The engine turns this + a `CardFilter`
+/// into the pre-filtered legal candidate list for a `ChooseTargets` slot.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TargetKind {
+    /// "any target" — creature / player / planeswalker / battle (CR 115.4).
+    Any,
+    Player,
+    /// A permanent matching the filter.
+    Permanent(CardFilter),
+    /// A creature (sugar for `Permanent` of creatures).
+    Creature(CardFilter),
+    /// A spell or ability on the stack.
+    StackObject(CardFilter),
+    /// A card in a public zone (graveyard/exile).
+    CardInZone { zone: Zone, filter: CardFilter },
+}
+
+/// One "target" requirement (one instance of the word "target"): its kind and how many.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TargetSpec {
+    pub kind: TargetKind,
+    pub min: u32,
+    pub max: u32,
+    /// If true, the targets must be distinct objects (the common case).
+    pub distinct: bool,
+}
+
+/// A selection of objects an effect operates on *without* the word "target" (e.g. "sacrifice a
+/// creature", "each creature you control"). Resolved at resolution time, not locked at cast.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SelectSpec {
+    pub zone: Zone,
+    pub filter: CardFilter,
+    /// Who selects / whose objects (controller of source by default).
+    pub chooser: PlayerRef,
+    pub min: ValueExpr,
+    pub max: ValueExpr,
+}
+
+/// A predicate over a card/object's characteristics (CR 109.3). A small, composable filter
+/// vocabulary; `All`/`Any` compose. Serde-able (no native predicates here — use a `Native`
+/// effect for genuinely uncomputable cases).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CardFilter {
+    /// Matches anything.
+    Any,
+    /// Conjunction of sub-filters.
+    All(Vec<CardFilter>),
+    /// Disjunction of sub-filters.
+    AnyOf(Vec<CardFilter>),
+    /// Negation.
+    Not(Box<CardFilter>),
+    HasCardType(CardType),
+    HasSubtype(String),
+    HasColor(Color),
+    Colorless,
+    /// Mana value within `[min, max]` (inclusive); `None` = unbounded.
+    ManaValue { min: Option<u32>, max: Option<u32> },
+    /// Controlled by the named player.
+    ControlledBy(PlayerRef),
+    Tapped,
+    Untapped,
+    /// Has a counter of this kind.
+    HasCounter(CounterKind),
+    /// Matches a specific named card (rare; for the few effects that name a card).
+    Named(String),
+}
+
+/// Card types (CR 300s). Mirrors the old skeleton's `CardType` vocabulary; lives here as the
+/// type the IR filters on. (Supertypes/subtypes are strings on the object.)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum CardType {
+    Artifact,
+    Battle,
+    Creature,
+    Enchantment,
+    Instant,
+    Land,
+    Planeswalker,
+    Sorcery,
+    Kindred,
+}
+
+/// Mana an ability/effect produces (CR 605/106). A simple bag; one entry per produced color.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ManaSpec {
+    /// Produced amounts keyed by color (use `Color::Colorless` for `{C}`).
+    pub produces: Vec<(Color, ValueExpr)>,
+    /// "Any one color"-style production: the controller chooses the color when it resolves.
+    pub any_color: Option<ValueExpr>,
+}
+
+/// A token's defining characteristics (CR 111.3). Used by both the `CreateToken` effect and
+/// the `CreateToken` whiteboard action.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TokenSpec {
+    pub name: String,
+    pub card_types: Vec<CardType>,
+    pub subtypes: Vec<String>,
+    pub colors: Vec<Color>,
+    pub power: i32,
+    pub toughness: i32,
+    pub keywords: Vec<String>,
+    /// Counters the token enters with (CR 614.1e), as `(kind, count)`.
+    pub counters: Vec<(CounterKind, u32)>,
+}
