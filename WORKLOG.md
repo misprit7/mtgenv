@@ -5,6 +5,16 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **engine:** **`fully_implemented` surfaced in the view (#30, engine side)** + **subtype enums landed
+  (step 1).** (1) `CharacteristicsView` gained `fully_implemented: Option<bool>`, populated in
+  `view.rs::chars_view` from `CardDef.fully_implemented` (design's 2fdaa77) via grp_id — `Some(true/
+  false)` for real cards, `None` for engine objects; webui's ⚠ badge (⚠ iff `Some(false)`) now runs
+  on live data. 3-case test. (665773d). (2) Subtypes/supertypes → enums: generated `crate::subtypes`
+  (Subtype tagged + Supertype flat, Display/FromStr/serde-as-string) landed additively/green
+  (924a321). The hard `Characteristics` field flip (Vec<String>→Vec<Subtype/Supertype>) + matching +
+  CardFilter IR variants + every card def is one atomic commit (no additive bridge) — coordinating
+  shapes + who-drives with design before the destructive sweep. View stays Vec<String>+Display so
+  the wire is unchanged. 106 tests green.
 - **webui:** **New `"counters"` preset deck** (user request — "a more complicated deck that uses
   more of the cards/functionality"). A G/W landfall + +1/+1-counters midrange 60 (24 land / 26
   creature / 10 noncreature), built server-side in `driver::counters_deck()` from the implemented
