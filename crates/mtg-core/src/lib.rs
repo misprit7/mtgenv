@@ -10,6 +10,10 @@
 pub mod ids;
 // Shared cross-cutting vocabulary + errors (owned by `design`/task #4; imported widely).
 pub mod basics;
+/// Closed subtype/supertype enums (CR 205.3/205.4), generated from Scryfall type catalogs by
+/// `scripts/gen_subtypes.py`. Replaces stringly-typed subtypes; serde/Display keep the canonical
+/// type-line string on the wire so the client view is unchanged.
+pub mod subtypes;
 pub mod error;
 pub mod state;
 pub mod chars;
