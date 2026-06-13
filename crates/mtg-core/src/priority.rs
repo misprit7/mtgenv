@@ -2079,6 +2079,17 @@ mod expect_tests {
         }
     }
 
+    /// Answers `ChooseModes` by picking a fixed mode index; otherwise passes. For the modal test.
+    struct ModeAgent(u32);
+    impl Agent for ModeAgent {
+        fn decide(&mut self, _v: &PlayerView, req: &DecisionRequest) -> DecisionResponse {
+            match req {
+                DecisionRequest::ChooseModes { .. } => DecisionResponse::Indices(vec![self.0]),
+                _ => DecisionResponse::Pass,
+            }
+        }
+    }
+
     /// A deterministic, aggressive agent for casting/combat tests: at priority it casts the
     /// first castable spell, else plays the first land, else passes; it attacks with
     /// everything; never blocks; targets an opponent (player) when choosing a target.
@@ -2655,6 +2666,38 @@ mod expect_tests {
             WbReason::Resolve(crate::ids::StackId(0)),
         );
         assert_eq!(e.state.player(PlayerId(1)).life, 17, "3 lands you control → 3 damage");
+    }
+
+    #[test]
+    fn modal_resolves_only_the_chosen_mode_c7() {
+        use crate::effects::action::{ResolutionCtx, WbReason};
+        use crate::effects::value::{PlayerRef, ValueExpr};
+        use crate::effects::{Effect, Mode};
+        // "Choose one — gain 3 life; or draw a card." The agent picks mode 0.
+        let modal = Effect::Modal {
+            modes: vec![
+                Mode {
+                    label: "Gain 3 life".into(),
+                    effect: Effect::GainLife { who: PlayerRef::Controller, amount: ValueExpr::Fixed(3) },
+                },
+                Mode {
+                    label: "Draw a card".into(),
+                    effect: Effect::Draw { who: PlayerRef::Controller, count: ValueExpr::Fixed(1) },
+                },
+            ],
+            min: 1,
+            max: 1,
+            allow_repeat: false,
+        };
+        let state = cards::build_game(1, &[&[grp::GRIZZLY_BEARS], &[]]); // P0 library has 1 card
+        let mut e = Engine::new(state, vec![Box::new(ModeAgent(0)), Box::new(PassAgent)]);
+        e.resolve_effect(
+            &modal,
+            &ResolutionCtx { controller: Some(PlayerId(0)), ..Default::default() },
+            WbReason::Resolve(crate::ids::StackId(0)),
+        );
+        assert_eq!(e.state.player(PlayerId(0)).life, 23, "chose 'gain 3 life'");
+        assert_eq!(e.state.player(PlayerId(0)).library.len(), 1, "did not draw (the other mode)");
     }
 
     #[test]

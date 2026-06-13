@@ -10,14 +10,16 @@
 //! Interpreted effects (the starter set's needs): `DealDamage`, `Draw`, `GainLife`,
 //! `LoseLife`, `Sequence`. Other IR nodes are a graceful no-op until their cards arrive.
 
-use crate::agent::{DecisionRequest, DecisionResponse, GameEvent, ReplacementOption};
+use crate::agent::{
+    ActionRef, DecisionRequest, DecisionResponse, GameEvent, ModeOption, ReplacementOption,
+};
 use crate::basics::{CardType, CounterKind, DamageKind, Target, Zone};
 use crate::effects::ability::{Ability, ActionPattern, Rewrite};
 use crate::effects::action::{Action, ResolutionCtx, Whiteboard, WbReason};
 use crate::effects::target::{CardFilter, TokenSpec};
 use crate::effects::value::{PlayerRef, ValueExpr};
-use crate::effects::{Effect, EffectTarget};
-use crate::ids::{ObjId, PlayerId};
+use crate::effects::{Effect, EffectTarget, Mode};
+use crate::ids::{ObjId, PlayerId, StackId};
 use crate::state::Characteristics;
 use crate::priority::Engine;
 
@@ -54,13 +56,96 @@ fn describe_rewrite(rw: &Rewrite) -> String {
 }
 
 impl Engine {
-    /// Resolve an `Effect`: materialize a whiteboard of `Action`s, then commit it.
+    /// Resolve an `Effect`: interpret its tree (asking the controller for any resolution-time
+    /// choices — modal modes, search selections) while materializing a whiteboard of `Action`s,
+    /// then commit it. Pure leaves lower in [`Engine::materialize`]; interactive/control-flow
+    /// nodes are handled in [`Engine::interpret`].
     pub(crate) fn resolve_effect(&mut self, effect: &Effect, ctx: &ResolutionCtx, reason: WbReason) {
+        let sid = match &reason {
+            WbReason::Resolve(s) => *s,
+            _ => StackId(0),
+        };
         let mut wb = Whiteboard::new(reason, ctx.clone());
         let mut cursor = 0usize;
-        self.materialize(effect, ctx, &mut wb, &mut cursor);
+        self.interpret(effect, ctx, sid, &mut wb, &mut cursor);
         // (M4: run the replacement/prevention rewrite pass here.)
         self.commit(wb);
+    }
+
+    /// The interactive interpreter: handles control-flow + resolution-time-decision nodes
+    /// (Sequence/Modal/Search), delegating every pure leaf to [`Engine::materialize`] with the
+    /// shared `cursor` (so a multi-target sequence still distributes its locked targets in order).
+    fn interpret(
+        &mut self,
+        effect: &Effect,
+        ctx: &ResolutionCtx,
+        sid: StackId,
+        wb: &mut Whiteboard,
+        cursor: &mut usize,
+    ) {
+        match effect {
+            Effect::Sequence(effects) => {
+                for e in effects {
+                    self.interpret(e, ctx, sid, wb, cursor);
+                }
+            }
+            // C7: modal — ask which mode(s), then resolve each chosen mode's effect (CR 700.2).
+            Effect::Modal { modes, min, max, allow_repeat } => {
+                for idx in self.choose_modes(ctx, sid, modes, *min, *max, *allow_repeat) {
+                    if let Some(m) = modes.get(idx as usize) {
+                        self.interpret(&m.effect, ctx, sid, wb, cursor);
+                    }
+                }
+            }
+            // Pure leaves (and not-yet-interactive nodes) lower without agent interaction.
+            _ => self.materialize(effect, ctx, wb, cursor),
+        }
+    }
+
+    /// Ask the controller to choose `min..=max` of a modal spell/ability's modes (CR 700.2),
+    /// returning the chosen mode indices (clamped to the legal set / filled to `min`).
+    fn choose_modes(
+        &mut self,
+        ctx: &ResolutionCtx,
+        sid: StackId,
+        modes: &[Mode],
+        min: u32,
+        max: u32,
+        allow_repeat: bool,
+    ) -> Vec<u32> {
+        let controller = ctx.controller.unwrap_or(PlayerId(0));
+        let options: Vec<ModeOption> =
+            modes.iter().map(|m| ModeOption { label: m.label.clone() }).collect();
+        let resp = self.ask(
+            controller,
+            &DecisionRequest::ChooseModes {
+                for_action: ActionRef(sid),
+                modes: options,
+                min,
+                max,
+                allow_repeat,
+            },
+        );
+        let mut chosen: Vec<u32> = match resp {
+            DecisionResponse::Indices(v) => v,
+            DecisionResponse::Index(i) => vec![i],
+            _ => Vec::new(),
+        };
+        chosen.retain(|&i| (i as usize) < modes.len());
+        if !allow_repeat {
+            chosen.sort_unstable();
+            chosen.dedup();
+        }
+        chosen.truncate(max as usize);
+        // Fill up to `min` with the first unused modes so a malformed/empty response can't
+        // under-resolve a "choose one" (CR 700.2d — you must choose the minimum).
+        while (chosen.len() as u32) < min {
+            match (0..modes.len() as u32).find(|i| !chosen.contains(i)) {
+                Some(i) => chosen.push(i),
+                None => break,
+            }
+        }
+        chosen
     }
 
     /// Walk an `Effect` tree, pushing the `Action`s it lowers to onto `wb`. `cursor` tracks
