@@ -88,8 +88,13 @@ impl Frame {
     }
 
     /// A v4 Pong echoing a 4-byte tick from a received Ping.
+    ///
+    /// NOTE: the client's reader rejects any frame whose format nibble isn't a
+    /// defined `SerializationFormat` (Json=1/Protobuf=2); 0 throws "Invalid message
+    /// serialization format". So Pong must carry a valid format nibble even though
+    /// its body is just a tick — we use Protobuf.
     pub fn pong(tick: [u8; 4]) -> Self {
-        Frame { version: 4, msg_type: MsgType::Pong, format: Format::Unspecified, body: tick.to_vec() }
+        Frame { version: 4, msg_type: MsgType::Pong, format: Format::Protobuf, body: tick.to_vec() }
     }
 
     /// Serialize this frame (always written as v4).
