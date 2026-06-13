@@ -217,3 +217,17 @@
   /* hover full-card preview */
   #preview { position: fixed; display: none; width: 320px; border-radius: 12px; z-index: 100;
     box-shadow: 0 12px 44px rgba(0,0,0,.75); pointer-events: none; }
+  /* God-view opponent hand strip (replay / spectate). */
+  .godhand { border-bottom: 1px solid var(--line); }
+  .godhand .hlabel { color: var(--accent2); }
+  /* Replay playback bar. */
+  .replaybar { display: flex; align-items: center; gap: 10px; padding: 6px 10px; margin: 4px 0;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 8px; flex-wrap: wrap; }
+  .replaybar .rbtn { background: var(--accent2); color: #04121d; border: none; border-radius: 6px;
+    padding: 4px 10px; font-weight: 800; cursor: pointer; font-size: 13px; }
+  .replaybar .rbtn:hover { filter: brightness(1.08); }
+  .replaybar .rbtn:disabled { opacity: .4; cursor: not-allowed; }
+  .replaybar .rbframe { font-variant-numeric: tabular-nums; color: var(--muted); min-width: 64px; }
+  .replaybar .rbrate { color: var(--muted); font-size: 12px; display: flex; align-items: center; gap: 5px; }
+  .replaybar .rblabel { color: var(--ink); font-size: 12px; flex: 1; min-width: 160px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

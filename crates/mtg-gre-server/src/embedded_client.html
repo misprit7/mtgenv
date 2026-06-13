@@ -224,6 +224,20 @@
   /* hover full-card preview */
   #preview { position: fixed; display: none; width: 320px; border-radius: 12px; z-index: 100;
     box-shadow: 0 12px 44px rgba(0,0,0,.75); pointer-events: none; }
+  /* God-view opponent hand strip (replay / spectate). */
+  .godhand { border-bottom: 1px solid var(--line); }
+  .godhand .hlabel { color: var(--accent2); }
+  /* Replay playback bar. */
+  .replaybar { display: flex; align-items: center; gap: 10px; padding: 6px 10px; margin: 4px 0;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 8px; flex-wrap: wrap; }
+  .replaybar .rbtn { background: var(--accent2); color: #04121d; border: none; border-radius: 6px;
+    padding: 4px 10px; font-weight: 800; cursor: pointer; font-size: 13px; }
+  .replaybar .rbtn:hover { filter: brightness(1.08); }
+  .replaybar .rbtn:disabled { opacity: .4; cursor: not-allowed; }
+  .replaybar .rbframe { font-variant-numeric: tabular-nums; color: var(--muted); min-width: 64px; }
+  .replaybar .rbrate { color: var(--muted); font-size: 12px; display: flex; align-items: center; gap: 5px; }
+  .replaybar .rblabel { color: var(--ink); font-size: 12px; flex: 1; min-width: 160px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 </style>
 </head>
 <body>
@@ -244,6 +258,8 @@
   <div class="rail" id="rail"></div>
 
   <div class="center">
+    <!-- God-view (replay / spectate) only: opponent hand face-up at top. Hidden in normal play. -->
+    <div class="hand godhand" id="oppHand" hidden></div>
     <div class="play">
       <div class="half oppo" id="oppoHalf"></div>
       <div class="midline"></div>
@@ -251,6 +267,15 @@
       <div class="stack" id="stack"></div>
     </div>
     <div class="stepbar" id="stepbar"></div>
+    <!-- Replay playback bar (god-view frame player). Hidden unless ?replay=<id>. -->
+    <div class="replaybar" id="replaybar" hidden>
+      <button class="rbtn" id="rbBack" title="Step back (←)">◀</button>
+      <button class="rbtn" id="rbPlay" title="Play / pause (space)">▶</button>
+      <button class="rbtn" id="rbFwd" title="Step forward (→)">▶▶</button>
+      <span class="rbframe" id="rbFrame">0 / 0</span>
+      <label class="rbrate">rate <input type="range" id="rbRate" min="1" max="12" step="1" value="3" /> <span id="rbRateV">3</span>/s</label>
+      <span class="rblabel" id="rbLabel"></span>
+    </div>
     <div class="hand" id="hand"></div>
   </div>
 
@@ -281,13 +306,19 @@
 
   const params = new URLSearchParams(location.search);
   const gameId = params.get("game");
+  const replayId = params.get("replay");
   const spectating = params.get("spectate") === "1" || params.get("spectate") === "true";
-  $("decks").textContent = spectating
-    ? "👁 Spectating Game #" + gameId
-    : gameId
-      ? "Game #" + gameId + " · you are Player " + (params.get("seat") || "0")
-      : "P0=" + (params.get("p0") || "demo") + " · P1=" + (params.get("p1") || "demo");
+  // God-view (no information masking): replays and (once engine lands god_view) spectating.
+  let godMode = !!replayId;
+  $("decks").textContent = replayId
+    ? "▶ Replay #" + replayId
+    : spectating
+      ? "👁 Spectating Game #" + gameId
+      : gameId
+        ? "Game #" + gameId + " · you are Player " + (params.get("seat") || "0")
+        : "P0=" + (params.get("p0") || "demo") + " · P1=" + (params.get("p1") || "demo");
   if (spectating) $("prompt").innerHTML = '<div class="waiting">👁 Spectating — watching the game (you are not playing).</div>';
+  if (replayId) $("prompt").innerHTML = '<div class="waiting">▶ Replay — god-view playback (no hidden information). Use the bar below.</div>';
   // Stops control (top bar): LIVE toggles — send setOption; the server echoes the new config and
   // the running game's agent honours it at the next window (no reset). Rendered from stopsView.
   const OPT = [["auto-pass", "auto_pass", "autopass"], ["smart", "smart_stops", "smartstops"],
@@ -304,14 +335,22 @@
       host.appendChild(a);
     });
   }
-  function setOption(key, on) { ws.send(JSON.stringify({ type: "setOption", key: key, on: on })); }
+  function setOption(key, on) { if (ws) ws.send(JSON.stringify({ type: "setOption", key: key, on: on })); }
 
-  const ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws" + location.search);
-  ws.onopen = () => { $("conn").textContent = "● connected";
-    log("Keys: Space = pass priority / take the only action · Enter = pass through this turn's stops (Esc cancels)"); };
-  ws.onclose = () => ($("conn").textContent = "○ disconnected");
-  ws.onerror = () => ($("conn").textContent = "connection error");
-  ws.onmessage = (e) => handle(JSON.parse(e.data));
+  // Replay mode has no live socket — it plays back recorded god-view frames. Normal/spectate modes
+  // open the WebSocket as before.
+  let ws = null;
+  if (replayId) {
+    $("conn").textContent = "● replay";
+    startReplay();
+  } else {
+    ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws" + location.search);
+    ws.onopen = () => { $("conn").textContent = "● connected";
+      log("Keys: Space = pass priority / take the only action · Enter = pass through this turn's stops (Esc cancels)"); };
+    ws.onclose = () => ($("conn").textContent = "○ disconnected");
+    ws.onerror = () => ($("conn").textContent = "connection error");
+    ws.onmessage = (e) => handle(JSON.parse(e.data));
+  }
 
   function handle(m) {
     if (m.type === "event") { view = m.view; logEvent(m.event); render(); }
@@ -342,6 +381,77 @@
     cur = null; multi.clear();
     $("prompt").innerHTML = '<div class="waiting">Waiting for the opponent…</div>';
     render();
+  }
+
+  // ── replay playback (god-view frame player) ───────────────────────────────
+  let replay = null, frameIdx = 0, playing = false, playTimer = null, frameRate = 3;
+  // Adapt an omniscient GodView frame into the shape render() expects (PlayerView-ish), with NO
+  // masking: every zone is the real face-up list. Viewpoint seat 0 sits on the bottom half.
+  function godToView(g, seat) {
+    const players = (g.players || []).map(p => ({
+      player: p.player, life: p.life, poison: p.poison,
+      mana_pool: p.mana_pool, counters: p.counters,
+      hand_count: (p.hand || []).length, library_count: (p.library || []).length,
+      graveyard: p.graveyard || [], exile_public: p.exile || [],
+      _hand: p.hand || [], _library: p.library || [], // god-view full zones (library is ordered)
+    }));
+    const self = players.find(p => p.player === seat) || players[0] || { _hand: [] };
+    return {
+      seat: seat, turn: g.turn, active_player: g.active_player, phase: g.phase,
+      priority_player: g.priority_player, players: players,
+      me: { hand: self._hand, known_library: [], revealed_to_me: [] },
+      battlefield: g.battlefield || [], stack: g.stack || [], combat: g.combat || null,
+      stops: null, _god: true,
+    };
+  }
+  function replaySource(s) {
+    if (s === "Human" || (s && s.Human !== undefined)) return "human game";
+    if (s && s.AiTraining) return "AI training — step " + s.AiTraining.step;
+    return "" + s;
+  }
+  function frameCount() { return replay && replay.frames ? replay.frames.length : 0; }
+  function startReplay() {
+    $("replaybar").hidden = false;
+    fetch("/api/replays/" + encodeURIComponent(replayId))
+      .then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+      .then(rep => {
+        replay = rep;
+        const meta = rep.meta || {};
+        if (meta.players) $("decks").textContent = "▶ Replay #" + replayId + " · " +
+          meta.players.map(p => "P" + p.seat + " " + (p.deck || "?")).join(" vs ");
+        log("Loaded replay: " + frameCount() + " frames" + (meta.source ? " · " + replaySource(meta.source) : ""));
+        showFrame(0);
+      })
+      .catch(e => { $("prompt").innerHTML = '<div class="banner">Replay #' + esc(replayId) +
+        " unavailable (" + esc(e.message) + "). The replay backend may not be wired yet.</div>"; });
+  }
+  function showFrame(i) {
+    const n = frameCount(); if (!n) return;
+    frameIdx = Math.max(0, Math.min(i, n - 1));
+    const fr = replay.frames[frameIdx];
+    view = godToView(fr.state, 0);
+    render();
+    $("rbFrame").textContent = (frameIdx + 1) + " / " + n;
+    $("rbLabel").textContent = fr.label || "";
+    $("rbBack").disabled = frameIdx === 0;
+    $("rbFwd").disabled = frameIdx === n - 1;
+    if (playing && frameIdx >= n - 1) pauseReplay();
+  }
+  function stepReplay(d) { pauseReplay(); showFrame(frameIdx + d); }
+  function playReplay() {
+    if (!frameCount()) return;
+    if (frameIdx >= frameCount() - 1) frameIdx = -1; // at end → restart from the top
+    playing = true; $("rbPlay").textContent = "❚❚";
+    playTimer = setInterval(() => showFrame(frameIdx + 1), Math.round(1000 / frameRate));
+  }
+  function pauseReplay() { playing = false; $("rbPlay").textContent = "▶"; if (playTimer) { clearInterval(playTimer); playTimer = null; } }
+  function togglePlay() { playing ? pauseReplay() : playReplay(); }
+  if (replayId) {
+    $("rbBack").onclick = () => stepReplay(-1);
+    $("rbFwd").onclick = () => stepReplay(1);
+    $("rbPlay").onclick = togglePlay;
+    $("rbRate").oninput = (e) => { frameRate = +e.target.value || 1; $("rbRateV").textContent = frameRate;
+      if (playing) { pauseReplay(); playReplay(); } };
   }
 
   // ── object/view helpers ───────────────────────────────────────────────
@@ -434,7 +544,7 @@
   function toggleStop(phase, own, on) {
     // LIVE: the server updates the shared per-(step, side) stop config + echoes it; the running
     // game's agent honours it at the next priority window — no game reset. `own` = your turn's copy.
-    ws.send(JSON.stringify({ type: "setStop", step: phase, own: own, on: on }));
+    if (ws) ws.send(JSON.stringify({ type: "setStop", step: phase, own: own, on: on }));
   }
 
   function renderRail() {
@@ -484,8 +594,14 @@
     const piles = el("div", "piles");
     const libCount = p.library_count != null ? p.library_count : p.libraryCount;
     const deck = you ? deckView[p.player] : null; // your starting decklist (debug peek)
-    const libPile = pileEl("Lib", libCount, null, "P" + p.player + " library", true);
-    if (deck) { libPile.classList.add("clk"); libPile.title = "Your starting decklist"; libPile.onclick = (e) => { e.stopPropagation(); openDecklist("P" + p.player + " decklist", deck); }; }
+    // God-view (replay/spectate): the library is fully visible IN ORDER (top = index 0); the hand
+    // is face-up. Otherwise the library is hidden and only the viewpoint seat sees its own hand.
+    const godLib = godMode && view._god ? p._library : null;
+    if (godMode && view._god) {
+      piles.appendChild(pileEl("Hand", (p._hand || []).length, p._hand || [], "P" + p.player + " hand", false));
+    }
+    const libPile = pileEl("Lib", libCount, godLib, "P" + p.player + " library" + (godLib ? " (top first)" : ""), !godLib);
+    if (deck && !godLib) { libPile.classList.add("clk"); libPile.title = "Your starting decklist"; libPile.onclick = (e) => { e.stopPropagation(); openDecklist("P" + p.player + " decklist", deck); }; }
     piles.appendChild(libPile);
     piles.appendChild(pileEl("GY", (p.graveyard || []).length, p.graveyard || [], "P" + p.player + " graveyard", false));
     const ex = p.exile_public || p.exilePublic || [];
@@ -558,6 +674,18 @@
     h.appendChild(lab);
     (view.me.hand || []).forEach(o => h.appendChild(cardEl(norm(o), { interactive: true, hand: true })));
     if (!(view.me.hand || []).length) h.appendChild(el("span", "waiting", "(empty hand)"));
+    // God-view (replay / spectate): render the opponent's hand face-up at the top, too.
+    const oh = $("oppHand");
+    if (godMode && view._god) {
+      oh.hidden = false; oh.innerHTML = "";
+      oh.appendChild(el("div", "hlabel", "opp hand"));
+      const opp = (view.players || []).find(p => p.player !== view.seat);
+      const cards = (opp && opp._hand) || [];
+      cards.forEach(o => oh.appendChild(cardEl(norm(o), { hand: true })));
+      if (!cards.length) oh.appendChild(el("span", "waiting", "(empty)"));
+    } else {
+      oh.hidden = true;
+    }
   }
 
   // ── card frame ───────────────────────────────────────────────────────
@@ -911,6 +1039,13 @@
     if ($("modal").classList.contains("show")) { if (e.key === "Escape") $("modal").classList.remove("show"); return; }
     const tag = e.target && e.target.tagName;
     if (tag === "INPUT" || tag === "TEXTAREA") return;                 // don't hijack number entry / text fields
+    // Replay mode: Space = play/pause, ←/→ = step a frame.
+    if (replayId) {
+      if (e.code === "Space" || e.key === " ") { e.preventDefault(); togglePlay(); }
+      else if (e.key === "ArrowLeft") { e.preventDefault(); stepReplay(-1); }
+      else if (e.key === "ArrowRight") { e.preventDefault(); stepReplay(1); }
+      return;
+    }
     if (e.code === "Space" || e.key === " ") { e.preventDefault(); spacePass(); }
     else if (e.key === "Enter") { e.preventDefault(); toggleAutoPass(); }
     else if (e.key === "Escape") { if (autoPassTurn !== null) { autoPassTurn = null; autoPassBadge(); } }

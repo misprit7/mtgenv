@@ -24,6 +24,8 @@
       <div class="rail" id="rail"></div>
 
       <div class="center">
+        <!-- God-view (replay / spectate) only: opponent hand face-up at top. Hidden in normal play. -->
+        <div class="hand godhand" id="oppHand" hidden></div>
         <div class="play">
           <div class="half oppo" id="oppoHalf"></div>
           <div class="midline"></div>
@@ -31,6 +33,15 @@
           <div class="stack" id="stack"></div>
         </div>
         <div class="stepbar" id="stepbar"></div>
+        <!-- Replay playback bar (god-view frame player). Hidden unless ?replay=<id>. -->
+        <div class="replaybar" id="replaybar" hidden>
+          <button class="rbtn" id="rbBack" title="Step back (←)">◀</button>
+          <button class="rbtn" id="rbPlay" title="Play / pause (space)">▶</button>
+          <button class="rbtn" id="rbFwd" title="Step forward (→)">▶▶</button>
+          <span class="rbframe" id="rbFrame">0 / 0</span>
+          <label class="rbrate">rate <input type="range" id="rbRate" min="1" max="12" step="1" value="3" /> <span id="rbRateV">3</span>/s</label>
+          <span class="rblabel" id="rbLabel"></span>
+        </div>
         <div class="hand" id="hand"></div>
       </div>
 
