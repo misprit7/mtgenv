@@ -67,7 +67,9 @@ pub fn app() -> Router {
         .route(
             "/api/games/:id",
             get(crate::lobby::game_detail).delete(crate::lobby::delete_game),
-        );
+        )
+        .route("/api/replays", get(list_replays))
+        .route("/api/replays/:id", get(get_replay));
     if dist.join("index.html").exists() {
         // Built Vite front end available — serve its /assets/* (and any stray path) via ServeDir.
         router = router.fallback_service(ServeDir::new(dist).fallback(get(embedded)));
@@ -101,6 +103,66 @@ async fn embedded() -> impl IntoResponse {
 /// Serve the baked-in Scryfall art manifest (grp_id → image URLs + artist).
 async fn card_art() -> impl IntoResponse {
     ([(axum::http::header::CONTENT_TYPE, "application/json")], CARD_ART)
+}
+
+/// The gitignored replay store (`<repo>/data/replays`, alongside `data/scryfall/`). Computed from
+/// the crate dir so it's independent of the server's working directory.
+fn replay_dir() -> std::path::PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data/replays")
+}
+
+/// `GET /api/replays` — list saved replays' metadata for the lobby. Replays are opaque JSON files
+/// (`data/replays/*.json`, the engine's serialized `Replay`); we surface each file's `meta` fields
+/// flattened, plus an `id` (filename stem) and `frames` count — without shipping every frame. A
+/// missing/empty store → `[]`, so the lobby degrades cleanly before any replay exists.
+async fn list_replays() -> impl IntoResponse {
+    let mut out: Vec<serde_json::Value> = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(replay_dir()) {
+        for e in entries.flatten() {
+            let path = e.path();
+            if path.extension().and_then(|s| s.to_str()) != Some("json") {
+                continue;
+            }
+            let (Some(stem), Ok(text)) = (
+                path.file_stem().and_then(|s| s.to_str()),
+                std::fs::read_to_string(&path),
+            ) else {
+                continue;
+            };
+            let Ok(val) = serde_json::from_str::<serde_json::Value>(&text) else {
+                continue;
+            };
+            let frames = val.get("frames").and_then(|f| f.as_array()).map_or(0, |a| a.len());
+            let mut item = serde_json::Map::new();
+            item.insert("id".into(), serde_json::Value::String(stem.to_string()));
+            item.insert("frames".into(), serde_json::Value::from(frames));
+            if let Some(serde_json::Value::Object(meta)) = val.get("meta").cloned() {
+                for (k, v) in meta {
+                    item.entry(k).or_insert(v);
+                }
+            }
+            out.push(serde_json::Value::Object(item));
+        }
+    }
+    // Newest first by `created_at` (unix-ms), when present.
+    out.sort_by_key(|v| std::cmp::Reverse(v.get("created_at").and_then(|c| c.as_i64()).unwrap_or(0)));
+    axum::Json(out)
+}
+
+/// `GET /api/replays/:id` — the full replay JSON (the viewer plays its `frames`). `id` is a bare
+/// filename stem, sanitized to block path traversal. 404 if absent.
+async fn get_replay(
+    axum::extract::Path(id): axum::extract::Path<String>,
+) -> axum::response::Response {
+    if id.is_empty() || !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+        return (axum::http::StatusCode::BAD_REQUEST, "bad replay id").into_response();
+    }
+    match std::fs::read_to_string(replay_dir().join(format!("{id}.json"))) {
+        Ok(text) => {
+            ([(axum::http::header::CONTENT_TYPE, "application/json")], text).into_response()
+        }
+        Err(_) => (axum::http::StatusCode::NOT_FOUND, "no such replay").into_response(),
+    }
 }
 
 /// Snapshot a seat's **starting decklist** from the freshly-built `GameState` (before the engine
