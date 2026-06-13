@@ -29,6 +29,7 @@ use tower_http::services::ServeDir;
 use crate::driver;
 use crate::protocol::{ClientMsg, DeckCardView, DeckEntry, ServerMsg};
 use crate::session::{ClientResponse, GreSessionAgent};
+use mtg_core::priority::StopConfig;
 use mtg_core::state::GameState;
 
 /// The self-contained, no-build client served when `web/dist/` is absent.
@@ -115,8 +116,9 @@ fn decklist_for(state: &GameState, seat: PlayerId) -> Vec<DeckEntry> {
     cards
 }
 
-/// Build the `Stops` echo (current live stop config) the UI renders the phase bar/toggles from.
-fn stops_msg(s: &driver::Stops) -> ServerMsg {
+/// Build the stop-config echo (the engine's live `StopConfig` for the human seat) the UI renders
+/// the phase bar / toggles from. Read straight off the shared handle the engine re-reads each window.
+fn stops_msg(s: &StopConfig) -> ServerMsg {
     ServerMsg::Stops {
         auto_pass: s.auto_pass,
         full_control: s.full_control,
@@ -185,15 +187,16 @@ async fn handle_socket(
     let (to_client_tx, mut to_client_rx) = tokio::sync::mpsc::unbounded_channel::<ServerMsg>();
     let (from_client_tx, from_client_rx) = std::sync::mpsc::channel::<ClientResponse>();
 
-    // The stop config is SHARED + live-mutable: the socket task mutates it on SetStop/SetOption,
-    // the GreSessionAgent reads it on every decision → mid-game stop toggling with NO reset.
-    let stops_handle = Arc::new(Mutex::new(stops));
-    let echo_tx = to_client_tx.clone(); // socket task → client (stop-config echoes)
     let result_tx = to_client_tx.clone(); // game thread → client (final GameOver frame)
     let deck_tx = to_client_tx.clone(); // game thread → client (starting-decklist peek)
-    let agent_stops = stops_handle.clone();
+    let echo_tx = to_client_tx.clone(); // socket task → client (stop-config echoes)
+    // The engine owns the human seat's live `StopConfig`; the game thread hands its `Arc<Mutex<…>>`
+    // handle back here over a oneshot so the socket task can toggle stops mid-game (the engine
+    // re-reads it at the next priority window → no reset). The Engine itself never leaves the
+    // thread (`dyn Agent` isn't `Send`); only the Send handle crosses.
+    let (handle_tx, handle_rx) = tokio::sync::oneshot::channel::<Arc<Mutex<StopConfig>>>();
     std::thread::spawn(move || {
-        let human = GreSessionAgent::new(PlayerId(0), to_client_tx, from_client_rx, agent_stops);
+        let human = GreSessionAgent::new(PlayerId(0), to_client_tx, from_client_rx);
         let bot = RandomAgent::new(seed);
         let agents: Vec<Box<dyn Agent>> = vec![Box::new(human), Box::new(bot)];
         // Decks chosen by the client (default demo = lands + creatures + burn), so the browser
@@ -205,14 +208,23 @@ async fn handle_socket(
             seat: PlayerId(0),
             cards: decklist_for(&state, PlayerId(0)),
         });
-        // Engine auto-pass stays OFF (prompts every window); the GreSessionAgent applies the
-        // human's live stop policy itself, so the human can re-stop steps mid-game.
-        let outcome = driver::run_state(state, agents);
+        // Build the engine with the human's stops applied (auto-pass on by default); the engine
+        // elides trivial priority windows itself and only calls the human's `decide()` at real
+        // stops. Hand the live stop handle to the socket task, then play the game out.
+        let (engine, handle) = driver::engine_with_stops(state, agents, PlayerId(0), &stops);
+        let _ = handle_tx.send(handle);
+        let outcome = driver::finish_game(engine);
         let _ = result_tx.send(ServerMsg::GameOver {
             winner: outcome.winner,
         });
     });
 
+    // Receive the engine's live stop handle (game thread sends it before running). If the thread
+    // died before sending, there's nothing to drive — bail.
+    let stops_handle = match handle_rx.await {
+        Ok(h) => h,
+        Err(_) => return,
+    };
     // Echo the initial stop config so the phase bar / toggles render the live state.
     let _ = echo_tx.send(stops_msg(&stops_handle.lock().unwrap()));
 
@@ -251,14 +263,10 @@ async fn handle_socket(
                                     break;
                                 }
                             }
-                            // Live stop changes: mutate the shared config + echo it back. The
-                            // running game's GreSessionAgent picks it up at the next window.
+                            // Live stop changes: mutate the engine's shared StopConfig + echo it
+                            // back. The running engine re-reads it at the next priority window.
                             Ok(ClientMsg::SetStop { step, on }) => {
-                                {
-                                    let mut s = stops_handle.lock().unwrap();
-                                    s.overrides.retain(|(p, _)| *p != step);
-                                    s.overrides.push((step, on));
-                                }
+                                stops_handle.lock().unwrap().set_override(step, Some(on));
                                 let _ = echo_tx.send(stops_msg(&stops_handle.lock().unwrap()));
                             }
                             Ok(ClientMsg::SetOption { key, on }) => {

@@ -10,10 +10,12 @@
 //! landed engine. Mulligans / choose-starting-player aren't issued yet because the engine
 //! defers them — when it adds those decision points, they flow to these same agents for free.)
 
+use std::sync::{Arc, Mutex};
+
 use mtg_core::agent::Agent;
 use mtg_core::basics::{Phase, Zone};
 use mtg_core::ids::PlayerId;
-use mtg_core::priority::Engine;
+use mtg_core::priority::{Engine, StopConfig};
 use mtg_core::state::{Characteristics, GameState};
 
 /// How a game ended.
@@ -61,43 +63,12 @@ impl Stops {
     pub fn full_control() -> Self {
         Stops { auto_pass: false, ..Default::default() }
     }
-
-    /// Whether this step is a stop (manual override, else the MP1/MP2 default).
-    pub fn is_stop(&self, phase: Phase) -> bool {
-        self.overrides
-            .iter()
-            .find(|(p, _)| *p == phase)
-            .map(|(_, v)| *v)
-            .unwrap_or(matches!(phase, Phase::PrecombatMain | Phase::PostcombatMain))
-    }
-
-    /// The MTGA-style decision: should the human be prompted at this priority window? Used
-    /// client-side by `GreSessionAgent` so the policy honours live stop changes (no reset).
-    pub fn should_ask(&self, phase: Phase, has_action: bool, own_on_top: bool) -> bool {
-        if !self.auto_pass || self.full_control {
-            return true; // paper-CR / full control: prompt everywhere
-        }
-        if self.is_stop(phase) {
-            return true; // MP1/MP2 default or a manual stop
-        }
-        if own_on_top && self.resolve_own_stack {
-            return false; // auto-pass to resolve your own spell/ability
-        }
-        self.smart_stops && has_action // SmartStops: prompt where you have a legal play
-    }
-
-    /// Effective per-priority-step stop state (the MTGA StopType vocabulary) for the UI phase bar.
-    pub fn effective_steps(&self) -> Vec<(Phase, bool)> {
-        use Phase::*;
-        [
-            Upkeep, Draw, PrecombatMain, BeginCombat, DeclareAttackers, DeclareBlockers,
-            CombatDamage, EndCombat, PostcombatMain, End,
-        ]
-        .into_iter()
-        .map(|p| (p, self.full_control || self.is_stop(p)))
-        .collect()
-    }
 }
+
+// NOTE: the auto-pass/stops POLICY (which windows actually prompt) and the phase-bar's effective
+// stop state both live in the engine's `StopConfig` (CR-correct masking is the engine's job). This
+// `Stops` is just the parsed/transport carrier — the CLI applies it via [`apply_stops`] and the web
+// applies it onto a live [`mtg_core::priority::Engine::stops_handle`] (see [`engine_with_stops`]).
 
 /// Apply a [`Stops`] config to the engine (for the given human seats) before running.
 pub fn apply_stops(engine: &mut Engine, stops: &Stops, human_seats: &[PlayerId]) {
@@ -159,6 +130,42 @@ pub fn demo_state(seed: u64) -> GameState {
 /// engine shuffles, deals opening hands, and runs the turn/priority/combat loop to a result.
 pub fn run_state(state: GameState, agents: Vec<Box<dyn Agent>>) -> Outcome {
     let mut engine = Engine::new(state, agents);
+    let winner = engine.run_game();
+    Outcome {
+        winner,
+        turns: engine.state.turn_number,
+    }
+}
+
+/// Build the engine for a human **web** session and hand back the `human` seat's live stop handle
+/// (with `stops` applied and auto-pass per the config). The engine owns the auto-pass/stops policy;
+/// the socket task holds the returned handle and toggles overrides mid-game (`set_override`) — the
+/// engine re-reads the shared config at the next priority window, so stops change with no reset.
+/// Returns the (not-yet-run) engine; call [`finish_game`] on the game thread to play it out.
+pub fn engine_with_stops(
+    state: GameState,
+    agents: Vec<Box<dyn Agent>>,
+    human: PlayerId,
+    stops: &Stops,
+) -> (Engine, Arc<Mutex<StopConfig>>) {
+    let engine = Engine::new(state, agents);
+    let handle = engine.stops_handle(human);
+    {
+        let mut c = handle.lock().unwrap();
+        c.auto_pass = stops.auto_pass;
+        c.full_control = stops.full_control;
+        c.smart_stops = stops.smart_stops;
+        c.resolve_own_stack = stops.resolve_own_stack;
+        for &(step, on) in &stops.overrides {
+            c.set_override(step, Some(on));
+        }
+    }
+    (engine, handle)
+}
+
+/// Play a prepared engine to completion (used by the web path, which runs it on its own thread
+/// after extracting the live stop handle via [`engine_with_stops`]).
+pub fn finish_game(mut engine: Engine) -> Outcome {
     let winner = engine.run_game();
     Outcome {
         winner,

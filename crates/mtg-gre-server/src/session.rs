@@ -11,13 +11,11 @@
 //! `recv` on the game thread). All async is confined to [`crate::server`].
 
 use std::sync::mpsc::Receiver;
-use std::sync::{Arc, Mutex};
 
 use mtg_core::agent::{Agent, DecisionRequest, DecisionResponse, GameEvent, PlayerView, RandomAgent};
 use mtg_core::ids::PlayerId;
 use tokio::sync::mpsc::UnboundedSender;
 
-use crate::driver::Stops;
 use crate::options::{self, Selection};
 use crate::protocol::ServerMsg;
 
@@ -40,10 +38,6 @@ pub struct GreSessionAgent {
     /// Fallback used if the client disconnects mid-game so the game thread terminates cleanly
     /// instead of hanging (the engine never sees a missing answer).
     fallback: RandomAgent,
-    /// Live-mutable MTGA stop config (mutated by the socket task on `SetStop`/`SetOption`). The
-    /// auto-pass/stops POLICY lives here (client-side), not in the engine, so the human can
-    /// change which steps they stop at **mid-game** with no reset — read fresh on every decision.
-    stops: Arc<Mutex<Stops>>,
 }
 
 impl GreSessionAgent {
@@ -51,7 +45,6 @@ impl GreSessionAgent {
         seat: PlayerId,
         to_client: UnboundedSender<ServerMsg>,
         from_client: Receiver<ClientResponse>,
-        stops: Arc<Mutex<Stops>>,
     ) -> Self {
         GreSessionAgent {
             seat,
@@ -59,31 +52,15 @@ impl GreSessionAgent {
             from_client,
             next_id: 1,
             fallback: RandomAgent::new(0xC0FFEE ^ seat.0 as u64),
-            stops,
         }
     }
 }
 
 impl Agent for GreSessionAgent {
     fn decide(&mut self, view: &PlayerView, req: &DecisionRequest) -> DecisionResponse {
-        // MTGA auto-pass policy, applied CLIENT-SIDE so live stop toggles take effect immediately.
-        // The engine runs with auto-pass off (prompts every priority window); we elide here per
-        // the user's current (live-mutable) stops, only surfacing stops + meaningful decisions.
-        if let DecisionRequest::Priority { actions, .. } = req {
-            let own_on_top = view
-                .stack
-                .last()
-                .map(|s| s.controller == view.seat)
-                .unwrap_or(false);
-            let ask = self
-                .stops
-                .lock()
-                .unwrap()
-                .should_ask(view.phase, !actions.is_empty(), own_on_top);
-            if !ask {
-                return DecisionResponse::Pass;
-            }
-        }
+        // The auto-pass/stops POLICY lives in the engine now (it holds this seat's live `StopConfig`
+        // and elides trivial priority windows itself, honouring mid-game stop toggles with no reset).
+        // So whenever the engine actually calls `decide()`, it's a real decision: just round-trip it.
         let id = self.next_id;
         self.next_id += 1;
         let prompt = options::prompt_for(view, req);
