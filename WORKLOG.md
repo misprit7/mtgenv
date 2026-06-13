@@ -71,8 +71,8 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
   engine's job. Asked `decompile` for field-level GRE Req/Resp shapes (§9 open questions);
   variant set not expected to change. Task #4 (implement agent.rs + effects/) blocked on
   the workspace scaffold (#1).
-- **Project bootstrapped from skeleton into a planned project.** Established docs, the
-  architecture, and three implementation plans. No engine code written yet (planning phase).
+- **Project bootstrapped into a planned project.** Established docs, the architecture, and
+  the implementation plans.
 - Downloaded the MTG Comprehensive Rules (eff. 2026-02-27) → `docs/rules/`
   (`MagicCompRules_20260227.pdf` + extracted `comprules.txt`).
 - Wrote `docs/rules/RULES_SUMMARY.md` — engine-implementer's map of the CR (layers, SBAs,

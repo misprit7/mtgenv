@@ -5,9 +5,9 @@
 > Sibling plans: `docs/plans/DECOMPILE_PLAN.md` (MTGA protocol), `docs/plans/GYM_PLAN.md`
 > (Python training env).
 
-This plan describes how to grow `mtgenv` from the current ~500-line skeleton into a full,
-fast, headless MTG rules engine suitable as the simulation core of an RL training
-environment, built on MTGA's whiteboard model.
+This plan describes how to build `mtgenv` as a full, fast, headless MTG rules engine
+suitable as the simulation core of an RL training environment, built on MTGA's whiteboard
+model.
 
 ---
 
@@ -31,22 +31,18 @@ environment, built on MTGA's whiteboard model.
 
 ---
 
-## 2. Assessment of the current skeleton
+## 2. Design requirements (what the structure must get right)
 
-`src/{types,card,player,game,main}.rs` is a reasonable naming sketch but is **not** the
-target architecture and should be treated as throwaway scaffolding:
+A few structural requirements shape everything below:
 
-- `Card` mixes definition (oracle characteristics) with instance state; no separation of
-  *copiable* vs *computed* characteristics → blocks layers/copy effects.
-- `draw_card` pops the *end* of the library and `clone()`s cards around → no stable object
-  identity, no zones-as-first-class, fights the borrow checker at scale.
-- `Decision` enum is a decent seed but is not generated from legal-action enumeration and
-  has no constraints/masking.
-- `Phase` enum is missing the priority model and turn-based actions.
-- `egui`/`eframe` are in the core crate → the core is not headless.
-
-Keep the *vocabulary* (PlayerId/CardId/Color/Phase names), discard the *structure*. We
-rebuild under a workspace.
+- Separate an object's *copiable* base characteristics from its *computed* (post-layer)
+  characteristics — required for the layer system and copy effects (CR 613/707).
+- Stable object identity (`ObjId`) with zones as first-class `ObjId` lists; never clone
+  cards around — keeps snapshot/clone cheap for search and replay.
+- `DecisionRequest`s are generated from legal-action enumeration with constraints (masking
+  is the engine's job) — the engine never asks an open-ended question.
+- The phase/step model carries the full priority + turn-based-action machinery.
+- `mtg-core` is headless: no GUI/Python/IO deps (GUI/bindings/CLI are separate crates).
 
 ## 3. Workspace & crate layout
 

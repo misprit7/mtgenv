@@ -85,7 +85,7 @@ Key property: **the engine never asks an open-ended question.** Every decision p
 
 Engine core is **pure and deterministic**: `apply(state, decision, rng) -> state`. RNG is an explicit seeded field of `GameState` so games are reproducible and snapshot/clone is trivial (enables MCTS rollouts and exact replay for differential testing).
 
-Current code (`src/game.rs`) already has the right bones: a `Decision` enum, a `DecisionPoint` trait, `GameError`, `next_phase()`. We will refactor `DecisionPoint` (generic-associated, hard to make into a trait object) into the unified `Agent` + `DecisionRequest`/`DecisionResponse` model below, and grow the `Decision` enum into the tagged request enum.
+The engine exposes a single `Agent` trait with a `DecisionRequest`/`DecisionResponse` model (`crates/mtg-core/src/agent.rs`; see below). The Python policy is just another `Agent` implementation behind that trait — no engine changes.
 
 ---
 
@@ -265,9 +265,9 @@ Ordered; each builds on the last and is independently testable.
 
 ---
 
-## Appendix — concrete first changes to `/home/xander/dev/p-mtg/mtgenv`
+## Appendix — concrete first changes (when the gym workstream starts)
 
-- `src/game.rs`: replace `DecisionPoint` (GAT, not object-safe) with `Agent` trait + grow `Decision` into `DecisionRequest`/`DecisionResponse` (§3). Add seeded RNG field to `GameState`; derive `serde` for snapshot.
-- `Cargo.toml`: move `egui`/`eframe` out of the core lib into an optional GUI bin target; keep `serde`/`serde_json`/`thiserror`. Add a new workspace member `mtgenv-py` (PyO3 `cdylib`, maturin) depending on the engine lib only.
-- New `python/mtgenv_gym/`: `MtgEnv`, obs encoder glue, `MaskablePPO` training entrypoint, vec/async collector.
-- New `tests/`: scripted-game differential harness vs Forge (`run-forge-headless.sh sim`).
+- Add a new workspace crate `crates/mtg-py` (PyO3 `cdylib`, maturin) depending only on `mtg-core`; it wraps the `Agent` boundary so a Python policy can answer `decide()`.
+- New `python/mtgenv_gym/`: `MtgEnv`, the observation encoder (`PlayerView` → tensors), a `MaskablePPO` training entrypoint, and a vectorized/async rollout collector.
+- Reuse `mtg-core`'s seeded `Rng` + `serde` snapshotting for reproducible rollouts / MCTS.
+- Validate rules behaviour via the engine's CR-derived expect tests + captured MTGA logs.

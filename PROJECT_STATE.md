@@ -57,8 +57,7 @@ MTGA client.
   no panics. `mtg-cli` is the self-play harness. `state/`/`turn/`/`stack.rs`/`sba.rs`/
   `priority.rs` implemented on top of design's `agent.rs`/`effects/`/`basics.rs`; whiteboard
   commit/replacement, layers, mana/casting/combat still stubbed (M3–M5).
-- Existing `src/*.rs` is a ~500-line naming skeleton being **replaced** by the workspace
-  (kept only as vocabulary reference); `egui`/`eframe` moving out of the core.
+- `mtg-core` is headless (no `egui`/`eframe`); the engine is built fresh under the workspace.
 - Docs in place: architecture (`docs/design/WHITEBOARD_MODEL.md`), rules
   (`docs/rules/RULES_SUMMARY.md` + PDF/text), plans (`docs/plans/`), `CLAUDE.md`.
 - Decompile recon done: MTGA = Mono + protobuf, Steam install; full decompile in progress.
