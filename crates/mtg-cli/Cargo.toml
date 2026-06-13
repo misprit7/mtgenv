@@ -1,0 +1,12 @@
+[package]
+name = "mtg-cli"
+version.workspace = true
+edition.workspace = true
+description = "Thin CLI runner for the mtg-core engine (sim / self-play harness)."
+
+[[bin]]
+name = "mtg-cli"
+path = "src/main.rs"
+
+[dependencies]
+mtg-core = { path = "../mtg-core" }

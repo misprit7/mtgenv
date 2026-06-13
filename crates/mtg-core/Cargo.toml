@@ -1,0 +1,8 @@
+[package]
+name = "mtg-core"
+version.workspace = true
+edition.workspace = true
+description = "Headless Magic: The Gathering rules engine (whiteboard model)."
+
+[dependencies]
+serde.workspace = true

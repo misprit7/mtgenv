@@ -1,0 +1,27 @@
+//! `mtg-core` — the headless Magic: The Gathering rules engine.
+//!
+//! Card-agnostic core (the "GRE") built on MTG Arena's whiteboard model. See
+//! `docs/design/WHITEBOARD_MODEL.md` and `docs/plans/ENGINE_PLAN.md`.
+//!
+//! This is the milestone-1 scaffold: the module tree is laid out but most modules
+//! are stubs. The core must never `match` on card identity — card behaviour is data
+//! interpreted by the effect runtime (`effects`).
+
+pub mod ids;
+pub mod state;
+pub mod chars;
+pub mod stack;
+pub mod turn;
+pub mod priority;
+pub mod whiteboard;
+pub mod events;
+pub mod sba;
+pub mod combat;
+pub mod mana;
+pub mod rng;
+
+// Owned by the `design` workstream (task #4): the agent/decision boundary and the
+// Effect IR. Declared here as (near-)empty modules so the workspace compiles; `design`
+// fills them per `docs/design/AGENT_INTERFACE.md`.
+pub mod agent;
+pub mod effects;

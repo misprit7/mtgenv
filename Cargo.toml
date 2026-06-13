@@ -1,11 +1,13 @@
-[package]
-name = "mtgenv"
+[workspace]
+resolver = "2"
+members = ["crates/mtg-core", "crates/mtg-cli"]
+
+[workspace.package]
 version = "0.1.0"
 edition = "2021"
 
-[dependencies]
-thiserror = "1.0"
+# Shared dependency versions. `mtg-core` stays headless (no GUI/python/IO deps).
+# A GUI viewer and PyO3 bindings live in their own crates added later.
+[workspace.dependencies]
 serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-egui = "0.24.0"
-eframe = "0.24.0" 
+thiserror = "1.0"
