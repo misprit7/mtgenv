@@ -102,7 +102,13 @@ Key points:
   `decide()` translates the engine's `DecisionRequest` into the matching GRE `*Req` message,
   ships it, and blocks until the matching `*Resp`/action comes back, which it translates into
   a `DecisionResponse`. It is the GRE-protobuf sibling of GYM_PLAN's `SocketAgent` (which
-  uses JSON) and `MtgaClientAgent` (DECOMPILE_PLAN §5) — *same trait, different wire*.
+  uses JSON) and `MtgaClientAgent` (DECOMPILE_PLAN §5) — *same trait, different wire*. The
+  formal contract that makes this a **thin, lossless, table-driven adapter** (not a
+  reinterpretation) is `AGENT_INTERFACE.md` §1.1: all boundary types derive `serde`, each
+  variant maps 1:1 onto a GRE `*Req`/`*Resp`, and index-based responses resolve back to
+  concrete GRE object refs via the request's own enumerated option vectors. Per that contract,
+  **the web client and the real MTGA client are the same backend** — two clients of one GRE
+  server.
 - **Message semantics vs. transport framing are separated.** The GRE *message set* (the
   recovered protobuf types) is shared by both transports; only the *framing* differs
   (WebSocket frames for the browser, MTGA's TCP framing for the real client). Swapping in the

@@ -5,6 +5,16 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **client:** wrote `docs/plans/CLIENT_PLAN.md` (task #5) — web play UI + a **GRE-protocol
+  server** (`mtg-gre-server` crate, axum + WebSocket, depends only on `mtg-core`) fronting the
+  engine. A human at the web UI is just another `Agent` backend (`GreSessionAgent`) — same
+  single boundary as RL/Gym and scripted AI. The seam is the GRE protocol itself, so the
+  **real MTGA client can be dropped in** (two strategies: protocol-compatible server +
+  endpoint redirect, vs. patch/runtime-hook the Mono client). Milestones: CLI text client →
+  minimal web board (JSON) → protocol-compatible server (recovered protobuf) → real-client
+  drop-in. Reconciled the DecisionRequest⇄GRE mapping to `AGENT_INTERFACE.md` §6.1; the docs
+  now cross-reference (design added §1.1 GRE-server serialization contract). Transport/
+  framing/handshake/auth + cert-pinning marked **blocked on decompile** (questions sent).
 - **design:** wrote `docs/design/AGENT_INTERFACE.md` — the single `Agent` trait +
   `DecisionRequest`/`DecisionResponse` enums + `PlayerView` (info-filtered, hidden zones
   masked) + the Effect IR / whiteboard `Action` / `Native` hatch (Rust sketches). The

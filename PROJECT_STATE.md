@@ -46,6 +46,10 @@ MTGA client.
   **design done with #3:** `docs/design/AGENT_INTERFACE.md` specifies the boundary (one
   `Agent` trait, superset `DecisionRequest`/`Response`, `PlayerView`, Effect IR + `Native`);
   #4 (implement it in `mtg-core`) waits on the scaffold (#1).
+  **client done with #5:** `docs/plans/CLIENT_PLAN.md` plans the web UI + `mtg-gre-server`
+  (axum+WS, depends only on `mtg-core`); a human is just a `GreSessionAgent` behind the one
+  boundary; mapping reconciled to AGENT_INTERFACE §6.1/§1.1; real-client drop-in via
+  endpoint-redirect or Mono patch. Transport/auth details blocked on decompile (#2).
 - Existing `src/*.rs` is a ~500-line naming skeleton being **replaced** by the workspace
   (kept only as vocabulary reference); `egui`/`eframe` moving out of the core.
 - Docs in place: architecture (`docs/design/WHITEBOARD_MODEL.md`), rules
