@@ -1,0 +1,20 @@
+[package]
+name = "mtga-bridge-server"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Stub backend that the real MTG Arena client can connect to (interop research). Self-contained; not wired to the mtgenv rules engine yet."
+
+# Intentionally dependency-free for the first milestone (frame + envelope codec).
+# TLS (tokio-rustls + rcgen), the HTTPS PlayFab stub (hyper), protobuf (prost) and
+# gzip (flate2) get added when we wire the live login/FrontDoor flow.
+
+[lib]
+name = "mtga_bridge"
+path = "src/lib.rs"
+
+[[bin]]
+name = "mtga-bridge"
+path = "src/main.rs"
+
+[dependencies]
