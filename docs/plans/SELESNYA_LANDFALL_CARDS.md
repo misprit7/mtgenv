@@ -96,6 +96,16 @@ cards first.
 | C16 | **Trigger: becomes the target of an opponent's spell/ability** | ability.rs/priority.rs | Surrak |
 | C17 | **Exile from a graveyard + count-card-types-among-exiled dynamic buff** | whiteboard.rs/chars | Keen-Eyed Curator |
 | C18 | **Static permissions** — play an extra land each turn; play lands from graveyard | priority.rs | Icetill Explorer |
+| C19 | **Mana production via real IR mana abilities** (CR 605) — implement `Effect::AddMana` + source/pay mana from `Ability::Activated{is_mana:true}` (cost + restriction/condition + `ManaSpec`), **retiring the `mana_colors` shortcut**; `mana_ability(color)` builder for basics; `ManaSpec.one_of` for "G or W" duals | mana.rs, whiteboard.rs, cards/mod.rs | Hushwood Verge, Llanowar Elves, Temple Garden, Ba Sing Se, + all lands/dorks |
+
+## Fidelity standard (do not approximate)
+
+Implement card text **faithfully**. The `mana_colors` color-vector is wrong for anything beyond a
+plain "{T}: Add X" — mana production is a mana ability (CR 605) and can be conditional/costed/
+any-color/dynamic; use the C19 IR path. The **deferred-clause** pattern (documented `// deferred:` +
+a rules-text note) is reserved for genuine *subsystems* (earthbend land-animation, crew, warp) — not
+avoidable conditionals; and when a card does need an unbuilt subsystem, mark the card **incomplete**
+and flag engine to build the capability rather than shipping a behaviorally-wrong version.
 
 ## Ease tiers (author cards in this order)
 
