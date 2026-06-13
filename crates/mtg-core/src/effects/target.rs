@@ -5,7 +5,7 @@
 //! which is a *concrete* reference.
 
 use super::value::{PlayerRef, ValueExpr};
-use crate::basics::{Color, CounterKind, Zone};
+use crate::basics::{CardType, Color, CounterKind, Zone};
 use serde::{Deserialize, Serialize};
 
 /// What kind of thing a "target" word accepts (CR 115). The engine turns this + a `CardFilter`
@@ -74,21 +74,6 @@ pub enum CardFilter {
     HasCounter(CounterKind),
     /// Matches a specific named card (rare; for the few effects that name a card).
     Named(String),
-}
-
-/// Card types (CR 300s). Lives here as the type the IR filters on. (Supertypes/subtypes are
-/// strings on the object.)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-pub enum CardType {
-    Artifact,
-    Battle,
-    Creature,
-    Enchantment,
-    Instant,
-    Land,
-    Planeswalker,
-    Sorcery,
-    Kindred,
 }
 
 /// Mana an ability/effect produces (CR 605/106). A simple bag; one entry per produced color.

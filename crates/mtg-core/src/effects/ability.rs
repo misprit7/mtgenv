@@ -4,10 +4,10 @@
 //! continuous/static (which contribute to layers + qualifications).
 
 use super::condition::{Condition, Duration};
-use super::target::{CardFilter, CardType, SelectSpec};
+use super::target::{CardFilter, SelectSpec};
 use super::value::ValueExpr;
 use super::Effect;
-use crate::basics::{Color, CounterKind, DamageKind, ManaCost};
+use crate::basics::{CardType, Color, CounterKind, DamageKind, ManaCost};
 use serde::{Deserialize, Serialize};
 
 /// A cost to be paid (CR 118): an optional mana component plus any number of non-mana

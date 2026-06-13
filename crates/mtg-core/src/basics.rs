@@ -34,6 +34,53 @@ impl Color {
     ];
 }
 
+/// Card types (CR 300s). The shared-vocabulary home for the type both the effect IR filters on
+/// and the engine's state/characteristics carry. (Supertypes/subtypes are strings on objects.)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum CardType {
+    Artifact,
+    Battle,
+    Creature,
+    Enchantment,
+    Instant,
+    Land,
+    Planeswalker,
+    Sorcery,
+    Kindred,
+}
+
+impl CardType {
+    /// The canonical type-line word for this card type.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            CardType::Artifact => "Artifact",
+            CardType::Battle => "Battle",
+            CardType::Creature => "Creature",
+            CardType::Enchantment => "Enchantment",
+            CardType::Instant => "Instant",
+            CardType::Land => "Land",
+            CardType::Planeswalker => "Planeswalker",
+            CardType::Sorcery => "Sorcery",
+            CardType::Kindred => "Kindred",
+        }
+    }
+
+    /// Whether a card of this type becomes a permanent on the battlefield (CR 110.4).
+    /// Instants and sorceries never do (400.4a); Kindred only ever appears alongside a
+    /// permanent type, so on its own it is not a permanent type.
+    pub fn is_permanent(self) -> bool {
+        matches!(
+            self,
+            CardType::Artifact
+                | CardType::Battle
+                | CardType::Creature
+                | CardType::Enchantment
+                | CardType::Land
+                | CardType::Planeswalker
+        )
+    }
+}
+
 /// The seven zones (CR 400). Public vs. hidden is a property of the zone + viewer, enforced by
 /// the `PlayerView` masking function — not encoded here.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
