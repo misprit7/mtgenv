@@ -519,6 +519,8 @@ impl Engine {
             _ => decider,
         };
         self.state.active_player = starting;
+        // The starting player anchors turn rotation + the CR 103.8a first-draw skip.
+        self.state.starting_player = starting;
     }
 
     /// The London mulligan (CR 103.5). Each player may mulligan any number of times; a mulligan
