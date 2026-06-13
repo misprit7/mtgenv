@@ -17,6 +17,8 @@
     display: flex; gap: 16px; align-items: baseline; flex-wrap: wrap; }
   header h1 { font-size: 15px; margin: 0; font-weight: 700; letter-spacing: .3px; }
   header .status { color: var(--muted); font-size: 12px; }
+  header a { color: var(--accent); text-decoration: none; }
+  header a:hover { text-decoration: underline; }
   main { display: grid; grid-template-columns: 1fr 320px; gap: 12px; padding: 12px; align-items: start; }
   .col { display: flex; flex-direction: column; gap: 12px; }
   .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
@@ -62,7 +64,11 @@
 <header>
   <h1>mtgenv</h1>
   <span class="status" id="conn">connecting…</span>
-  <span class="status">demo deck (creatures + burn) · you are Player 0 · opponent = RandomAgent</span>
+  <span class="status" id="decks"></span>
+  <span class="status">new game:
+    <a href="?">demo</a> ·
+    <a href="?p0=burn&amp;p1=bears">play burn (vs bears)</a> ·
+    <a href="?p0=bears&amp;p1=burn">play bears (vs burn)</a></span>
 </header>
 <main>
   <div class="col">
@@ -83,7 +89,11 @@
   let cur = null;       // current decide message {id, prompt, view}
   let multi = new Set();// selected indices for selectMany
 
-  const ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws");
+  // Show the chosen decks (from ?p0=&p1=) and carry them to the WS so the server deals them.
+  const params = new URLSearchParams(location.search);
+  $("decks").textContent = "you (P0) = " + (params.get("p0") || "demo") +
+    " · opponent (P1) = " + (params.get("p1") || "demo");
+  const ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws" + location.search);
   ws.onopen = () => { $("conn").textContent = "connected"; };
   ws.onclose = () => { $("conn").textContent = "disconnected"; };
   ws.onerror = () => { $("conn").textContent = "connection error"; };

@@ -71,6 +71,20 @@ pub fn run_demo_game(agents: Vec<Box<dyn Agent>>, seed: u64) -> Outcome {
     run_state(demo_state(seed), agents)
 }
 
+/// Build a game from optional per-seat preset deck names (`"burn"`/`"bears"`/`"demo"`); any
+/// unset/unknown seat falls back to the demo deck. Used by the web server's deck picker.
+pub fn state_for_decks(p0: Option<&str>, p1: Option<&str>, seed: u64) -> GameState {
+    if p0.is_none() && p1.is_none() {
+        return demo_state(seed);
+    }
+    let pick = |name: Option<&str>| {
+        name.and_then(mtg_core::cards::preset_deck)
+            .unwrap_or_else(mtg_core::cards::demo_deck)
+    };
+    let (d0, d1) = (pick(p0), pick(p1));
+    mtg_core::cards::build_game(seed, &[&d0, &d1])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

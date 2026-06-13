@@ -64,8 +64,13 @@ let view: PlayerView | null = null;
 let cur: Decide | null = null;
 const multi = new Set<number>();
 
+// Deck selection: ?p0=&p1= (burn/bears/demo) flows through to the server via the WS query.
+const deckParams = new URLSearchParams(location.search);
+$("decks").textContent = `you (P0) = ${deckParams.get("p0") || "demo"} · opponent (P1) = ${
+  deckParams.get("p1") || "demo"
+}`;
 const wsProto = location.protocol === "https:" ? "wss://" : "ws://";
-const ws = new WebSocket(`${wsProto}${location.host}/ws`);
+const ws = new WebSocket(`${wsProto}${location.host}/ws${location.search}`);
 ws.onopen = () => ($("conn").textContent = "connected");
 ws.onclose = () => ($("conn").textContent = "disconnected");
 ws.onerror = () => ($("conn").textContent = "connection error");

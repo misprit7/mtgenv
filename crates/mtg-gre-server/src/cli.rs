@@ -154,6 +154,7 @@ impl Cli {
             "life" => self.cmd_life(&args),
             "add" => self.cmd_add(&args),
             "deck" => self.cmd_deck(&args),
+            "preset" => self.cmd_preset(&args),
             "handsize" => self.cmd_handsize(&args),
             "deal" => self.cmd_deal(&args),
             "show" | "dump" => self.cmd_show(&args),
@@ -174,6 +175,7 @@ Commands:
   add <player> <zone> <card>… place card(s) in a zone (zone: library|hand|battlefield|graveyard|exile)
                               cards: plains island mountain forest bears giant shock divination salve bolt
   deck <player> <count> [name] add <count> cards to the library (round-robin basics, or all <name>)
+  preset <seat> <burn|bears|demo>  load a named preset deck into a seat's library
   handsize <player> <n>       set maximum hand size
   deal on|off                 deal opening hands on 'run' (off = play the hand-built scenario as-is)
   show [player]               dump full state (no arg) or a seat's PlayerView
@@ -279,6 +281,33 @@ Lines starting with '#' are comments. At a decision prompt: an index, 'p'/Enter 
             self.say(&format!("unknown card name (try: {CARD_NAMES})"));
         }
         self.say(&format!("added {added} card(s) to P{p}'s library"));
+    }
+
+    /// Load a named preset deck (`burn`/`bears`/`demo`) into a seat's library — composes with
+    /// `new`/`seat`/`add`/`deal`/`run` for building the user's matchups by hand.
+    fn cmd_preset(&mut self, args: &[&str]) {
+        let (Some(seat), Some(name)) = (
+            args.first().and_then(|s| s.parse::<u32>().ok()),
+            args.get(1),
+        ) else {
+            return self.say("usage: preset <seat> <burn|bears|demo>");
+        };
+        if !self.valid_player(seat) {
+            return;
+        }
+        let Some(deck) = cards::preset_deck(name) else {
+            return self.say(&format!("unknown preset '{name}' (burn|bears|demo)"));
+        };
+        let db = self.state.card_db();
+        let chars: Vec<Characteristics> = deck
+            .iter()
+            .filter_map(|&g| db.get(g).map(|d| d.chars.clone()))
+            .collect();
+        let n = chars.len();
+        for c in chars {
+            self.state.add_card(PlayerId(seat), c, Zone::Library);
+        }
+        self.say(&format!("loaded {n}-card '{name}' deck into P{seat}'s library"));
     }
 
     fn cmd_handsize(&mut self, args: &[&str]) {

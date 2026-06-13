@@ -9,10 +9,12 @@
 //! Static serving prefers a built Vite front end at `web/dist/`; if it hasn't been built, the
 //! server falls back to a self-contained embedded client so `cargo run` works with no Node step.
 
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
+use axum::extract::Query;
 use axum::response::{Html, IntoResponse};
 use axum::routing::get;
 use axum::Router;
@@ -59,13 +61,20 @@ pub async fn serve(addr: &str) -> std::io::Result<()> {
     axum::serve(listener, app()).await
 }
 
-async fn ws_handler(ws: WebSocketUpgrade) -> impl IntoResponse {
-    ws.on_upgrade(handle_socket)
+/// `/ws?p0=<deck>&p1=<deck>` — deck names (`burn`/`bears`/`demo`) pick each seat's deck; unset =
+/// demo. Seat 0 is the human (browser), seat 1 the `RandomAgent`.
+async fn ws_handler(
+    ws: WebSocketUpgrade,
+    Query(params): Query<HashMap<String, String>>,
+) -> impl IntoResponse {
+    let p0 = params.get("p0").cloned();
+    let p1 = params.get("p1").cloned();
+    ws.on_upgrade(move |socket| handle_socket(socket, p0, p1))
 }
 
 /// One browser connection = one game. The browser is seat 0 (the human); seat 1 is a
-/// `RandomAgent`.
-async fn handle_socket(socket: WebSocket) {
+/// `RandomAgent`. `p0`/`p1` are optional per-seat preset deck names.
+async fn handle_socket(socket: WebSocket, p0: Option<String>, p1: Option<String>) {
     let seed = SEED.fetch_add(1, Ordering::Relaxed);
 
     // server→client pushes (unbounded; sent from the sync game thread) and client→server
@@ -80,8 +89,10 @@ async fn handle_socket(socket: WebSocket) {
         let human = GreSessionAgent::new(PlayerId(0), to_client_tx, from_client_rx);
         let bot = RandomAgent::new(seed);
         let agents: Vec<Box<dyn Agent>> = vec![Box::new(human), Box::new(bot)];
-        // Demo deck = lands + creatures + burn, so the browser game exercises casting & combat.
-        let outcome = driver::run_demo_game(agents, seed);
+        // Decks chosen by the client (default demo = lands + creatures + burn), so the browser
+        // game exercises casting & combat — and the user can pick e.g. Burn vs Bears.
+        let state = driver::state_for_decks(p0.as_deref(), p1.as_deref(), seed);
+        let outcome = driver::run_state(state, agents);
         let _ = result_tx.send(ServerMsg::GameOver {
             winner: outcome.winner,
         });

@@ -14,6 +14,8 @@ header {
 }
 header h1 { font-size: 15px; margin: 0; font-weight: 700; letter-spacing: .3px; }
 header .status { color: var(--muted); font-size: 12px; }
+header a { color: var(--accent); text-decoration: none; }
+header a:hover { text-decoration: underline; }
 main { display: grid; grid-template-columns: 1fr 320px; gap: 12px; padding: 12px; align-items: start; }
 .col { display: flex; flex-direction: column; gap: 12px; }
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
