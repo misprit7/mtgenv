@@ -5,6 +5,15 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **engine:** post-M3 follow-ups (3 small commits): (1) adopted design's canonical
+  `basics::CardType`, deleted the `state::CardType` duplicate (one import path); (2) added
+  scenario hooks for webui's CLI — `Engine::skip_opening_deal()` (play a hand-built scenario
+  with no shuffle/deal), public `Engine::legal_actions(p)` (pre-render the masked option set),
+  and an `Outcome { winner, turns, reason }` via a new `GameState.end_reason`; (3) task #10 —
+  added **Lightning Bolt** ({R}, 3 to any target) and the **Burn** (40 Bolt + 20 Mountain) /
+  **Bears** (40 Grizzly Bears + 20 Forest) preset decks + `preset_deck`/`burn_vs_bears_game`;
+  `mtg-cli` now takes deck args (`mtg-cli <seed> burn bears`). 39 mtg-core tests green,
+  full workspace green (mtg-gre-server 10), clippy clean.
 - **engine:** implemented task #9 (ENGINE_PLAN milestone 3) — a minimal PLAYABLE game:
   mana + casting + vanilla creatures + combat. New `cards/` module: `CardDef`
   (Characteristics + design's `Ability` IR) + a `CardDb` registry keyed by `grp_id`; a
