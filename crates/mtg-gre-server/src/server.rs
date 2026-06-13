@@ -74,19 +74,33 @@ pub async fn serve(addr: &str) -> std::io::Result<()> {
 }
 
 /// `/ws?p0=<deck>&p1=<deck>` — deck names (`burn`/`bears`/`demo`) pick each seat's deck; unset =
-/// demo. Seat 0 is the human (browser), seat 1 the `RandomAgent`.
+/// demo. `?autopass=0` plays paper-CR (prompt every window); `?fullcontrol=1` stops everywhere.
+/// Seat 0 is the human (browser), seat 1 the `RandomAgent`.
 async fn ws_handler(
     ws: WebSocketUpgrade,
     Query(params): Query<HashMap<String, String>>,
 ) -> impl IntoResponse {
     let p0 = params.get("p0").cloned();
     let p1 = params.get("p1").cloned();
-    ws.on_upgrade(move |socket| handle_socket(socket, p0, p1))
+    let truthy = |v: &str| v == "1" || v.eq_ignore_ascii_case("on") || v.eq_ignore_ascii_case("true");
+    let stops = driver::Stops {
+        // Auto-pass on by default for human play; ?autopass=0 opts into every-window prompting.
+        auto_pass: params.get("autopass").map(|v| truthy(v)).unwrap_or(true),
+        full_control: params.get("fullcontrol").map(|v| truthy(v)).unwrap_or(false),
+        overrides: Vec::new(),
+    };
+    ws.on_upgrade(move |socket| handle_socket(socket, p0, p1, stops))
 }
 
 /// One browser connection = one game. The browser is seat 0 (the human); seat 1 is a
-/// `RandomAgent`. `p0`/`p1` are optional per-seat preset deck names.
-async fn handle_socket(socket: WebSocket, p0: Option<String>, p1: Option<String>) {
+/// `RandomAgent`. `p0`/`p1` are optional per-seat preset deck names; `stops` is the human's
+/// MTGA-style auto-pass/stop config.
+async fn handle_socket(
+    socket: WebSocket,
+    p0: Option<String>,
+    p1: Option<String>,
+    stops: driver::Stops,
+) {
     let seed = SEED.fetch_add(1, Ordering::Relaxed);
 
     // server→client pushes (unbounded; sent from the sync game thread) and client→server
@@ -104,7 +118,8 @@ async fn handle_socket(socket: WebSocket, p0: Option<String>, p1: Option<String>
         // Decks chosen by the client (default demo = lands + creatures + burn), so the browser
         // game exercises casting & combat — and the user can pick e.g. Burn vs Bears.
         let state = driver::state_for_decks(p0.as_deref(), p1.as_deref(), seed);
-        let outcome = driver::run_state(state, agents);
+        // The browser (seat 0) is the human; apply its MTGA-style auto-pass/stops.
+        let outcome = driver::run_state_with(state, agents, &stops, &[PlayerId(0)]);
         let _ = result_tx.send(ServerMsg::GameOver {
             winner: outcome.winner,
         });

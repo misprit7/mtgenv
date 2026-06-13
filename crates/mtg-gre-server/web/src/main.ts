@@ -20,6 +20,16 @@ fetch("/card-art.json").then((r) => r.json()).then((m) => { artMap = m; render()
 
 const params = new URLSearchParams(location.search);
 $("decks").textContent = `P0=${params.get("p0") || "demo"} · P1=${params.get("p1") || "demo"}`;
+// MTGA-style stops: auto-pass on by default; toggle links start a new game with the new setting.
+{
+  const ap = params.get("autopass") !== "0";
+  const fc = ["1", "on", "true"].includes((params.get("fullcontrol") || "").toLowerCase());
+  const link = (label: string, key: string, cur: boolean): string => {
+    const p = new URLSearchParams(location.search); p.set(key, cur ? "0" : "1");
+    return `<a href="?${p.toString()}">${label}: ${cur ? "on" : "off"}</a>`;
+  };
+  $("stops").innerHTML = `stops: ${link("auto-pass", "autopass", ap)} · ${link("full-control", "fullcontrol", fc)}`;
+}
 
 const wsProto = location.protocol === "https:" ? "wss://" : "ws://";
 const ws = new WebSocket(`${wsProto}${location.host}/ws${location.search}`);

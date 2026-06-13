@@ -19,7 +19,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use mtg_core::agent::{Agent, RandomAgent};
-use mtg_core::basics::Zone;
+use mtg_core::basics::{Phase, Zone};
 use mtg_core::cards;
 use mtg_core::ids::PlayerId;
 use mtg_core::priority::Engine;
@@ -98,6 +98,8 @@ pub struct Cli {
     seats: Vec<SeatSpec>,
     deal: bool,
     seed: u64,
+    /// MTGA-style auto-pass / stop config for human seats, applied at `run`.
+    stops: crate::driver::Stops,
 }
 
 /// Run the CLI REPL against `io` until EOF or `quit`.
@@ -129,6 +131,7 @@ impl Cli {
             seats: vec![SeatSpec::Human, SeatSpec::Random(seed ^ 0xB0B)],
             deal: true,
             seed,
+            stops: crate::driver::Stops::default(),
         }
     }
 
@@ -158,6 +161,10 @@ impl Cli {
             "preset" => self.cmd_preset(&args),
             "handsize" => self.cmd_handsize(&args),
             "deal" => self.cmd_deal(&args),
+            "autopass" => self.cmd_autopass(&args),
+            "fullcontrol" => self.cmd_fullcontrol(&args),
+            "stop" => self.cmd_stop(&args),
+            "stops" => self.cmd_stops(),
             "show" | "dump" => self.cmd_show(&args),
             "play" => self.cmd_play(&args),
             "run" | "start" => self.cmd_run(),
@@ -180,6 +187,10 @@ Commands:
   preset <seat> <burn|bears|demo>  load a named preset deck into a seat's library
   handsize <player> <n>       set maximum hand size
   deal on|off                 deal opening hands on 'run' (off = play the hand-built scenario as-is)
+  autopass on|off             MTGA auto-pass (on, default: prompt only at stops; off: every window)
+  fullcontrol on|off          stop at every priority window
+  stop <step> on|off|default  override a stop (steps: mp1 mp2 upkeep draw attackers blockers …)
+  stops                       show the current stop config
   show [player]               dump full state (no arg) or a seat's PlayerView
   play [decks…] [seed]        quick game vs RandomAgent. decks: demo (default)|lands|burn|bears;
                               one deck = both seats, two = P0 P1 (e.g. 'play burn bears')
@@ -340,6 +351,57 @@ Lines starting with '#' are comments. At a decision prompt: an index, 'p'/Enter 
         }
     }
 
+    // ── stops (MTGA-style auto-pass) ─────────────────────────────────────────────────────────
+
+    fn cmd_autopass(&mut self, args: &[&str]) {
+        match args.first().copied() {
+            Some("on") => { self.stops.auto_pass = true; self.say("auto-pass: on (Arena — prompt only at stops + decisions)"); }
+            Some("off") => { self.stops.auto_pass = false; self.say("auto-pass: off (paper CR — prompt at every priority window)"); }
+            _ => self.say("usage: autopass on|off"),
+        }
+    }
+
+    fn cmd_fullcontrol(&mut self, args: &[&str]) {
+        match args.first().copied() {
+            Some("on") => { self.stops.full_control = true; self.say("full control: on (stop at every priority window)"); }
+            Some("off") => { self.stops.full_control = false; self.say("full control: off"); }
+            _ => self.say("usage: fullcontrol on|off"),
+        }
+    }
+
+    fn cmd_stop(&mut self, args: &[&str]) {
+        let (Some(step_s), Some(val_s)) = (args.first(), args.get(1)) else {
+            return self.say("usage: stop <step> on|off|default  (steps: mp1 mp2 upkeep draw attackers blockers …)");
+        };
+        let Some(step) = parse_step(step_s) else {
+            return self.say(&format!("unknown step '{step_s}' (mp1|mp2|upkeep|draw|attackers|blockers|begincombat|combatdamage|endcombat|end|cleanup|untap)"));
+        };
+        self.stops.overrides.retain(|(s, _)| *s != step);
+        match *val_s {
+            "on" | "always" => { self.stops.overrides.push((step, true)); self.say(&format!("stop at {step:?}: always")); }
+            "off" | "never" => { self.stops.overrides.push((step, false)); self.say(&format!("stop at {step:?}: never")); }
+            "default" => self.say(&format!("stop at {step:?}: Arena default")),
+            _ => self.say("usage: stop <step> on|off|default"),
+        }
+    }
+
+    fn cmd_stops(&self) {
+        let s = &self.stops;
+        let mut out = String::from("Stops (MTGA profile):\n");
+        out += &format!("  auto-pass:    {}\n", if s.auto_pass { "on" } else { "off (paper CR)" });
+        out += &format!("  full control: {}\n", if s.full_control { "on (stop everywhere)" } else { "off" });
+        out += "  default stops: precombat-main, postcombat-main, declare-attackers (your turn), declare-blockers (defending)\n";
+        if s.overrides.is_empty() {
+            out += "  overrides:    (none)";
+        } else {
+            out.push_str("  overrides:   ");
+            for (st, v) in &s.overrides {
+                out += &format!(" {st:?}={}", if *v { "always" } else { "never" });
+            }
+        }
+        self.say(&out);
+    }
+
     // ── inspection ──────────────────────────────────────────────────────────────────────────
 
     fn cmd_show(&self, args: &[&str]) {
@@ -402,6 +464,15 @@ Lines starting with '#' are comments. At a decision prompt: an index, 'p'/Enter 
             // Play the hand-built scenario as-is: no shuffle, no opening draw (engine hook).
             engine.skip_opening_deal();
         }
+        // MTGA-style auto-pass / stops for the human seat(s).
+        let human_seats: Vec<PlayerId> = self
+            .seats
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| matches!(s, SeatSpec::Human))
+            .map(|(i, _)| PlayerId(i as u32))
+            .collect();
+        crate::driver::apply_stops(&mut engine, &self.stops, &human_seats);
         let winner = engine.run_game();
         // Keep the finished state so post-game `show` works.
         self.state = engine.state;
@@ -454,6 +525,25 @@ fn build_play_state(names: &[&str], seed: u64) -> Option<GameState> {
         }
         _ => None,
     }
+}
+
+/// Parse a turn-step name (for `stop <step>`).
+fn parse_step(s: &str) -> Option<Phase> {
+    Some(match s.to_ascii_lowercase().as_str() {
+        "untap" => Phase::Untap,
+        "upkeep" => Phase::Upkeep,
+        "draw" => Phase::Draw,
+        "mp1" | "main1" | "precombatmain" | "premain" => Phase::PrecombatMain,
+        "begincombat" | "bc" => Phase::BeginCombat,
+        "attackers" | "da" | "declareattackers" => Phase::DeclareAttackers,
+        "blockers" | "db" | "declareblockers" => Phase::DeclareBlockers,
+        "combatdamage" | "cd" | "damage" => Phase::CombatDamage,
+        "endcombat" | "ec" => Phase::EndCombat,
+        "mp2" | "main2" | "postcombatmain" | "postmain" => Phase::PostcombatMain,
+        "end" | "endstep" => Phase::End,
+        "cleanup" => Phase::Cleanup,
+        _ => return None,
+    })
 }
 
 fn parse_zone(s: &str) -> Option<Zone> {

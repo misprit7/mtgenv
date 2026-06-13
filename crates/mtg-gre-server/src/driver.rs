@@ -11,7 +11,7 @@
 //! defers them — when it adds those decision points, they flow to these same agents for free.)
 
 use mtg_core::agent::Agent;
-use mtg_core::basics::Zone;
+use mtg_core::basics::{Phase, Zone};
 use mtg_core::ids::PlayerId;
 use mtg_core::priority::Engine;
 use mtg_core::state::{Characteristics, GameState};
@@ -21,6 +21,61 @@ use mtg_core::state::{Characteristics, GameState};
 pub struct Outcome {
     pub winner: Option<PlayerId>,
     pub turns: u32,
+}
+
+/// MTGA-style stop configuration the client applies to the engine before a game runs. With
+/// `auto_pass` on, the human's `decide()` is only called at stops + meaningful decisions (the
+/// engine elides trivial priority windows) — much less tedious than paper-CR's every-window prompt.
+#[derive(Debug, Clone)]
+pub struct Stops {
+    /// Arena auto-pass profile on (default for human play) vs paper-CR every-window prompting.
+    pub auto_pass: bool,
+    /// Stop at every priority window (overrides the default stops).
+    pub full_control: bool,
+    /// Per-step overrides of the Arena defaults (`true` = always stop here, `false` = never).
+    pub overrides: Vec<(Phase, bool)>,
+}
+
+impl Default for Stops {
+    fn default() -> Self {
+        // Human play: Arena auto-pass on, default stops (own MP1/MP2, your attackers, defending
+        // blockers). The user can change these via the CLI `stops` commands / web toggles.
+        Stops { auto_pass: true, full_control: false, overrides: Vec::new() }
+    }
+}
+
+impl Stops {
+    /// Paper Comprehensive-Rules: prompt at every priority window (auto-pass off).
+    pub fn full_control() -> Self {
+        Stops { auto_pass: false, full_control: false, overrides: Vec::new() }
+    }
+}
+
+/// Apply a [`Stops`] config to the engine (for the given human seats) before running.
+pub fn apply_stops(engine: &mut Engine, stops: &Stops, human_seats: &[PlayerId]) {
+    engine.set_arena_auto_pass(stops.auto_pass);
+    for &p in human_seats {
+        engine.set_full_control(p, stops.full_control);
+        for &(step, val) in &stops.overrides {
+            engine.set_stop(p, step, Some(val));
+        }
+    }
+}
+
+/// Like [`run_state`] but applies a stop config first (MTGA-style auto-pass for human play).
+pub fn run_state_with(
+    state: GameState,
+    agents: Vec<Box<dyn Agent>>,
+    stops: &Stops,
+    human_seats: &[PlayerId],
+) -> Outcome {
+    let mut engine = Engine::new(state, agents);
+    apply_stops(&mut engine, stops, human_seats);
+    let winner = engine.run_game();
+    Outcome {
+        winner,
+        turns: engine.state.turn_number,
+    }
 }
 
 /// The five basic land names, dealt round-robin into each library.

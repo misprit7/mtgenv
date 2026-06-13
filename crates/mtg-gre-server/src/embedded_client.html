@@ -169,6 +169,7 @@
     <span class="s" id="conn">connecting…</span>
     <span class="spacer"></span>
     <span class="s" id="decks"></span>
+    <span class="s" id="stops"></span>
     <span class="s">new:
       <a href="?">demo</a> ·
       <a href="?p0=burn&amp;p1=bears">burn</a> ·
@@ -212,6 +213,16 @@
 
   const params = new URLSearchParams(location.search);
   $("decks").textContent = "P0=" + (params.get("p0") || "demo") + " · P1=" + (params.get("p1") || "demo");
+  // MTGA-style stops: auto-pass on by default; toggle links start a new game with the new setting.
+  (function () {
+    const ap = params.get("autopass") !== "0";
+    const fc = ["1", "on", "true"].includes((params.get("fullcontrol") || "").toLowerCase());
+    const link = (label, key, cur) => {
+      const p = new URLSearchParams(location.search); p.set(key, cur ? "0" : "1");
+      return '<a href="?' + p.toString() + '">' + label + ": " + (cur ? "on" : "off") + "</a>";
+    };
+    $("stops").innerHTML = "stops: " + link("auto-pass", "autopass", ap) + " · " + link("full-control", "fullcontrol", fc);
+  })();
 
   const ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws" + location.search);
   ws.onopen = () => ($("conn").textContent = "● connected");
