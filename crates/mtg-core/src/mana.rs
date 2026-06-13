@@ -17,8 +17,10 @@ use crate::ids::{ObjId, PlayerId};
 use crate::state::GameState;
 
 /// The untapped mana sources `p` controls: `(permanent, colours it can tap for right now)`.
-/// Colours come from each source's `{T}`-cost mana abilities (`Ability::Activated{is_mana}`,
-/// condition-aware), falling back to the legacy `mana_colors` shortcut while cards migrate (C19).
+/// Colours come from three places, unioned: each source's `{T}`-cost IR mana abilities
+/// (`Ability::Activated{is_mana}`, condition-aware), the **intrinsic** basic-land-type mana
+/// derived from the permanent's COMPUTED subtypes (CR 305.6 — see [`basic_land_type_color`]),
+/// and the legacy `mana_colors` shortcut while cards migrate (C19).
 fn mana_sources(state: &GameState, p: PlayerId) -> Vec<(ObjId, Vec<Color>)> {
     state
         .player(p)
@@ -29,13 +31,26 @@ fn mana_sources(state: &GameState, p: PlayerId) -> Vec<(ObjId, Vec<Color>)> {
             if o.status.tapped {
                 return None;
             }
+            let computed = state.computed(id);
             // CR 302.6: a summoning-sick creature can't use a `{T}` mana ability (unless haste).
-            // Lands/artifacts are never sick, so this only gates creature mana dorks (Llanowar).
-            if o.summoning_sick && !state.computed(id).has_keyword(Keyword::Haste) {
+            // Lands/artifacts are never sick, so this only gates creature mana dorks (Llanowar)
+            // and animated man-lands that became creatures this turn.
+            if o.summoning_sick && !computed.has_keyword(Keyword::Haste) {
                 return None;
             }
             let def = state.card_db.get(o.chars.grp_id)?;
-            let colors = producible_colors(state, def, p);
+            let mut colors = producible_colors(state, def, p);
+            // CR 305.6: any land with a basic land type has an intrinsic `{T}: Add <colour>`
+            // ability per type, NOT authored on the card. We read the COMPUTED subtypes
+            // (post-layer-system) so type-changing effects flow through for free — an animated
+            // land keeps its mana, Spreading Seas / Urborg-style subtype changes are honoured.
+            for st in &computed.subtypes {
+                if let Some(c) = basic_land_type_color(st) {
+                    if !colors.contains(&c) {
+                        colors.push(c);
+                    }
+                }
+            }
             if colors.is_empty() {
                 None
             } else {
@@ -43,6 +58,21 @@ fn mana_sources(state: &GameState, p: PlayerId) -> Vec<(ObjId, Vec<Color>)> {
             }
         })
         .collect()
+}
+
+/// CR 305.6: the colour a basic land *type* intrinsically taps for. Returns `None` for
+/// non-basic-type subtypes (e.g. "Vehicle", "Aura"). This is what lets a `Forest` produce `{G}`
+/// with no authored mana ability, so basics and typed duals (e.g. Temple Garden = `Forest Plains`)
+/// carry mana purely from their subtype line — and type-changing effects carry it for free.
+fn basic_land_type_color(subtype: &str) -> Option<Color> {
+    match subtype {
+        "Plains" => Some(Color::White),
+        "Island" => Some(Color::Blue),
+        "Swamp" => Some(Color::Black),
+        "Mountain" => Some(Color::Red),
+        "Forest" => Some(Color::Green),
+        _ => None,
+    }
 }
 
 /// The colours `def` can currently produce for controller `p` — from its IR mana abilities whose
@@ -319,5 +349,66 @@ mod tests {
             can_pay(&state, PlayerId(0), &cost(0, &[(Color::White, 1)])),
             "conditional {{W}} is available once you control a Forest"
         );
+    }
+
+    #[test]
+    fn basic_land_type_mana_is_intrinsic_from_subtype() {
+        // CR 305.6: a land taps for its basic land type's colour with NO authored mana ability
+        // and NO `mana_colors` shortcut — purely from its computed subtype line. A typed dual
+        // (e.g. Temple Garden = `Forest Plains`) taps for both.
+        use crate::basics::CardType;
+        use crate::state::Characteristics;
+        let mut db = cards::starter_db();
+        // A pure-data basic: just `Land` + supertype `Basic` + subtype `Forest`. No ability,
+        // no `mana_colors`. This is exactly how design will author basics post-migration.
+        db.insert(cards::CardDef {
+            chars: Characteristics {
+                name: "Plain Forest".into(),
+                card_types: vec![CardType::Land],
+                supertypes: vec!["Basic".into()],
+                subtypes: vec!["Forest".into()],
+                grp_id: 9401,
+                ..Default::default()
+            },
+            abilities: Vec::new(),
+            mana_colors: Vec::new(),
+            text: String::new(),
+        });
+        // A typed dual: subtypes `Forest Plains`, no ability, no shortcut.
+        db.insert(cards::CardDef {
+            chars: Characteristics {
+                name: "Type Garden".into(),
+                card_types: vec![CardType::Land],
+                subtypes: vec!["Forest".into(), "Plains".into()],
+                grp_id: 9402,
+                ..Default::default()
+            },
+            abilities: Vec::new(),
+            mana_colors: Vec::new(),
+            text: String::new(),
+        });
+        let mut state = GameState::new(2, 1);
+        state.set_card_db(Arc::new(db));
+        let forest = state.card_db().get(9401).unwrap().chars.clone();
+        state.add_card(PlayerId(0), forest, Zone::Battlefield);
+
+        // The subtype alone makes it a {G} source.
+        assert!(
+            can_pay(&state, PlayerId(0), &cost(0, &[(Color::Green, 1)])),
+            "a `Forest` subtype intrinsically taps for {{G}}"
+        );
+        assert!(
+            !can_pay(&state, PlayerId(0), &cost(0, &[(Color::White, 1)])),
+            "a `Forest` doesn't tap for {{W}}"
+        );
+
+        let garden = state.card_db().get(9402).unwrap().chars.clone();
+        state.add_card(PlayerId(0), garden, Zone::Battlefield);
+        // Now 2 sources; the dual covers both G and W simultaneously.
+        assert!(
+            can_pay(&state, PlayerId(0), &cost(0, &[(Color::Green, 1), (Color::White, 1)])),
+            "`Forest Plains` + `Forest` pay {{G}}{{W}}"
+        );
+        assert_eq!(available_mana(&state, PlayerId(0)), 2);
     }
 }
