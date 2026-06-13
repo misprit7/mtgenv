@@ -28,5 +28,5 @@ dist/
 # Node
 node_modules/
 
-# Downloaded data (Scryfall bulk oracle cards, images, etc.) — fetched by scripts/setup.sh
+# Downloaded data (Scryfall bulk default cards, images, etc.) — fetched by scripts/setup.sh
 /data/

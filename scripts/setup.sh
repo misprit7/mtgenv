@@ -3,7 +3,10 @@
 # One-time setup for the mtgenv repo. Idempotent / safe to re-run.
 #
 # Steps:
-#   1. Download Scryfall "oracle_cards" bulk data into the gitignored data/ dir.
+#   1. Download Scryfall "default_cards" bulk data into the gitignored data/ dir.
+#      (default_cards = one object per printing, so every Arena printing's `arena_id`
+#      is present — unlike oracle_cards, which keeps only one representative printing
+#      per oracle id and drops most Arena ids.)
 #   2. Install the web client's npm deps (only if the web front end + npm are present).
 #
 # Add further one-time setup below as the project grows.
@@ -20,34 +23,38 @@ UA="mtgenv/0.1 (https://github.com/misprit7/mtgenv; local dev)"
 
 need() { command -v "$1" >/dev/null 2>&1 || { echo "error: '$1' is required but not installed." >&2; exit 1; }; }
 
-# 1. Scryfall oracle_cards bulk data --------------------------------------------------------
-fetch_scryfall_oracle_cards() {
+# 1. Scryfall default_cards bulk data -------------------------------------------------------
+fetch_scryfall_default_cards() {
   need curl; need jq
   mkdir -p "$DATA_DIR"
-  local out="$DATA_DIR/oracle-cards.json"
-  local stamp="$DATA_DIR/.oracle-cards.updated_at"
+  local out="$DATA_DIR/default-cards.json"
+  local stamp="$DATA_DIR/.default-cards.updated_at"
 
-  echo "==> Resolving Scryfall oracle_cards bulk download…"
+  echo "==> Resolving Scryfall default_cards bulk download…"
   local meta uri updated
   meta="$(curl -fsSL -H "User-Agent: $UA" -H "Accept: application/json" \
             https://api.scryfall.com/bulk-data)"
-  uri="$(printf '%s' "$meta" | jq -r '.data[] | select(.type=="oracle_cards") | .download_uri')"
-  updated="$(printf '%s' "$meta" | jq -r '.data[] | select(.type=="oracle_cards") | .updated_at')"
+  uri="$(printf '%s' "$meta" | jq -r '.data[] | select(.type=="default_cards") | .download_uri')"
+  updated="$(printf '%s' "$meta" | jq -r '.data[] | select(.type=="default_cards") | .updated_at')"
 
   if [[ -z "$uri" || "$uri" == "null" ]]; then
-    echo "error: could not find an 'oracle_cards' entry in the Scryfall bulk-data index." >&2
+    echo "error: could not find a 'default_cards' entry in the Scryfall bulk-data index." >&2
     exit 1
   fi
   if [[ -f "$out" && -f "$stamp" && "$(cat "$stamp")" == "$updated" ]]; then
-    echo "    oracle-cards.json already current ($updated) — skipping download."
+    echo "    default-cards.json already current ($updated) — skipping download."
     return 0
   fi
 
-  echo "==> Downloading oracle_cards ($updated)…"
+  echo "==> Downloading default_cards ($updated)… (~450MB, every printing)"
   curl -fSL --progress-bar -H "User-Agent: $UA" "$uri" -o "$out.tmp"
   mv "$out.tmp" "$out"
   printf '%s' "$updated" > "$stamp"
-  echo "    saved $out ($(du -h "$out" | cut -f1), $(jq 'length' "$out") cards)."
+  # Remove the legacy oracle_cards dump if present (we use default_cards now).
+  rm -f "$DATA_DIR/oracle-cards.json" "$DATA_DIR/.oracle-cards.updated_at"
+  local stats
+  stats="$(jq -c '{n: length, arena: ([.[] | select(.arena_id)] | length)}' "$out")"
+  echo "    saved $out ($(du -h "$out" | cut -f1); $stats)."
 }
 
 # 2. Web client deps (optional) -------------------------------------------------------------
@@ -64,7 +71,7 @@ install_web_deps() {
 }
 
 main() {
-  fetch_scryfall_oracle_cards
+  fetch_scryfall_default_cards
   install_web_deps
   echo "==> Setup complete."
 }

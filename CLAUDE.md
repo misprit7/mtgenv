@@ -12,8 +12,9 @@ implement the full ruleset; near-term it's a tiny card pool with a correct core.
 ## Setup
 
 After cloning, run `./scripts/setup.sh` once (idempotent). It downloads Scryfall's
-`oracle_cards` bulk data into the gitignored `data/scryfall/` and installs the web client's
-npm deps. Then `cargo build` / `cargo test`.
+`default_cards` bulk data (one object per printing, so every Arena printing's `arena_id`
+is present) into the gitignored `data/scryfall/` and installs the web client's npm deps.
+Then `cargo build` / `cargo test`.
 
 ## Read order (the docs are the spec & the plan)
 
