@@ -10,7 +10,7 @@
 //! Interpreted effects (the starter set's needs): `DealDamage`, `Draw`, `GainLife`,
 //! `LoseLife`, `Sequence`. Other IR nodes are a graceful no-op until their cards arrive.
 
-use crate::agent::GameEvent;
+use crate::agent::{DecisionRequest, DecisionResponse, GameEvent, ReplacementOption};
 use crate::basics::{DamageKind, Target, Zone};
 use crate::effects::ability::{Ability, ActionPattern, Rewrite};
 use crate::effects::action::{Action, ResolutionCtx, Whiteboard, WbReason};
@@ -20,12 +20,35 @@ use crate::effects::{Effect, EffectTarget};
 use crate::ids::{ObjId, PlayerId};
 use crate::priority::Engine;
 
-/// The object an action's outcome lands on (for finding self-scoped replacement effects).
+/// A replacement effect that applies to a pending action (for the CR 616.1f choice).
+struct Applicable {
+    source: ObjId,
+    idx: usize,
+    rewrite: Rewrite,
+    description: String,
+}
+
+/// The object an action's outcome lands on (for finding applicable replacement effects).
 fn affected_object(action: &Action) -> Option<ObjId> {
     match action {
         Action::MoveZone { obj, to: Zone::Battlefield, .. } => Some(*obj),
         Action::Damage { target: Target::Object(o), .. } => Some(*o),
+        Action::AddCounters { obj, .. } => Some(*obj),
         _ => None,
+    }
+}
+
+/// A short human-readable label for a rewrite (for the `ChooseReplacement` decision/UI).
+fn describe_rewrite(rw: &Rewrite) -> String {
+    match rw {
+        Rewrite::Prevent => "prevent".to_string(),
+        Rewrite::Skip => "skip".to_string(),
+        Rewrite::ReplaceWith(_) => "instead".to_string(),
+        Rewrite::ScaleAmount { numerator, denominator } => format!("scale {numerator}/{denominator}"),
+        Rewrite::AddAmount(n) => format!("add {n}"),
+        Rewrite::Redirect => "redirect".to_string(),
+        Rewrite::EntersWithCounters { kind, n } => format!("enters with {n} {kind:?}"),
+        Rewrite::EntersTapped => "enters tapped".to_string(),
     }
 }
 
@@ -101,70 +124,143 @@ impl Engine {
         }
     }
 
-    /// The replacement/prevention rewrite pass (CR 614/616). Each applicable replacement
-    /// modifies the staged actions **at most once** (CR 614.5), looping to a fixpoint.
-    ///
-    /// Milestone-4 prototype scope: SELF-scoped replacements only — the affected object's own
-    /// `Ability::Replacement`s (the entering object for an ETB; the damaged object for damage).
-    /// Global replacements on other permanents (Hardened Scales, "prevent damage to creatures
-    /// you control") + a `CardFilter::ItSelf` are the documented generalization. No player
-    /// choice among multiple replacements yet (CR 616.1f) — applies in ability order.
-    fn rewrite(&self, wb: &mut Whiteboard) {
-        let mut applied: Vec<(ObjId, usize)> = Vec::new();
+    /// The replacement/prevention rewrite pass (CR 614/616). Scans every applicable
+    /// replacement — both the affected object's own (self / `ItSelf`) and GLOBAL ones on any
+    /// battlefield permanent (e.g. Hardened Scales) — and rewrites the staged actions to a
+    /// fixpoint. Each replacement modifies a given event at most once (CR 614.5; keyed by
+    /// (source, ability, affected)). When >1 applies to one event, the affected object's
+    /// controller chooses which applies first (CR 616.1f), then we re-check.
+    fn rewrite(&mut self, wb: &mut Whiteboard) {
+        let mut applied: Vec<(ObjId, usize, ObjId)> = Vec::new();
         loop {
-            let hit = wb.actions.iter().enumerate().find_map(|(ai, action)| {
-                let obj = affected_object(action)?;
-                let (idx, rw) = self.find_replacement(obj, action, &applied)?;
-                Some((ai, obj, idx, rw))
-            });
-            let Some((ai, obj, idx, rw)) = hit else { break };
-            applied.push((obj, idx));
-            self.apply_rewrite(&rw, wb, ai, obj);
+            // First action with ≥1 applicable, not-yet-applied replacement.
+            let mut hit: Option<(usize, ObjId, Vec<Applicable>)> = None;
+            for (ai, action) in wb.actions.iter().enumerate() {
+                let Some(affected) = affected_object(action) else {
+                    continue;
+                };
+                let applicable = self.applicable_replacements(action, affected, &applied);
+                if !applicable.is_empty() {
+                    hit = Some((ai, affected, applicable));
+                    break;
+                }
+            }
+            let Some((ai, affected, applicable)) = hit else { break };
+
+            // CR 616.1f: the affected object's controller picks which applies first.
+            let pick = if applicable.len() == 1 {
+                0
+            } else {
+                self.choose_replacement(affected, &applicable)
+            };
+            let chosen = &applicable[pick];
+            applied.push((chosen.source, chosen.idx, affected));
+            let rw = chosen.rewrite.clone();
+            self.apply_rewrite(&rw, wb, ai, affected);
         }
     }
 
-    /// The first unapplied self-replacement on `obj` whose pattern matches `action`.
-    fn find_replacement(
+    /// Every replacement (self + global) that applies to `action` (affecting `affected`) and
+    /// hasn't already fired for this (source, ability, affected) event.
+    fn applicable_replacements(
         &self,
-        obj: ObjId,
         action: &Action,
-        applied: &[(ObjId, usize)],
-    ) -> Option<(usize, Rewrite)> {
-        let def = self.state.def_of(obj)?;
-        def.abilities.iter().enumerate().find_map(|(idx, ab)| match ab {
-            Ability::Replacement { pattern, rewrite }
-                if !applied.contains(&(obj, idx)) && self.pattern_matches(pattern, action, obj) =>
-            {
-                Some((idx, rewrite.clone()))
+        affected: ObjId,
+        applied: &[(ObjId, usize, ObjId)],
+    ) -> Vec<Applicable> {
+        // Candidate sources: the affected object itself (covers self-replacements on an
+        // object that isn't on the battlefield yet, e.g. an ETB) + every battlefield
+        // permanent (global replacements).
+        let mut sources = vec![affected];
+        for p in &self.state.players {
+            for &id in &p.battlefield {
+                if id != affected {
+                    sources.push(id);
+                }
             }
-            _ => None,
-        })
+        }
+        let mut out = Vec::new();
+        for src in sources {
+            let Some(def) = self.state.def_of(src) else {
+                continue;
+            };
+            for (idx, ab) in def.abilities.iter().enumerate() {
+                if let Ability::Replacement { pattern, rewrite } = ab {
+                    if applied.contains(&(src, idx, affected)) {
+                        continue;
+                    }
+                    if self.pattern_matches(pattern, action, affected, src) {
+                        out.push(Applicable {
+                            source: src,
+                            idx,
+                            rewrite: rewrite.clone(),
+                            description: describe_rewrite(rewrite),
+                        });
+                    }
+                }
+            }
+        }
+        out
     }
 
-    fn pattern_matches(&self, pattern: &ActionPattern, action: &Action, obj: ObjId) -> bool {
+    /// Ask the affected object's controller which replacement to apply first (CR 616.1f).
+    fn choose_replacement(&mut self, affected: ObjId, applicable: &[Applicable]) -> usize {
+        let controller = self
+            .state
+            .objects
+            .get(&affected)
+            .map(|o| o.controller)
+            .unwrap_or(self.state.active_player);
+        let options = applicable
+            .iter()
+            .map(|a| ReplacementOption {
+                source: a.source,
+                description: a.description.clone(),
+            })
+            .collect();
+        let req = DecisionRequest::ChooseReplacement {
+            event: "replacement".to_string(),
+            applicable: options,
+        };
+        match self.ask(controller, &req) {
+            DecisionResponse::Index(i) => (i as usize).min(applicable.len() - 1),
+            _ => 0,
+        }
+    }
+
+    /// Whether `pattern` (a replacement on `source`) matches `action` (affecting `affected`).
+    fn pattern_matches(
+        &self,
+        pattern: &ActionPattern,
+        action: &Action,
+        affected: ObjId,
+        source: ObjId,
+    ) -> bool {
         match (pattern, action) {
             (
                 ActionPattern::WouldEnterBattlefield(filter),
                 Action::MoveZone { obj: o, to: Zone::Battlefield, .. },
-            ) => *o == obj && self.filter_matches(filter, *o),
+            ) => *o == affected && self.filter_matches(filter, affected, source),
             (
                 ActionPattern::WouldBeDealtDamage { to, kind },
                 Action::Damage { target: Target::Object(o), kind: dk, .. },
             ) => {
-                *o == obj
-                    && self.filter_matches(to, *o)
+                *o == affected
+                    && self.filter_matches(to, affected, source)
                     && match kind {
                         Some(k) => k == dk,
                         None => true,
                     }
             }
+            (
+                ActionPattern::WouldAddCounters { kind, to },
+                Action::AddCounters { obj: o, kind: k, .. },
+            ) => *o == affected && k == kind && self.filter_matches(to, affected, source),
             _ => false,
         }
     }
 
-    /// Apply one rewrite to the staged actions (CR 614.1). Milestone-4 prototype: prevention
-    /// (delete the action) and enters-with-counters (stage an `AddCounters` right after the
-    /// ETB so the permanent is on the battlefield with its counters before SBAs run).
+    /// Apply one rewrite to the staged actions (CR 614.1).
     fn apply_rewrite(&self, rw: &Rewrite, wb: &mut Whiteboard, ai: usize, obj: ObjId) {
         match rw {
             Rewrite::Prevent | Rewrite::Skip => {
@@ -186,24 +282,60 @@ impl Engine {
                 wb.actions
                     .insert(ai + 1, Action::TapUntap { obj, tap: true });
             }
-            // ReplaceWith / ScaleAmount / AddAmount / Redirect: future work.
+            Rewrite::AddAmount(delta) => match &mut wb.actions[ai] {
+                Action::Damage { amount, .. } => {
+                    *amount = (*amount as i64 + delta).max(0) as u32;
+                }
+                Action::AddCounters { n, .. } => {
+                    *n = (*n + *delta as i32).max(0);
+                }
+                _ => {}
+            },
+            Rewrite::ScaleAmount { numerator, denominator } => {
+                let den = (*denominator).max(1);
+                match &mut wb.actions[ai] {
+                    Action::Damage { amount, .. } => {
+                        *amount = *amount * *numerator / den;
+                    }
+                    Action::AddCounters { n, .. } => {
+                        *n = *n * *numerator as i32 / den as i32;
+                    }
+                    _ => {}
+                }
+            }
+            // ReplaceWith / Redirect: future work.
             _ => {}
         }
     }
 
-    /// A minimal `CardFilter` evaluator (prototype). `Any` matches; the common structural
-    /// predicates are supported; anything else is `false` until a card needs it.
-    fn filter_matches(&self, filter: &CardFilter, obj: ObjId) -> bool {
+    /// Evaluate a `CardFilter` against object `obj`, where the filter belongs to a replacement
+    /// on `source` (so `ItSelf` and `ControlledBy(Controller)` resolve relative to `source`).
+    fn filter_matches(&self, filter: &CardFilter, obj: ObjId, source: ObjId) -> bool {
         let Some(o) = self.state.objects.get(&obj) else {
             return false;
         };
         match filter {
             CardFilter::Any => true,
-            CardFilter::All(fs) => fs.iter().all(|f| self.filter_matches(f, obj)),
-            CardFilter::AnyOf(fs) => fs.iter().any(|f| self.filter_matches(f, obj)),
-            CardFilter::Not(f) => !self.filter_matches(f, obj),
+            CardFilter::ItSelf => obj == source,
+            CardFilter::All(fs) => fs.iter().all(|f| self.filter_matches(f, obj, source)),
+            CardFilter::AnyOf(fs) => fs.iter().any(|f| self.filter_matches(f, obj, source)),
+            CardFilter::Not(f) => !self.filter_matches(f, obj, source),
             CardFilter::HasCardType(t) => o.chars.card_types.contains(t),
             CardFilter::HasSubtype(s) => o.chars.subtypes.contains(s),
+            CardFilter::ControlledBy(pref) => {
+                let src_controller = self
+                    .state
+                    .objects
+                    .get(&source)
+                    .map(|s| s.controller)
+                    .unwrap_or(o.controller);
+                let want = match pref {
+                    PlayerRef::Controller | PlayerRef::Owner => src_controller,
+                    PlayerRef::Opponent | PlayerRef::EachOpponent => self.opponent_of(src_controller),
+                    _ => src_controller,
+                };
+                o.controller == want
+            }
             _ => false,
         }
     }

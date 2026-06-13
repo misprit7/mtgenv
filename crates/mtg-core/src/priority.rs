@@ -1192,6 +1192,35 @@ mod expect_tests {
     use crate::ids::PlayerId;
     use crate::state::{Characteristics, GameState};
     use expect_test::expect;
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    /// Records the size of each `ChooseReplacement` request it answers (always picks index 0),
+    /// so a test can assert the CR 616.1f decision was surfaced; otherwise passes/declines.
+    struct ReplacementSpy {
+        seen: Rc<RefCell<Vec<usize>>>,
+    }
+    impl Agent for ReplacementSpy {
+        fn decide(&mut self, _v: &PlayerView, req: &DecisionRequest) -> DecisionResponse {
+            match req {
+                DecisionRequest::ChooseReplacement { applicable, .. } => {
+                    self.seen.borrow_mut().push(applicable.len());
+                    DecisionResponse::Index(0)
+                }
+                DecisionRequest::Priority { actions, .. } => {
+                    // Cast the first castable (to get the creature down), else pass.
+                    match actions.iter().position(|a| matches!(a, PlayableAction::Cast { .. })) {
+                        Some(i) => DecisionResponse::Action(i as u32),
+                        None => DecisionResponse::Pass,
+                    }
+                }
+                DecisionRequest::SelectCards { min, .. } => {
+                    DecisionResponse::Indices((0..*min).collect())
+                }
+                _ => DecisionResponse::Pass,
+            }
+        }
+    }
 
     /// An agent that always passes priority and declines/minimises every other choice — so a
     /// trace shows pure turn structure with no random land plays.
@@ -1432,6 +1461,79 @@ mod expect_tests {
         assert!(sba::collect(&e.state).is_empty(), "nothing dies");
         // No damage was dealt (the only candidate event was prevented).
         expect![[r#""#]].assert_eq(&event_trace(&e.event_log));
+    }
+
+    #[test]
+    fn global_replacement_root_maze_taps_an_opponents_land() {
+        // Root Maze ("Artifacts and lands enter tapped") is a GLOBAL replacement on P1's
+        // enchantment that rewrites P0's land's ETB — validating the cross-battlefield scan.
+        let mut state = cards::build_game(6, &[&[], &[]]);
+        put(&mut state, PlayerId(1), grp::ROOT_MAZE, Zone::Battlefield);
+        let forest = put(&mut state, PlayerId(0), grp::FOREST, Zone::Hand);
+        state.active_player = PlayerId(0);
+        state.phase = Phase::PrecombatMain;
+        let mut e = Engine::new(state, vec![Box::new(AggroAgent), Box::new(PassAgent)]);
+        e.priority_round();
+
+        assert_eq!(e.state.object(forest).zone, Zone::Battlefield, "land was played");
+        assert!(e.state.object(forest).status.tapped, "Root Maze made it enter tapped");
+    }
+
+    #[test]
+    fn global_counter_modifier_hardened_scales_buffs_servant() {
+        // Hardened Scales (GLOBAL) modifies the AddCounters event that Servant of the Scale's
+        // own enters-with-a-counter replacement produces — a replacement modifying another
+        // replacement's output, resolved by the fixpoint. 0/0 → enters with 2 counters → 2/2.
+        use crate::basics::CounterKind;
+        let mut state = cards::build_game(7, &[&[], &[]]);
+        put(&mut state, PlayerId(0), grp::HARDENED_SCALES, Zone::Battlefield);
+        put(&mut state, PlayerId(0), grp::FOREST, Zone::Battlefield); // pay {G}
+        let servant = put(&mut state, PlayerId(0), grp::SERVANT_OF_THE_SCALE, Zone::Hand);
+        state.active_player = PlayerId(0);
+        state.phase = Phase::PrecombatMain;
+        let mut e = Engine::new(state, vec![Box::new(AggroAgent), Box::new(PassAgent)]);
+        e.priority_round();
+
+        let s = e.state.object(servant);
+        assert_eq!(s.zone, Zone::Battlefield);
+        assert_eq!(
+            s.counters.get(&CounterKind::PlusOnePlusOne),
+            2,
+            "1 (self) + 1 (Hardened Scales) = 2 counters"
+        );
+        assert_eq!(s.effective_toughness(), 2);
+    }
+
+    #[test]
+    fn replacement_choice_616_1f_with_two_hardened_scales() {
+        // TWO Hardened Scales both apply to Servant's one AddCounters event → CR 616.1f: the
+        // affected object's controller chooses the order, then we re-check. Each adds 1, so
+        // Servant ends with 1 + 1 + 1 = 3 counters; the ChooseReplacement decision is surfaced.
+        use crate::basics::CounterKind;
+        let seen = Rc::new(RefCell::new(Vec::new()));
+        let mut state = cards::build_game(8, &[&[], &[]]);
+        put(&mut state, PlayerId(0), grp::HARDENED_SCALES, Zone::Battlefield);
+        put(&mut state, PlayerId(0), grp::HARDENED_SCALES, Zone::Battlefield);
+        put(&mut state, PlayerId(0), grp::FOREST, Zone::Battlefield); // pay {G}
+        let servant = put(&mut state, PlayerId(0), grp::SERVANT_OF_THE_SCALE, Zone::Hand);
+        state.active_player = PlayerId(0);
+        state.phase = Phase::PrecombatMain;
+        let agents: Vec<Box<dyn Agent>> = vec![
+            Box::new(ReplacementSpy { seen: Rc::clone(&seen) }),
+            Box::new(PassAgent),
+        ];
+        let mut e = Engine::new(state, agents);
+        e.priority_round();
+
+        assert_eq!(
+            e.state.object(servant).counters.get(&CounterKind::PlusOnePlusOne),
+            3,
+            "both Hardened Scales applied (1 + 1 + 1)"
+        );
+        assert!(
+            seen.borrow().iter().any(|&n| n == 2),
+            "a ChooseReplacement with 2 applicable replacements was surfaced (CR 616.1f)"
+        );
     }
 
     #[test]

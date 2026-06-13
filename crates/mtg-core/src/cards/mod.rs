@@ -40,6 +40,8 @@ pub mod grp {
     pub const SERVANT_OF_THE_SCALE: u32 = 32;
     pub const FOG_BANK: u32 = 33;
     pub const EXULTANT_CULTIST: u32 = 34;
+    pub const ROOT_MAZE: u32 = 35;
+    pub const HARDENED_SCALES: u32 = 36;
 }
 
 /// A card definition: its printed characteristics + abilities (the Effect IR), plus the
@@ -156,6 +158,22 @@ fn vanilla_creature(
     toughness: i32,
 ) -> CardDef {
     creature(grp_id, name, subtype, color, cost, power, toughness, Vec::new())
+}
+
+fn enchantment(grp_id: u32, name: &str, color: Color, cost: ManaCost, abilities: Vec<Ability>) -> CardDef {
+    CardDef {
+        chars: Characteristics {
+            name: name.to_string(),
+            card_types: vec![CardType::Enchantment],
+            colors: vec![color],
+            mana_cost: Some(cost),
+            grp_id,
+            ..Default::default()
+        },
+        abilities,
+        mana_colors: Vec::new(),
+        text: String::new(),
+    }
 }
 
 fn spell(grp_id: u32, name: &str, ty: CardType, color: Color, cost: ManaCost, effect: Effect) -> CardDef {
@@ -309,7 +327,9 @@ pub fn starter_db() -> CardDb {
         0,
         0,
         vec![Ability::Replacement {
-            pattern: ActionPattern::WouldEnterBattlefield(CardFilter::Any),
+            // Self-replacement (CR 614.12): only THIS creature, via `ItSelf` (so it doesn't
+            // apply to other creatures under the global scan).
+            pattern: ActionPattern::WouldEnterBattlefield(CardFilter::ItSelf),
             rewrite: Rewrite::EntersWithCounters {
                 kind: CounterKind::PlusOnePlusOne,
                 n: 1,
@@ -328,8 +348,9 @@ pub fn starter_db() -> CardDb {
         0,
         2,
         vec![Ability::Replacement {
+            // "to THIS creature" — `ItSelf`, so it only prevents damage to Fog Bank itself.
             pattern: ActionPattern::WouldBeDealtDamage {
-                to: CardFilter::Any,
+                to: CardFilter::ItSelf,
                 kind: Some(DamageKind::Combat),
             },
             rewrite: Rewrite::Prevent,
@@ -354,6 +375,37 @@ pub fn starter_db() -> CardDb {
             },
         }],
     ).with_text("When this creature dies, draw a card."));
+    // Root Maze {G} Enchantment — "Artifacts and lands enter tapped." (GLOBAL replacement,
+    // affects all players' artifacts/lands.)
+    db.insert(enchantment(
+        grp::ROOT_MAZE,
+        "Root Maze",
+        Color::Green,
+        mana_cost(1, &[]),
+        vec![Ability::Replacement {
+            pattern: ActionPattern::WouldEnterBattlefield(CardFilter::AnyOf(vec![
+                CardFilter::HasCardType(CardType::Artifact),
+                CardFilter::HasCardType(CardType::Land),
+            ])),
+            rewrite: Rewrite::EntersTapped,
+        }],
+    ).with_text("Artifacts and lands enter tapped."));
+    // Hardened Scales {G} Enchantment — "If one or more +1/+1 counters would be put on a
+    // creature you control, that many plus one are put on it instead." (GLOBAL counter
+    // modifier scoped to creatures the controller controls.)
+    db.insert(enchantment(
+        grp::HARDENED_SCALES,
+        "Hardened Scales",
+        Color::Green,
+        mana_cost(0, &[(Color::Green, 1)]),
+        vec![Ability::Replacement {
+            pattern: ActionPattern::WouldAddCounters {
+                kind: CounterKind::PlusOnePlusOne,
+                to: CardFilter::ControlledBy(PlayerRef::Controller),
+            },
+            rewrite: Rewrite::AddAmount(1),
+        }],
+    ).with_text("If one or more +1/+1 counters would be put on a creature you control, that many plus one +1/+1 counters are put on it instead."));
     db
 }
 
@@ -436,7 +488,7 @@ mod tests {
     #[test]
     fn starter_db_has_expected_cards() {
         let db = starter_db();
-        assert_eq!(db.len(), 15);
+        assert_eq!(db.len(), 17);
         assert!(db.get(grp::FOREST).unwrap().is_mana_source());
         assert_eq!(db.get(grp::FOREST).unwrap().mana_colors, vec![Color::Green]);
         // Grizzly Bears is a vanilla 2/2 with no abilities.
