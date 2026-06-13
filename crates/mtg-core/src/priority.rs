@@ -455,15 +455,24 @@ impl Engine {
         }
     }
 
-    /// Play a land: a special action (CR 116.2a), no stack. The land enters the battlefield
-    /// under `p`'s control and counts against the one-land-per-turn limit.
+    /// Play a land: a special action (CR 116.2a), no stack. Routed through the whiteboard so
+    /// ETB replacement effects (e.g. Root Maze "lands enter tapped") apply and the ETB event
+    /// fires from commit. Counts against the one-land-per-turn limit.
     fn play_land(&mut self, p: PlayerId, card: ObjId) {
-        self.state.move_object(card, Zone::Battlefield, p);
-        self.state.player_mut(p).lands_played_this_turn += 1;
-        self.broadcast(GameEvent::ObjectMoved {
+        let ctx = ResolutionCtx {
+            controller: Some(p),
+            source: Some(card),
+            ..Default::default()
+        };
+        let mut wb = Whiteboard::new(WbReason::TurnBased, ctx);
+        wb.push(Action::MoveZone {
             obj: card,
             to: Zone::Battlefield,
+            pos: ZonePos::Any,
+            cause: MoveCause::Other,
         });
+        self.commit(wb);
+        self.state.player_mut(p).lands_played_this_turn += 1;
     }
 
     /// Cast a spell from `p`'s hand (CR 601, minimal): put it on the stack (601.2a), choose

@@ -180,7 +180,13 @@ impl Engine {
                     },
                 );
             }
-            // ReplaceWith / ScaleAmount / AddAmount / Redirect / EntersTapped: future work.
+            Rewrite::EntersTapped => {
+                // The permanent enters tapped: tap it right after it enters, in the same
+                // commit (before SBAs), so it's tapped as it arrives (CR 614.1c/d).
+                wb.actions
+                    .insert(ai + 1, Action::TapUntap { obj, tap: true });
+            }
+            // ReplaceWith / ScaleAmount / AddAmount / Redirect: future work.
             _ => {}
         }
     }
@@ -217,6 +223,11 @@ impl Engine {
                 if let Some(o) = self.state.objects.get_mut(&obj) {
                     let cur = o.counters.counts.entry(kind).or_insert(0);
                     *cur = (*cur as i32 + n).max(0) as u32;
+                }
+            }
+            Action::TapUntap { obj, tap } => {
+                if let Some(o) = self.state.objects.get_mut(&obj) {
+                    o.status.tapped = tap;
                 }
             }
             Action::MoveZone { obj, to, .. } => {
