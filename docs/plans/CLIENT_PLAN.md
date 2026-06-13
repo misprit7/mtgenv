@@ -473,8 +473,15 @@ This is **personal research and interoperability** only — the same posture as 
   (601.2c) → `Distribute` if needed (601.2d) → `ChooseNumber` for X (601.2b) → `PayCost`
   (601.2f–h) — **each its own `decide()` call and thus its own GRE round-trip.** So a single
   cast is a short *sequence* of prompts, not one mega-prompt; the web UI guides the player
-  through that sequence (and `GreSessionAgent` may auto-answer steps with a single legal
-  option to cut chatter). `CastingTimeOptions` exists so a backend can instead mirror GRE's
+  through that sequence. (`GreSessionAgent` may skip the **wire round-trip** for a step that
+  has a single legal option — answering `Index(0)` locally, identical to what
+  `PyAgent`/`ScriptedAgent` would return — but it must **not** *elide the decision itself*:
+  the engine still issues every `decide()` call, so all backends are consulted at the same
+  points. Whether a forced single-option decision is issued at all is an **engine / Arena-
+  profile** concern, like auto-pass "stops" (AGENT_INTERFACE §8, GYM_PLAN §4), kept out of the
+  per-agent layer so the decision log replays identically — required for differential-testing-
+  vs-Forge and exact replay, ENGINE_PLAN §8.) `CastingTimeOptions` exists so a backend can
+  instead mirror GRE's
   **batched** `CastingTimeOptionsReq`, collapsing the cast-time choices into one round-trip.
   The adapter must therefore **handle both shapes** (sequence or batched) and map whichever
   the engine emits. *Remaining knob:* the exact batched-vs-substepped granularity is one of
