@@ -13,6 +13,7 @@ let lastTurn = 0;
 const multi = new Set<number>();
 let orderSeq: number[] = [];
 let previewUrl: string | null = null;
+let stopsView: Any = null; // live stop config echoed by the server
 
 // Card art: a baked manifest (grp_id → art_crop/artist), batch-resolved from Scryfall once.
 // No runtime Scryfall API calls — we only load the cached CDN images.
@@ -21,22 +22,25 @@ fetch("/card-art.json").then((r) => r.json()).then((m) => { artMap = m; render()
 
 const params = new URLSearchParams(location.search);
 $("decks").textContent = `P0=${params.get("p0") || "demo"} · P1=${params.get("p1") || "demo"}`;
-// MTGA-style stops: toggle links start a new game with the new setting (live mid-game toggling
-// is Phase 2). Defaults match MTGA: auto-pass/smart/resolve on, full-control off.
-{
-  const on = (key: string, dflt: boolean): boolean => {
-    const v = params.get(key); return v == null ? dflt : ["1", "on", "true"].includes(v.toLowerCase());
-  };
-  const link = (label: string, key: string, cur: boolean): string => {
-    const p = new URLSearchParams(location.search); p.set(key, cur ? "0" : "1");
-    return `<a href="?${p.toString()}">${label}: ${cur ? "on" : "off"}</a>`;
-  };
-  $("stops").innerHTML = "stops: " +
-    `${link("auto-pass", "autopass", on("autopass", true))} · ` +
-    `${link("smart", "smartstops", on("smartstops", true))} · ` +
-    `${link("full-ctrl", "fullcontrol", on("fullcontrol", false))} · ` +
-    `${link("resolve-stack", "resolvestack", on("resolvestack", true))}`;
+// Stops control (top bar): LIVE toggles — send setOption; the server echoes the new config and
+// the running game's agent honours it at the next window (no reset). Rendered from stopsView.
+const OPT: Array<[string, string, string]> = [
+  ["auto-pass", "auto_pass", "autopass"], ["smart", "smart_stops", "smartstops"],
+  ["full-ctrl", "full_control", "fullcontrol"], ["resolve", "resolve_own_stack", "resolvestack"],
+];
+function renderStopsControl(): void {
+  const host = $("stops"); host.innerHTML = "";
+  if (!stopsView) return;
+  host.appendChild(document.createTextNode("stops: "));
+  OPT.forEach(([label, field, key], i) => {
+    if (i) host.appendChild(document.createTextNode(" · "));
+    const a = el("a", undefined, `${label}: ${stopsView[field] ? "on" : "off"}`) as HTMLAnchorElement;
+    a.href = "#";
+    a.onclick = (e) => { e.preventDefault(); setOption(key, !stopsView[field]); };
+    host.appendChild(a);
+  });
 }
+function setOption(key: string, on: boolean): void { ws.send(JSON.stringify({ type: "setOption", key, on })); }
 
 const wsProto = location.protocol === "https:" ? "wss://" : "ws://";
 const ws = new WebSocket(`${wsProto}${location.host}/ws${location.search}`);
@@ -50,6 +54,7 @@ function handle(m: Any): void {
   else if (m.type === "decide") { view = m.view; cur = m; multi.clear(); orderSeq = []; render(); }
   else if (m.type === "gameOver") { cur = null; renderEnd(m.winner); }
   else if (m.type === "log") { log(m.text); }
+  else if (m.type === "stops") { stopsView = m; renderStopsControl(); if (view) renderStepBar(); }
 }
 
 function logEvent(ev: Any): void {
@@ -113,7 +118,8 @@ const STEPS: Array<{ phase: string; label: string; stop: boolean }> = [
 ];
 function stopMap(): Any {
   const m: Any = {};
-  if (view.stops && view.stops.per_step) view.stops.per_step.forEach((p: Any) => (m[p[0]] = p[1]));
+  const src = (stopsView && stopsView.per_step) || (view.stops && view.stops.per_step) || [];
+  src.forEach((p: Any) => (m[p[0]] = p[1]));
   return m;
 }
 function renderStepBar(): void {
@@ -134,13 +140,9 @@ function renderStepBar(): void {
   });
 }
 function toggleStop(phase: string, on: boolean): void {
-  // Per-game via a query param for now; live mid-game toggling lands with the engine stop handle.
-  const p = new URLSearchParams(location.search);
-  const m: Any = {};
-  (p.get("stops") || "").split(",").filter(Boolean).forEach((t) => { const [k, v] = t.split(":"); m[k] = v !== "0"; });
-  m[phase] = on;
-  p.set("stops", Object.entries(m).map(([k, v]) => `${k}:${v ? "1" : "0"}`).join(","));
-  location.search = p.toString();
+  // LIVE: the server mutates the shared stop config + echoes it; the running game's agent honours
+  // it at the next priority window — no game reset.
+  ws.send(JSON.stringify({ type: "setStop", step: phase, on }));
 }
 
 function renderRail(): void {
@@ -179,19 +181,19 @@ function pinfoEl(p: Any, you: boolean): HTMLElement {
   d.appendChild(who);
   d.appendChild(el("div", "life" + (p.life <= 5 ? " low" : ""), `♥ ${p.life}`));
   const piles = el("div", "piles");
-  piles.appendChild(pileEl("Lib", p.library_count ?? p.libraryCount, null, ""));
-  piles.appendChild(pileEl("GY", (p.graveyard || []).length, p.graveyard, `P${p.player} graveyard`));
+  const myLib = you && view.me && view.me.library ? view.me.library : null;
+  piles.appendChild(pileEl("Lib", p.library_count ?? p.libraryCount, myLib, `P${p.player} library`, !myLib));
+  piles.appendChild(pileEl("GY", (p.graveyard || []).length, p.graveyard || [], `P${p.player} graveyard`, false));
   const exile = p.exile_public || p.exilePublic || [];
-  piles.appendChild(pileEl("Exile", exile.length, exile, `P${p.player} exile`));
+  piles.appendChild(pileEl("Exile", exile.length, exile, `P${p.player} exile`, false));
   d.appendChild(piles);
   return d;
 }
 
-function pileEl(label: string, n: number, objs: Any[] | null, title: string): HTMLElement {
+function pileEl(label: string, n: number, objs: Any[] | null, title: string, hidden: boolean): HTMLElement {
   const d = el("div", "pile");
   d.innerHTML = `<div class="n">${n}</div><div class="l">${label}</div>`;
-  if (objs && objs.length) d.onclick = () => openZone(title, objs);
-  else d.style.cursor = "default";
+  d.onclick = () => openZone(title, hidden ? null : objs || []);
   return d;
 }
 
@@ -419,10 +421,18 @@ function renderEnd(winner: number | null): void {
 }
 
 // ── zone viewer modal ─────────────────────────────────────────────────────────
-function openZone(title: string, objs: Any[]): void {
-  $("modalTitle").textContent = `${title} (${objs.length})`;
+function openZone(title: string, objs: Any[] | null): void {
   const g = $("modalGrid"); g.innerHTML = "";
-  objs.map(norm).forEach((c) => g.appendChild(cardEl(c, {})));
+  if (objs == null) {
+    $("modalTitle").textContent = `${title} (hidden)`;
+    g.innerHTML = '<div class="waiting">This zone is hidden — its contents aren\'t in your view.</div>';
+  } else if (!objs.length) {
+    $("modalTitle").textContent = `${title} (0)`;
+    g.innerHTML = '<div class="waiting">(empty)</div>';
+  } else {
+    $("modalTitle").textContent = `${title} (${objs.length})`;
+    objs.map(norm).forEach((c) => g.appendChild(cardEl(c, {})));
+  }
   $("modal").classList.add("show");
 }
 $("modalClose").onclick = () => $("modal").classList.remove("show");

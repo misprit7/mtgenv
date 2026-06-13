@@ -12,6 +12,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::Query;
@@ -64,6 +65,17 @@ async fn embedded() -> impl IntoResponse {
 /// Serve the baked-in Scryfall art manifest (grp_id → image URLs + artist).
 async fn card_art() -> impl IntoResponse {
     ([(axum::http::header::CONTENT_TYPE, "application/json")], CARD_ART)
+}
+
+/// Build the `Stops` echo (current live stop config) the UI renders the phase bar/toggles from.
+fn stops_msg(s: &driver::Stops) -> ServerMsg {
+    ServerMsg::Stops {
+        auto_pass: s.auto_pass,
+        full_control: s.full_control,
+        smart_stops: s.smart_stops,
+        resolve_own_stack: s.resolve_own_stack,
+        per_step: s.effective_steps(),
+    }
 }
 
 /// Bind `addr` and serve until the process exits.
@@ -125,22 +137,29 @@ async fn handle_socket(
     let (to_client_tx, mut to_client_rx) = tokio::sync::mpsc::unbounded_channel::<ServerMsg>();
     let (from_client_tx, from_client_rx) = std::sync::mpsc::channel::<ClientResponse>();
 
-    // Run the (synchronous) game on its own thread. A separate sender clone outlives the agent
-    // so the thread can push one final, unambiguous GameOver frame after the loop returns.
-    let result_tx = to_client_tx.clone();
+    // The stop config is SHARED + live-mutable: the socket task mutates it on SetStop/SetOption,
+    // the GreSessionAgent reads it on every decision → mid-game stop toggling with NO reset.
+    let stops_handle = Arc::new(Mutex::new(stops));
+    let echo_tx = to_client_tx.clone(); // socket task → client (stop-config echoes)
+    let result_tx = to_client_tx.clone(); // game thread → client (final GameOver frame)
+    let agent_stops = stops_handle.clone();
     std::thread::spawn(move || {
-        let human = GreSessionAgent::new(PlayerId(0), to_client_tx, from_client_rx);
+        let human = GreSessionAgent::new(PlayerId(0), to_client_tx, from_client_rx, agent_stops);
         let bot = RandomAgent::new(seed);
         let agents: Vec<Box<dyn Agent>> = vec![Box::new(human), Box::new(bot)];
         // Decks chosen by the client (default demo = lands + creatures + burn), so the browser
         // game exercises casting & combat — and the user can pick e.g. Burn vs Bears.
         let state = driver::state_for_decks(p0.as_deref(), p1.as_deref(), seed);
-        // The browser (seat 0) is the human; apply its MTGA-style auto-pass/stops.
-        let outcome = driver::run_state_with(state, agents, &stops, &[PlayerId(0)]);
+        // Engine auto-pass stays OFF (prompts every window); the GreSessionAgent applies the
+        // human's live stop policy itself, so the human can re-stop steps mid-game.
+        let outcome = driver::run_state(state, agents);
         let _ = result_tx.send(ServerMsg::GameOver {
             winner: outcome.winner,
         });
     });
+
+    // Echo the initial stop config so the phase bar / toggles render the live state.
+    let _ = echo_tx.send(stops_msg(&stops_handle.lock().unwrap()));
 
     let (mut sink, mut stream) = socket.split();
 
@@ -167,16 +186,40 @@ async fn handle_socket(
             incoming = stream.next() => {
                 match incoming {
                     Some(Ok(Message::Text(t))) => {
-                        if let Ok(ClientMsg::Response { id, picks, number, pass, order }) =
-                            serde_json::from_str::<ClientMsg>(&t)
-                        {
-                            // If the game thread is gone, the send just errors; we exit below.
-                            if from_client_tx
-                                .send(ClientResponse { id, picks, number, pass, order })
-                                .is_err()
-                            {
-                                break;
+                        match serde_json::from_str::<ClientMsg>(&t) {
+                            Ok(ClientMsg::Response { id, picks, number, pass, order }) => {
+                                // If the game thread is gone, the send just errors; we exit below.
+                                if from_client_tx
+                                    .send(ClientResponse { id, picks, number, pass, order })
+                                    .is_err()
+                                {
+                                    break;
+                                }
                             }
+                            // Live stop changes: mutate the shared config + echo it back. The
+                            // running game's GreSessionAgent picks it up at the next window.
+                            Ok(ClientMsg::SetStop { step, on }) => {
+                                {
+                                    let mut s = stops_handle.lock().unwrap();
+                                    s.overrides.retain(|(p, _)| *p != step);
+                                    s.overrides.push((step, on));
+                                }
+                                let _ = echo_tx.send(stops_msg(&stops_handle.lock().unwrap()));
+                            }
+                            Ok(ClientMsg::SetOption { key, on }) => {
+                                {
+                                    let mut s = stops_handle.lock().unwrap();
+                                    match key.as_str() {
+                                        "autopass" => s.auto_pass = on,
+                                        "fullcontrol" => s.full_control = on,
+                                        "smartstops" => s.smart_stops = on,
+                                        "resolvestack" => s.resolve_own_stack = on,
+                                        _ => {}
+                                    }
+                                }
+                                let _ = echo_tx.send(stops_msg(&stops_handle.lock().unwrap()));
+                            }
+                            Err(_) => {}
                         }
                     }
                     Some(Ok(Message::Close(_))) | None => break,

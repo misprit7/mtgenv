@@ -12,6 +12,7 @@
 
 use crate::options::Prompt;
 use mtg_core::agent::{GameEvent, PlayerView};
+use mtg_core::basics::Phase;
 use mtg_core::ids::PlayerId;
 use serde::{Deserialize, Serialize};
 
@@ -40,6 +41,14 @@ pub enum ServerMsg {
     Log {
         text: String,
     },
+    /// The current (live-mutable) stop config, echoed so the UI phase bar / toggles reflect it.
+    Stops {
+        auto_pass: bool,
+        full_control: bool,
+        smart_stops: bool,
+        resolve_own_stack: bool,
+        per_step: Vec<(Phase, bool)>,
+    },
 }
 
 /// Client → server. The only inbound message: a selection answering the current prompt.
@@ -56,6 +65,16 @@ pub enum ClientMsg {
         pass: bool,
         #[serde(default)]
         order: Vec<u32>,
+    },
+    /// Live per-step stop toggle (no game reset).
+    SetStop {
+        step: Phase,
+        on: bool,
+    },
+    /// Live toggle of a global stop option (`autopass`/`fullcontrol`/`smartstops`/`resolvestack`).
+    SetOption {
+        key: String,
+        on: bool,
     },
 }
 
@@ -187,7 +206,10 @@ mod tests {
         let map = |wire: &str| {
             let ClientMsg::Response {
                 picks, number, pass, order, ..
-            } = serde_json::from_str(wire).unwrap();
+            } = serde_json::from_str(wire).unwrap()
+            else {
+                panic!("expected a response frame");
+            };
             options::response_from(
                 &req,
                 &Selection {
