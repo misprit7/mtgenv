@@ -711,6 +711,24 @@ surfacing) so the policy is consulted only at meaningful points; and the fixed g
 action vocabulary derives its per-step mask directly from the enumerated options. None of
 that changes the trait — it is policy on top of the same boundary.
 
+### 8.1 Decision elision is an engine/Arena-profile concern — never per-agent
+
+Whether a choice point is *raised at all* (auto-pass of trivial priority windows; eliding a
+forced decision that has exactly one legal option) is decided by the **engine, governed by the
+Arena profile** (ENGINE_PLAN §9) — *uniformly for every backend*. This is load-bearing for the
+"interchangeable backends" guarantee and for differential-testing/replay (ENGINE_PLAN §8): all
+backends must be consulted at the **same** decision points so the decision log replays
+identically and a Forge-oracle diff compares like-for-like. A backend must **not** invent its
+own elision (e.g. a GRE/web agent silently resolving a forced choice the engine never issued
+while the RL agent sees a different call sequence) — that would desync the decision streams.
+
+The permitted backend-local optimization is purely at the **transport** layer: when the engine
+*does* issue a decision that happens to have a single legal option, an agent may answer it
+locally (return the lone option) instead of doing a wire round-trip — because that returns the
+*identical* response any other backend would. Elide-the-call = engine/profile (uniform);
+skip-the-round-trip-for-a-lone-option = agent transport (fine, same answer). Keep the line
+there.
+
 ---
 
 ## 9. Open questions / awaiting `decompile`
