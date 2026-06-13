@@ -1,0 +1,6 @@
+# Vendored MTGA assemblies — Wizards' copyrighted DLLs, NEVER committed.
+# Populate by copying from the local MTGA install:
+#   cp ~/.local/share/Steam/steamapps/common/MTGA/MTGA_Data/Managed/*.dll libs/
+/libs/
+/bin/
+/obj/
