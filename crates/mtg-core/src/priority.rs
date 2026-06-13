@@ -27,6 +27,7 @@ use crate::stack::{StackObject, StackObjectKind};
 use crate::state::view::view_for;
 use crate::state::GameState;
 use crate::turn::{is_main_phase, step_grants_priority, TURN_STEPS};
+use std::sync::{Arc, Mutex};
 
 /// A hard cap on turns so a pathological game can never loop forever. Real games end far
 /// sooner (a lands-only game ends when a player decks out, CR 704.5b). Reaching the cap
@@ -60,6 +61,10 @@ pub struct Outcome {
 /// Modeled on the recovered MTGA `SettingsMessage` (../mtga-re/docs/priority_stops.md).
 #[derive(Debug, Clone)]
 pub struct StopConfig {
+    /// Arena-profile auto-pass on (a human/UI session) vs paper-CR every-window prompting
+    /// (default, deterministic for differential-testing / RL replay). When off, every priority
+    /// window prompts and the rest of the fields are inert.
+    pub auto_pass: bool,
     /// "Full control": stop at every priority window (overrides everything else).
     pub full_control: bool,
     /// SmartStops (MTGA default ON): stop at any step where the seat has a legal play (so it
@@ -79,6 +84,7 @@ pub struct StopConfig {
 impl Default for StopConfig {
     fn default() -> Self {
         StopConfig {
+            auto_pass: false,        // paper-CR by default; a UI session turns it on
             full_control: false,
             smart_stops: true,       // MTGA default (smartStopsSetting = Enable)
             resolve_own_stack: true, // MTGA default (stackAutoPassOption = ResolveMyStackEffects)
@@ -119,6 +125,40 @@ impl StopConfig {
             None => arena_default_stop(p, step, active),
         }
     }
+
+    /// Set/clear a per-step stop override: `Some(true)` = always stop, `Some(false)` = never,
+    /// `None` = revert to the Arena default. Public so a UI session holding a [`Engine::stops_handle`]
+    /// can toggle a stop mid-game (the engine re-reads the config at the next window).
+    pub fn set_override(&mut self, step: Phase, stop: Option<bool>) {
+        match stop {
+            Some(v) => {
+                self.overrides.insert(step, v);
+            }
+            None => {
+                self.overrides.remove(&step);
+            }
+        }
+    }
+
+    /// The effective stop state of each priority-granting step for *display* (the phase bar):
+    /// `full_control || override || the persistent Arena default` (your own two main phases),
+    /// independent of whose turn it currently is. For the live, turn-aware "would I stop right
+    /// now" the engine uses [`Engine::is_stop`] instead.
+    pub fn effective_steps(&self) -> Vec<(Phase, bool)> {
+        TURN_STEPS
+            .iter()
+            .copied()
+            .filter(|&s| step_grants_priority(s))
+            .map(|s| {
+                let on = self.full_control
+                    || self.overrides.get(&s).copied().unwrap_or(matches!(
+                        s,
+                        Phase::PrecombatMain | Phase::PostcombatMain
+                    ));
+                (s, on)
+            })
+            .collect()
+    }
 }
 
 /// MTGA's persistent default stop set (../mtga-re/docs/priority_stops.md §1): only your own
@@ -149,11 +189,11 @@ pub struct Engine {
     pub event_log: Vec<GameEvent>,
     record_events: bool,
     started: bool,
-    /// Arena-profile auto-pass policy (MTGA stops). Off by default = paper-CR / deterministic
-    /// (every window prompts), which keeps differential-testing and RL replay deterministic;
-    /// a human/UI session enables it. One [`StopConfig`] per seat.
-    arena_auto_pass: bool,
-    stops: Vec<StopConfig>,
+    /// One [`StopConfig`] per seat (incl. its `auto_pass` flag), behind `Arc<Mutex<…>>` so a UI session can hold a live
+    /// handle ([`Engine::stops_handle`]) and toggle a seat's stops *mid-game* from another
+    /// thread; the engine re-reads the config at every priority window. RL/headless play never
+    /// touches these (auto-pass stays off), so the lock is uncontended there.
+    stops: Vec<Arc<Mutex<StopConfig>>>,
 }
 
 impl Engine {
@@ -164,43 +204,48 @@ impl Engine {
             state.players.len(),
             "one agent per seat is required"
         );
-        let stops = vec![StopConfig::default(); state.players.len()];
+        let stops = (0..state.players.len())
+            .map(|_| Arc::new(Mutex::new(StopConfig::default())))
+            .collect();
         Engine {
             state,
             agents,
             event_log: Vec::new(),
             record_events: false,
             started: false,
-            arena_auto_pass: false,
             stops,
         }
     }
 
     // ── Arena-profile auto-pass / stops (MTGA-style; AGENT_INTERFACE §8.1 elision) ───────────
 
-    /// Enable/disable the Arena-profile auto-pass policy. Off (default) = paper-CR: every
-    /// priority window prompts (deterministic for differential-testing / RL replay). On = a
-    /// seat is prompted only at its stops + meaningful (non-priority) decisions.
+    /// Enable/disable the Arena-profile auto-pass policy for *every* seat. Off (default) =
+    /// paper-CR: every priority window prompts (deterministic for differential-testing / RL
+    /// replay). On = a seat is prompted only at its stops + meaningful (non-priority) decisions.
+    /// (The flag is per-seat in [`StopConfig`]; a UI can also flip a single seat's via its
+    /// [`Engine::stops_handle`].)
     pub fn set_arena_auto_pass(&mut self, on: bool) {
-        self.arena_auto_pass = on;
+        for cfg in &self.stops {
+            cfg.lock().unwrap().auto_pass = on;
+        }
     }
     /// "Full control" for a seat: stop at every priority window (overrides auto-pass).
     pub fn set_full_control(&mut self, p: PlayerId, on: bool) {
-        self.stops[p.0 as usize].full_control = on;
+        self.stops[p.0 as usize].lock().unwrap().full_control = on;
     }
     /// SmartStops for a seat (MTGA default ON): stop wherever the seat has a legal play. When
     /// OFF, the seat auto-passes through unimportant steps even with an action.
     pub fn set_smart_stops(&mut self, p: PlayerId, on: bool) {
-        self.stops[p.0 as usize].smart_stops = on;
+        self.stops[p.0 as usize].lock().unwrap().smart_stops = on;
     }
     /// `stackAutoPassOption` for a seat: ON (default) = auto-pass your own stack objects so
     /// they resolve; OFF = re-prompt you to respond to your own spell.
     pub fn set_resolve_own_stack(&mut self, p: PlayerId, on: bool) {
-        self.stops[p.0 as usize].resolve_own_stack = on;
+        self.stops[p.0 as usize].lock().unwrap().resolve_own_stack = on;
     }
     /// Apply a named MTGA [`AutoPassOption`] to a seat (a convenience over the flags).
     pub fn set_auto_pass_option(&mut self, p: PlayerId, opt: AutoPassOption) {
-        let cfg = &mut self.stops[p.0 as usize];
+        let mut cfg = self.stops[p.0 as usize].lock().unwrap();
         match opt {
             AutoPassOption::FullControl => cfg.full_control = true,
             AutoPassOption::ResolveMyStackEffects | AutoPassOption::UnlessAction
@@ -219,23 +264,33 @@ impl Engine {
     /// Override a seat's stop at `step`: `Some(true)` = always stop, `Some(false)` = never,
     /// `None` = revert to the Arena default.
     pub fn set_stop(&mut self, p: PlayerId, step: Phase, stop: Option<bool>) {
-        let o = &mut self.stops[p.0 as usize].overrides;
+        let mut cfg = self.stops[p.0 as usize].lock().unwrap();
         match stop {
             Some(v) => {
-                o.insert(step, v);
+                cfg.overrides.insert(step, v);
             }
             None => {
-                o.remove(&step);
+                cfg.overrides.remove(&step);
             }
         }
     }
-    /// A seat's stop configuration (for the UI).
-    pub fn stop_config(&self, p: PlayerId) -> &StopConfig {
-        &self.stops[p.0 as usize]
+    /// A live handle to a seat's stop configuration. A UI session holds the clone and mutates
+    /// it (e.g. on a `SetStop` from the client) while the game runs on another thread; the
+    /// engine consults the same `Mutex` at every priority window, so changes take effect at the
+    /// next window with no game reset. (Arena auto-pass must be on for the config to matter.)
+    pub fn stops_handle(&self, p: PlayerId) -> Arc<Mutex<StopConfig>> {
+        Arc::clone(&self.stops[p.0 as usize])
+    }
+    /// A snapshot of a seat's stop configuration (for the UI).
+    pub fn stop_config(&self, p: PlayerId) -> StopConfig {
+        self.stops[p.0 as usize].lock().unwrap().clone()
     }
     /// Whether `p` would currently stop at `step` (for the UI to render active stops).
     pub fn is_stop(&self, p: PlayerId, step: Phase) -> bool {
-        self.stops[p.0 as usize].stops_at(p, step, self.state.active_player)
+        self.stops[p.0 as usize]
+            .lock()
+            .unwrap()
+            .stops_at(p, step, self.state.active_player)
     }
 
     /// The Arena-profile decision: should `p`'s current priority window be auto-passed
@@ -243,10 +298,10 @@ impl Engine {
     /// only the priority `Pass`/act window. Never auto-passes a stop or under full control;
     /// with auto-pass off, always prompts (returns false).
     fn should_auto_pass(&self, p: PlayerId, has_action: bool) -> bool {
-        if !self.arena_auto_pass {
+        let cfg = self.stops[p.0 as usize].lock().unwrap();
+        if !cfg.auto_pass {
             return false;
         }
-        let cfg = &self.stops[p.0 as usize];
         if cfg.full_control {
             return false; // stop at every window
         }
@@ -1106,13 +1161,16 @@ impl Engine {
     /// Used everywhere the engine builds a view (decide/observe).
     fn view_for_seat(&self, p: PlayerId) -> PlayerView {
         let mut view = view_for(&self.state, p);
-        if self.arena_auto_pass {
-            let cfg = &self.stops[p.0 as usize];
+        // Snapshot the config once (don't hold the lock while computing per-step, which would
+        // re-enter the same non-reentrant Mutex via `stops_at`).
+        let cfg = self.stops[p.0 as usize].lock().unwrap().clone();
+        if cfg.auto_pass {
+            let active = self.state.active_player;
             let per_step = TURN_STEPS
                 .iter()
                 .copied()
                 .filter(|&s| step_grants_priority(s))
-                .map(|s| (s, self.is_stop(p, s)))
+                .map(|s| (s, cfg.stops_at(p, s, active)))
                 .collect();
             view.stops = Some(StopStateView {
                 full_control: cfg.full_control,
@@ -1730,6 +1788,40 @@ mod expect_tests {
         // Full control stops over the stack regardless.
         e.set_full_control(PlayerId(1), true);
         assert!(!e.should_auto_pass(PlayerId(1), false), "full control stops over the stack");
+    }
+
+    #[test]
+    fn stops_handle_toggles_stops_live() {
+        // A UI session holds the seat's StopConfig handle and mutates it mid-game (from the
+        // socket thread); the engine re-reads the shared config at the next window with no reset.
+        let state = cards::build_game(1, &[&[], &[]]);
+        let mut e = Engine::new(state, vec![Box::new(PassAgent), Box::new(PassAgent)]);
+        e.set_arena_auto_pass(true);
+        e.state.active_player = PlayerId(0);
+
+        // Upkeep is not a default stop.
+        assert!(!e.is_stop(PlayerId(0), Phase::Upkeep));
+        let handle = e.stops_handle(PlayerId(0));
+        // Mutate through the handle (what the socket task does on a `SetStop`).
+        handle.lock().unwrap().set_override(Phase::Upkeep, Some(true));
+        assert!(e.is_stop(PlayerId(0), Phase::Upkeep), "engine sees the live toggle");
+        // Revert.
+        handle.lock().unwrap().set_override(Phase::Upkeep, None);
+        assert!(!e.is_stop(PlayerId(0), Phase::Upkeep), "revert restores the Arena default");
+
+        // The handle aliases the engine's own config (same Arc), and each seat is independent.
+        assert!(!e.stops_handle(PlayerId(1)).lock().unwrap().full_control);
+        e.set_full_control(PlayerId(0), true);
+        assert!(handle.lock().unwrap().full_control, "engine setter is visible through the handle");
+        assert!(!e.stops_handle(PlayerId(1)).lock().unwrap().full_control, "seats are independent");
+
+        // effective_steps (the display echo) shows MP1/MP2 as the persistent defaults.
+        let cfg = e.stop_config(PlayerId(1));
+        let eff = cfg.effective_steps();
+        let on = |ph: Phase| eff.iter().find(|(p, _)| *p == ph).map(|(_, b)| *b);
+        assert_eq!(on(Phase::PrecombatMain), Some(true));
+        assert_eq!(on(Phase::PostcombatMain), Some(true));
+        assert_eq!(on(Phase::Upkeep), Some(false));
     }
 
     /// Put a card (by grp_id) directly into a player's zone, returning its id.
