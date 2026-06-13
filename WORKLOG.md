@@ -40,6 +40,16 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
   then anthem then counter sublayer order, dirty discipline); workspace green, clippy clean.
   No effects/ change (built over design's `StaticContribution` IR). Deferred: layers 1–5 copy/
   control/text, CDAs, a genuine 613.8 dependency case, RemoveAllAbilities (Humility's other half).
+  - **M5-gen: affects-reads-COMPUTED (CR 613.8)** — `compute` no longer pre-filters statics by
+    base characteristics; each layer re-checks applicability against the type set computed
+    through PRIOR layers. So a land turned into a creature (layer 4) is seen as a creature by
+    a layer-6/7 effect. Validated: **Nature's Revolt** ("all lands are 2/2 creatures") + Glorious
+    Anthem → your land-creature is 3/3 (anthem reads its computed Creature type), opponent's
+    land-creature stays 2/2; combat creature-eligibility now uses computed type too (a
+    land-creature can attack/block). 59 mtg-core tests green. STILL deferred (need new
+    subsystems/IR, scoped for the lead): layer 1 copy (copiable values + ETB copy), layer 2
+    control (auras + computed-controller refactor + `SetController`), layer 3 text, 7a CDAs,
+    7d switch, intra-layer 613.8 dependency ordering.
 - **engine:** task #12 — **Arena-profile priority auto-pass + MTGA-style stops** (decision
   elision, AGENT_INTERFACE §8.1) layered over the CR-correct priority loop. The engine still
   grants priority at every window; the policy elides the `Priority` prompt (treats it as a
