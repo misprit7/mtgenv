@@ -209,6 +209,15 @@ The server owns: framing/serialization, the connect handshake, mapping `Decision
 owns: rendering `PlayerView`/`GameStateMessage`, presenting *only the enumerated legal
 options*, and submitting one `ClientToGREMessage` per decision.
 
+**Transport/UI-only GRE messages are the server's job, not the engine's.** Several
+`GREMessageType`s are *not* player decisions and therefore never reach the `Agent` boundary:
+`IntermissionReq`, `TimeoutMessage`, `TimerStateMessage`, `UIMessage`, `PredictionResp` (and
+`ConnectResp`, settings get/set). The GRE server originates/answers these itself — turn
+timers, intermissions between games, UI hints, connection liveness — without consulting
+`mtg-core`. (Confirmed with `design`: these live in the server layer, deliberately *outside*
+`DecisionRequest`, which stays a pure superset of the engine's actual decision points.) This
+keeps the engine boundary clean while still presenting the real client a complete GRE surface.
+
 ---
 
 ## 5. DecisionRequest ⇄ GRE message mapping
