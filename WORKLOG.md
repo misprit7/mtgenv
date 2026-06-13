@@ -5,6 +5,19 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **engine:** task #14 checkpoint 4 — **planeswalkers** (DONE → #14 complete). Groundwork:
+  `Characteristics.loyalty` (printed), enters-with-loyalty on battlefield entry (CR 306.5b),
+  CR 704.5i 0-loyalty SBA, `Object.used_once_per_turn` (CR 606.3) reset each turn. **4a Loyalty
+  abilities:** loyalty cost via design's `CostComponent::Loyalty(i32)` in `can_pay_cost`/`pay_cost`
+  (+N adds counters, −N removes, −N gated on loyalty≥N); once-per-turn-per-planeswalker enforced;
+  loyalty abilities flow through the existing activated-ability path (sorcery-speed, controller-only
+  by construction). Card: Chandra, Pyrogenius (+2 deals 2 to each opponent, −3 deals 4 to target
+  creature; −10 ultimate deferred). **4b Attackable:** `declare_attackers` offers the defending
+  player's planeswalkers as attack targets (CR 508.1a); `apply_damage` to a planeswalker removes that
+  many loyalty counters (CR 120.3/306.8), 0-loyalty SBA handles death. starter_db 37→38, 84 mtg-core
+  tests green, clippy clean. IR: only `CostComponent::Loyalty` (design). **#14 done** across 4
+  checkpoints (combat keywords → rest of keywords → auras/equipment → planeswalkers). Deferred across
+  #14: ward (cost IR), shroud, Rancor recursion, general enchant restrictions, planeswalker ultimates.
 - **webui:** **live mid-game stop toggling** (fixed: was resetting the game) + **debug library
   peek**. Stops: moved the MTGA auto-pass/stops POLICY client-side into `GreSessionAgent` over a
   shared `Arc<Mutex<driver::Stops>>` the socket mutates on `SetStop`/`SetOption`; engine auto-pass
