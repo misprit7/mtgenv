@@ -66,6 +66,11 @@ pub struct StopConfig {
     /// never auto-passes past a chance to act). When OFF, the seat auto-passes through
     /// "unimportant" steps even with an action available.
     pub smart_stops: bool,
+    /// `stackAutoPassOption == ResolveMyStackEffects` (MTGA default ON): while the seat's OWN
+    /// object is on top of the stack, auto-pass so it resolves — don't re-prompt the seat to
+    /// respond to its own spell/ability. OFF lets the seat respond to itself (like full
+    /// control, but only over the stack).
+    pub resolve_own_stack: bool,
     /// Per-step override of the Arena default: `Some(true)` = always stop here, `Some(false)`
     /// = never stop here, `None` = use the Arena default.
     overrides: std::collections::BTreeMap<Phase, bool>,
@@ -75,10 +80,32 @@ impl Default for StopConfig {
     fn default() -> Self {
         StopConfig {
             full_control: false,
-            smart_stops: true, // MTGA default
+            smart_stops: true,       // MTGA default (smartStopsSetting = Enable)
+            resolve_own_stack: true, // MTGA default (stackAutoPassOption = ResolveMyStackEffects)
             overrides: std::collections::BTreeMap::new(),
         }
     }
+}
+
+/// MTGA's `AutoPassOption` (../mtga-re/docs/priority_stops.md §5) — the named priority-passing
+/// modes, exposed as a convenience that configures a seat's [`StopConfig`] flags. The engine
+/// models the behaviourally-distinct knobs (full control, SmartStops, resolve-own-stack); the
+/// finer turn-policy distinctions (Turn vs EndStep vs ResolveAll) are approximated onto them
+/// and refined later against byte-exact captured defaults.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AutoPassOption {
+    /// Pass unless I have a legal action (SmartStops on).
+    UnlessAction,
+    /// Pass unless the opponent has acted (2-player ≈ `UnlessAction` + resolve-own-stack).
+    UnlessOpponentAction,
+    /// Default: auto-pass so my own stack objects resolve; re-stop on a stop/SmartStop or an
+    /// opponent action.
+    ResolveMyStackEffects,
+    /// Auto-pass through the whole stack emptying (approximated: resolve-own-stack + no
+    /// SmartStops while responding).
+    ResolveAll,
+    /// Stop at every priority window.
+    FullControl,
 }
 
 impl StopConfig {
@@ -166,6 +193,29 @@ impl Engine {
     pub fn set_smart_stops(&mut self, p: PlayerId, on: bool) {
         self.stops[p.0 as usize].smart_stops = on;
     }
+    /// `stackAutoPassOption` for a seat: ON (default) = auto-pass your own stack objects so
+    /// they resolve; OFF = re-prompt you to respond to your own spell.
+    pub fn set_resolve_own_stack(&mut self, p: PlayerId, on: bool) {
+        self.stops[p.0 as usize].resolve_own_stack = on;
+    }
+    /// Apply a named MTGA [`AutoPassOption`] to a seat (a convenience over the flags).
+    pub fn set_auto_pass_option(&mut self, p: PlayerId, opt: AutoPassOption) {
+        let cfg = &mut self.stops[p.0 as usize];
+        match opt {
+            AutoPassOption::FullControl => cfg.full_control = true,
+            AutoPassOption::ResolveMyStackEffects | AutoPassOption::UnlessAction
+            | AutoPassOption::UnlessOpponentAction => {
+                cfg.full_control = false;
+                cfg.smart_stops = true;
+                cfg.resolve_own_stack = true;
+            }
+            AutoPassOption::ResolveAll => {
+                cfg.full_control = false;
+                cfg.smart_stops = false;
+                cfg.resolve_own_stack = true;
+            }
+        }
+    }
     /// Override a seat's stop at `step`: `Some(true)` = always stop, `Some(false)` = never,
     /// `None` = revert to the Arena default.
     pub fn set_stop(&mut self, p: PlayerId, step: Phase, stop: Option<bool>) {
@@ -196,8 +246,22 @@ impl Engine {
         if !self.arena_auto_pass {
             return false;
         }
-        let step = self.state.phase;
         let cfg = &self.stops[p.0 as usize];
+        if cfg.full_control {
+            return false; // stop at every window
+        }
+        // Stack-resolution policy (stackAutoPassOption). While something is on the stack the
+        // window is about responding, not the step's stop.
+        if let Some(top) = self.state.stack.top() {
+            if top.controller == p && cfg.resolve_own_stack {
+                return true; // ResolveMyStackEffects: let my own object resolve
+            }
+            // Opponent's object on top (or resolve-own-stack off): prompt to respond iff I can
+            // act and SmartStops is on; otherwise auto-pass.
+            return !(has_action && cfg.smart_stops);
+        }
+        // Stack empty → the step-based stop set.
+        let step = self.state.phase;
         if cfg.stops_at(p, step, self.state.active_player) {
             return false; // a stop → prompt
         }
@@ -1556,6 +1620,39 @@ mod expect_tests {
         let seen2 = prompted2.borrow().clone();
         assert!(seen2.contains(&Phase::Upkeep), "full control stops at upkeep");
         assert!(seen2.contains(&Phase::BeginCombat), "full control stops at begin combat");
+    }
+
+    #[test]
+    fn stack_auto_pass_resolves_your_own_objects() {
+        // stackAutoPassOption = ResolveMyStackEffects (MTGA default): while your own object is
+        // on top of the stack you auto-pass (let it resolve, don't respond to yourself); the
+        // opponent is still prompted to respond when they can act.
+        use crate::stack::{StackObject, StackObjectKind};
+        let state = cards::build_game(1, &[&[], &[]]);
+        let mut e = Engine::new(state, vec![Box::new(PassAgent), Box::new(PassAgent)]);
+        e.set_arena_auto_pass(true);
+        e.state.active_player = PlayerId(0);
+        e.state.phase = Phase::PrecombatMain; // a stop step — but the stack policy overrides
+        let sid = e.state.mint_stack();
+        e.state.stack.push(StackObject {
+            id: sid,
+            controller: PlayerId(0),
+            source: None,
+            kind: StackObjectKind::Ability { index: 0 },
+            targets: vec![],
+        });
+
+        // P0's own object on top → auto-pass (even in MP1, even with an action available).
+        assert!(e.should_auto_pass(PlayerId(0), true), "ResolveMyStackEffects auto-passes own object");
+        // The opponent is prompted to respond iff they can act.
+        assert!(!e.should_auto_pass(PlayerId(1), true), "opponent prompted to respond (has play)");
+        assert!(e.should_auto_pass(PlayerId(1), false), "opponent auto-passes with no response");
+        // resolve_own_stack OFF ⇒ P0 may respond to its own object.
+        e.set_resolve_own_stack(PlayerId(0), false);
+        assert!(!e.should_auto_pass(PlayerId(0), true), "respond-to-self when resolve_own_stack off");
+        // Full control stops over the stack regardless.
+        e.set_full_control(PlayerId(1), true);
+        assert!(!e.should_auto_pass(PlayerId(1), false), "full control stops over the stack");
     }
 
     /// Put a card (by grp_id) directly into a player's zone, returning its id.
