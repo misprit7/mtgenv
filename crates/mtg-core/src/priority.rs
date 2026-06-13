@@ -191,6 +191,10 @@ pub struct Engine {
     replay_frames: Vec<ReplayFrame>,
     /// Provenance stamped into the emitted [`Replay`]'s metadata (caller-set). Default `Human`.
     replay_source: ReplaySource,
+    /// Optional live frame sink: called with each [`ReplayFrame`] as it is captured, so a caller
+    /// can stream god-view frames to spectators mid-game (the engine runs synchronously, so this
+    /// is the re-entrant point). Runs on the game thread. `None` = no live streaming.
+    replay_sink: Option<Box<dyn FnMut(&ReplayFrame)>>,
     started: bool,
     /// One [`StopConfig`] per seat (incl. its `auto_pass` flag), behind `Arc<Mutex<…>>` so a UI session can hold a live
     /// handle ([`Engine::stops_handle`]) and toggle a seat's stops *mid-game* from another
@@ -218,6 +222,7 @@ impl Engine {
             record_replay: false,
             replay_frames: Vec::new(),
             replay_source: ReplaySource::Human,
+            replay_sink: None,
             started: false,
             stops,
         }
@@ -358,13 +363,28 @@ impl Engine {
         self.replay_source = source;
     }
 
-    /// Capture one omniscient frame of the *current* state, labelled with what just happened.
-    /// No-op unless replay recording is on.
+    /// Install a live frame sink: `sink` is invoked with each [`ReplayFrame`] the moment it is
+    /// captured, so a caller can stream god-view frames to spectators *during* the synchronous
+    /// game run (e.g. forward each frame onto a broadcast channel). Implies replay recording is
+    /// on (turns it on if it wasn't, capturing the initial "game start" frame). Replaces any
+    /// previously-installed sink.
+    pub fn set_replay_sink(&mut self, sink: Box<dyn FnMut(&ReplayFrame)>) {
+        self.replay_sink = Some(sink);
+        self.record_replay(true);
+    }
+
+    /// Capture one omniscient frame of the *current* state, labelled with what just happened, and
+    /// (if a [sink][Engine::set_replay_sink] is installed) stream it live. No-op unless recording.
     fn push_replay_frame(&mut self, label: String) {
-        if self.record_replay {
-            let state = god_view(&self.state);
-            self.replay_frames.push(ReplayFrame { state, label });
+        if !self.record_replay {
+            return;
         }
+        let state = god_view(&self.state);
+        let frame = ReplayFrame { state, label };
+        if let Some(sink) = self.replay_sink.as_mut() {
+            sink(&frame);
+        }
+        self.replay_frames.push(frame);
     }
 
     /// The replay accumulated so far — callable incrementally (e.g. to feed a live spectator) and
@@ -1921,6 +1941,27 @@ mod tests {
         let back: Replay = serde_json::from_str(&json).unwrap();
         assert_eq!(back.frames.len(), replay.frames.len());
         assert_eq!(back.meta.source, ReplaySource::AiTraining { step: 42 });
+    }
+
+    #[test]
+    fn replay_sink_streams_frames_live() {
+        use std::cell::RefCell;
+        use std::rc::Rc;
+        // A live spectator forwards each frame as it's captured; here we just count + keep labels.
+        let seen: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(Vec::new()));
+        let sink_seen = seen.clone();
+        let mut e = lands_only_game(12, 9);
+        e.set_replay_sink(Box::new(move |frame| {
+            sink_seen.borrow_mut().push(frame.label.clone());
+        }));
+        let _ = e.run_game();
+
+        let streamed = seen.borrow();
+        // The sink saw the "game start" frame first, then one per event — same count the engine kept.
+        assert_eq!(streamed.len(), e.replay_frame_count(), "sink saw every captured frame");
+        assert!(streamed.len() > 5);
+        assert_eq!(streamed[0], "game start");
+        assert!(streamed.last().unwrap().starts_with("Game over"), "last frame is the game end");
     }
 
     /// Build a two-player lands-only game: `lib` basic lands each, two `RandomAgent`s.
