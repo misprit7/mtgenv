@@ -170,12 +170,14 @@ async fn ws_handler(
                 .collect()
         })
         .unwrap_or_default();
+    // Defaults come from `Stops::default()` (single source of truth — incl. SmartStops OFF); query
+    // params override per-flag, e.g. ?autopass=0 prompts every window, ?smartstops=1 re-enables it.
+    let def = driver::Stops::default();
     let stops = driver::Stops {
-        // MTGA defaults for human play; ?autopass=0 opts into every-window prompting.
-        auto_pass: flag("autopass", true),
-        full_control: flag("fullcontrol", false),
-        smart_stops: flag("smartstops", true),
-        resolve_own_stack: flag("resolvestack", true),
+        auto_pass: flag("autopass", def.auto_pass),
+        full_control: flag("fullcontrol", def.full_control),
+        smart_stops: flag("smartstops", def.smart_stops),
+        resolve_own_stack: flag("resolvestack", def.resolve_own_stack),
         overrides,
     };
     ws.on_upgrade(move |socket| handle_socket(socket, p0, p1, stops))

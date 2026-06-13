@@ -72,13 +72,17 @@
   .step.clickable:hover { border-color: var(--accent); }
   .step .slabel { font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   /* two stop dots per step: top = your turn, bottom = opponent's turn (independently toggleable) */
-  .step .sdots { display: flex; flex-direction: column; align-items: center; gap: 2px; margin-top: 3px; }
-  .step .sdot { width: 8px; height: 8px; border-radius: 50%; border: 1px solid var(--muted); cursor: pointer; }
+  .step .sdots { display: flex; flex-direction: column; align-items: stretch; gap: 2px; margin-top: 3px; }
+  /* each dot sits in a full-width clickable row → a big, easy hit target (not just the 12px dot) */
+  .step .sdotrow { display: flex; justify-content: center; align-items: center; height: 18px;
+    border-radius: 4px; cursor: pointer; }
+  .step .sdotrow:hover { background: rgba(255,255,255,.12); }
+  .step .sdot { width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid var(--muted); }
+  .step .sdotrow:hover .sdot { border-color: var(--accent); }
   .step .sdot.opp { border-style: dashed; } /* opponent's-turn dot reads as a dashed ring when off */
-  .step .sdot.on { background: #d23b3b; border-color: #ff7a7a; box-shadow: 0 0 5px #d23b3b; }
-  .step .sdot:hover { border-color: var(--accent); }
+  .step .sdot.on { background: #d23b3b; border-color: #ff7a7a; box-shadow: 0 0 6px #d23b3b; }
   .step.cur .sdot { border-color: #06140b; }
-  .step .dotlbl { font-size: 8px; line-height: 8px; height: 8px; color: var(--muted); }
+  .step .dotlbl { font-size: 9px; line-height: 18px; height: 18px; color: var(--muted); }
   .step.legend { flex: 0 0 auto; min-width: 28px; background: transparent; border-color: transparent; }
   /* auto-pass-this-turn indicator (Enter) */
   .autopass-badge { position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%);
@@ -159,7 +163,16 @@
   .card.tapped { transform: rotate(90deg); margin: 18px 24px; }
   .card.legal { cursor: pointer; box-shadow: 0 0 0 2px var(--legal), 0 0 12px var(--legalglow); }
   .card.legal:hover { box-shadow: 0 0 0 3px var(--legal), 0 0 16px var(--legalglow); }
-  .card.selected { box-shadow: 0 0 0 3px var(--sel), 0 0 14px rgba(91,140,255,.7); }
+  .card.selected { box-shadow: 0 0 0 3px var(--sel), 0 0 14px rgba(91,140,255,.7); position: relative; }
+  .card.selected::after { content: "🎯"; position: absolute; top: 2px; right: 3px; font-size: 13px;
+    text-shadow: 0 0 3px #000; }
+  /* chosen target/option feedback: selected side-panel buttons, player panels, and a summary line */
+  button.opt.sel { background: var(--sel); color: #06140b; border-color: var(--sel); font-weight: 700; }
+  button.opt.sel::before { content: "✓ "; }
+  .pinfo.targetable { cursor: pointer; box-shadow: 0 0 0 2px var(--legal), 0 0 12px var(--legalglow); }
+  .pinfo.targeted { cursor: pointer; box-shadow: 0 0 0 3px var(--sel), 0 0 16px rgba(91,140,255,.8); }
+  .pinfo .tgtbadge { color: var(--sel); font-weight: 800; font-size: 11px; }
+  .chosen { margin-top: 6px; color: var(--sel); font-weight: 700; font-size: 12px; }
   .card.back { background: repeating-linear-gradient(45deg,#3a2d52,#3a2d52 6px,#473864 6px,#473864 12px);
     border: 1px solid #241c33; }
   .card .badge { position: absolute; left: 3px; bottom: 2px; font-size: 8px; font-weight: 800;
@@ -377,8 +390,8 @@
     const legend = el("div", "step legend");
     legend.appendChild(el("div", "slabel", "stop"));
     const lz = el("div", "sdots");
-    lz.appendChild(el("div", "dotlbl", "you"));
     lz.appendChild(el("div", "dotlbl", "opp"));
+    lz.appendChild(el("div", "dotlbl", "you"));
     legend.appendChild(lz);
     bar.appendChild(legend);
     STEPS.forEach(st => {
@@ -387,19 +400,20 @@
       if (st.stop) {
         const s = stops[st.phase] || { mine: false, opp: false };
         const dots = el("div", "sdots");
-        dots.appendChild(stopDot(st, true, s.mine));   // your turn (top)
-        dots.appendChild(stopDot(st, false, s.opp));   // opponent's turn (bottom)
+        dots.appendChild(stopDot(st, false, s.opp));   // opponent's turn (top)
+        dots.appendChild(stopDot(st, true, s.mine));   // your turn (bottom)
         cell.appendChild(dots);
       }
       bar.appendChild(cell);
     });
   }
   function stopDot(st, own, on) {
-    const dot = el("div", "sdot" + (own ? " you" : " opp") + (on ? " on" : ""));
+    const row = el("div", "sdotrow"); // full-width clickable band → easy to hit (not just the dot)
     const side = own ? "YOUR" : "the opponent's";
-    dot.title = (on ? "Remove stop on " : "Stop on ") + side + " " + st.label + " (get priority there)";
-    dot.onclick = (e) => { e.stopPropagation(); toggleStop(st.phase, own, !on); };
-    return dot;
+    row.title = (on ? "Remove stop on " : "Stop on ") + side + " " + st.label + " (get priority there)";
+    row.onclick = (e) => { e.stopPropagation(); toggleStop(st.phase, own, !on); };
+    row.appendChild(el("div", "sdot" + (own ? " you" : " opp") + (on ? " on" : "")));
+    return row;
   }
   function toggleStop(phase, own, on) {
     // LIVE: the server updates the shared per-(step, side) stop config + echoes it; the running
@@ -437,8 +451,17 @@
 
   function pinfoEl(p, you) {
     const d = el("div", "pinfo" + (view.active_player === p.player ? " active" : ""));
+    // If this player is a legal target of the current choice, make the whole panel a click target.
+    const pIdx = playerOptIdx(p.player);
+    const targeted = pIdx >= 0 && multi.has(pIdx);
+    if (pIdx >= 0) {
+      d.classList.add(targeted ? "targeted" : "targetable");
+      d.title = (targeted ? "Targeted — click to unselect Player " : "Click to target Player ") + p.player;
+      d.onclick = () => onOptionToggle(pIdx);
+    }
     const who = el("div", "who");
-    who.innerHTML = "Player " + p.player + (you ? ' <span class="you">YOU</span>' : "");
+    who.innerHTML = "Player " + p.player + (you ? ' <span class="you">YOU</span>' : "") +
+      (targeted ? ' <span class="tgtbadge">🎯 target</span>' : "");
     d.appendChild(who);
     const life = el("div", "life" + (p.life <= 5 ? " low" : ""), "♥ " + p.life);
     d.appendChild(life);
@@ -446,7 +469,7 @@
     const libCount = p.library_count != null ? p.library_count : p.libraryCount;
     const deck = you ? deckView[p.player] : null; // your starting decklist (debug peek)
     const libPile = pileEl("Lib", libCount, null, "P" + p.player + " library", true);
-    if (deck) { libPile.classList.add("clk"); libPile.title = "Your starting decklist"; libPile.onclick = () => openDecklist("P" + p.player + " decklist", deck); }
+    if (deck) { libPile.classList.add("clk"); libPile.title = "Your starting decklist"; libPile.onclick = (e) => { e.stopPropagation(); openDecklist("P" + p.player + " decklist", deck); }; }
     piles.appendChild(libPile);
     piles.appendChild(pileEl("GY", (p.graveyard || []).length, p.graveyard || [], "P" + p.player + " graveyard", false));
     const ex = p.exile_public || p.exilePublic || [];
@@ -458,8 +481,29 @@
   function pileEl(label, n, objs, title, hidden) {
     const d = el("div", "pile");
     d.innerHTML = '<div class="n">' + n + '</div><div class="l">' + label + '</div>';
-    d.onclick = () => openZone(title, hidden ? null : (objs || []));
+    // stopPropagation so opening a zone doesn't also toggle a player-target on the parent panel.
+    d.onclick = (e) => { e.stopPropagation(); openZone(title, hidden ? null : (objs || [])); };
     return d;
+  }
+  // The prompt-option index that targets player `pid` (a "Player N" option with no board object),
+  // or -1. Lets the board's player panels act as click targets for player-targeting choices.
+  function playerOptIdx(pid) {
+    if (!cur) return -1;
+    const p = cur.prompt;
+    if (p.mode !== "selectMany" && p.mode !== "selectOne") return -1;
+    const objs = p.option_objs || p.optionObjs || [];
+    for (let i = 0; i < p.options.length; i++) {
+      if (objs[i] == null && p.options[i] === ("Player " + pid)) return i;
+    }
+    return -1;
+  }
+  // Unified option toggle (used by side-panel buttons AND board player panels) so every view stays
+  // in sync: selectMany toggles the pending set + full re-render; single-choice submits immediately.
+  function onOptionToggle(i) {
+    if (!cur) return;
+    const p = cur.prompt;
+    if (p.mode === "selectMany") { if (multi.has(i)) multi.delete(i); else multi.add(i); render(); }
+    else { send({ picks: [i] }); }
   }
 
   function renderHalf(elId, pid, isOppo) {
@@ -661,14 +705,17 @@
     p.options.forEach((label, i) => {
       if (objs[i] != null) { boardCount++; return; }
       const b = el("button", "opt" + (multi.has(i) ? " sel" : ""), label);
-      b.onclick = () => {
-        if (p.mode === "selectMany") { if (multi.has(i)) multi.delete(i); else multi.add(i); renderPrompt(); }
-        else send({ picks: [i] });
-      };
+      b.onclick = () => onOptionToggle(i);
       opts.appendChild(b);
     });
     root.appendChild(opts);
-    if (boardCount) root.appendChild(hint("→ click the highlighted cards on the board" + (p.mode === "selectMany" ? " to select" : "") + "."));
+    if (boardCount) root.appendChild(hint("→ click the highlighted cards / players on the board" + (p.mode === "selectMany" ? " to select" : "") + "."));
+
+    // Show exactly what's chosen so far (board cards + player/side-panel options).
+    if (p.mode === "selectMany" && multi.size) {
+      const chosen = [...multi].sort((a, b) => a - b).map(i => p.options[i]).join(", ");
+      root.appendChild(el("div", "chosen", "🎯 Chosen: " + chosen));
+    }
 
     const acts = [];
     if (p.mode === "selectMany") {
@@ -796,10 +843,23 @@
   function spacePass() {
     if (!cur) return;
     const p = cur.prompt;
-    if (p.canPass) { send({ pass: true }); return; }                  // priority/optional → pass (default)
-    if ((p.mode === "action" || p.mode === "selectOne") && (p.options || []).length === 1) {
-      send({ picks: [0] });                                           // sole forced option → take it
+    // 1) A valid in-progress selection → accept/submit it (e.g. declare attackers, targets).
+    if (p.mode === "selectMany") {
+      const n = multi.size;
+      if (n >= p.min && n <= p.max) { send({ picks: [...multi].sort((a, b) => a - b) }); return; }
+      if (p.canPass) { send({ pass: true }); return; }
+      return;                                                          // selection not yet valid → wait
     }
+    if (p.mode === "order") { if (orderSeq.length === p.options.length) send({ order: orderSeq.slice() }); return; }
+    if (p.mode === "number") {
+      const inp = document.querySelector("#prompt input");
+      if (inp) send({ number: clamp(parseInt(inp.value || "0", 10), p.numMin, p.numMax) });
+      return;
+    }
+    // 2) Priority / optional → pass (the default action).
+    if (p.canPass) { send({ pass: true }); return; }
+    // 3) A single forced option → take it.
+    if ((p.mode === "action" || p.mode === "selectOne") && (p.options || []).length === 1) send({ picks: [0] });
   }
   function toggleAutoPass() {
     if (!view) return;

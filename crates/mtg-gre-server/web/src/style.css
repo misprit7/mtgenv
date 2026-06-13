@@ -65,13 +65,17 @@
   .step.clickable:hover { border-color: var(--accent); }
   .step .slabel { font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   /* two stop dots per step: top = your turn, bottom = opponent's turn (independently toggleable) */
-  .step .sdots { display: flex; flex-direction: column; align-items: center; gap: 2px; margin-top: 3px; }
-  .step .sdot { width: 8px; height: 8px; border-radius: 50%; border: 1px solid var(--muted); cursor: pointer; }
+  .step .sdots { display: flex; flex-direction: column; align-items: stretch; gap: 2px; margin-top: 3px; }
+  /* each dot sits in a full-width clickable row → a big, easy hit target (not just the 12px dot) */
+  .step .sdotrow { display: flex; justify-content: center; align-items: center; height: 18px;
+    border-radius: 4px; cursor: pointer; }
+  .step .sdotrow:hover { background: rgba(255,255,255,.12); }
+  .step .sdot { width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid var(--muted); }
+  .step .sdotrow:hover .sdot { border-color: var(--accent); }
   .step .sdot.opp { border-style: dashed; } /* opponent's-turn dot reads as a dashed ring when off */
-  .step .sdot.on { background: #d23b3b; border-color: #ff7a7a; box-shadow: 0 0 5px #d23b3b; }
-  .step .sdot:hover { border-color: var(--accent); }
+  .step .sdot.on { background: #d23b3b; border-color: #ff7a7a; box-shadow: 0 0 6px #d23b3b; }
   .step.cur .sdot { border-color: #06140b; }
-  .step .dotlbl { font-size: 8px; line-height: 8px; height: 8px; color: var(--muted); }
+  .step .dotlbl { font-size: 9px; line-height: 18px; height: 18px; color: var(--muted); }
   .step.legend { flex: 0 0 auto; min-width: 28px; background: transparent; border-color: transparent; }
   /* auto-pass-this-turn indicator (Enter) */
   .autopass-badge { position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%);
@@ -152,7 +156,16 @@
   .card.tapped { transform: rotate(90deg); margin: 18px 24px; }
   .card.legal { cursor: pointer; box-shadow: 0 0 0 2px var(--legal), 0 0 12px var(--legalglow); }
   .card.legal:hover { box-shadow: 0 0 0 3px var(--legal), 0 0 16px var(--legalglow); }
-  .card.selected { box-shadow: 0 0 0 3px var(--sel), 0 0 14px rgba(91,140,255,.7); }
+  .card.selected { box-shadow: 0 0 0 3px var(--sel), 0 0 14px rgba(91,140,255,.7); position: relative; }
+  .card.selected::after { content: "🎯"; position: absolute; top: 2px; right: 3px; font-size: 13px;
+    text-shadow: 0 0 3px #000; }
+  /* chosen target/option feedback: selected side-panel buttons, player panels, and a summary line */
+  button.opt.sel { background: var(--sel); color: #06140b; border-color: var(--sel); font-weight: 700; }
+  button.opt.sel::before { content: "✓ "; }
+  .pinfo.targetable { cursor: pointer; box-shadow: 0 0 0 2px var(--legal), 0 0 12px var(--legalglow); }
+  .pinfo.targeted { cursor: pointer; box-shadow: 0 0 0 3px var(--sel), 0 0 16px rgba(91,140,255,.8); }
+  .pinfo .tgtbadge { color: var(--sel); font-weight: 800; font-size: 11px; }
+  .chosen { margin-top: 6px; color: var(--sel); font-weight: 700; font-size: 12px; }
   .card.back { background: repeating-linear-gradient(45deg,#3a2d52,#3a2d52 6px,#473864 6px,#473864 12px);
     border: 1px solid #241c33; }
   .card .badge { position: absolute; left: 3px; bottom: 2px; font-size: 8px; font-weight: 800;

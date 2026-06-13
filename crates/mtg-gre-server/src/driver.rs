@@ -45,13 +45,16 @@ pub struct Stops {
 
 impl Default for Stops {
     fn default() -> Self {
-        // Human play, MTGA defaults: auto-pass on, SmartStops on, resolve-own-stack on, default
-        // persistent stops = your two main phases only (declare-attackers/blockers are forced
-        // turn-based decisions, always presented anyway — not priority stops).
+        // Human play: auto-pass on, resolve-own-stack on, default persistent stops = your two main
+        // phases only. SmartStops is OFF by default here (diverges from MTGA's on-by-default): users
+        // found "stop at every step where I *could* cast something" (e.g. holding a Shock with red
+        // mana open) far too chatty — they want priority only at steps they've actually marked. Flip
+        // it back on with the "smart" toggle. (declare-attackers/blockers are forced turn-based
+        // decisions, always presented anyway — not priority stops.)
         Stops {
             auto_pass: true,
             full_control: false,
-            smart_stops: true,
+            smart_stops: false,
             resolve_own_stack: true,
             overrides: Vec::new(),
         }
