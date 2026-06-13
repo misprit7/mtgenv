@@ -302,22 +302,24 @@ hand-author the trait and codegen the data enums, or `prost` from `.proto` for a
 
 ## 5. Mapping to the engine's agent interface
 
-### The pattern to mirror (Forge)
-`/home/xander/dev/p-mtg/forge-ai/forge-game/src/main/java/forge/game/player/PlayerController.java`
-(347 lines) is an **abstract decision interface** the game loop calls whenever a
-player must choose: `declareAttackers(Player, Combat)`,
-`declareBlockers(Player, Combat)`, `chooseTargetsFor(SpellAbility)`,
-`assignCombatDamage(...)`, `orderBlockers(...)`, `confirmTrigger(...)`,
-`announceRequirements(...)` (X/kicker), `chooseSingleEntityForEffect(...)`, etc.
-Concrete subclasses: human UI, Forge AI, and `PlayerControllerRl`
-(`forge-ai/forge-ai/src/main/java/forge/ai/PlayerControllerRl.java`) which routes
-each decision over a socket via `RlBridge`
-(`forge-ai/forge-ai/src/main/java/forge/ai/RlBridge.java`, server socket, JSON
-request/response, blocking queue) to a Python RL agent. **This is exactly the
-swap-by-implementation shape we want.** Note the Forge methods map almost 1:1
-onto MTGA's `*Req` set (declare attackers/blockers, targets, damage assignment,
-order, confirm/optional, announce X) — strong evidence the abstraction
-generalizes.
+### The pattern to mirror (MTGA's own GRE protocol)
+The drop-in target *is* the reference. The recovered GRE `*Req`/`*Resp` catalog
+(see `../mtga-re/schema/gre_schema.json` and `../mtga-re/docs/GRE_DECISIONS.md`)
+is itself an **abstract decision interface**: at every point a player must choose,
+the GRE server emits a `*Req` that pre-enumerates the legal options, and the client
+replies with the matching `*Resp`. The catalog covers exactly the choices the
+engine must surface — `MulliganReq`, `ChooseStartingPlayerReq`,
+`DeclareAttackersReq`/`DeclareBlockersReq`, `SelectTargetsReq`, `AssignDamageReq`,
+`OrderReq` (triggers/blockers/combat-damage order), `CastingTimeOptionsReq`
+(X/kicker/alt+additional costs), `SelectNReq`/`DistributionReq`/`NumericInputReq`,
+`OptionalActionMessage` (confirm), and the `ActionsAvailableReq` → `PerformActionResp`
+priority loop. Crucially, **MTGA already does the legal-option masking server-side
+and routes every choice through a single decision boundary** — e.g.
+`DeclareAttackersReq` ships `qualifiedAttackers` + per-creature `legalDamageRecipients`
++ `mustAttack`. That is exactly the swap-by-implementation shape `mtgenv` wants, and
+it independently validates our `Agent`/`DecisionRequest` design: mirror the GRE
+catalog 1:1 and the engine's built-in AI, a Python RL agent, and the real MTGA
+client all become interchangeable backends behind one seam.
 
 ### Rust design (lands in `mtgenv`)
 Define **one decision-request enum and one decision-response enum** that mirror
@@ -359,9 +361,9 @@ pub trait Agent {
 
 Three interchangeable implementations behind `trait Agent` (the whole point):
 - **(a) Rust engine / built-in AI** — `RuleBasedAgent`, in-process.
-- **(b) Python RL agent** — `SocketAgent` (mirror of Forge's `RlBridge`:
-  serialize `GameView` + `DecisionRequest` to JSON/proto over a socket, block for
-  `DecisionResponse`).
+- **(b) Python RL agent** — `SocketAgent`: serialize `GameView` + `DecisionRequest`
+  to JSON/proto over a socket and block for `DecisionResponse` (the Gym env drives it
+  from the Python side; see `GYM_PLAN.md`).
 - **(c) Real MTGA client** — `MtgaClientAgent`: translate `DecisionRequest` →
   the actual `GREToClientMessage`/`ClientToGREMessage` protobuf and drive the
   live client. Because the Rust enums were **generated from the recovered MTGA
@@ -421,8 +423,5 @@ de-risked by the dual descriptor+source routes and the Phase-5 log validation.
 - Logs (validator): `…/MTGA/MTGA_Data/Logs/Logs/UTC_Log - *.log`
 - Decompile repo (to create): `/home/xander/dev/p-mtg/mtga-re/`
 - Engine to mirror into: `/home/xander/dev/p-mtg/mtgenv/` (`src/`)
-- Forge refs:
-  `…/forge-ai/forge-game/src/main/java/forge/game/player/PlayerController.java`,
-  `…/forge-ai/forge-ai/src/main/java/forge/ai/PlayerControllerRl.java`,
-  `…/forge-ai/forge-ai/src/main/java/forge/ai/RlBridge.java`
+- Recovered schema/transport (the reference): `/home/xander/dev/p-mtg/mtga-re/schema/gre_schema.json`, `…/mtga-re/docs/{GRE_DECISIONS,REQ_RESP_FIELDS,transport}.md`
 - Tooling: `/home/xander/.dotnet/dotnet` (8.0.406); install `ilspycmd` (`dotnet tool install -g ilspycmd`); `mono` not needed.
