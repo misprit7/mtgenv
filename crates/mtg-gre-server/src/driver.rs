@@ -383,4 +383,74 @@ mod tests {
         let outcome = run_state(state, agents);
         assert!(outcome.winner.is_some(), "counters mirror should produce a winner");
     }
+
+    /// Walk a serialized `PlayerView` JSON tree and collect `name → fully_implemented` for every
+    /// `chars` object (one that carries both `name` and the `fully_implemented` key).
+    fn collect_flags(
+        v: &serde_json::Value,
+        out: &mut std::collections::HashMap<String, Option<bool>>,
+    ) {
+        match v {
+            serde_json::Value::Object(m) => {
+                if let (Some(serde_json::Value::String(name)), Some(flag)) =
+                    (m.get("name"), m.get("fully_implemented"))
+                {
+                    out.insert(name.clone(), flag.as_bool());
+                }
+                for child in m.values() {
+                    collect_flags(child, out);
+                }
+            }
+            serde_json::Value::Array(a) => a.iter().for_each(|c| collect_flags(c, out)),
+            _ => {}
+        }
+    }
+
+    #[test]
+    fn fully_implemented_flag_reaches_the_wire_for_a_real_partial_card() {
+        // Real-data verification of the ⚠ "not fully implemented" badge (task #30): a board with a
+        // genuinely tracked-incomplete card (Lumbering Worldwagon — Crew 4 deferred) and a complete
+        // vanilla (Grizzly Bears). Project the seat view, wrap it in the exact `ServerMsg::Event`
+        // the server pushes, serialize, and assert the per-card flag the web client reads.
+        use mtg_core::agent::GameEvent;
+        use mtg_core::basics::{Phase, Zone};
+        use mtg_core::cards::dft::lumbering_worldwagon::LUMBERING_WORLDWAGON;
+        use mtg_core::cards::grp;
+        use mtg_core::state::view::view_for;
+        use std::sync::Arc;
+
+        let mut state = GameState::new(2, 1);
+        state.set_card_db(Arc::new(mtg_core::cards::starter_db()));
+        let (wagon, bear) = {
+            let db = state.card_db();
+            (
+                db.get(LUMBERING_WORLDWAGON).unwrap().chars.clone(),
+                db.get(grp::GRIZZLY_BEARS).unwrap().chars.clone(),
+            )
+        };
+        state.add_card(PlayerId(0), wagon, Zone::Battlefield);
+        state.add_card(PlayerId(0), bear, Zone::Battlefield);
+
+        let view = view_for(&state, PlayerId(0));
+        let msg = crate::protocol::ServerMsg::Event {
+            event: GameEvent::PhaseBegan { turn: 1, phase: Phase::PrecombatMain, active: PlayerId(0) },
+            view,
+        };
+        let json = serde_json::to_value(&msg).unwrap();
+        let mut flags = std::collections::HashMap::new();
+        collect_flags(&json, &mut flags);
+
+        // The partial card serializes as `false` (client renders ⚠ + deferred-clause tooltip); the
+        // complete card as `true` (no badge). This is the exact JSON the client parses.
+        assert_eq!(
+            flags.get("Lumbering Worldwagon"),
+            Some(&Some(false)),
+            "tracked-incomplete card must reach the wire as fully_implemented:false"
+        );
+        assert_eq!(
+            flags.get("Grizzly Bears"),
+            Some(&Some(true)),
+            "fully-implemented card must reach the wire as fully_implemented:true"
+        );
+    }
 }
