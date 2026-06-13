@@ -133,5 +133,8 @@ pub fn view_for(state: &GameState, seat: PlayerId) -> PlayerView {
         battlefield,
         stack,
         combat,
+        // Settings-echo, filled per-seat by `Engine::view_for_seat` (which has the StopConfig);
+        // the bare masking function leaves it `None`.
+        stops: None,
     }
 }

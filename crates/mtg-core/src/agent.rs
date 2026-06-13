@@ -62,6 +62,10 @@ pub struct PlayerView {
     pub stack: Vec<StackObjView>,
     /// Combat state, when in a combat phase.
     pub combat: Option<CombatView>,
+    /// This seat's own priority-stop settings, for display (which steps auto-pass vs. stop
+    /// under the Arena profile). `None` when no auto-pass profile is active. Self-only render
+    /// data — see [`StopStateView`].
+    pub stops: Option<StopStateView>,
 }
 
 /// Public facts about one seat.
@@ -159,6 +163,22 @@ pub struct CombatView {
     pub attackers: Vec<(ObjId, Target)>,
     /// (blocker, the attacker it's blocking).
     pub blockers: Vec<(ObjId, ObjId)>,
+}
+
+/// A seat's priority-stop settings, surfaced for display (the Arena auto-pass profile, §8.1).
+///
+/// **This is settings ECHO, not game state** (interim). In the GRE these settings are a distinct
+/// sub-protocol (the client *sets* them via a settings message; the server *enforces and echoes*
+/// them) — not part of the game-state view. We model only the echo half here, folded into
+/// `PlayerView` as self-only render data; the *set* half (a client changing its own stops through
+/// the protocol) is engine-side config today and would, if exposed, become a settings exchange.
+/// `per_step` lists the effective stop at each priority-granting step for this seat right now.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct StopStateView {
+    pub full_control: bool,
+    pub smart_stops: bool,
+    pub resolve_own_stack: bool,
+    pub per_step: Vec<(Phase, bool)>,
 }
 
 // ════════════════════════════════════════════════════════════════════════════════════════
@@ -825,6 +845,7 @@ mod tests {
             battlefield: vec![],
             stack: vec![],
             combat: None,
+            stops: None,
         }
     }
 
