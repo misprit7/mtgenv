@@ -117,6 +117,14 @@ impl Engine {
                     });
                 }
             }
+            Effect::Attach { what, to } => {
+                // `what` (usually SourceSelf) is resolved first; `to` consumes the chosen target.
+                let attachment = self.resolve_target(what, ctx, cursor);
+                let target = self.resolve_target(to, ctx, cursor);
+                if let (Some(Target::Object(attachment)), Some(target)) = (attachment, target) {
+                    wb.push(Action::AttachTo { attachment, target });
+                }
+            }
             // Other IR nodes are not yet interpreted (minimal scope). They are a no-op rather
             // than a panic so a card carrying them degrades gracefully.
             _ => {}
@@ -400,6 +408,17 @@ impl Engine {
                         obj,
                         to: Zone::Graveyard,
                     });
+                }
+            }
+            Action::AttachTo { attachment, target: Target::Object(host) } => {
+                // Move `attachment` (an Aura/Equipment) onto `host` (CR 701.3). Re-attaching
+                // simply overwrites the old host. Marks chars dirty so the "while attached"
+                // static (AttachedHost) recomputes.
+                if self.state.objects.contains_key(&host) {
+                    if let Some(o) = self.state.objects.get_mut(&attachment) {
+                        o.attached_to = Some(host);
+                    }
+                    self.state.mark_chars_dirty();
                 }
             }
             // Remaining Action variants are not produced by the milestone-3 interpreter.

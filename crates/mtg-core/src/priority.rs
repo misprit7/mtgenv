@@ -12,13 +12,14 @@
 //! slot in without reshaping it.
 
 use crate::agent::{
-    ActionRef, Agent, CastVariant, DecisionRequest, DecisionResponse, GameEvent, PlayableAction,
-    PlayerView, SelectReason, StopStateView, TargetSlot,
+    AbilityRef, ActionRef, Agent, CastVariant, DecisionRequest, DecisionResponse, GameEvent,
+    PlayableAction, PlayerView, SelectReason, StopStateView, TargetSlot,
 };
 use crate::basics::{CardType, Phase, Target, Zone, ZonePos};
-use crate::effects::ability::{Ability, EventPattern, Keyword};
+use crate::effects::ability::{Ability, Cost, CostComponent, EventPattern, Keyword, Restriction, Timing};
 use crate::effects::action::{Action, MoveCause, ResolutionCtx, Whiteboard, WbReason};
-use crate::effects::target::{TargetKind, TargetSpec};
+use crate::effects::target::{CardFilter, TargetKind, TargetSpec};
+use crate::effects::value::PlayerRef;
 use crate::effects::{Effect, EffectTarget};
 use crate::ids::{ObjId, PlayerId};
 use crate::mana;
@@ -702,15 +703,134 @@ impl Engine {
                 });
             }
         }
+
+        // Activated abilities (CR 602) of permanents `p` controls — e.g. Equip. Mana abilities
+        // (CR 605) use a separate no-stack path and are skipped here. Masked by timing, the
+        // activation restriction, cost payability, and (if it targets) a legal target.
+        for &perm in &s.player(p).battlefield {
+            let Some(def) = s.def_of(perm) else { continue };
+            for (i, ab) in def.abilities.iter().enumerate() {
+                let Ability::Activated { cost, effect, timing, restriction, is_mana } = ab else {
+                    continue;
+                };
+                if *is_mana {
+                    continue;
+                }
+                let timing_ok = match timing {
+                    Timing::Instant => true,
+                    Timing::Sorcery => sorcery_speed,
+                };
+                if !timing_ok {
+                    continue;
+                }
+                if matches!(restriction, Some(Restriction::OnlyYourTurn)) && p != s.active_player {
+                    continue;
+                }
+                if !self.can_pay_cost(p, perm, cost) {
+                    continue;
+                }
+                let has_targets = collect_target_specs(effect)
+                    .iter()
+                    .all(|spec| self.target_candidates(spec, p).len() as u32 >= spec.min.max(1));
+                if has_targets {
+                    actions.push(PlayableAction::Activate {
+                        source: perm,
+                        ability: AbilityRef(i as u32),
+                    });
+                }
+            }
+        }
         actions
+    }
+
+    /// Whether `p` can pay `cost` to activate an ability of `source`. Handles the components the
+    /// starter set uses (mana, `{T}`); other components aren't masked yet and pass through.
+    fn can_pay_cost(&self, p: PlayerId, source: ObjId, cost: &Cost) -> bool {
+        if let Some(m) = &cost.mana {
+            if !mana::can_pay(&self.state, p, m) {
+                return false;
+            }
+        }
+        for c in &cost.components {
+            let ok = match c {
+                CostComponent::TapSelf => {
+                    self.state.objects.get(&source).is_some_and(|o| !o.status.tapped)
+                }
+                _ => true,
+            };
+            if !ok {
+                return false;
+            }
+        }
+        true
     }
 
     fn perform_priority_action(&mut self, p: PlayerId, action: &PlayableAction) {
         match action {
             PlayableAction::PlayLand { card } => self.play_land(p, *card),
             PlayableAction::Cast { spell, .. } => self.cast_spell(p, *spell),
-            // Activate / ActivateMana / Special: milestone 4+. Never enumerated yet.
+            PlayableAction::Activate { source, ability } => {
+                self.activate_ability(p, *source, *ability)
+            }
+            // ActivateMana / Special: separate paths (mana abilities don't use the stack).
             _ => {}
+        }
+    }
+
+    /// Activate a (non-mana) activated ability (CR 602.2): put it on the stack, choose targets
+    /// (locked now, 602.2b), then pay the cost. It resolves via [`Engine::resolve_top`].
+    fn activate_ability(&mut self, p: PlayerId, source: ObjId, ability: AbilityRef) {
+        let idx = ability.0 as usize;
+        let (cost, effect) = match self.state.def_of(source).and_then(|d| d.abilities.get(idx)) {
+            Some(Ability::Activated { cost, effect, is_mana: false, .. }) => {
+                (cost.clone(), effect.clone())
+            }
+            _ => return,
+        };
+        let sid = self.state.mint_stack();
+        self.state.stack.push(StackObject {
+            id: sid,
+            controller: p,
+            source: Some(source),
+            kind: StackObjectKind::Ability { index: idx as u32 },
+            targets: Vec::new(),
+        });
+        let specs = collect_target_specs(&effect);
+        if !specs.is_empty() {
+            let slots: Vec<TargetSlot> = specs
+                .iter()
+                .map(|spec| TargetSlot {
+                    description: String::new(),
+                    legal: self.target_candidates(spec, p),
+                    min: spec.min,
+                    max: spec.max,
+                })
+                .collect();
+            let req = DecisionRequest::ChooseTargets {
+                for_action: ActionRef(sid),
+                slots: slots.clone(),
+            };
+            let resp = self.ask(p, &req);
+            let chosen = parse_targets(&slots, &resp);
+            if let Some(obj) = self.state.stack.items.iter_mut().find(|s| s.id == sid) {
+                obj.targets = chosen;
+            }
+        }
+        self.pay_cost(p, source, &cost);
+    }
+
+    /// Pay an ability/cost's components (CR 118). Mana is auto-tapped; the starter set also uses
+    /// `{T}`. Components beyond these aren't charged yet (none in the starter pool need them).
+    fn pay_cost(&mut self, p: PlayerId, source: ObjId, cost: &Cost) {
+        if let Some(m) = &cost.mana {
+            mana::auto_pay(&mut self.state, p, m);
+        }
+        for c in &cost.components {
+            if let CostComponent::TapSelf = c {
+                if let Some(o) = self.state.objects.get_mut(&source) {
+                    o.status.tapped = true;
+                }
+            }
         }
     }
 
@@ -838,9 +958,33 @@ impl Engine {
         match &spec.kind {
             TargetKind::Any => creatures().chain(players()).collect(),
             TargetKind::Player => players().collect(),
-            TargetKind::Creature(_) | TargetKind::Permanent(_) => creatures().collect(),
+            TargetKind::Creature(filter) | TargetKind::Permanent(filter) => creatures()
+                .filter(|t| self.target_matches_filter(t, filter, caster))
+                .collect(),
             // StackObject / CardInZone: not needed by the starter set.
             _ => Vec::new(),
+        }
+    }
+
+    /// Apply the subset of a `CardFilter` that targeting needs (the engine still pre-masks
+    /// hexproof in `targetable_by`). Currently honours `ControlledBy` (e.g. equip's "creature
+    /// you control"); other predicates aren't yet enforced at target time and pass through.
+    fn target_matches_filter(&self, t: &Target, filter: &CardFilter, caster: PlayerId) -> bool {
+        let Target::Object(id) = t else { return true };
+        let Some(o) = self.state.objects.get(id) else {
+            return false;
+        };
+        match filter {
+            CardFilter::ControlledBy(PlayerRef::Controller | PlayerRef::Owner) => {
+                o.controller == caster
+            }
+            CardFilter::ControlledBy(PlayerRef::Opponent | PlayerRef::EachOpponent) => {
+                o.controller != caster
+            }
+            CardFilter::All(fs) => fs.iter().all(|f| self.target_matches_filter(t, f, caster)),
+            CardFilter::AnyOf(fs) => fs.iter().any(|f| self.target_matches_filter(t, f, caster)),
+            CardFilter::Not(f) => !self.target_matches_filter(t, f, caster),
+            _ => true,
         }
     }
 
@@ -961,12 +1105,13 @@ impl Engine {
                 }
             }
             StackObjectKind::Ability { index } => {
-                // A triggered ability on the stack: run its effect, then it ceases to exist
-                // (CR 608.2n). The effect is looked up from the source's CardDef by `grp_id`
-                // (persists across zones, so dies-triggers resolve too).
+                // A triggered or activated ability on the stack: run its effect, then it ceases
+                // to exist (CR 608.2n). The effect is looked up from the source's CardDef by
+                // `grp_id` (persists across zones, so dies-triggers resolve too).
                 let effect = obj.source.and_then(|src| {
                     self.state.def_of(src).and_then(|d| match d.abilities.get(index as usize) {
-                        Some(Ability::Triggered { effect, .. }) => Some(effect.clone()),
+                        Some(Ability::Triggered { effect, .. })
+                        | Some(Ability::Activated { effect, .. }) => Some(effect.clone()),
                         _ => None,
                     })
                 });
@@ -1075,6 +1220,12 @@ impl Engine {
                             to: Zone::Graveyard,
                         });
                     }
+                }
+                StateBasedAction::EquipmentUnattaches { equipment } => {
+                    if let Some(o) = self.state.objects.get_mut(equipment) {
+                        o.attached_to = None;
+                    }
+                    self.state.mark_chars_dirty();
                 }
             }
         }
@@ -1301,6 +1452,10 @@ fn collect_specs_into(effect: &Effect, out: &mut Vec<TargetSpec>) {
         }
         | Effect::Destroy {
             what: EffectTarget::Target(spec),
+        }
+        | Effect::Attach {
+            to: EffectTarget::Target(spec),
+            ..
         } => out.push(spec.clone()),
         Effect::Sequence(effects) => {
             for e in effects {
@@ -1591,6 +1746,25 @@ mod expect_tests {
                 DecisionRequest::SelectCards { min, .. } => {
                     DecisionResponse::Indices((0..*min).collect())
                 }
+                _ => DecisionResponse::Pass,
+            }
+        }
+    }
+
+    /// Activates the first available activated ability (e.g. Equip), choosing target slot 0;
+    /// otherwise passes. For the equipment test.
+    struct EquipAgent;
+    impl Agent for EquipAgent {
+        fn decide(&mut self, _v: &PlayerView, req: &DecisionRequest) -> DecisionResponse {
+            match req {
+                DecisionRequest::Priority { actions, .. } => actions
+                    .iter()
+                    .position(|a| matches!(a, PlayableAction::Activate { .. }))
+                    .map(|i| DecisionResponse::Action(i as u32))
+                    .unwrap_or(DecisionResponse::Pass),
+                DecisionRequest::ChooseTargets { slots, .. } => DecisionResponse::Pairs(
+                    slots.iter().enumerate().map(|(si, _)| (si as u32, 0u32)).collect(),
+                ),
                 _ => DecisionResponse::Pass,
             }
         }
@@ -1926,6 +2100,30 @@ mod expect_tests {
         );
         e.perform_sbas(&sbas);
         assert_eq!(e.state.object(rancor).zone, Zone::Graveyard, "Aura fell off into the graveyard");
+    }
+
+    #[test]
+    fn equipment_equips_a_creature_then_unattaches_when_it_dies() {
+        // Equip is a sorcery-speed activated ability: pay {1}, attach Bonesplitter to a creature
+        // you control, and its AttachedHost static gives +2/+0. When the host dies the Equipment
+        // stays on the battlefield, just unattached (CR 704.5q).
+        let mut state = cards::build_game(1, &[&[], &[]]);
+        let bears = put(&mut state, PlayerId(0), grp::GRIZZLY_BEARS, Zone::Battlefield); // 2/2
+        let saw = put(&mut state, PlayerId(0), grp::BONESPLITTER, Zone::Battlefield);
+        put(&mut state, PlayerId(0), grp::MOUNTAIN, Zone::Battlefield); // pay Equip {1}
+        state.active_player = PlayerId(0);
+        state.phase = Phase::PrecombatMain;
+        let mut e = Engine::new(state, vec![Box::new(EquipAgent), Box::new(PassAgent)]);
+        e.priority_round();
+
+        assert_eq!(e.state.object(saw).attached_to, Some(bears), "Bonesplitter equipped the creature");
+        assert_eq!(e.state.computed(bears).power, Some(4), "equipped creature is +2/+0");
+        assert_eq!(e.state.computed(bears).toughness, Some(2));
+
+        // The creature dies → Equipment unattaches but remains on the battlefield.
+        e.state.move_object(bears, Zone::Graveyard, PlayerId(0));
+        assert_eq!(e.state.object(saw).zone, Zone::Battlefield, "Equipment stays on the battlefield");
+        assert_eq!(e.state.object(saw).attached_to, None, "but is no longer attached");
     }
 
     /// Put a card (by grp_id) directly into a player's zone, returning its id.

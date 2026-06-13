@@ -52,10 +52,15 @@ pub enum StateBasedAction {
         reason: DeathReason,
     },
     /// CR 704.5 (Auras): an Aura attached to an illegal object, or not attached at all, is put
-    /// into its owner's graveyard. (Equipment instead just unattaches, CR 704.5 — added with
-    /// the equipment checkpoint.)
+    /// into its owner's graveyard.
     AuraFallsOff {
         aura: ObjId,
+    },
+    /// CR 704.5 (Equipment): an Equipment attached to an illegal permanent (one that isn't a
+    /// creature) becomes unattached but stays on the battlefield. (A host *leaving* already
+    /// unattaches it via `move_object`; this covers a host that stops being a creature.)
+    EquipmentUnattaches {
+        equipment: ObjId,
     },
 }
 
@@ -142,6 +147,27 @@ pub fn collect(state: &GameState) -> Vec<StateBasedAction> {
         });
         if !legal_host {
             out.push(StateBasedAction::AuraFallsOff { aura: o.id });
+        }
+    }
+    // Equipment attachment SBA (CR 704.5): an Equipment attached to a non-creature permanent
+    // becomes unattached (but stays). `attached_to` being `Some` implies the host is still on
+    // the battlefield (a host leaving clears the link in `move_object`).
+    for o in state.objects.values() {
+        if o.zone != Zone::Battlefield {
+            continue;
+        }
+        if !o.chars.subtypes.iter().any(|s| s == "Equipment") {
+            continue;
+        }
+        if let Some(h) = o.attached_to {
+            let host_ok = state
+                .objects
+                .get(&h)
+                .is_some_and(|ho| ho.zone == Zone::Battlefield)
+                && state.computed(h).is_creature();
+            if !host_ok {
+                out.push(StateBasedAction::EquipmentUnattaches { equipment: o.id });
+            }
         }
     }
     out

@@ -15,7 +15,9 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use crate::basics::{CardType, Color, CounterKind, DamageKind, ManaCost, Zone};
-use crate::effects::ability::{Ability, ActionPattern, EventPattern, Keyword, Rewrite, StaticContribution};
+use crate::effects::ability::{
+    Ability, ActionPattern, Cost, EventPattern, Keyword, Rewrite, StaticContribution, Timing,
+};
 use crate::effects::condition::Duration;
 use crate::effects::target::{CardFilter, SelectSpec, TargetKind, TargetSpec};
 use crate::effects::value::{PlayerRef, ValueExpr};
@@ -63,6 +65,7 @@ pub mod grp {
     pub const KING_CHEETAH: u32 = 61;
     pub const GLADECOVER_SCOUT: u32 = 62;
     pub const RANCOR: u32 = 63;
+    pub const BONESPLITTER: u32 = 64;
 }
 
 /// `SelectSpec` for a static affecting "creatures you control" (the anthem scope). min/max are
@@ -620,6 +623,44 @@ pub fn starter_db() -> CardDb {
             },
         ],
     ).with_text("Enchant creature. Enchanted creature gets +2/+0 and has trample. (Return-to-hand clause not yet modeled.)"));
+    // Bonesplitter {1} Artifact — Equipment. "Equipped creature gets +2/+0. Equip {1}." The
+    // static buffs the AttachedHost (layer 7c); equip is a sorcery-speed activated ability that
+    // attaches this to a creature you control (CR 301.5 / 702.6).
+    db.insert(CardDef {
+        chars: Characteristics {
+            name: "Bonesplitter".to_string(),
+            card_types: vec![CardType::Artifact],
+            subtypes: vec!["Equipment".to_string()],
+            colors: Vec::new(),
+            mana_cost: Some(mana_cost(1, &[])),
+            grp_id: grp::BONESPLITTER,
+            ..Default::default()
+        },
+        abilities: vec![
+            Ability::Static {
+                contribution: StaticContribution::ModifyPT { power: 2, toughness: 0 },
+                affects: attached_host(),
+                duration: Duration::WhileSourcePresent,
+            },
+            Ability::Activated {
+                cost: Cost { mana: Some(mana_cost(1, &[])), components: Vec::new() },
+                effect: Effect::Attach {
+                    what: EffectTarget::SourceSelf,
+                    to: EffectTarget::Target(TargetSpec {
+                        kind: TargetKind::Creature(CardFilter::ControlledBy(PlayerRef::Controller)),
+                        min: 1,
+                        max: 1,
+                        distinct: true,
+                    }),
+                },
+                timing: Timing::Sorcery,
+                restriction: None,
+                is_mana: false,
+            },
+        ],
+        mana_colors: Vec::new(),
+        text: String::new(),
+    }.with_text("Equipped creature gets +2/+0. Equip {1}"));
     db
 }
 
@@ -702,7 +743,7 @@ mod tests {
     #[test]
     fn starter_db_has_expected_cards() {
         let db = starter_db();
-        assert_eq!(db.len(), 35);
+        assert_eq!(db.len(), 36);
         assert!(db.get(grp::FOREST).unwrap().is_mana_source());
         assert_eq!(db.get(grp::FOREST).unwrap().mana_colors, vec![Color::Green]);
         // Grizzly Bears is a vanilla 2/2 with no abilities.
