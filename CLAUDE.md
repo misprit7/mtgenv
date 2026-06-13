@@ -59,14 +59,13 @@ implement the full ruleset; near-term it's a tiny card pool with a correct core.
 
 ## Prior art on this machine (reference / reuse — don't reinvent)
 
-- `../forge-ai` — **Forge**, a complete open-source Java MTG engine the user works with.
-  The reference for: the `PlayerController` decision pattern (`forge-game/.../player/
-  PlayerController.java`), an existing RL bridge (`PlayerControllerRl` + `RlBridge` JSON-
-  over-TCP:12345 ↔ `python/ForgeEnv`), and a huge declarative card corpus
-  (`forge-gui/res/cardsfolder/`). Use Forge as a **differential-testing oracle** and a
-  possible **interim Gym backend**.
+- `../forge-ai` — **Forge** (open-source Java MTG engine). This is the **prior attempt that
+  `mtgenv` replaces**, and it was painful to work with. Do **NOT** align the design to Forge,
+  use it as a testing oracle, depend on its API, or import its card scripts — treat it as
+  off-limits prior art, not a reference. (Validate rules via CR-derived expect tests + the
+  captured MTGA Detailed-Logs; source card data from MTGJSON/Scryfall.)
 - `../magician` — 17lands-style MTGA replay/draft-data ML (state/feature representation ideas).
-- `../../from-scratch/mtgai` — an earlier MTG-AI attempt (notes + a Forge PlayerController).
+- `../../from-scratch/mtgai` — an earlier MTG-AI attempt (notes).
 - `../mtga-re` — **(not yet created)** target repo for the MTGA decompile work.
 
 ## Key facts already established

@@ -65,9 +65,10 @@ MTGA client.
 - **The GRE protocol is the client seam.** A GRE-protocol server wraps `mtg-core`; the web
   client and the real MTGA client are both clients of it → decompile must capture transport,
   not just message schemas.
-- **PyO3 + maturin** for the RL hot path; keep a socket transport option for MTGA/Forge.
+- **PyO3 + maturin** for the RL hot path; a socket transport option for the GRE/web client.
 - Target **paper CR** as truth + an **Arena profile** for MTGA-specific behavior.
-- Use **Forge** (`../forge-ai`) as a differential-testing oracle and possible interim Gym backend.
+- Validate rules correctness via CR-derived unit/expect tests + the captured MTGA Detailed-Logs.
+  (No Forge — it's the abandoned prior attempt this project replaces, not a reference/oracle.)
 
 ## Risks / open questions
 
@@ -76,6 +77,6 @@ MTGA client.
 - Action-space design for RL (huge, variable) — factored + masked vocabulary, autoregressive
   later.
 - State must stay cheaply cloneable/serializable for MCTS + vectorized envs.
-- Card-pool acquisition strategy (translate Forge `cardsfolder` → IR vs. oracle-text compiler).
+- Card-pool acquisition strategy: MTGJSON/Scryfall oracle data → Effect-IR (oracle-text→IR compiler).
 - Legal/ToS care around MTGA decompilation (personal research/interop; don't redistribute
   WotC code/assets) — see DECOMPILE_PLAN.
