@@ -77,8 +77,8 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 - **design:** wrote `docs/design/AGENT_INTERFACE.md` — the single `Agent` trait +
   `DecisionRequest`/`DecisionResponse` enums + `PlayerView` (info-filtered, hidden zones
   masked) + the Effect IR / whiteboard `Action` / `Native` hatch (Rust sketches). The
-  `DecisionRequest` set is a proven **superset** of Forge's 107-method `PlayerController`
-  AND the recovered MTGA GRE `*Req` catalog (coverage matrices in §6). Masking is the
+  `DecisionRequest` set is a proven **superset** of the recovered MTGA GRE `*Req` catalog
+  (coverage matrices in §6). Masking is the
   engine's job. Asked `decompile` for field-level GRE Req/Resp shapes (§9 open questions);
   variant set not expected to change. Task #4 (implement agent.rs + effects/) blocked on
   the workspace scaffold (#1).
@@ -92,7 +92,7 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
   `docs/design/WHITEBOARD_MODEL.md`. Card-agnostic core + declarative effect rules that
   rewrite a pending-actions whiteboard; agenda pipeline; qualifications; layers; LKI.
 - Wrote `docs/plans/ENGINE_PLAN.md` (Rust workspace, milestones, agent boundary, testing
-  incl. differential-vs-Forge), `docs/plans/GYM_PLAN.md` (PyO3+maturin, action masking,
+  CR-derived expect tests + MTGA logs), `docs/plans/GYM_PLAN.md` (PyO3+maturin, action masking,
   self-play), `docs/plans/DECOMPILE_PLAN.md` (MTGA protocol recovery).
 - Recon: **MTGA is a Mono build** (not IL2CPP), Steam install, **protobuf** GRE protocol
   (`Wizards.MDN.GreProtobuf.dll`). Decompile is the easy path; work to live in `../mtga-re`.
