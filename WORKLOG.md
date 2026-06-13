@@ -5,6 +5,18 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **webui:** task #8 follow-ups (interactive play deepened). (1) Swapped the temporary driver
+  for engine's real `Engine::run_game` (removed duplicated rules logic). (2) Built an
+  **expressive CLI** (`mtg-play`): scenario setup (`new`/`life`/`add`/`deck`/`handsize`/`seat`),
+  inspection (`show` god-view / `show <p>` filtered `PlayerView`), and a **scriptable** mode
+  (`--script`, deterministic) — `cli.rs`/`render.rs`, shared option projection so CLI + web mask
+  identically. (3) `play [decks…] [seed]` deals the engine's real decks — **demo** (creatures+burn)
+  default, plus the user's **`play burn bears`** matchup — so casting, targeting (Lightning Bolt),
+  combat and the damage/deck-out win conditions all surface (game-over prints the `end_reason`).
+  The web board now deals the demo deck too (creatures render in-browser). (4) Wired engine's new
+  `skip_opening_deal()` so `deal off` plays a hand-built scenario as-is. expect-test snapshots of
+  the CLI render + the JSON wire projection (living protocol docs). 13 crate tests green; full
+  workspace green. Next: place named starter-db cards in scenarios (`add … "Grizzly Bears"`).
 - **engine:** post-M3 follow-ups (3 small commits): (1) adopted design's canonical
   `basics::CardType`, deleted the `state::CardType` duplicate (one import path); (2) added
   scenario hooks for webui's CLI — `Engine::skip_opening_deal()` (play a hand-built scenario

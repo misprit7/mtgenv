@@ -21,6 +21,7 @@ use mtg_core::agent::{Agent, RandomAgent};
 use mtg_core::basics::Zone;
 use mtg_core::ids::PlayerId;
 use mtg_core::priority::Engine;
+use mtg_core::sba::LossReason;
 use mtg_core::state::view::view_for;
 use mtg_core::state::{Characteristics, GameState};
 
@@ -170,9 +171,10 @@ Commands:
                               card: a basic land name (Plains|Island|Swamp|Mountain|Forest)
   deck <player> <count> [name] add <count> basics to the library (round-robin, or all <name>)
   handsize <player> <n>       set maximum hand size
-  deal on|off                 deal opening hands on 'run' (default on)
+  deal on|off                 deal opening hands on 'run' (off = play the hand-built scenario as-is)
   show [player]               dump full state (no arg) or a seat's PlayerView
-  play [lands] [seed]         quick game vs RandomAgent (demo deck = creatures+burn; 'lands' = lands-only)
+  play [decks…] [seed]        quick game vs RandomAgent. decks: demo (default)|lands|burn|bears;
+                              one deck = both seats, two = P0 P1 (e.g. 'play burn bears')
   run                         run the configured scenario to completion
   quit                        exit
 Lines starting with '#' are comments. At a decision prompt: an index, 'p'/Enter to pass, '?' help, 'dump' to re-show.";
@@ -313,16 +315,23 @@ Lines starting with '#' are comments. At a decision prompt: an index, 'p'/Enter 
     // ── play ─────────────────────────────────────────────────────────────────────────────────
 
     fn cmd_play(&mut self, args: &[&str]) {
-        // `play` → demo game (lands + creatures + burn); `play lands` → lands-only.
-        let lands = args.first() == Some(&"lands");
-        let rest: &[&str] = if lands { &args[1..] } else { args };
-        let seed = rest.first().and_then(|s| s.parse().ok()).unwrap_or(self.seed);
-        self.seed = seed;
-        self.state = if lands {
-            crate::driver::lands_only_state(2, seed)
-        } else {
-            crate::driver::demo_state(seed)
+        // Args are deck names (non-numeric) plus an optional seed (numeric):
+        //   play                → demo deck both seats
+        //   play lands           → lands-only
+        //   play burn bears 7    → P0 burn, P1 bears, seed 7
+        let mut deck_names: Vec<&str> = Vec::new();
+        let mut seed = self.seed;
+        for a in args {
+            match a.parse::<u64>() {
+                Ok(n) => seed = n,
+                Err(_) => deck_names.push(a),
+            }
+        }
+        let Some(state) = build_play_state(&deck_names, seed) else {
+            return self.say("usage: play [demo|lands|burn|bears] [deck1] [seed]  (unknown deck name)");
         };
+        self.seed = seed;
+        self.state = state;
         self.seats = vec![SeatSpec::Human, SeatSpec::Random(seed ^ 0xB0B)];
         self.deal = true;
         self.cmd_run();
@@ -347,18 +356,25 @@ Lines starting with '#' are comments. At a decision prompt: an index, 'p'/Enter 
             })
             .collect();
 
-        if !self.deal {
-            // Running a scenario with exact hands (no opening draw) needs an engine hook to skip
-            // the deal; it isn't exposed yet, so note it and run with the deal for now.
-            self.say("(note: 'deal off' needs an engine hook to skip the opening draw — pending; running WITH deal)");
-        }
-
         let mut engine = Engine::new(self.state.clone(), agents);
+        if !self.deal {
+            // Play the hand-built scenario as-is: no shuffle, no opening draw (engine hook).
+            engine.skip_opening_deal();
+        }
         let winner = engine.run_game();
         // Keep the finished state so post-game `show` works.
         self.state = engine.state;
         let w = winner.map(|p| format!("P{}", p.0)).unwrap_or_else(|| "draw".into());
-        self.say(&format!("\n═══ GAME OVER — winner {w} (turn {}) ═══", self.state.turn_number));
+        let reason = match self.state.end_reason {
+            Some(LossReason::ZeroOrLessLife) => " — a player hit 0 life",
+            Some(LossReason::DrewFromEmptyLibrary) => " — a player decked out",
+            Some(LossReason::TenPoison) => " — a player got 10 poison",
+            None => "",
+        };
+        self.say(&format!(
+            "\n═══ GAME OVER — winner {w} (turn {}){reason} ═══",
+            self.state.turn_number
+        ));
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────────────────────
@@ -370,6 +386,25 @@ Lines starting with '#' are comments. At a decision prompt: an index, 'p'/Enter 
             self.say(&format!("no player {p} (game has {} players)", self.state.players.len()));
             false
         }
+    }
+}
+
+/// Build the `GameState` for a `play` command from preset deck names (+ seed). `[]` = demo deck;
+/// `["lands"]` = lands-only; one preset name = both seats; two = one per seat. `None` = unknown.
+fn build_play_state(names: &[&str], seed: u64) -> Option<GameState> {
+    match names {
+        [] => Some(crate::driver::demo_state(seed)),
+        ["lands"] => Some(crate::driver::lands_only_state(2, seed)),
+        [a] => {
+            let d = mtg_core::cards::preset_deck(a)?;
+            Some(mtg_core::cards::build_game(seed, &[&d, &d]))
+        }
+        [a, b] => {
+            let d0 = mtg_core::cards::preset_deck(a)?;
+            let d1 = mtg_core::cards::preset_deck(b)?;
+            Some(mtg_core::cards::build_game(seed, &[&d0, &d1]))
+        }
+        _ => None,
     }
 }
 
