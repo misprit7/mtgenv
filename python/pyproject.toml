@@ -1,0 +1,27 @@
+# Python side of the gym (GYM_PLAN L4/L5). Managed with `uv`. The compiled engine extension
+# `mtg_py` is built separately by maturin from `crates/mtg-py` (see README) and installed into the
+# same venv; it is intentionally NOT a declared dependency here (it's a local Rust build, not PyPI).
+[project]
+name = "mtgenv-gym"
+version = "0.1.0"
+description = "Gymnasium RL environment over the mtg-core engine (via the mtg_py PyO3 extension)."
+requires-python = ">=3.9"
+dependencies = [
+    "numpy",
+    "gymnasium",
+    "sb3-contrib",   # MaskablePPO (pulls stable-baselines3 + torch)
+    "tensorboard",   # training curves
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "maturin",       # builds the mtg_py extension
+]
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["mtgenv_gym"]

@@ -2,6 +2,10 @@
 report win-rate vs random — the M1 exit criterion (GYM_PLAN §8.1).
 
     PYTHONPATH=python python python/train.py --deck demo --timesteps 60000 --eval-games 400
+    # with TensorBoard curves (PPO losses + periodic eval/mean_reward = win-rate signal):
+    PYTHONPATH=python python python/train.py --deck burn_vs_bears --timesteps 60000 \
+        --tensorboard runs/ --tb-eval-freq 4000
+    tensorboard --logdir runs/
 
 ``train_and_eval`` is importable so the pytest learning-sanity test can run a short version and
 assert the win-rate climbs above the ~50% a random agent gets.
@@ -13,7 +17,9 @@ import argparse
 
 import numpy as np
 from sb3_contrib import MaskablePPO
+from sb3_contrib.common.maskable.callbacks import MaskableEvalCallback
 from sb3_contrib.common.wrappers import ActionMasker
+from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv
 
 from mtgenv_gym import MtgEnv
@@ -25,22 +31,44 @@ def _mask_fn(env):
     return env.action_masks()
 
 
+def _wrapped_env(deck, auto_pass, seed):
+    env = MtgEnv(deck=deck, auto_pass=auto_pass)
+    env = ActionMasker(env, _mask_fn)
+    env.reset(seed=seed)
+    return env
+
+
 def _make_env(deck, auto_pass, seed):
-    def thunk():
-        env = MtgEnv(deck=deck, auto_pass=auto_pass)
-        env = ActionMasker(env, _mask_fn)
-        env.reset(seed=seed)
-        return env
-
-    return thunk
+    return lambda: _wrapped_env(deck, auto_pass, seed)
 
 
-def make_model(deck="demo", auto_pass=True, n_envs=8, seed=0, **ppo_kwargs):
+def make_model(deck="demo", auto_pass=True, n_envs=8, seed=0, tensorboard_log=None, verbose=0,
+               **ppo_kwargs):
     venv = DummyVecEnv([_make_env(deck, auto_pass, seed + i) for i in range(n_envs)])
     policy_kwargs = dict(features_extractor_class=EntityExtractor)
-    defaults = dict(n_steps=256, batch_size=256, gamma=0.999, ent_coef=0.01, verbose=0, seed=seed)
+    defaults = dict(n_steps=256, batch_size=256, gamma=0.999, ent_coef=0.01, seed=seed)
     defaults.update(ppo_kwargs)
-    return MaskablePPO("MultiInputPolicy", venv, policy_kwargs=policy_kwargs, **defaults)
+    return MaskablePPO(
+        "MultiInputPolicy",
+        venv,
+        policy_kwargs=policy_kwargs,
+        tensorboard_log=tensorboard_log,
+        verbose=verbose,
+        **defaults,
+    )
+
+
+def eval_callback(deck="demo", auto_pass=True, seed=10_000, eval_freq=4000, n_eval_episodes=50):
+    """A periodic eval-vs-random callback. With the ±1 terminal reward, ``eval/mean_reward`` is the
+    win-rate signal (= win-rate − loss-rate), logged to TensorBoard alongside the PPO losses."""
+    eval_env = Monitor(_wrapped_env(deck, auto_pass, seed))
+    return MaskableEvalCallback(
+        eval_env,
+        eval_freq=eval_freq,
+        n_eval_episodes=n_eval_episodes,
+        deterministic=True,
+        verbose=0,
+    )
 
 
 def evaluate(model, deck="demo", auto_pass=True, n_games=400, seed0=1_000_000):
@@ -86,9 +114,14 @@ def random_baseline(deck="demo", auto_pass=True, n_games=400, seed0=2_000_000):
     return wins, draws, losses
 
 
-def train_and_eval(deck="demo", timesteps=60_000, eval_games=400, n_envs=8, seed=0):
-    model = make_model(deck=deck, n_envs=n_envs, seed=seed)
-    model.learn(total_timesteps=timesteps, progress_bar=False)
+def train_and_eval(deck="demo", timesteps=60_000, eval_games=400, n_envs=8, seed=0,
+                   tensorboard_log=None, tb_eval_freq=4000):
+    model = make_model(deck=deck, n_envs=n_envs, seed=seed, tensorboard_log=tensorboard_log)
+    callback = None
+    if tensorboard_log is not None:
+        # Log eval/mean_reward (= win-rate − loss-rate vs random) periodically to TensorBoard.
+        callback = eval_callback(deck=deck, eval_freq=max(tb_eval_freq // n_envs, 1))
+    model.learn(total_timesteps=timesteps, progress_bar=False, callback=callback)
     w, d, l = evaluate(model, deck=deck, n_games=eval_games)
     bw, bd, bl = random_baseline(deck=deck, n_games=eval_games)
     return {
@@ -105,9 +138,14 @@ def main():
     ap.add_argument("--eval-games", type=int, default=400)
     ap.add_argument("--n-envs", type=int, default=8)
     ap.add_argument("--save", default=None)
+    ap.add_argument("--tensorboard", default=None, help="TensorBoard log dir (enables curves)")
+    ap.add_argument("--tb-eval-freq", type=int, default=4000, help="eval-vs-random every N steps")
     args = ap.parse_args()
 
-    res = train_and_eval(args.deck, args.timesteps, args.eval_games, args.n_envs)
+    res = train_and_eval(
+        args.deck, args.timesteps, args.eval_games, args.n_envs,
+        tensorboard_log=args.tensorboard, tb_eval_freq=args.tb_eval_freq,
+    )
     t, b = res["trained"], res["baseline"]
     print(f"deck={args.deck}  timesteps={args.timesteps}  eval_games={args.eval_games}")
     print(f"  random baseline  win-rate {b['win_rate']:.3f}  (W{b['win']}/D{b['draw']}/L{b['loss']})")

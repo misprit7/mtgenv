@@ -7,32 +7,40 @@ A Gymnasium env over the `mtg-core` engine via the `mtg_py` PyO3 extension (`cra
   fixed-width action space with env-side autoregressive decomposition + legality mask, sparse
   terminal reward, and a `MaskablePPO` agent that **beats a random opponent**.
 
-## Setup
+## Setup (uv)
 
 ```bash
-# from the repo root
-python3 -m venv .venv && source .venv/bin/activate
-pip install maturin numpy gymnasium pytest sb3-contrib   # sb3-contrib pulls torch (M1 training)
+# from the repo root — the Python deps are declared in python/pyproject.toml
+uv venv .venv --python 3.14            # create the venv (any CPython 3.9+ works via abi3)
+uv pip install -e "python[dev]"        # numpy, gymnasium, sb3-contrib (torch), tensorboard, pytest, maturin
 
 # build + install the Rust extension `mtg_py` into the venv
 # (abi3 forward-compat lets the build target the box's newer-than-known CPython 3.14)
-PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1 maturin develop --release -m crates/mtg-py/Cargo.toml
+PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1 .venv/bin/maturin develop --release -m crates/mtg-py/Cargo.toml
 ```
+
+`uv run --python .venv …` or `.venv/bin/python …` runs anything below; `PYTHONPATH=python` puts the
+top-level scripts (`train.py`, `benchmark.py`) and `mtgenv_gym` on the path.
 
 ## Run
 
 ```bash
 # fast smoke (random self-play legality + conservation + env Dict obs)
-PYTHONPATH=python pytest python/tests/test_smoke.py -q
+PYTHONPATH=python .venv/bin/python -m pytest python/tests/test_smoke.py -q
 
 # learning-sanity (trains ~20s, asserts win-rate beats random)
-PYTHONPATH=python pytest python/tests/test_learning.py -q
+PYTHONPATH=python .venv/bin/python -m pytest python/tests/test_learning.py -q
 
 # throughput / conservation report
-PYTHONPATH=python python python/benchmark.py --deck demo --games 3000
+PYTHONPATH=python .venv/bin/python python/benchmark.py --deck demo --games 3000
 
 # train + report win-rate vs random (the M1 exit criterion)
-PYTHONPATH=python python python/train.py --deck burn_vs_bears --timesteps 60000 --eval-games 400
+PYTHONPATH=python .venv/bin/python python/train.py --deck burn_vs_bears --timesteps 60000 --eval-games 400
+
+# …with TensorBoard curves (PPO losses + periodic eval/mean_reward = win-rate signal)
+PYTHONPATH=python .venv/bin/python python/train.py --deck burn_vs_bears --timesteps 60000 \
+    --tensorboard runs/ --tb-eval-freq 4000
+tensorboard --logdir runs/
 ```
 
 ## Layout
