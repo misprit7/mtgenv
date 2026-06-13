@@ -216,6 +216,21 @@ pub fn finish_game(mut engine: Engine) -> Outcome {
     }
 }
 
+/// Like [`finish_game`] but records an omniscient [`Replay`](mtg_core::replay::Replay) of the whole
+/// game (god-view frame per public event). Returns the outcome plus the recorded replay — the
+/// engine fills seats + result; the caller stamps `source`/`created_at`/player names+decks and
+/// persists it (so the lobby's finished-game "Replay" button can play it back).
+pub fn finish_game_with_replay(mut engine: Engine) -> (Outcome, mtg_core::replay::Replay) {
+    engine.record_replay(true);
+    let winner = engine.run_game();
+    let replay = engine.replay();
+    let outcome = Outcome {
+        winner,
+        turns: engine.state.turn_number,
+    };
+    (outcome, replay)
+}
+
 /// Run one lands-only game between `agents` (indexed by seat) through `mtg-core`'s engine.
 pub fn run_lands_game(agents: Vec<Box<dyn Agent>>, seed: u64) -> Outcome {
     run_state(lands_only_state(agents.len(), seed), agents)

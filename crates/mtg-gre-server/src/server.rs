@@ -111,6 +111,19 @@ fn replay_dir() -> std::path::PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data/replays")
 }
 
+/// Persist a finished game's [`Replay`](mtg_core::replay::Replay) to `data/replays/<id>.json`
+/// (best-effort; creates the store dir). The lobby's finished-game "▶ Replay" button links to
+/// `/play?replay=<id>`, so the file id matches the game id.
+pub(crate) fn save_replay(id: u64, replay: &mtg_core::replay::Replay) {
+    let dir = replay_dir();
+    if std::fs::create_dir_all(&dir).is_err() {
+        return;
+    }
+    if let Ok(json) = serde_json::to_string(replay) {
+        let _ = std::fs::write(dir.join(format!("{id}.json")), json);
+    }
+}
+
 /// `GET /api/replays` — list saved replays' metadata for the lobby. Replays are opaque JSON files
 /// (`data/replays/*.json`, the engine's serialized `Replay`); we surface each file's `meta` fields
 /// flattened, plus an `id` (filename stem) and `frames` count — without shipping every frame. A

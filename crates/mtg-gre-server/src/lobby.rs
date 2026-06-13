@@ -542,8 +542,19 @@ fn spawn_game(seed: u64, room: Arc<Room>, mut slots: Vec<Option<SeatIngredients>
             }
         }
 
-        // Play it out, then broadcast the result and record it.
-        let outcome = driver::finish_game(engine);
+        // Play it out (recording an omniscient replay), then broadcast the result + persist the
+        // replay so the lobby's finished-game "▶ Replay" button can play it back.
+        let (outcome, mut replay) = driver::finish_game_with_replay(engine);
+        for (i, seat) in room.seats.iter().enumerate() {
+            if let Some(rp) = replay.meta.players.get_mut(i) {
+                rp.name = format!("P{i} ({})", seat_kind_label(seat.kind));
+                rp.deck = seat.deck.clone();
+            }
+        }
+        replay.meta.source = mtg_core::replay::ReplaySource::Human; // a lobby game (human/AI mix)
+        replay.meta.created_at = now_millis();
+        crate::server::save_replay(room.id, &replay);
+
         for (_pid, tx) in &senders {
             let _ = tx.send(ServerMsg::GameOver {
                 winner: outcome.winner,
@@ -556,4 +567,21 @@ fn spawn_game(seed: u64, room: Arc<Room>, mut slots: Vec<Option<SeatIngredients>
             winner: outcome.winner.map(|p| p.0),
         };
     });
+}
+
+/// A short label for a seat's controller, stamped into replay metadata.
+fn seat_kind_label(kind: SeatKind) -> &'static str {
+    match kind {
+        SeatKind::Human => "Human",
+        SeatKind::Random => "Agent",
+        SeatKind::Rl => "RL",
+    }
+}
+
+/// Unix epoch milliseconds (server-stamped — the core never reads a clock).
+fn now_millis() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
 }
