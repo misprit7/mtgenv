@@ -5,6 +5,18 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **gym:** refreshed `docs/plans/GYM_PLAN.md` to a current spec (was a stale sketch). Removed all
+  Forge references (abandoned prior attempt); re-anchored on PyO3+maturin + the *implemented* `Agent`
+  boundary (`agent.rs`: 21 `DecisionRequest` variants, `PlayerView`, `RandomAgent`). Key updates:
+  obs space maps the real `PlayerView`/`CharacteristicsView` (`grp_id` card-embedding ids,
+  hidden-info masking inherited from `view_for`); factored action vocab + boolean mask
+  (MaskablePPO), reusing `options.rs`'s 5-shape projection; reward sparse-terminal + annealed
+  potential shaping; auto-pass/stops (already in `priority.rs`) as the episode-length lever.
+  **Resumable-step API**: documented two shapes — (A) thread+channel `PyAgent` reusing the proven
+  `GreSessionAgent` bridge (zero engine change, ship now), (B) a true re-entrant `resume`/`submit`
+  engine API (coordinate with `engine`, spec only). Testing reframed to CR expect-tests + captured
+  MTGA logs (not a cross-engine oracle). Milestones 0→4. **Spec only — awaiting user review before
+  any implementation.**
 - **webui:** big UI/UX pass on `mtg-gre-server` (many small commits). (1) **MTGO-style web board**:
   real MTG card frames (name/mana/art/type/rules/PT), opponent-top/you-bottom layout, hand at the
   bottom, left rail (life + Library/Graveyard/Exile piles → click to view zones), readable game-log
