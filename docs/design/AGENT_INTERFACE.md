@@ -1,8 +1,10 @@
 # The Agent Interface: One Decision Boundary
 
-> **Status:** Foundational design decision (DESIGN ONLY — no crate code yet; the
-> implementation lands in `crates/mtg-core/src/agent.rs` + `crates/mtg-core/src/effects/`
-> under board task #4).
+> **Status:** Foundational design decision — **implemented** in `crates/mtg-core/src/agent.rs`
+> (the `Agent` trait, `DecisionRequest`/`DecisionResponse`, `PlayerView`, `RandomAgent`) +
+> `crates/mtg-core/src/effects/` (the Effect IR). This doc is the spec; keep it in sync with the
+> code. The Rust blocks below are sketches (illustrative shapes) — the crate is the source of
+> truth for exact field types.
 >
 > **Read first:** `docs/design/WHITEBOARD_MODEL.md` (esp. §2.1 whiteboard/Action, §2.3 the
 > IR, §2.6 decisions-carry-constraints), `docs/plans/ENGINE_PLAN.md` §6 (the decision
@@ -126,8 +128,7 @@ pub struct PlayerView {
     pub turn: u32,
     pub active_player: PlayerId,
     pub phase: Phase,                 // current phase/step
-    pub step_has_priority: bool,
-    pub priority_player: Option<PlayerId>,
+    pub priority_player: Option<PlayerId>,  // who holds priority (None = no priority window)
 
     pub players: Vec<PlayerPublicView>,   // one per seat, including self (public facts)
     pub me: PlayerPrivateView,            // self-only: full hand, known library tops, etc.
@@ -135,8 +136,7 @@ pub struct PlayerView {
     pub battlefield: Vec<ObjView>,        // all permanents (public), with computed chars
     pub stack: Vec<StackObjView>,         // spells + abilities on the stack
     pub combat: Option<CombatView>,       // attackers/blockers/assignments when in combat
-
-    pub recent_events: Vec<GameEvent>,    // public log slice since last decision (for RL/obs)
+    // Events are delivered via `observe()` (the push channel), NOT embedded in the view.
 }
 
 pub struct PlayerPublicView {
@@ -232,22 +232,24 @@ pub enum DecisionRequest {
     ChooseNumber { reason: NumberReason, min: i64, max: i64, step: u32,
                    forbidden: Vec<i64>, disallow_even: bool, disallow_odd: bool },
 
-    /// The cast-time option bundle presented together at CR 601.2b: modes, X, kicker/
-    /// multikicker, additional/alternative/optional costs, bargain, casualty, conspire,
-    /// hybrid/Phyrexian/mana-type choices. **RECOMMENDED canonical shape: one batched
-    /// `CastingTimeOptions` per cast** (see §9 resolution) — this is 1:1 with GRE's
-    /// `CastingTimeOptionsReq { castingTimeOptionReq[] }`, so the MTGA-client adapter is a
-    /// pure passthrough (it does NOT have to aggregate several sequential engine decisions
-    /// into one wire message). Each `CastOption` mirrors one `CastingTimeOptionReq`, whose
-    /// GRE `oneof { numericInputReq | modalReq | selectNReq | selectManaTypeReq }` maps to
-    /// the same inner choices `ChooseNumber`/`ChooseModes`/`SelectCards`/`ChooseColor`
-    /// represent — so the gym MAY still decompose this bundle into per-head autoregressive
-    /// sub-steps on the PyAgent side (§3.1) without changing the engine boundary.
-    /// NOTE: targets (`ChooseTargets`/`SelectTargetsReq`) and final payment (`PayCost`/
-    /// `PayCostsReq`) are *separate* decide()s in both CR (601.2c, 601.2f-h) and GRE — they
-    /// are NOT part of this bundle. So a typical cast = Priority → CastingTimeOptions →
-    /// ChooseTargets → PayCost (≤ ~3 follow-up round-trips after the Priority pick).
-    /// GRE:   CastingTimeOptionsReq (CastingTimeOptionType: ChooseX/Kicker/Modal/Bargain/…).
+    /// The cast-time **optional/additional costs** a caster may opt into at CR 601.2b (kicker,
+    /// multikicker, buyback, bargain, the decision to pay casualty, conspire, …). Answered by
+    /// `Indices` — which of the options are paid. Each `CastOption` is just `{ label, required }`.
+    ///
+    /// **DECISION (course-corrected — see §9):** value-bearing cast choices — **X, modal mode
+    /// selection, mana-type** — are NOT bundled into this request. The engine issues each as its
+    /// own `ChooseNumber` / `ChooseModes` / `ChooseColor` decision, so *every* request has a
+    /// clean, flat, unambiguous `DecisionResponse` (a batched bundle of heterogeneous choices —
+    /// a number for X, indices for a modal, a bool for a cost — cannot be expressed by the flat
+    /// response enum, and silently dropping the number is worse than an extra round-trip). This
+    /// is also the RL-friendly shape (one head per choice). A real-MTGA-client GRE adapter
+    /// reassembles `CastingTimeOptions` + the separate value decisions into one
+    /// `CastingTimeOptionsReq` (whose inner `oneof` mirrors them) — that aggregation is the
+    /// adapter's job, not the boundary's.
+    /// So a typical cast = Priority → [ChooseModes] → [ChooseNumber(X)] → CastingTimeOptions →
+    /// ChooseTargets → PayCost (each its own decide(), only those the spell needs).
+    /// GRE:   CastingTimeOptionsReq (the optional/additional-cost slots; the value oneofs map to
+    ///        the separate ChooseNumber/ChooseModes/ChooseColor decisions).
     CastingTimeOptions { for_action: ActionRef, options: Vec<CastOption> },
 
     /// Choose the targets for one action. One `TargetSlot` per instance of the word
@@ -413,6 +415,40 @@ violation is an *engine/agent-implementation bug*, not a game event — surfaced
 legal options, an index-based response is legal by construction — RL gets a constant-width
 action mask for free (GYM_PLAN §3).
 
+### 4.1 Request → expected response (the pairing)
+
+Each request variant expects exactly one response shape. This pairing is part of the contract
+(not a convention to rediscover per backend) — every `Agent` implementation must honor it, and
+the engine validates against it.
+
+| `DecisionRequest` | expected `DecisionResponse` |
+|---|---|
+| `Priority` | `Pass` \| `Action(i)` |
+| `ChooseStartingPlayer` | `Index(i)` |
+| `Mulligan` | `Bool(b)` — `true` = mulligan, `false` = keep |
+| `ChooseModes` | `Indices(is)` |
+| `ChooseNumber` | `Number(n)` |
+| `CastingTimeOptions` | `Indices(is)` — which optional costs are paid |
+| `ChooseTargets` | `Pairs((slot, cand))` |
+| `Distribute` | `Amounts((recipient, n))` |
+| `PayCost` | `Payment { mana, non_mana }` |
+| `DeclareAttackers` | `Pairs((attacker, defender))` |
+| `DeclareBlockers` | `Pairs((blocker, attacker))` |
+| `AssignCombatDamage` | `Amounts((recipient, n))` |
+| `OrderObjects` | `Order(perm)` |
+| `SelectCards` | `Indices(is)` |
+| `SelectFromGroups` | `Pairs((group, option))` |
+| `ArrangeCards` | `Arrangement((card, dest, pos))` |
+| `ChooseReplacement` | `Index(i)` |
+| `ChooseCounterType` | `Index(i)` |
+| `ChooseOption` | `Indices(is)` |
+| `ChooseColor` | `Indices(is)` |
+| `Confirm` | `Bool(b)` — `true` = yes |
+
+> A future `DecisionResponse::validate_against(req)` helper should enforce this table in one
+> place (so a malformed pairing is `EngineError::IllegalResponse`, never a silent misread). The
+> reference `RandomAgent` and the GRE-server's `response_from` already follow it.
+
 ---
 
 ## 5. Supporting types (sketches)
@@ -436,9 +472,10 @@ pub enum Target {
 
 /// One legal play at priority. The engine builds one per castable spell, activatable
 /// ability, playable land, and special action. Choosing it spawns follow-up requests in
-/// CR 601.2 order: `CastingTimeOptions` (the batched modes/X/optional-cost bundle, 601.2b)
-/// → `ChooseTargets` (601.2c) → `PayCost` (601.2f-h). See §9 for why the cast-time options
-/// are batched (1:1 with GRE `CastingTimeOptionsReq`) rather than split per choice.
+/// CR 601.2 order, each a separate decide() (only those the spell needs): `ChooseModes`
+/// (601.2b) → `ChooseNumber`(X) (601.2b) → `CastingTimeOptions` (optional costs, 601.2b) →
+/// `ChooseTargets` (601.2c) → `PayCost` (601.2f-h). See §9 for why these are decomposed
+/// (each cleanly flat-answerable) rather than batched into one request.
 pub enum PlayableAction {
     Cast       { spell: ObjId, variant: CastVariant },   // CastVariant ~ ActionType Cast*/adventure/MDFC
     Activate   { source: ObjId, ability: AbilityRef },
@@ -449,7 +486,7 @@ pub enum PlayableAction {
 
 /// One "target" word's slot: its pre-filtered legal candidates and how many it takes.
 pub struct TargetSlot {
-    pub description: TargetKind,   // "target creature", "any target", ...
+    pub description: String,       // human/UI text, e.g. "target creature an opponent controls"
     pub legal: Vec<Target>,        // already filtered (protection/hexproof/ward-applied)
     pub min: u32,
     pub max: u32,
@@ -731,25 +768,28 @@ pairing table `../mtga-re/docs/GRE_DECISIONS.md`), recovered from MTGA `2026.59.
   (`repeated DamageAssigner`); this doc's `AssignCombatDamage` is **per-source** (finer — one
   decision per assigning creature, RL-friendly). The GRE adapter batches the engine's
   per-source requests into one wire message; both are equivalent and lossless.
-- **`CastingTimeOptionsReq` — CONFIRMED + GRANULARITY RESOLVED (the item lead flagged).**
+- **`CastingTimeOptionsReq` — GRANULARITY RESOLVED (course-corrected after implementation).**
   `CastingTimeOptionsReq { castingTimeOptionReq[] }`, and each `CastingTimeOptionReq` is a
   wrapper that **embeds an inner request** via `oneof { numericInputReq | modalReq |
   selectNReq | selectManaTypeReq }` keyed by `CastingTimeOptionType` (`ChooseX, Kicker,
   Multikicker, AdditionalCost, OptionalCost, ManaType, Modal, Casualty, Bargain, Done, …`).
-  GRE's own message bundles a cast's options into **one round-trip** whose components are
-  exactly our `ChooseNumber`(X)/`ChooseModes`(modal)/`SelectCards`/`ChooseColor`(mana-type).
-  **Resolution (recommended canonical):** the engine emits **one batched `CastingTimeOptions`
-  decide() per cast** rather than N separate ChooseModes/ChooseNumber calls — because that is
-  1:1 with `CastingTimeOptionsReq`, keeping the MTGA-client adapter a *pure passthrough* (it
-  cannot otherwise aggregate several sequential engine decisions into one wire Req). **Targets
-  and final payment stay separate** (`SelectTargetsReq`/`ChooseTargets` at 601.2c,
-  `PayCostsReq`/`PayCost` at 601.2f-h) in both CR and GRE. So a cast costs ≤ ~3 follow-up
-  round-trips: `Priority → CastingTimeOptions → ChooseTargets → PayCost`. The gym may still
-  decompose the `CastingTimeOptions` bundle into autoregressive per-head sub-steps on the
-  PyAgent side (§3.1) without changing the boundary. *This refines (does not break) the
-  earlier "ChooseModes → ChooseTargets → ChooseNumber(X) → PayCost" sequence: the cast-time
-  options collapse into one bundle; targets/payment unchanged.* No variant change. Flagged to
-  lead + client per request; lock at #4 implementation with engine + gym sign-off.
+  An earlier draft proposed mirroring this on our side as **one batched `CastingTimeOptions`
+  decide()** carrying heterogeneous inner choices. **Implementation showed that doesn't work:**
+  a batched answer is multi-part (a *number* for X, *indices* for a modal, a *bool* for an
+  optional cost) and the flat `DecisionResponse` (§4) cannot express it — so a batched
+  `CastingTimeOptions` is silently un-answerable (the web client collapsed it to `Indices`,
+  dropping any X value). **Decision: decompose.** The value-bearing cast choices are issued as
+  their own decisions — **X → `ChooseNumber`, modes → `ChooseModes`, mana-type → `ChooseColor`,
+  convoke/casualty selection → `SelectCards`** — each cleanly flat-answerable and RL-friendly
+  (one head per choice). `CastingTimeOptions` then carries **only the optional/additional-cost
+  opt-ins** (`CastOption { label, required }`), answered by `Indices`. Targets and payment stay
+  separate (`SelectTargetsReq`/`ChooseTargets` 601.2c; `PayCostsReq`/`PayCost` 601.2f-h). A cast
+  is therefore a short sequence of decide()s: `Priority → [ChooseModes] → [ChooseNumber(X)] →
+  CastingTimeOptions → ChooseTargets → PayCost` (only the steps the spell needs). The
+  real-MTGA-client GRE adapter reassembles these into one `CastingTimeOptionsReq` when driving
+  the live client (its inner `oneof` maps back to the separate decisions) — that aggregation is
+  the adapter's job, not the boundary's. **No variant change; `CastOptionKind`'s embedded
+  sub-requests were removed** (they were dead, un-answerable code).
 - **`SelectN*` / `Group` / `Distribution` / `Replacement` — CONFIRMED.** `SelectNReq`
   (`minSel, maxSel, ids[], context, listType, validationType, …`) ↔ `SelectCards`;
   `SelectNGroupReq`/`SelectFromGroupsReq`/`GroupReq` ↔ `SelectFromGroups`; `DistributionReq`

@@ -198,8 +198,14 @@ pub enum DecisionRequest {
         disallow_odd: bool,
     },
 
-    /// The batched cast-time option bundle at CR 601.2b (modes/X/kicker/bargain/…). One per
-    /// cast, 1:1 with GRE `CastingTimeOptionsReq` so the MTGA adapter is a pure passthrough.
+    /// The cast-time *optional costs* a caster may opt into at CR 601.2b (kicker, buyback,
+    /// bargain, the decision to pay casualty, …). Answered by `Indices` (which costs are paid).
+    /// VALUE-bearing cast choices — X, modal mode selection, mana-type — are NOT bundled here:
+    /// the engine issues each as its own `ChooseNumber` / `ChooseModes` / `ChooseColor` decision
+    /// so every request has a clean, flat, unambiguous response. (A real-MTGA-client GRE adapter
+    /// reassembles these + the separate value decisions into one `CastingTimeOptionsReq`, whose
+    /// inner `oneof` mirrors them — that aggregation is the adapter's job, not the boundary's.)
+    /// GRE: CastingTimeOptionsReq (the optional/additional-cost slots).
     CastingTimeOptions {
         for_action: ActionRef,
         options: Vec<CastOption>,
@@ -492,36 +498,20 @@ pub struct OptionLabel {
     pub label: String,
 }
 
-/// A mode option for `ChooseModes` / `CastOption::Modal`.
+/// A mode option for `ChooseModes`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ModeOption {
     pub label: String,
 }
 
-/// One cast-time option in a `CastingTimeOptions` bundle — mirrors GRE `CastingTimeOptionReq`'s
-/// inner `oneof` keyed by `CastingTimeOptionType`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// One cast-time optional/additional cost in a `CastingTimeOptions` request. The caller opts in
+/// by index. (Value-bearing cast choices — X, modes, mana-type — are separate decisions; see
+/// the `CastingTimeOptions` variant doc.)
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CastOption {
     pub label: String,
+    /// `true` = an additional cost that must be paid; `false` = an optional cost (kicker-style).
     pub required: bool,
-    pub kind: CastOptionKind,
-}
-
-/// The inner shape of a cast-time option (GRE oneof: numericInput | modal | selectN | manaType).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum CastOptionKind {
-    /// Choose X / an amount (CR 601.2b).
-    ChooseX { min: i64, max: i64 },
-    /// An optional cost (kicker/buyback/…): pay it or not.
-    OptionalCost,
-    /// An additional cost that must be paid.
-    AdditionalCost,
-    /// A modal choice bundled into the cast.
-    Modal { modes: Vec<ModeOption>, min: u32, max: u32 },
-    /// Pick a mana type (hybrid/Phyrexian/"of any color").
-    ManaType { allowed: Vec<Color> },
-    /// Select objects (e.g. convoke/casualty creature).
-    Selection { options: Vec<ObjId> },
 }
 
 // ── reason / kind tags (let backends & RL heads route without re-deriving context) ──────
@@ -722,12 +712,9 @@ impl Agent for RandomAgent {
                 *disallow_even,
                 *disallow_odd,
             )),
-            // NOTE: a *batched* CastingTimeOptions answer is multi-part (a number for ChooseX, a
-            // bool for an optional cost, indices for a modal …) and does not fit a single flat
-            // `DecisionResponse`. In practice the engine decomposes it into the per-option
-            // sub-decisions (`ChooseNumber`/`ChooseModes`/`Confirm`/`ChooseColor`/`SelectCards`),
-            // each flat-answerable — see the open item flagged at #4 integration. Here we decline
-            // all optional cast-time options.
+            // CastingTimeOptions now carries only optional/additional costs (X/modes/mana-type are
+            // their own decisions), so it is cleanly answered by `Indices`. Decline all optional
+            // costs (a random agent that pays nothing extra is always legal).
             DecisionRequest::CastingTimeOptions { .. } => DecisionResponse::Indices(vec![]),
             DecisionRequest::ChooseTargets { slots, .. } => {
                 let mut pairs = Vec::new();
