@@ -14,13 +14,13 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use crate::basics::{Color, DamageKind, ManaCost, Zone};
+use crate::basics::{CardType, Color, DamageKind, ManaCost, Zone};
 use crate::effects::ability::Ability;
 use crate::effects::target::{TargetKind, TargetSpec};
 use crate::effects::value::{PlayerRef, ValueExpr};
 use crate::effects::{Effect, EffectTarget};
 use crate::ids::PlayerId;
-use crate::state::{CardType, Characteristics, GameState};
+use crate::state::{Characteristics, GameState};
 
 /// Oracle/printing ids for the starter set (the `grp_id` linking an object to its [`CardDef`]).
 pub mod grp {

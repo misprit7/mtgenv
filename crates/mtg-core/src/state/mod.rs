@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use crate::basics::{Color, CounterBag, ManaCost, ManaPool, Phase, Status, Zone};
+use crate::basics::{CardType, Color, CounterBag, ManaCost, ManaPool, Phase, Status, Zone};
 use crate::cards::{CardDb, CardDef};
 use crate::combat::CombatState;
 use crate::ids::{ObjId, PlayerId};
@@ -28,43 +28,9 @@ pub const STARTING_LIFE: i32 = 20;
 /// The default opening-hand / maximum hand size (CR 103.5 / 514.1).
 pub const DEFAULT_HAND_SIZE: usize = 7;
 
-/// A card type (CR 300s). This is *structural* Magic vocabulary — reasoning about types is
-/// the engine's job — not card identity, so using it in the core does not violate the
-/// "never `match` on card identity" law (WHITEBOARD_MODEL §2 / CLAUDE.md).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-pub enum CardType {
-    Artifact,
-    Battle,
-    Creature,
-    Enchantment,
-    Instant,
-    Kindred,
-    Land,
-    Planeswalker,
-    Sorcery,
-}
-
-impl CardType {
-    /// Permanent types (CR 110.4): everything except instant/sorcery, which can never be a
-    /// permanent (CR 400.4a). (`Kindred` is only ever paired with a permanent type.)
-    pub fn is_permanent(self) -> bool {
-        !matches!(self, CardType::Instant | CardType::Sorcery | CardType::Kindred)
-    }
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            CardType::Artifact => "Artifact",
-            CardType::Battle => "Battle",
-            CardType::Creature => "Creature",
-            CardType::Enchantment => "Enchantment",
-            CardType::Instant => "Instant",
-            CardType::Kindred => "Kindred",
-            CardType::Land => "Land",
-            CardType::Planeswalker => "Planeswalker",
-            CardType::Sorcery => "Sorcery",
-        }
-    }
-}
+// `CardType` is shared vocabulary owned by `basics` (CR 300s); imported above. Reasoning
+// about card *types* is structural Magic (the engine's job) — not card identity — so it
+// doesn't violate the "never `match` on card identity" law (WHITEBOARD_MODEL §2 / CLAUDE.md).
 
 /// The printed / base ("copiable", CR 707.2) characteristics of an object. The layer system
 /// (`chars/`, CR 613) will later compute a derived cache from these; in milestone 2 the

@@ -15,7 +15,7 @@ use crate::agent::{
     ActionRef, Agent, CastVariant, DecisionRequest, DecisionResponse, GameEvent, PlayableAction,
     SelectReason, TargetSlot,
 };
-use crate::basics::{Phase, Target, Zone};
+use crate::basics::{CardType, Phase, Target, Zone};
 use crate::effects::action::{ResolutionCtx, WbReason};
 use crate::effects::target::{TargetKind, TargetSpec};
 use crate::effects::{Effect, EffectTarget};
@@ -24,7 +24,7 @@ use crate::mana;
 use crate::sba::{self, LossReason, StateBasedAction};
 use crate::stack::{StackObject, StackObjectKind};
 use crate::state::view::view_for;
-use crate::state::{CardType, GameState};
+use crate::state::GameState;
 use crate::turn::{is_main_phase, step_grants_priority, TURN_STEPS};
 
 /// A hard cap on turns so a pathological game can never loop forever. Real games end far
