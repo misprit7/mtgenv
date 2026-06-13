@@ -7,8 +7,10 @@
 //! and the `RandomAgent` play through the exact same engine the RL backend will.
 //!
 //! (Earlier this file carried a stand-in loop while #7 was in flight; it now delegates to the
-//! landed engine. Mulligans / choose-starting-player aren't issued yet because the engine
-//! defers them — when it adds those decision points, they flow to these same agents for free.)
+//! landed engine. The engine now issues London mulligans at game start — `Mulligan` per seat, then
+//! `SelectCards{BottomForMulligan}` on keep — which flow to these same agents for free (options.rs
+//! already projects both; the human gets Keep/Mulligan, then a bottom-N selection). Choose-starting-
+//! player isn't issued yet; when the engine adds it, it flows the same way.)
 
 use std::sync::{Arc, Mutex};
 
