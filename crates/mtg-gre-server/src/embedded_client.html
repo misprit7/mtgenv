@@ -157,7 +157,10 @@
   .card .c-type { font-size: 7.5px; background: rgba(255,255,255,.4); border-radius: 3px; padding: 1px 3px;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .card .c-rules { font-size: 7.5px; background: rgba(255,255,255,.55); border-radius: 3px; padding: 2px 3px;
-    flex: 0 0 auto; min-height: 14px; color: #2a241b; overflow: hidden; }
+    flex: 0 1 auto; min-height: 14px; color: #2a241b; overflow: hidden; line-height: 1.25;
+    /* Show several lines of oracle text, but hard-clip long text (e.g. Mossborn Hydra) with an
+       ellipsis instead of letting it blow out of the card frame. */
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; line-clamp: 4; }
   .card .c-pt { position: absolute; right: 3px; bottom: 2px; background: rgba(255,255,255,.85);
     border: 1px solid rgba(0,0,0,.4); border-radius: 4px; font-size: 9px; font-weight: 800; padding: 0 3px; }
   .card.tapped { transform: rotate(90deg); margin: 18px 24px; }
@@ -189,6 +192,8 @@
   .card.sick { opacity: .82; }
   .hand .card { width: 104px; height: 146px; }
   .hand .card .c-name { font-size: 10px; } .hand .card .c-type, .hand .card .c-rules { font-size: 8.5px; }
+  /* Hand cards are larger, so they can show more oracle-text lines before clipping. */
+  .hand .card .c-rules { -webkit-line-clamp: 6; line-clamp: 6; }
   .card.mini { width: 64px; height: 90px; }
 
   /* zone viewer modal */
@@ -266,7 +271,6 @@
   let view = null, cur = null, lastTurn = 0;
   const multi = new Set();
   let orderSeq = [];
-  let previewUrl = null;
   let stopsView = null; // live stop config echoed by the server (phase bar + toggles read this)
   const deckView = {}; // seat → starting decklist (debug peek; RL-safe, pushed once at setup)
 
@@ -369,6 +373,7 @@
     renderStepBar();
     renderHand();
     if (cur) renderPrompt();
+    refreshPreview(); // re-derive the hover preview against the freshly-rebuilt DOM
   }
 
   // MTGO-style phase/step bar. `stop` = a priority-granting step you can stop at (StopType vocab).
@@ -588,12 +593,11 @@
       art.style.backgroundSize = "cover";
     }
     d.appendChild(art);
-    // Hover → full card image preview (follows the cursor).
-    if (info && info.img) {
-      d.addEventListener("mouseenter", (e) => showPreview(info.img, e));
-      d.addEventListener("mousemove", (e) => { if (previewUrl) positionPreview(e); });
-      d.addEventListener("mouseleave", hidePreview);
-    }
+    // Hover → full card image preview. Stored as a data-attr and resolved by the global pointer
+    // tracker (`refreshPreview`) rather than per-element mouseenter/leave listeners — so when the
+    // board re-renders and this element is replaced out from under the cursor, the preview can't
+    // get orphaned/stuck open (the tracker re-derives what's under the pointer every frame).
+    if (info && info.img) d.dataset.preview = info.img;
     d.appendChild(el("div", "c-type", typeLine(chars)));
     const rules = el("div", "c-rules");
     // Computed keywords (incl. layer-granted, e.g. Flying from Levitation) bold on top, then text.
@@ -786,7 +790,7 @@
       const art = artMap[c.grp_id];
       const thumb = el("div", "dlthumb");
       if (art && (art.art || art.img)) thumb.style.backgroundImage = "url('" + (art.art || art.img) + "')";
-      if (art && art.img) { row.onmouseenter = (ev) => showPreview(art.img, ev); row.onmousemove = positionPreview; row.onmouseleave = hidePreview; }
+      if (art && art.img) row.dataset.preview = art.img;
       const cnt = el("div", "dlcount", (e.count || 1) + "×");
       const nm = el("div", "dlname", c.name);
       const pips = el("div", "dlpips");
@@ -817,8 +821,8 @@
     return "?";
   }
   // ── hover full-card preview ──────────────────────────────────────────────
-  function showPreview(url, ev) { previewUrl = url; const p = $("preview"); p.src = url; p.style.display = "block"; positionPreview(ev); }
-  function hidePreview() { previewUrl = null; $("preview").style.display = "none"; }
+  function showPreview(url, ev) { const p = $("preview"); p.src = url; p.style.display = "block"; positionPreview(ev); }
+  function hidePreview() { $("preview").style.display = "none"; }
   function positionPreview(ev) {
     const p = $("preview"), w = 320, h = 446;
     let x = ev.clientX + 22, y = ev.clientY - h / 2;
@@ -826,6 +830,22 @@
     y = Math.max(8, Math.min(y, window.innerHeight - h - 8));
     p.style.left = x + "px"; p.style.top = y + "px";
   }
+  // Global pointer tracking: the single source of truth for what the preview shows. We re-derive
+  // the element under the cursor (`elementFromPoint`) on every move AND after every render, so a
+  // card replaced/removed under a stationary cursor can never leave a stale preview on screen.
+  // (`#preview` is `pointer-events:none`, so it never shadows the card beneath it.)
+  let ptrX = -1, ptrY = -1;
+  function refreshPreview() {
+    if (ptrX < 0) return;
+    const t = document.elementFromPoint(ptrX, ptrY);
+    const card = t && t.closest ? t.closest("[data-preview]") : null;
+    const url = card && card.dataset ? card.dataset.preview : null;
+    if (url) showPreview(url, { clientX: ptrX, clientY: ptrY });
+    else hidePreview();
+  }
+  document.addEventListener("mousemove", (e) => { ptrX = e.clientX; ptrY = e.clientY; refreshPreview(); }, true);
+  // Cursor leaves the document entirely (e.g. out the top of the window) → drop the preview.
+  document.addEventListener("mouseout", (e) => { if (!e.relatedTarget) { ptrX = ptrY = -1; hidePreview(); } });
 
   function eventText(ev) {
     const k = Object.keys(ev)[0], v = ev[k];

@@ -150,7 +150,10 @@
   .card .c-type { font-size: 7.5px; background: rgba(255,255,255,.4); border-radius: 3px; padding: 1px 3px;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .card .c-rules { font-size: 7.5px; background: rgba(255,255,255,.55); border-radius: 3px; padding: 2px 3px;
-    flex: 0 0 auto; min-height: 14px; color: #2a241b; overflow: hidden; }
+    flex: 0 1 auto; min-height: 14px; color: #2a241b; overflow: hidden; line-height: 1.25;
+    /* Show several lines of oracle text, but hard-clip long text (e.g. Mossborn Hydra) with an
+       ellipsis instead of letting it blow out of the card frame. */
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; line-clamp: 4; }
   .card .c-pt { position: absolute; right: 3px; bottom: 2px; background: rgba(255,255,255,.85);
     border: 1px solid rgba(0,0,0,.4); border-radius: 4px; font-size: 9px; font-weight: 800; padding: 0 3px; }
   .card.tapped { transform: rotate(90deg); margin: 18px 24px; }
@@ -182,6 +185,8 @@
   .card.sick { opacity: .82; }
   .hand .card { width: 104px; height: 146px; }
   .hand .card .c-name { font-size: 10px; } .hand .card .c-type, .hand .card .c-rules { font-size: 8.5px; }
+  /* Hand cards are larger, so they can show more oracle-text lines before clipping. */
+  .hand .card .c-rules { -webkit-line-clamp: 6; line-clamp: 6; }
   .card.mini { width: 64px; height: 90px; }
 
   /* zone viewer modal */

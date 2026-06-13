@@ -12,7 +12,6 @@ let cur: Any = null;
 let lastTurn = 0;
 const multi = new Set<number>();
 let orderSeq: number[] = [];
-let previewUrl: string | null = null;
 let stopsView: Any = null; // live stop config echoed by the server
 let autoPassTurn: number | null = null; // Enter-hold: turn we're passing all priority stops through
 const deckView: Any = {}; // seat → starting decklist (debug peek; RL-safe, pushed once at setup)
@@ -117,6 +116,7 @@ function render(): void {
   renderStepBar();
   renderHand();
   if (cur) renderPrompt();
+  refreshPreview(); // re-derive the hover preview against the freshly-rebuilt DOM
 }
 
 // MTGO-style phase/step bar. `stop` = a priority-granting step you can stop at (StopType vocab).
@@ -334,12 +334,11 @@ function cardEl(c: Any, ctx: Any): HTMLElement {
     art.style.backgroundSize = "cover";
   }
   d.appendChild(art);
-  // Hover → full card image preview (follows the cursor).
-  if (info && info.img) {
-    d.addEventListener("mouseenter", (e) => showPreview(info.img, e as MouseEvent));
-    d.addEventListener("mousemove", (e) => { if (previewUrl) positionPreview(e as MouseEvent); });
-    d.addEventListener("mouseleave", hidePreview);
-  }
+  // Hover → full card image preview. Stored as a data-attr and resolved by the global pointer
+  // tracker (`refreshPreview`) rather than per-element mouseenter/leave listeners — so when the
+  // board re-renders and this element is replaced out from under the cursor, the preview can't
+  // get orphaned/stuck open (the tracker re-derives what's under the pointer every frame).
+  if (info && info.img) d.dataset.preview = info.img;
   d.appendChild(el("div", "c-type", typeLine(chars)));
   const rules = el("div", "c-rules");
   // Computed keywords (incl. layer-granted, e.g. Flying from Levitation) bold on top, then text.
@@ -530,11 +529,7 @@ function openDecklist(title: string, entries: Any[]): void {
     const art = artMap[c.grp_id];
     const thumb = el("div", "dlthumb");
     if (art && (art.art || art.img)) thumb.style.backgroundImage = `url('${art.art || art.img}')`;
-    if (art && art.img) {
-      row.addEventListener("mouseenter", (ev) => showPreview(art.img, ev as MouseEvent));
-      row.addEventListener("mousemove", (ev) => { if (previewUrl) positionPreview(ev as MouseEvent); });
-      row.addEventListener("mouseleave", hidePreview);
-    }
+    if (art && art.img) row.dataset.preview = art.img;
     row.appendChild(el("div", "dlcount", `${e.count || 1}×`));
     row.appendChild(thumb);
     row.appendChild(el("div", "dlname", c.name));
@@ -567,11 +562,10 @@ function tgtName(t: Any): string {
 }
 // ── hover full-card preview ────────────────────────────────────────────────────
 function showPreview(url: string, ev: MouseEvent): void {
-  previewUrl = url;
   const p = $("preview") as HTMLImageElement;
   p.src = url; p.style.display = "block"; positionPreview(ev);
 }
-function hidePreview(): void { previewUrl = null; $("preview").style.display = "none"; }
+function hidePreview(): void { $("preview").style.display = "none"; }
 function positionPreview(ev: MouseEvent): void {
   const p = $("preview"); const w = 320, h = 446;
   let x = ev.clientX + 22; let y = ev.clientY - h / 2;
@@ -579,6 +573,22 @@ function positionPreview(ev: MouseEvent): void {
   y = Math.max(8, Math.min(y, window.innerHeight - h - 8));
   p.style.left = `${x}px`; p.style.top = `${y}px`;
 }
+// Global pointer tracking: the single source of truth for what the preview shows. We re-derive the
+// element under the cursor (`elementFromPoint`) on every move AND after every render, so a card
+// replaced/removed under a stationary cursor can never leave a stale preview on screen. (`#preview`
+// is `pointer-events:none`, so it never shadows the card beneath it.)
+let ptrX = -1, ptrY = -1;
+function refreshPreview(): void {
+  if (ptrX < 0) return;
+  const t = document.elementFromPoint(ptrX, ptrY);
+  const card = t && (t as HTMLElement).closest ? (t as HTMLElement).closest("[data-preview]") : null;
+  const url = card ? (card as HTMLElement).dataset.preview : null;
+  if (url) showPreview(url, { clientX: ptrX, clientY: ptrY } as MouseEvent);
+  else hidePreview();
+}
+document.addEventListener("mousemove", (e) => { ptrX = e.clientX; ptrY = e.clientY; refreshPreview(); }, true);
+// Cursor leaves the document entirely (e.g. out the top of the window) → drop the preview.
+document.addEventListener("mouseout", (e) => { if (!(e as MouseEvent).relatedTarget) { ptrX = ptrY = -1; hidePreview(); } });
 
 function eventText(ev: Any): string | null {
   const k = Object.keys(ev)[0]; const v = ev[k];
