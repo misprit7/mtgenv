@@ -193,6 +193,16 @@ pub async fn game_detail(State(lobby): State<Arc<Lobby>>, Path(id): Path<u64>) -
     }
 }
 
+/// `DELETE /api/games/:id` — remove a game from the lobby listing. If it's mid-game, the engine
+/// thread keeps its own `Arc<Room>` clone and finishes harmlessly; this only drops the listing.
+pub async fn delete_game(State(lobby): State<Arc<Lobby>>, Path(id): Path<u64>) -> StatusCode {
+    if lobby.rooms.lock().unwrap().remove(&id).is_some() {
+        StatusCode::NO_CONTENT
+    } else {
+        StatusCode::NOT_FOUND
+    }
+}
+
 /// `POST /api/games` — create a game from a seat config. Returns `{ "id": <u64> }`. Agent-only games
 /// (no human seats) start running immediately.
 pub async fn create_game(State(lobby): State<Arc<Lobby>>, Json(req): Json<CreateReq>) -> Response {

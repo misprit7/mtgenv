@@ -64,7 +64,10 @@ pub fn app() -> Router {
             "/api/games",
             get(crate::lobby::list_games).post(crate::lobby::create_game),
         )
-        .route("/api/games/:id", get(crate::lobby::game_detail));
+        .route(
+            "/api/games/:id",
+            get(crate::lobby::game_detail).delete(crate::lobby::delete_game),
+        );
     if dist.join("index.html").exists() {
         // Built Vite front end available — serve its /assets/* (and any stray path) via ServeDir.
         router = router.fallback_service(ServeDir::new(dist).fallback(get(embedded)));

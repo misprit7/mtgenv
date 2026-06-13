@@ -15,6 +15,11 @@
   .sub { color: var(--muted); margin: 0 0 22px; font-size: 13px; }
   .panel { background: var(--panel); border:1px solid var(--line); border-radius: 12px; padding: 16px 18px; margin-bottom: 22px; }
   .panel h2 { margin: 0 0 12px; font-size: 15px; }
+  .ghdr { display:flex; align-items:center; justify-content:space-between; }
+  .ghdr h2 { margin: 0 0 12px; }
+  button.small { padding: 5px 10px; font-size: 12px; }
+  button.rm { background: transparent; color: var(--muted); border:1px solid var(--line); padding: 5px 9px; font-size: 12px; }
+  button.rm:hover { color:#ff7a7a; border-color:#ff7a7a; }
   .seats { display:flex; gap:14px; flex-wrap: wrap; }
   .seat { background: var(--rail); border:1px solid var(--line); border-radius: 10px; padding: 12px; min-width: 220px; flex:1; }
   .seat h3 { margin:0 0 8px; font-size: 13px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing:.04em; }
@@ -75,7 +80,10 @@
   </div>
 
   <div class="panel">
-    <h2>Games</h2>
+    <div class="ghdr">
+      <h2>Games</h2>
+      <button class="ghost small" id="clearFinished">Clear finished</button>
+    </div>
     <div class="games" id="games"><div class="empty">Loading…</div></div>
   </div>
 </div>
@@ -186,8 +194,25 @@ function gameRow(g) {
   const spec = el("button", "ghost", "Spectate");
   spec.disabled = true; spec.title = "Spectating running games is coming soon";
   acts.appendChild(spec);
+  // Remove this game from the lobby.
+  const rm = el("button", "rm", "✕");
+  rm.title = "Remove game"; rm.onclick = () => removeGame(g.id);
+  acts.appendChild(rm);
   row.appendChild(acts);
   return row;
+}
+
+async function removeGame(id) {
+  try { await fetch("/api/games/" + id, { method: "DELETE" }); } catch (e) {}
+  await refresh();
+}
+
+async function clearFinished() {
+  let games = [];
+  try { games = await (await fetch("/api/games")).json(); } catch (e) { return; }
+  await Promise.all(games.filter((g) => g.status.state === "finished")
+    .map((g) => fetch("/api/games/" + g.id, { method: "DELETE" }).catch(() => {})));
+  await refresh();
 }
 
 function statusBadge(st) {
@@ -212,6 +237,7 @@ function el(tag, cls, text) {
 
 buildForm();
 $("createBtn").onclick = createGame;
+$("clearFinished").onclick = clearFinished;
 refresh();
 setInterval(refresh, 2000);
 </script>
