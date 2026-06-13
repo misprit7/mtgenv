@@ -744,7 +744,18 @@ impl Engine {
             None => return,
         };
         let effect = self.state.def_of(card).and_then(|d| d.spell_effect().cloned());
-        let specs = effect.as_ref().map(collect_target_specs).unwrap_or_default();
+        let mut specs = effect.as_ref().map(collect_target_specs).unwrap_or_default();
+        // An Aura spell targets the permanent it will enchant (CR 601.2c / 303.4f); it has no
+        // spell ability, so the target is structural. First pass: Auras enchant a creature
+        // (matches the starter set's "Enchant creature"); a general enchant restriction is future.
+        if self.is_aura(card) {
+            specs.push(TargetSpec {
+                kind: TargetKind::Creature(crate::effects::target::CardFilter::Any),
+                min: 1,
+                max: 1,
+                distinct: true,
+            });
+        }
 
         // 601.2a: the card becomes a spell on top of the stack.
         let sid = self.state.mint_stack();
@@ -846,6 +857,15 @@ impl Engine {
         true
     }
 
+    /// Whether `id` is an Aura (the enchantment subtype, CR 303). Auras have no spell ability;
+    /// their cast-target and enters-attached behaviour is wired structurally on this flag.
+    fn is_aura(&self, id: ObjId) -> bool {
+        self.state
+            .objects
+            .get(&id)
+            .is_some_and(|o| o.chars.subtypes.iter().any(|s| s == "Aura"))
+    }
+
     /// CR 608.2b: a spell/ability resolves unless *every* target is illegal. (Returns true if
     /// it has no targets.)
     fn targets_still_legal(&self, targets: &[Target]) -> bool {
@@ -882,6 +902,13 @@ impl Engine {
                 let owner = self.state.object(id).owner;
                 let is_perm = self.state.object(id).chars.is_permanent();
                 if is_perm {
+                    // An Aura spell whose target became illegal doesn't resolve — it's put into
+                    // its owner's graveyard (CR 608.3b / 702.3 — no enters-attached).
+                    if self.is_aura(id) && !self.targets_still_legal(&obj.targets) {
+                        self.state.move_object(id, Zone::Graveyard, owner);
+                        self.broadcast(GameEvent::ObjectMoved { obj: id, to: Zone::Graveyard });
+                        return;
+                    }
                     // Permanent spell → enters the battlefield (CR 608.3), routed through the
                     // whiteboard so ETB replacement effects (enters-with-counters / -tapped)
                     // apply and the ETB event (→ triggers) fires from commit.
@@ -898,6 +925,17 @@ impl Engine {
                         cause: MoveCause::Resolved,
                     });
                     self.commit(wb);
+                    // An Aura enters the battlefield attached to its chosen target (CR 303.4f /
+                    // 608.3e). Set the link after the ETB commit, then mark chars dirty so the
+                    // "enchanted creature …" static (AttachedHost) takes effect.
+                    if self.is_aura(id) {
+                        if let Some(Target::Object(host)) = obj.targets.first().copied() {
+                            if let Some(o) = self.state.objects.get_mut(&id) {
+                                o.attached_to = Some(host);
+                            }
+                            self.state.mark_chars_dirty();
+                        }
+                    }
                 } else {
                     // Instant/sorcery: recheck targets (608.2b), run the effect (608.2c),
                     // then put it into its owner's graveyard (608.2n).
@@ -1022,6 +1060,18 @@ impl Engine {
                         self.broadcast(GameEvent::PermanentDied { obj: *creature });
                         self.broadcast(GameEvent::ObjectMoved {
                             obj: *creature,
+                            to: Zone::Graveyard,
+                        });
+                    }
+                }
+                StateBasedAction::AuraFallsOff { aura } => {
+                    let owner = match self.state.objects.get(aura) {
+                        Some(o) if o.zone == Zone::Battlefield => o.owner,
+                        _ => continue,
+                    };
+                    if self.state.move_object(*aura, Zone::Graveyard, owner) {
+                        self.broadcast(GameEvent::ObjectMoved {
+                            obj: *aura,
                             to: Zone::Graveyard,
                         });
                     }
@@ -1822,6 +1872,60 @@ mod expect_tests {
         assert_eq!(on(Phase::PrecombatMain), Some(true));
         assert_eq!(on(Phase::PostcombatMain), Some(true));
         assert_eq!(on(Phase::Upkeep), Some(false));
+    }
+
+    #[test]
+    fn aura_enters_attached_and_buffs_its_host() {
+        // Cast Rancor on a creature: the Aura targets at cast (601.2c), enters the battlefield
+        // attached (608.3e), and its AttachedHost statics buff the host (+2/+0, trample).
+        let mut state = cards::build_game(1, &[&[], &[]]);
+        let bears = put(&mut state, PlayerId(0), grp::GRIZZLY_BEARS, Zone::Battlefield); // 2/2
+        put(&mut state, PlayerId(0), grp::FOREST, Zone::Battlefield); // pay {G}
+        let rancor = put(&mut state, PlayerId(0), grp::RANCOR, Zone::Hand);
+        state.active_player = PlayerId(0);
+        state.phase = Phase::PrecombatMain;
+        let mut e = Engine::new(state, vec![Box::new(AggroAgent), Box::new(PassAgent)]);
+        e.priority_round();
+
+        assert_eq!(e.state.object(rancor).zone, Zone::Battlefield, "Rancor resolved onto the battlefield");
+        assert_eq!(
+            e.state.object(rancor).attached_to,
+            Some(bears),
+            "Rancor entered attached to the chosen creature"
+        );
+        let cc = e.state.computed(bears);
+        assert_eq!(cc.power, Some(4), "enchanted creature is +2/+0");
+        assert!(cc.has_keyword(Keyword::Trample), "and has trample");
+    }
+
+    #[test]
+    fn aura_falls_off_into_graveyard_when_its_host_leaves() {
+        // CR 704.5 (Auras): once the host leaves the battlefield the Aura is no longer attached
+        // to a legal object, so a state-based action puts it into its owner's graveyard.
+        let mut state = cards::build_game(1, &[&[], &[]]);
+        let bears = put(&mut state, PlayerId(0), grp::GRIZZLY_BEARS, Zone::Battlefield);
+        let rancor = put(&mut state, PlayerId(0), grp::RANCOR, Zone::Battlefield);
+        state.objects.get_mut(&rancor).unwrap().attached_to = Some(bears);
+        state.mark_chars_dirty();
+        let mut e = pass_engine(state);
+
+        // Attached to a creature → no fall-off.
+        assert!(
+            !sba::collect(&e.state)
+                .iter()
+                .any(|s| matches!(s, StateBasedAction::AuraFallsOff { .. })),
+            "no fall-off while legally attached"
+        );
+        // Host leaves (e.g. dies): `move_object` unattaches the Aura, then the SBA collects it.
+        e.state.move_object(bears, Zone::Graveyard, PlayerId(0));
+        let sbas = sba::collect(&e.state);
+        assert!(
+            sbas.iter()
+                .any(|s| matches!(s, StateBasedAction::AuraFallsOff { aura } if *aura == rancor)),
+            "the now-unattached Aura is collected as a fall-off SBA"
+        );
+        e.perform_sbas(&sbas);
+        assert_eq!(e.state.object(rancor).zone, Zone::Graveyard, "Aura fell off into the graveyard");
     }
 
     /// Put a card (by grp_id) directly into a player's zone, returning its id.

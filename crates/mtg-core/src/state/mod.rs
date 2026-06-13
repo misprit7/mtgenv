@@ -110,6 +110,10 @@ pub struct Object {
     /// Timestamp for the layer system (CR 613.7): assigned when the object enters the
     /// battlefield; orders continuous effects within a sublayer.
     pub timestamp: Timestamp,
+    /// The permanent this object is attached to (CR 701.3) — set for Auras and Equipment.
+    /// `None` for unattached permanents and anything off the battlefield. The continuous
+    /// effects an attached permanent grants read this via `CardFilter::AttachedHost`.
+    pub attached_to: Option<ObjId>,
 }
 
 impl Object {
@@ -357,6 +361,7 @@ impl GameState {
             dealt_deathtouch: false,
             summoning_sick: false,
             timestamp,
+            attached_to: None,
         };
         self.objects.insert(id, obj);
         if let Some(v) = self.player_mut(owner).zone_vec_mut(zone) {
@@ -415,6 +420,20 @@ impl GameState {
         }
         if let Some(v) = self.player_mut(to_owner).zone_vec_mut(to) {
             v.push(id);
+        }
+        // Attachment bookkeeping (CR 400.7 / 701.3): an object leaving the battlefield is no
+        // longer attached to anything, and anything attached to *it* becomes unattached. The
+        // resulting illegal-attachment cases (aura → graveyard, equipment unattaches) are then
+        // handled by the state-based-action pass (CR 704.5m/n/q).
+        if from_zone == Zone::Battlefield {
+            if let Some(o) = self.objects.get_mut(&id) {
+                o.attached_to = None;
+            }
+            for o in self.objects.values_mut() {
+                if o.attached_to == Some(id) {
+                    o.attached_to = None;
+                }
+            }
         }
         // Continuous effects change when a permanent enters or leaves the battlefield.
         if to == Zone::Battlefield || from_zone == Zone::Battlefield {

@@ -51,6 +51,12 @@ pub enum StateBasedAction {
         creature: ObjId,
         reason: DeathReason,
     },
+    /// CR 704.5 (Auras): an Aura attached to an illegal object, or not attached at all, is put
+    /// into its owner's graveyard. (Equipment instead just unattaches, CR 704.5 — added with
+    /// the equipment checkpoint.)
+    AuraFallsOff {
+        aura: ObjId,
+    },
 }
 
 /// Collect every state-based action that currently applies (CR 704.5). Pure: no mutation.
@@ -113,6 +119,29 @@ pub fn collect(state: &GameState) -> Vec<StateBasedAction> {
                 creature: o.id,
                 reason: DeathReason::LethalDamage,
             });
+        }
+    }
+    // Aura attachment SBA (CR 704.5): an Aura must be attached to a legal object — first pass,
+    // a creature on the battlefield (the starter set's auras all "enchant creature"). An Aura
+    // not attached, or whose host is gone / no longer a creature, is put into its owner's
+    // graveyard. (The host being destroyed unattaches the Aura first, via `move_object`, so the
+    // creature's death and the Aura's fall-off resolve in successive SBA iterations.)
+    for o in state.objects.values() {
+        if o.zone != Zone::Battlefield {
+            continue;
+        }
+        if !o.chars.subtypes.iter().any(|s| s == "Aura") {
+            continue;
+        }
+        let legal_host = o.attached_to.is_some_and(|h| {
+            state
+                .objects
+                .get(&h)
+                .is_some_and(|ho| ho.zone == Zone::Battlefield)
+                && state.computed(h).is_creature()
+        });
+        if !legal_host {
+            out.push(StateBasedAction::AuraFallsOff { aura: o.id });
         }
     }
     out

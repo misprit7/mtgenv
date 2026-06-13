@@ -62,6 +62,7 @@ pub mod grp {
     pub const RAGING_GOBLIN: u32 = 60;
     pub const KING_CHEETAH: u32 = 61;
     pub const GLADECOVER_SCOUT: u32 = 62;
+    pub const RANCOR: u32 = 63;
 }
 
 /// `SelectSpec` for a static affecting "creatures you control" (the anthem scope). min/max are
@@ -73,6 +74,18 @@ fn creatures_you_control() -> SelectSpec {
             CardFilter::HasCardType(CardType::Creature),
             CardFilter::ControlledBy(PlayerRef::Controller),
         ]),
+        chooser: PlayerRef::Controller,
+        min: ValueExpr::Fixed(0),
+        max: ValueExpr::Fixed(0),
+    }
+}
+
+/// `SelectSpec` for a static affecting "the permanent this Aura/Equipment is attached to"
+/// (CR 702.3e/702.6e) — the source-relative `AttachedHost` filter. min/max unused for statics.
+fn attached_host() -> SelectSpec {
+    SelectSpec {
+        zone: Zone::Battlefield,
+        filter: CardFilter::AttachedHost,
         chooser: PlayerRef::Controller,
         min: ValueExpr::Fixed(0),
         max: ValueExpr::Fixed(0),
@@ -226,6 +239,14 @@ fn enchantment(grp_id: u32, name: &str, color: Color, cost: ManaCost, abilities:
         mana_colors: Vec::new(),
         text: String::new(),
     }
+}
+
+/// An Aura (CR 303): an Enchantment with the "Aura" subtype. The engine reads the subtype to
+/// require an enchant target at cast and to enter the battlefield attached (CR 303.4f / 608.3e).
+fn aura(grp_id: u32, name: &str, color: Color, cost: ManaCost, abilities: Vec<Ability>) -> CardDef {
+    let mut def = enchantment(grp_id, name, color, cost, abilities);
+    def.chars.subtypes = vec!["Aura".to_string()];
+    def
 }
 
 fn spell(grp_id: u32, name: &str, ty: CardType, color: Color, cost: ManaCost, effect: Effect) -> CardDef {
@@ -577,6 +598,28 @@ pub fn starter_db() -> CardDb {
             }),
         },
     ).with_text("Destroy target creature."));
+    // Rancor {G} Aura — "Enchant creature. Enchanted creature gets +2/+0 and has trample." Two
+    // statics over the AttachedHost: layer-7c ModifyPT and layer-6 GrantKeyword(Trample). (The
+    // "return to hand when put into a graveyard" recursion clause needs a ReturnToHand effect +
+    // dies-trigger for non-creatures — deferred.)
+    db.insert(aura(
+        grp::RANCOR,
+        "Rancor",
+        Color::Green,
+        mana_cost(0, &[(Color::Green, 1)]),
+        vec![
+            Ability::Static {
+                contribution: StaticContribution::ModifyPT { power: 2, toughness: 0 },
+                affects: attached_host(),
+                duration: Duration::WhileSourcePresent,
+            },
+            Ability::Static {
+                contribution: StaticContribution::GrantKeyword(Keyword::Trample),
+                affects: attached_host(),
+                duration: Duration::WhileSourcePresent,
+            },
+        ],
+    ).with_text("Enchant creature. Enchanted creature gets +2/+0 and has trample. (Return-to-hand clause not yet modeled.)"));
     db
 }
 
@@ -659,7 +702,7 @@ mod tests {
     #[test]
     fn starter_db_has_expected_cards() {
         let db = starter_db();
-        assert_eq!(db.len(), 34);
+        assert_eq!(db.len(), 35);
         assert!(db.get(grp::FOREST).unwrap().is_mana_source());
         assert_eq!(db.get(grp::FOREST).unwrap().mana_colors, vec![Color::Green]);
         // Grizzly Bears is a vanilla 2/2 with no abilities.

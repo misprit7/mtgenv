@@ -220,6 +220,12 @@ fn matches_filter(
     match filter {
         CardFilter::Any => true,
         CardFilter::ItSelf => target_id == src_id,
+        // "Enchanted/equipped creature …": the source (Aura/Equipment) is attached to the
+        // candidate. Source-relative, like `ItSelf`, so the "while attached" static stays in the
+        // normal global gather scan with no special-casing (CR 702.3e/702.6e).
+        CardFilter::AttachedHost => {
+            state.objects.get(&src_id).and_then(|s| s.attached_to) == Some(target_id)
+        }
         CardFilter::All(fs) => fs
             .iter()
             .all(|f| matches_filter(state, f, o, target_id, target_types, src_id, src_controller)),
@@ -294,6 +300,27 @@ mod tests {
         put(&mut s, PlayerId(0), grp::LEVITATION, Zone::Battlefield);
         assert!(compute(&s, bears).has_keyword(Keyword::Flying), "your creature gains flying");
         assert!(!compute(&s, foe).has_keyword(Keyword::Flying), "opponent's does not");
+    }
+
+    #[test]
+    fn rancor_aura_buffs_and_grants_trample_only_to_its_host() {
+        // An Aura's "enchanted creature gets +2/+0 and has trample" is two AttachedHost statics
+        // (layer 7c ModifyPT + layer 6 GrantKeyword) — they reach only the attached permanent.
+        let mut s = cards::build_game(1, &[&[], &[]]);
+        let bears = put(&mut s, PlayerId(0), grp::GRIZZLY_BEARS, Zone::Battlefield); // 2/2
+        let other = put(&mut s, PlayerId(0), grp::GRIZZLY_BEARS, Zone::Battlefield); // 2/2
+        let rancor = put(&mut s, PlayerId(0), grp::RANCOR, Zone::Battlefield);
+        s.objects.get_mut(&rancor).unwrap().attached_to = Some(bears); // (engine sets this on resolution)
+        s.mark_chars_dirty();
+
+        let host = compute(&s, bears);
+        assert_eq!(host.power, Some(4), "enchanted creature gets +2/+0");
+        assert_eq!(host.toughness, Some(2));
+        assert!(host.has_keyword(Keyword::Trample), "and has trample");
+
+        let unenchanted = compute(&s, other);
+        assert_eq!(unenchanted.power, Some(2), "another creature is unaffected");
+        assert!(!unenchanted.has_keyword(Keyword::Trample));
     }
 
     #[test]
