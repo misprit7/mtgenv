@@ -2439,10 +2439,10 @@ mod expect_tests {
     fn aura_enters_attached_and_buffs_its_host() {
         // Cast Rancor on a creature: the Aura targets at cast (601.2c), enters the battlefield
         // attached (608.3e), and its AttachedHost statics buff the host (+2/+0, trample).
-        let mut state = cards::build_game(1, &[&[], &[]]);
+        let mut state = synth_state(1);
         let bears = put(&mut state, PlayerId(0), grp::GRIZZLY_BEARS, Zone::Battlefield); // 2/2
         put(&mut state, PlayerId(0), grp::FOREST, Zone::Battlefield); // pay {G}
-        let rancor = put(&mut state, PlayerId(0), grp::RANCOR, Zone::Hand);
+        let rancor = put(&mut state, PlayerId(0), synth::TRAMPLE_AURA, Zone::Hand);
         state.active_player = PlayerId(0);
         state.phase = Phase::PrecombatMain;
         let mut e = Engine::new(state, vec![Box::new(AggroAgent), Box::new(PassAgent)]);
@@ -2463,9 +2463,9 @@ mod expect_tests {
     fn aura_falls_off_into_graveyard_when_its_host_leaves() {
         // CR 704.5 (Auras): once the host leaves the battlefield the Aura is no longer attached
         // to a legal object, so a state-based action puts it into its owner's graveyard.
-        let mut state = cards::build_game(1, &[&[], &[]]);
+        let mut state = synth_state(1);
         let bears = put(&mut state, PlayerId(0), grp::GRIZZLY_BEARS, Zone::Battlefield);
-        let rancor = put(&mut state, PlayerId(0), grp::RANCOR, Zone::Battlefield);
+        let rancor = put(&mut state, PlayerId(0), synth::TRAMPLE_AURA, Zone::Battlefield);
         state.objects.get_mut(&rancor).unwrap().attached_to = Some(bears);
         state.mark_chars_dirty();
         let mut e = pass_engine(state);
@@ -2553,8 +2553,8 @@ mod expect_tests {
     #[test]
     fn loyalty_plus_ability_adds_loyalty_and_resolves() {
         use crate::basics::CounterKind;
-        let mut state = cards::build_game(1, &[&[], &[]]);
-        let chandra = put(&mut state, PlayerId(0), grp::CHANDRA_PYROGENIUS, Zone::Battlefield); // loyalty 5
+        let mut state = synth_state(1);
+        let chandra = put(&mut state, PlayerId(0), synth::WALKER, Zone::Battlefield); // loyalty 5
         state.active_player = PlayerId(0);
         state.phase = Phase::PrecombatMain;
         let mut e = Engine::new(state, vec![Box::new(ActivateAgent { want: 0 }), Box::new(PassAgent)]);
@@ -2570,8 +2570,8 @@ mod expect_tests {
     #[test]
     fn loyalty_minus_ability_pays_loyalty_and_deals_damage() {
         use crate::basics::CounterKind;
-        let mut state = cards::build_game(1, &[&[], &[]]);
-        let chandra = put(&mut state, PlayerId(0), grp::CHANDRA_PYROGENIUS, Zone::Battlefield); // loyalty 5
+        let mut state = synth_state(1);
+        let chandra = put(&mut state, PlayerId(0), synth::WALKER, Zone::Battlefield); // loyalty 5
         let prey = put(&mut state, PlayerId(1), grp::GRIZZLY_BEARS, Zone::Battlefield); // 2/2
         state.active_player = PlayerId(0);
         state.phase = Phase::PrecombatMain;
@@ -2591,8 +2591,8 @@ mod expect_tests {
         // also locks out −3 this turn (not just a second +2). A creature is on the board so −3
         // would otherwise be legal (loyalty 7 ≥ 3, a target exists) — proving the flag blocks the
         // OTHER ability, not merely re-use of the same one.
-        let mut state = cards::build_game(1, &[&[], &[]]);
-        put(&mut state, PlayerId(0), grp::CHANDRA_PYROGENIUS, Zone::Battlefield);
+        let mut state = synth_state(1);
+        put(&mut state, PlayerId(0), synth::WALKER, Zone::Battlefield);
         put(&mut state, PlayerId(1), grp::GRIZZLY_BEARS, Zone::Battlefield); // a legal −3 target
         state.active_player = PlayerId(0);
         state.phase = Phase::PrecombatMain;
@@ -2609,8 +2609,8 @@ mod expect_tests {
     #[test]
     fn cannot_activate_a_minus_ability_without_enough_loyalty() {
         use crate::basics::CounterKind;
-        let mut state = cards::build_game(1, &[&[], &[]]);
-        let chandra = put(&mut state, PlayerId(0), grp::CHANDRA_PYROGENIUS, Zone::Battlefield);
+        let mut state = synth_state(1);
+        let chandra = put(&mut state, PlayerId(0), synth::WALKER, Zone::Battlefield);
         put(&mut state, PlayerId(1), grp::GRIZZLY_BEARS, Zone::Battlefield); // a legal −3 target
         state.objects.get_mut(&chandra).unwrap().counters.counts.insert(CounterKind::Loyalty, 2);
         state.active_player = PlayerId(0);
@@ -3014,6 +3014,152 @@ mod expect_tests {
         state.add_card(owner, chars, zone)
     }
 
+    /// grp ids for synthetic test-only cards (self-contained stand-ins so subsystem tests don't
+    /// depend on any shippable card).
+    mod synth {
+        pub const WALKER: u32 = 9600; // planeswalker, loyalty 5, +2 / −3
+        pub const FOG: u32 = 9700; // 0/2, prevents combat damage to itself
+        pub const COUNTER_CREATURE: u32 = 9800; // 0/0, enters with a +1/+1 counter
+        pub const TRAMPLE_AURA: u32 = 9500; // aura, +2/+0 & trample on its host
+    }
+
+    /// A 2-player `GameState` whose card DB also contains the synthetic test cards above.
+    fn synth_state(seed: u64) -> GameState {
+        use crate::basics::{CardType, Color, CounterKind, DamageKind};
+        use crate::cards::CardDef;
+        use crate::effects::ability::{
+            Ability, ActionPattern, Cost, CostComponent, Restriction, Rewrite, StaticContribution,
+            Timing,
+        };
+        use crate::effects::condition::Duration;
+        use crate::effects::target::{CardFilter, SelectSpec, TargetKind, TargetSpec};
+        use crate::effects::value::{PlayerRef, ValueExpr};
+        use crate::effects::{Effect, EffectTarget};
+        use crate::state::Characteristics;
+
+        let mut db = cards::starter_db();
+
+        // Loyalty planeswalker (Chandra stand-in): +2 deals 2 to each opponent; −3 deals 4 to a creature.
+        db.insert(CardDef {
+            chars: Characteristics {
+                name: "Test Walker".into(),
+                card_types: vec![CardType::Planeswalker],
+                loyalty: Some(5),
+                grp_id: synth::WALKER,
+                ..Default::default()
+            },
+            abilities: vec![
+                Ability::Activated {
+                    cost: Cost { mana: None, components: vec![CostComponent::Loyalty(2)] },
+                    effect: Effect::DealDamage {
+                        amount: ValueExpr::Fixed(2),
+                        to: EffectTarget::Player(PlayerRef::EachOpponent),
+                        kind: DamageKind::Noncombat,
+                    },
+                    timing: Timing::Sorcery,
+                    restriction: Some(Restriction::OncePerTurn),
+                    is_mana: false,
+                },
+                Ability::Activated {
+                    cost: Cost { mana: None, components: vec![CostComponent::Loyalty(-3)] },
+                    effect: Effect::DealDamage {
+                        amount: ValueExpr::Fixed(4),
+                        to: EffectTarget::Target(TargetSpec {
+                            kind: TargetKind::Creature(CardFilter::Any),
+                            min: 1,
+                            max: 1,
+                            distinct: true,
+                        }),
+                        kind: DamageKind::Noncombat,
+                    },
+                    timing: Timing::Sorcery,
+                    restriction: Some(Restriction::OncePerTurn),
+                    is_mana: false,
+                },
+            ],
+            mana_colors: Vec::new(),
+            text: String::new(),
+        });
+
+        // 0/2 that prevents combat damage to itself (Fog Bank stand-in).
+        db.insert(CardDef {
+            chars: Characteristics {
+                name: "Test Fog".into(),
+                card_types: vec![CardType::Creature],
+                subtypes: vec!["Wall".into()],
+                colors: vec![Color::Blue],
+                power: Some(0),
+                toughness: Some(2),
+                grp_id: synth::FOG,
+                ..Default::default()
+            },
+            abilities: vec![Ability::Replacement {
+                pattern: ActionPattern::WouldBeDealtDamage {
+                    to: CardFilter::ItSelf,
+                    kind: Some(DamageKind::Combat),
+                },
+                rewrite: Rewrite::Prevent,
+            }],
+            mana_colors: Vec::new(),
+            text: String::new(),
+        });
+
+        // 0/0 that enters with a +1/+1 counter ({G}); drives the replacement-pass tests.
+        db.insert(CardDef {
+            chars: Characteristics {
+                name: "Test Scaler".into(),
+                card_types: vec![CardType::Creature],
+                subtypes: vec!["Test".into()],
+                colors: vec![Color::Green],
+                mana_cost: Some(cards::mana_cost(0, &[(Color::Green, 1)])),
+                power: Some(0),
+                toughness: Some(0),
+                grp_id: synth::COUNTER_CREATURE,
+                ..Default::default()
+            },
+            abilities: vec![Ability::Replacement {
+                pattern: ActionPattern::WouldEnterBattlefield(CardFilter::ItSelf),
+                rewrite: Rewrite::EntersWithCounters { kind: CounterKind::PlusOnePlusOne, n: 1 },
+            }],
+            mana_colors: Vec::new(),
+            text: String::new(),
+        });
+
+        // Aura ({G}): +2/+0 & trample on the enchanted creature.
+        let host = |c: StaticContribution| Ability::Static {
+            contribution: c,
+            affects: SelectSpec {
+                zone: Zone::Battlefield,
+                filter: CardFilter::AttachedHost,
+                chooser: PlayerRef::Controller,
+                min: ValueExpr::Fixed(0),
+                max: ValueExpr::Fixed(0),
+            },
+            duration: Duration::WhileSourcePresent,
+        };
+        db.insert(CardDef {
+            chars: Characteristics {
+                name: "Test Aura".into(),
+                card_types: vec![CardType::Enchantment],
+                subtypes: vec!["Aura".into()],
+                colors: vec![Color::Green],
+                mana_cost: Some(cards::mana_cost(0, &[(Color::Green, 1)])),
+                grp_id: synth::TRAMPLE_AURA,
+                ..Default::default()
+            },
+            abilities: vec![
+                host(StaticContribution::ModifyPT { power: 2, toughness: 0 }),
+                host(StaticContribution::GrantKeyword(Keyword::Trample)),
+            ],
+            mana_colors: Vec::new(),
+            text: String::new(),
+        });
+
+        let mut s = GameState::new(2, seed);
+        s.set_card_db(std::sync::Arc::new(db));
+        s
+    }
+
     /// Compact render of the decisive events for a scenario (for expect traces).
     fn event_trace(events: &[GameEvent]) -> String {
         let mut out = String::new();
@@ -3127,9 +3273,9 @@ mod expect_tests {
         // rewrite pass turns its ETB into entering-with-a-counter, so it's a 1/1 that survives
         // the toughness-0 SBA. (Straight-through commit would let a 0/0 die immediately.)
         use crate::basics::CounterKind;
-        let mut state = cards::build_game(3, &[&[], &[]]);
+        let mut state = synth_state(3);
         put(&mut state, PlayerId(0), grp::FOREST, Zone::Battlefield); // pay {G}
-        let servant = put(&mut state, PlayerId(0), grp::SERVANT_OF_THE_SCALE, Zone::Hand);
+        let servant = put(&mut state, PlayerId(0), synth::COUNTER_CREATURE, Zone::Hand);
         state.active_player = PlayerId(0);
         state.phase = Phase::PrecombatMain;
         let mut e = Engine::new(state, vec![Box::new(AggroAgent), Box::new(PassAgent)]);
@@ -3148,9 +3294,9 @@ mod expect_tests {
         // combat-damage event to it, so it takes 0 (would otherwise die), and its own 0 power
         // deals nothing to the attacker. No DamageDealt events occur.
         use crate::combat::{Attack, Block, CombatState};
-        let mut state = cards::build_game(4, &[&[], &[]]);
+        let mut state = synth_state(4);
         let bears = put(&mut state, PlayerId(0), grp::GRIZZLY_BEARS, Zone::Battlefield);
-        let fog = put(&mut state, PlayerId(1), grp::FOG_BANK, Zone::Battlefield);
+        let fog = put(&mut state, PlayerId(1), synth::FOG, Zone::Battlefield);
         state.active_player = PlayerId(0);
         state.combat = Some(CombatState {
             attackers: vec![Attack {
@@ -3195,10 +3341,10 @@ mod expect_tests {
         // own enters-with-a-counter replacement produces — a replacement modifying another
         // replacement's output, resolved by the fixpoint. 0/0 → enters with 2 counters → 2/2.
         use crate::basics::CounterKind;
-        let mut state = cards::build_game(7, &[&[], &[]]);
+        let mut state = synth_state(7);
         put(&mut state, PlayerId(0), grp::HARDENED_SCALES, Zone::Battlefield);
         put(&mut state, PlayerId(0), grp::FOREST, Zone::Battlefield); // pay {G}
-        let servant = put(&mut state, PlayerId(0), grp::SERVANT_OF_THE_SCALE, Zone::Hand);
+        let servant = put(&mut state, PlayerId(0), synth::COUNTER_CREATURE, Zone::Hand);
         state.active_player = PlayerId(0);
         state.phase = Phase::PrecombatMain;
         let mut e = Engine::new(state, vec![Box::new(AggroAgent), Box::new(PassAgent)]);
@@ -3221,11 +3367,11 @@ mod expect_tests {
         // Servant ends with 1 + 1 + 1 = 3 counters; the ChooseReplacement decision is surfaced.
         use crate::basics::CounterKind;
         let seen = Rc::new(RefCell::new(Vec::new()));
-        let mut state = cards::build_game(8, &[&[], &[]]);
+        let mut state = synth_state(8);
         put(&mut state, PlayerId(0), grp::HARDENED_SCALES, Zone::Battlefield);
         put(&mut state, PlayerId(0), grp::HARDENED_SCALES, Zone::Battlefield);
         put(&mut state, PlayerId(0), grp::FOREST, Zone::Battlefield); // pay {G}
-        let servant = put(&mut state, PlayerId(0), grp::SERVANT_OF_THE_SCALE, Zone::Hand);
+        let servant = put(&mut state, PlayerId(0), synth::COUNTER_CREATURE, Zone::Hand);
         state.active_player = PlayerId(0);
         state.phase = Phase::PrecombatMain;
         let agents: Vec<Box<dyn Agent>> = vec![
