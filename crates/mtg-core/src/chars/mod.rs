@@ -279,4 +279,25 @@ mod tests {
         assert_eq!(compute(&s, bears).power, Some(3), "+1/+1 counter (7c) stacks on top");
         assert_eq!(compute(&s, bears).toughness, Some(3));
     }
+
+    #[test]
+    fn dirty_recompute_discipline_fires_at_the_right_beats() {
+        // The cache is rebuilt on the dirty signal; queries are correct even between rebuilds.
+        let mut s = cards::build_game(1, &[&[], &[]]);
+        let bears = put(&mut s, PlayerId(0), grp::GRIZZLY_BEARS, Zone::Battlefield);
+        assert!(s.chars_is_dirty(), "a permanent entering marks the cache dirty");
+
+        s.recompute_continuous();
+        assert!(!s.chars_is_dirty(), "recompute clears the dirty flag");
+        assert_eq!(s.computed(bears).power, Some(2), "cached value");
+
+        // An anthem enters → dirty again; a query is still correct (fresh compute while dirty).
+        put(&mut s, PlayerId(0), grp::GLORIOUS_ANTHEM, Zone::Battlefield);
+        assert!(s.chars_is_dirty(), "the anthem entering re-marks dirty");
+        assert_eq!(s.computed(bears).power, Some(3), "correct even before recompute");
+
+        s.recompute_continuous();
+        assert!(!s.chars_is_dirty());
+        assert_eq!(s.computed(bears).power, Some(3), "cache reflects the anthem after recompute");
+    }
 }
