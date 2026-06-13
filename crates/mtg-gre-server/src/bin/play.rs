@@ -1,34 +1,53 @@
-//! M1 binary — play a lands-only game **at the terminal** against a `RandomAgent`.
+//! M1 binary — the expressive interactive / scriptable CLI.
 //!
-//! Run: `cargo run -p mtg-gre-server --bin mtg-play [-- <seed>]`
+//! Run interactively:   `cargo run -p mtg-gre-server --bin mtg-play`
+//!   then type `play` to start a lands-only game vs `RandomAgent`, or `help` for the full
+//!   scenario-setup + inspection command set.
+//! Run a script:        `cargo run -p mtg-gre-server --bin mtg-play -- --script game.txt`
+//!   (setup commands + decision lines from a file → deterministic; pairs with expect-tests).
 //!
-//! Proves "a human is just another Agent": you (Player 0) are a [`HumanAgent`] and your opponent
-//! (Player 1) is mtg-core's [`RandomAgent`] — both behind the one decision boundary.
+//! Proves "a human is just another Agent": human seats are [`HumanAgent`]s behind the one
+//! decision boundary; everything else (turn structure, priority, masking) is `mtg-core`.
+//!
+//! [`HumanAgent`]: mtg_gre_server::human::HumanAgent
 
-use mtg_core::agent::{Agent, RandomAgent};
-use mtg_core::ids::PlayerId;
-use mtg_gre_server::driver;
-use mtg_gre_server::human::HumanAgent;
+use std::fs::File;
+use std::io::{stdin, stdout, BufRead, BufReader};
+
+use mtg_gre_server::cli;
 
 fn main() {
-    let seed: u64 = std::env::args()
-        .nth(1)
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(1);
-
-    println!("mtgenv — terminal play (lands-only demo).");
-    println!("You are Player 0 (HumanAgent) vs Player 1 (RandomAgent). Seed {seed}.");
-    println!("At each decision: type an option index, or press Enter / 'p' to pass.\n");
-
-    let agents: Vec<Box<dyn Agent>> = vec![
-        Box::new(HumanAgent::new(PlayerId(0))),
-        Box::new(RandomAgent::new(seed)),
-    ];
-    let outcome = driver::run_lands_game(agents, seed);
-
-    println!("\n═══════════════ GAME OVER ═══════════════");
-    match outcome.winner {
-        Some(p) => println!("Winner: Player {} (after {} turns)", p.0, outcome.turns),
-        None => println!("Draw (after {} turns)", outcome.turns),
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let mut script: Option<String> = None;
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--script" | "-s" => {
+                script = args.get(i + 1).cloned();
+                i += 2;
+            }
+            "--help" | "-h" => {
+                eprintln!("usage: mtg-play [--script <file>]   (no args = interactive REPL on stdin)");
+                return;
+            }
+            other => {
+                eprintln!("mtg-play: unknown arg '{other}' (try --help)");
+                i += 1;
+            }
+        }
     }
+
+    let (reader, echo): (Box<dyn BufRead>, bool) = match &script {
+        Some(path) => match File::open(path) {
+            Ok(f) => (Box::new(BufReader::new(f)), true),
+            Err(e) => {
+                eprintln!("mtg-play: cannot open script '{path}': {e}");
+                std::process::exit(1);
+            }
+        },
+        None => (Box::new(stdin().lock()), false),
+    };
+
+    let io = cli::CliIo::new(reader, Box::new(stdout()), echo);
+    cli::run(io);
 }

@@ -29,16 +29,24 @@ const BASICS: [&str; 5] = ["Plains", "Island", "Swamp", "Mountain", "Forest"];
 /// draws the opening hand from this, so it must exceed the opening hand size.
 const LIBRARY_SIZE: usize = 14;
 
-/// Run one lands-only game between `agents` (indexed by seat) through `mtg-core`'s engine.
-pub fn run_lands_game(agents: Vec<Box<dyn Agent>>, seed: u64) -> Outcome {
-    let mut state = GameState::new(agents.len(), seed);
-    for seat in 0..agents.len() as u32 {
+/// Build a fresh lands-only [`GameState`]: `num_players` seats, each with a round-robin basic-land
+/// library (the engine deals opening hands itself). Shared by [`run_lands_game`] and the CLI's
+/// quick `play` command.
+pub fn lands_only_state(num_players: usize, seed: u64) -> GameState {
+    let mut state = GameState::new(num_players, seed);
+    for seat in 0..num_players as u32 {
         let pid = PlayerId(seat);
         for i in 0..LIBRARY_SIZE {
             let name = BASICS[i % BASICS.len()];
             state.add_card(pid, Characteristics::basic_land(name), Zone::Library);
         }
     }
+    state
+}
+
+/// Run one lands-only game between `agents` (indexed by seat) through `mtg-core`'s engine.
+pub fn run_lands_game(agents: Vec<Box<dyn Agent>>, seed: u64) -> Outcome {
+    let state = lands_only_state(agents.len(), seed);
     // The engine shuffles, deals opening hands, and runs the turn/priority loop to a result.
     let mut engine = Engine::new(state, agents);
     let winner = engine.run_game();

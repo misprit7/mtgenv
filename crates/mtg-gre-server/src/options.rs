@@ -384,6 +384,62 @@ pub fn response_from(req: &DecisionRequest, sel: &Selection) -> DecisionResponse
     }
 }
 
+/// Parse one line of user/script input into a [`Selection`], according to the prompt's input
+/// `mode`. Shared by the terminal `HumanAgent` and any other line-driven backend so they all
+/// interpret input identically. Tolerant: unparseable input falls back to a safe default (pass /
+/// no selection), and `response_from` + the engine clamp anything out of range.
+pub fn parse_selection(prompt: &Prompt, input: &str) -> Selection {
+    let t = input.trim();
+    match prompt.mode {
+        Mode::Action => {
+            if t.is_empty() || t.eq_ignore_ascii_case("p") || t.eq_ignore_ascii_case("pass") {
+                Selection {
+                    pass: true,
+                    ..Default::default()
+                }
+            } else if let Ok(i) = t.parse::<u32>() {
+                Selection {
+                    picks: vec![i],
+                    ..Default::default()
+                }
+            } else {
+                Selection {
+                    pass: true,
+                    ..Default::default()
+                }
+            }
+        }
+        Mode::SelectOne => Selection {
+            picks: vec![t.parse::<u32>().unwrap_or(0)],
+            ..Default::default()
+        },
+        Mode::SelectMany => Selection {
+            picks: t.split_whitespace().filter_map(|s| s.parse().ok()).collect(),
+            ..Default::default()
+        },
+        Mode::Number => {
+            let n = t
+                .parse::<i64>()
+                .unwrap_or(prompt.num_min)
+                .clamp(prompt.num_min, prompt.num_max);
+            Selection {
+                number: Some(n),
+                ..Default::default()
+            }
+        }
+        Mode::Order => Selection {
+            order: t.split_whitespace().filter_map(|s| s.parse().ok()).collect(),
+            ..Default::default()
+        },
+    }
+}
+
+/// A safe default response for a request (used on EOF / closed input): pass priority, keep the
+/// hand, decline optional choices, and under-select bounded picks (the engine fills the rest).
+pub fn default_response(req: &DecisionRequest) -> DecisionResponse {
+    response_from(req, &Selection::default())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

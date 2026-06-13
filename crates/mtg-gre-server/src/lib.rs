@@ -18,6 +18,8 @@
 
 pub mod options;
 pub mod protocol;
+pub mod render;
+pub mod cli;
 pub mod human;
 pub mod session;
 pub mod driver;
