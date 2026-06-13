@@ -706,7 +706,7 @@ mod tests {
 #[cfg(test)]
 mod expect_tests {
     use super::*;
-    use crate::agent::{DecisionResponse, PlayerView};
+    use crate::agent::{DecisionResponse, PlayerView, RandomAgent};
     use crate::basics::{Phase, Zone};
     use crate::ids::PlayerId;
     use crate::state::{Characteristics, GameState};
@@ -804,5 +804,62 @@ mod expect_tests {
             T1 PlayerId(0) End
             T1 PlayerId(0) Cleanup"#]]
         .assert_eq(&trace);
+    }
+
+    /// A whole deterministic lands-only game (two seeded `RandomAgent`s, 8-card libraries)
+    /// rendered as a turn-by-turn trace of its meaningful events: draws, land plays, and the
+    /// decking loss that ends it (CR 704.5b). This snapshots the milestone-2 game loop.
+    #[test]
+    fn full_lands_only_game_trace() {
+        let mut state = GameState::new(2, 7);
+        for seat in 0..2u32 {
+            for _ in 0..8 {
+                state.add_card(PlayerId(seat), Characteristics::basic_land("Forest"), Zone::Library);
+            }
+        }
+        let agents: Vec<Box<dyn Agent>> = vec![
+            Box::new(RandomAgent::new(7 ^ 0xA11CE)),
+            Box::new(RandomAgent::new(7 ^ 0xB0B)),
+        ];
+        let mut engine = Engine::new(state, agents);
+        engine.record_events(true);
+        let winner = engine.run_game();
+        assert_eq!(winner, Some(PlayerId(0)));
+
+        let mut out = String::new();
+        let mut cur_turn = 0u32;
+        for ev in &engine.event_log {
+            match ev {
+                GameEvent::PhaseBegan { turn, active, .. } if *turn != cur_turn => {
+                    cur_turn = *turn;
+                    out.push_str(&format!("== turn {turn} (active {active:?}) ==\n"));
+                }
+                GameEvent::PhaseBegan { .. } => {}
+                GameEvent::DrewCards { player, count } => {
+                    out.push_str(&format!("  {player:?} draws {count}\n"))
+                }
+                GameEvent::ObjectMoved { obj, to } => {
+                    out.push_str(&format!("  {obj:?} -> {to:?}\n"))
+                }
+                GameEvent::GameEnded { winner } => {
+                    out.push_str(&format!("game over, winner {winner:?}\n"))
+                }
+                other => out.push_str(&format!("  {other:?}\n")),
+            }
+        }
+        expect![[r#"
+              PlayerId(0) draws 7
+              PlayerId(1) draws 7
+            == turn 1 (active PlayerId(0)) ==
+              ObjId(3) -> Battlefield
+            == turn 2 (active PlayerId(1)) ==
+              PlayerId(1) draws 1
+              ObjId(9) -> Battlefield
+            == turn 3 (active PlayerId(0)) ==
+              PlayerId(0) draws 1
+            == turn 4 (active PlayerId(1)) ==
+            game over, winner Some(PlayerId(0))
+        "#]]
+        .assert_eq(&out);
     }
 }

@@ -32,11 +32,11 @@ These four properties define the boundary. Everything below is in service of the
    seat: hidden zones masked, opponent hand as a count, library order hidden, face-down
    cards hidden from players who may not see them. This is the *only* correct place to
    enforce hidden information (rules-correctness) and it is required for RL (no info leak).
-4. **The request set is a superset of both proven granularities, and is 1:1-translatable to
-   the GRE wire.** It covers every Forge `PlayerController` decision method (the battle-tested
-   107-method interface) **and** every MTGA GRE `*Req` in the recovered catalog (§6 proves the
-   coverage). The three concrete non-engine backends are therefore all *implementation swaps,
-   no engine changes*:
+4. **The request set is a superset of the GRE request catalog, and is 1:1-translatable to
+   the GRE wire.** It covers every MTGA GRE `*Req` in the recovered, log-validated catalog
+   (§6 proves the coverage); its granularity is driven by that catalog + the Comprehensive
+   Rules + the engine's own decision points. The three concrete non-engine backends are
+   therefore all *implementation swaps, no engine changes*:
    - **`PyAgent`** (Gym/RL) and **`ScriptedAgent`** implement `decide` directly.
    - **A GRE-protocol server** fronting (a) a from-scratch **web client** and (b) the **real
      MTGA client** (task #5 / `docs/plans/CLIENT_PLAN.md`). It maps `DecisionRequest →
@@ -64,8 +64,7 @@ pub trait Agent {
 
     /// Push-only notification: a public reveal, a die-roll result, a value chosen by an
     /// opponent, a zone change — anything the seat should learn but need not answer.
-    /// Default no-op. Mirrors Forge `PlayerController.reveal()/notifyOfValue()` and the
-    /// GRE `GameStateMessage` diff / `RevealHandReq` stream.
+    /// Default no-op. Maps to the GRE `GameStateMessage` diff / `RevealHandReq` stream.
     fn observe(&mut self, _view: &PlayerView, _ev: &GameEvent) {}
 }
 ```
@@ -84,7 +83,7 @@ Notes:
 
 `DecisionRequest`, `DecisionResponse`, `PlayerView`, `GameEvent`, and every supporting type
 in §5 **derive `serde::{Serialize, Deserialize}`**. This is what lets a non-in-process backend
-(the GRE-protocol server fronting the web client and the real MTGA client; also a Forge-style
+(the GRE-protocol server fronting the web client and the real MTGA client, or any other
 `SocketAgent`) sit behind the trait without the engine knowing. The contract the GRE server
 relies on:
 
@@ -191,20 +190,19 @@ chosen-but-secret info per its rules. Anything an opponent reveals arrives via `
 ## 3. `DecisionRequest` — the enumerated, masked choice set
 
 The closed set of every choice the engine can ask. Each variant **pre-enumerates legal
-options** (law #2). Per-variant doc comments name the Forge `PlayerController` method(s) and
-the MTGA GRE `*Req` it subsumes (the superset proof is the table in §6).
+options** (law #2). Per-variant doc comments name the MTGA GRE `*Req` it subsumes (the
+superset proof is the table in §6).
 
 ```rust
 pub enum DecisionRequest {
     // ─── Game setup ───────────────────────────────────────────────────────────────
     /// Pick who takes the first turn.
-    /// Forge: chooseStartingPlayer.            GRE: ChooseStartingPlayerReq.
+    /// GRE: ChooseStartingPlayerReq.
     ChooseStartingPlayer { candidates: Vec<PlayerId> },
 
     /// London mulligan keep-or-mulligan decision. If the agent keeps after N mulligans,
     /// the engine immediately issues a `SelectCards{ reason: BottomForMulligan, .. }` for
     /// the N cards to put on the bottom.
-    /// Forge: mulliganKeepHand / londonMulliganReturnCards / confirmMulliganScry.
     /// GRE:   MulliganReq { mulliganType, freeMulliganCount, mulliganCount } →
     ///        MulliganResp { decision: MulliganOption }. CONFIRMED: the resp carries only
     ///        the keep/mulligan decision; London bottoming is a separate follow-up
@@ -215,8 +213,6 @@ pub enum DecisionRequest {
     /// The active-priority player may cast/activate/play-land/take-a-special-action/pass.
     /// Every legal play is pre-enumerated as a `PlayableAction`. `can_pass` is almost
     /// always true (it is false only mid-cast where the rules forbid passing).
-    /// Forge: getAbilityToPlay / chooseSpellAbilityToPlay / playChosenSpellAbility
-    ///        / playSaFromPlayEffect.
     /// GRE:   ActionsAvailableReq (+ ActionType Pass/Play/Cast*/Activate/Activate_Mana/
     ///        Special/Special_TurnFaceUp).
     Priority { actions: Vec<PlayableAction>, can_pass: bool },
@@ -224,15 +220,13 @@ pub enum DecisionRequest {
     // ─── Casting/activation sub-decisions (601.2 / 602.2) ───────────────────────────
     /// Choose modes for a modal spell/ability (CR 700.2). `min`/`max` bound the count;
     /// `allow_repeat` for "choose one or more, you may choose the same mode" style.
-    /// Forge: chooseModeForAbility.            GRE: part of CastingTimeOptionsReq.
+    /// GRE: part of CastingTimeOptionsReq.
     ChooseModes { for_action: ActionRef, modes: Vec<ModeOption>, min: u32, max: u32, allow_repeat: bool },
 
     /// Choose a number: value of X, cost-reduction amount, keyword-cost N, "choose a
     /// number" effects. Legal set = `[min,max]` by `step`, minus `forbidden`, minus the
     /// parity excluded by `disallow_even`/`disallow_odd`. `forbidden` realizes
     /// WHITEBOARD_MODEL §2.6 (X with forbidden values) — CONFIRMED real on the GRE wire.
-    /// Forge: announceRequirements (X) / chooseNumber / chooseNumberForCostReduction
-    ///        / chooseNumberForKeywordCost.
     /// GRE:   NumericInputReq { minValue, maxValue, stepSize, disallowedValues[],
     ///        disallowEven, disallowOdd, numericInputType } → NumericInputResp.
     ChooseNumber { reason: NumberReason, min: i64, max: i64, step: u32,
@@ -253,28 +247,22 @@ pub enum DecisionRequest {
     /// `PayCostsReq`) are *separate* decide()s in both CR (601.2c, 601.2f-h) and GRE — they
     /// are NOT part of this bundle. So a typical cast = Priority → CastingTimeOptions →
     /// ChooseTargets → PayCost (≤ ~3 follow-up round-trips after the Priority pick).
-    /// Forge: chooseOptionalCosts / chooseModeForAbility / announceRequirements.
     /// GRE:   CastingTimeOptionsReq (CastingTimeOptionType: ChooseX/Kicker/Modal/Bargain/…).
     CastingTimeOptions { for_action: ActionRef, options: Vec<CastOption> },
 
     /// Choose the targets for one action. One `TargetSlot` per instance of the word
     /// "target"; each slot carries its own pre-filtered legal candidate list and min/max.
-    /// Forge: chooseTargetsFor / chooseNewTargetsFor / chooseTarget
-    ///        / chooseSingleEntityForEffect / chooseEntitiesForEffect.
     /// GRE:   SelectTargetsReq (+ SubmitTargetsResp).
     ChooseTargets { for_action: ActionRef, slots: Vec<TargetSlot> },
 
     /// Divide/distribute an amount among recipients (damage division, counters, shield).
     /// Each recipient gets ≥ `min_each` (usually 1, CR 601.2d); division locks at this step.
-    /// Forge: divideShield / divide-damage paths.   GRE: DistributionReq.
+    /// GRE: DistributionReq.
     Distribute { reason: DistributeReason, among: Vec<Target>, total: u32, min_each: u32, max_each: Option<u32> },
 
     /// Pay a cost: which mana to spend, which permanents to tap/sacrifice/exile for
     /// convoke/improvise/delve, life, discards-as-cost, etc. The engine pre-computes the
     /// legal payment methods; mana abilities are enumerated as `ManaSource`s (CR 605/602.2g).
-    /// Forge: payManaCost / payCombatCost / payCostToPreventEffect / confirmPayment /
-    ///        specifyManaCombo / chooseManaFromPool / chooseCardsForConvokeOrImprovise /
-    ///        chooseCardsToDelve / orderCosts.
     /// GRE:   PayCostsReq (+ ActionType Make_Payment/Activate_Mana/FloatMana/Special_Payment).
     PayCost { cost: CostRequest, mana_sources: Vec<ManaSource>, non_mana: Vec<PaymentOption> },
 
@@ -283,19 +271,18 @@ pub enum DecisionRequest {
     /// attack and its restrictions (can't-attack) / requirements (must-attack), plus any
     /// attack cost and exert/enlist opt-ins. The engine enforces the "obey the maximum
     /// satisfiable requirement set" rule (CR 508.1d).
-    /// Forge: declareAttackers / exertAttackers / enlistAttackers.
     /// GRE:   DeclareAttackersReq (+ SubmitAttackersResp).
     DeclareAttackers { eligible: Vec<AttackerOption> },
 
     /// Declare blockers. Each `BlockerOption` lists which attackers that creature may
     /// legally block (evasion/restrictions already applied, CR 509.1b) and any block cost.
-    /// Forge: declareBlockers.                 GRE: DeclareBlockersReq (+ SubmitBlockersResp).
+    /// GRE: DeclareBlockersReq (+ SubmitBlockersResp).
     DeclareBlockers { eligible: Vec<BlockerOption>, attackers: Vec<ObjId> },
 
     /// Assign combat damage from one attacker/blocker among its recipients in the chosen
     /// damage-assignment order. The engine supplies the lethal threshold per recipient
     /// (toughness − marked, deathtouch ⇒ 1) and whether trample/excess applies (CR 510.1c-e).
-    /// Forge: assignCombatDamage.              GRE: AssignDamageReq (+ AssignDamageConfirmation).
+    /// GRE: AssignDamageReq (+ AssignDamageConfirmation).
     AssignCombatDamage { source: ObjId, recipients: Vec<DamageSlot>, total: u32,
                          deathtouch: bool, trample_to: Option<Target> },
 
@@ -303,8 +290,6 @@ pub enum DecisionRequest {
     /// Order a set of objects: triggers on the stack (APNAP, CR 603.3b), an attacker's
     /// blockers (damage-assignment order), a blocker's attackers, cards moved to a zone,
     /// or a cost sequence. `kind` disambiguates.
-    /// Forge: orderBlockers / orderBlocker / orderAttackers / orderMoveToZoneList /
-    ///        orderCosts / orderAndPlaySimultaneousSa.
     /// GRE:   OrderReq (+ OrderResp) / OrderCombatDamageReq (+ OrderDamageConfirmation).
     OrderObjects { kind: OrderKind, items: Vec<ObjId> },
 
@@ -313,35 +298,27 @@ pub enum DecisionRequest {
     /// destroy, discard (incl. discard-to-max-hand-size), search a library/zone, reveal,
     /// scry/surveil staging, choose-creatures-for-effect, activate-from-opening-hand, etc.
     /// `reason` carries the context so a backend/RL head can route.
-    /// Forge: choosePermanentsToSacrifice / choosePermanentsToDestroy / chooseCardsForEffect
-    ///        / chooseEntitiesForEffect / chooseCardsToDiscardFrom /
-    ///        chooseCardsToDiscardToMaximumHandSize / chooseCardsToRevealFromHand /
-    ///        chooseSaToActivateFromOpeningHand / chooseCardsToDelve.
     /// GRE:   SelectNReq / SearchReq / RevealHandReq.
     SelectCards { reason: SelectReason, from: Vec<ObjId>, min: u32, max: u32, filter: CardFilter },
 
     /// Choose from multiple distinct groups at once (e.g. fetch one of each type, or pick
     /// from several piles). Each group has its own min/max.
-    /// Forge: chooseCardsForEffectMultiple.    GRE: SelectNGroupReq / SelectFromGroupsReq /
-    ///        SearchFromGroupsReq / GroupReq.
+    /// GRE: SelectNGroupReq / SelectFromGroupsReq / SearchFromGroupsReq / GroupReq.
     SelectFromGroups { reason: SelectReason, groups: Vec<SelectGroup> },
 
     /// Stage the top N cards of a library into ordered destinations: scry (top/bottom),
     /// surveil (top/graveyard), fateseal (opponent), generic "look at top N, arrange".
-    /// Forge: arrangeForScry / arrangeForSurveil / willPutCardOnTop / orderMoveToZoneList.
     /// GRE:   no dedicated scry/surveil message in this build — composed from `SelectNReq`
     ///        (which cards to bottom/graveyard) + `OrderReq` (order the rest on top).
     ArrangeCards { reason: ArrangeReason, cards: Vec<ObjId>, destinations: Vec<ZoneDest> },
 
     /// Choose which replacement/prevention effect (or interacting static) applies to an
     /// event when several could (CR 616.1f), then the engine re-checks and may re-ask.
-    /// Forge: chooseSingleReplacementEffect / confirmReplacementEffect /
-    ///        chooseSingleStaticAbility.
     /// GRE:   SelectReplacementReq.
     ChooseReplacement { event: EventDigest, applicable: Vec<ReplacementOption> },
 
     /// Choose a counter kind (proliferate, "remove a counter", etc.).
-    /// Forge: chooseCounterType.               GRE: SelectCountersReq.
+    /// GRE: SelectCountersReq.
     ChooseCounterType { options: Vec<CounterKind> },
 
     // ─── Small typed choices ──────────────────────────────────────────────────────────
@@ -349,9 +326,6 @@ pub enum DecisionRequest {
     /// a creature/land type, a vote, a sector/sprocket, a protection quality, a keyword to
     /// grant, a named card (StringInput collapses to a pick over a card-name vocabulary),
     /// a card face/state for an MDFC/adventure.
-    /// Forge: chooseSomeType / vote / chooseSector / chooseSprocket / chooseProtectionType
-    ///        / chooseKeywordForPump / chooseCardName / chooseSingleCardFace
-    ///        / chooseSingleCardState / chooseSingleSpellForEffect / chooseSpellAbilitiesForEffect.
     /// GRE:   SelectNReq carrying a `StaticList` of labels (listType=SelectionListType,
     ///        idType — *label* selection, not game objects) → SelectNResp; name input =
     ///        StringInputReq → StringInputResp. NOTE: `PromptReq` is NOT a decision message —
@@ -360,7 +334,6 @@ pub enum DecisionRequest {
     ChooseOption { reason: OptionReason, options: Vec<OptionLabel>, min: u32, max: u32 },
 
     /// Choose color(s). Separate from ChooseOption so RL gets a clean 5/6-way head.
-    /// Forge: chooseColor / chooseColorAllowColorless / chooseColors.
     /// GRE:   SelectNReq with a color `StaticList`; for mana-type-at-cast it is the
     ///        `selectManaTypeReq` arm of a `CastingTimeOptionReq` (SelectManaTypeReq).
     ChooseColor { allowed: Vec<Color>, min: u32, max: u32 },
@@ -368,9 +341,6 @@ pub enum DecisionRequest {
     /// A yes/no (or this-or-that binary). `kind` carries what's being confirmed: an
     /// optional trigger, a "may" effect, pay-to-prevent, a coin/flip call, a static-ability
     /// application, a bid, put-on-top.
-    /// Forge: confirmAction / confirmTrigger / confirmReplacementEffect (boolean form) /
-    ///        confirmStaticApplication / confirmBidAction / chooseBinary / chooseFlipResult
-    ///        / willPutCardOnTop / confirmMulliganScry / confirmPayment.
     /// GRE:   OptionalActionMessage → OptionalResp. (No standalone ConfirmReq in this build;
     ///        `Prompt` is display metadata, not the decision.)
     Confirm { kind: ConfirmKind },
