@@ -12,7 +12,7 @@
 //!   on itself (C9b) — adding the current count doubles it.
 
 use crate::basics::{Color, CounterKind};
-use crate::cards::fin::sazhs_chocobo::land_you_control;
+use crate::cards::helpers::land_you_control;
 use crate::cards::{creature, mana_cost, CardDb};
 use crate::effects::ability::{Ability, ActionPattern, EventPattern, Keyword, Rewrite};
 use crate::effects::target::CardFilter;

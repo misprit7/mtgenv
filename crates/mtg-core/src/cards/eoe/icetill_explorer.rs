@@ -16,7 +16,7 @@
 //! approximation of them. Add the two statics here once the C18 subsystem exists.
 
 use crate::basics::Color;
-use crate::cards::fin::sazhs_chocobo::land_you_control;
+use crate::cards::helpers::land_you_control;
 use crate::cards::{creature, mana_cost, CardDb};
 use crate::effects::ability::{Ability, EventPattern};
 use crate::effects::value::{PlayerRef, ValueExpr};

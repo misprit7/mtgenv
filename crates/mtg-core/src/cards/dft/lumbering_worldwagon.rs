@@ -20,29 +20,16 @@
 //!   Flagged to engine/lead.
 
 use crate::basics::{CardType, Color, Zone, ZoneDest, ZonePos};
-use crate::cards::{basic_land_filter, mana_cost, CardDb, CardDef};
+use crate::cards::helpers::{basic_land_filter, itself, lands_you_control};
+use crate::cards::{mana_cost, CardDb, CardDef};
 use crate::effects::ability::{Ability, EventPattern, StaticContribution};
 use crate::effects::condition::Duration;
-use crate::effects::target::{CardFilter, SelectSpec};
 use crate::effects::value::{PlayerRef, ValueExpr};
 use crate::effects::Effect;
 use crate::state::Characteristics;
 
 /// grp id (per-set ids live near their cards).
 pub const LUMBERING_WORLDWAGON: u32 = 105;
-
-/// "the number of lands you control" — the CDA's dynamic power (matches the chars-layer 7a form
-/// the engine tests: the `controller` field restricts to you; the filter narrows to lands).
-fn lands_you_control() -> ValueExpr {
-    ValueExpr::Count {
-        zone: Zone::Battlefield,
-        filter: CardFilter::All(vec![
-            CardFilter::HasCardType(CardType::Land),
-            CardFilter::ControlledBy(PlayerRef::Controller),
-        ]),
-        controller: Some(PlayerRef::Controller),
-    }
-}
 
 /// "you may search your library for a basic land card, put it onto the battlefield tapped, then
 /// shuffle" — the shared body of both triggers.
@@ -82,13 +69,7 @@ pub fn register(db: &mut CardDb) {
                     power: lands_you_control(),
                     toughness: ValueExpr::Fixed(4),
                 },
-                affects: SelectSpec {
-                    zone: Zone::Battlefield,
-                    filter: CardFilter::ItSelf,
-                    chooser: PlayerRef::Controller,
-                    min: ValueExpr::Fixed(0),
-                    max: ValueExpr::Fixed(0),
-                },
+                affects: itself(),
                 duration: Duration::WhileSourcePresent,
             },
             // "Whenever this Vehicle enters … you may fetch a basic."

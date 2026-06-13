@@ -2,9 +2,8 @@
 //! anthems, type/P-T changers, and "while attached" buffs over the `AttachedHost`.
 
 use crate::basics::{CardType, Color, Zone};
-use crate::cards::{
-    attached_host, aura, creatures_you_control, enchantment, grp, mana_cost, CardDb, CardDef,
-};
+use crate::cards::helpers::{attached_host, creatures_you_control};
+use crate::cards::{aura, enchantment, grp, mana_cost, CardDb, CardDef};
 use crate::effects::ability::{
     Ability, Cost, Keyword, Qualification, StaticContribution, Timing,
 };

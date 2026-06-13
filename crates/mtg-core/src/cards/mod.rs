@@ -18,11 +18,15 @@ use std::sync::Arc;
 
 use crate::basics::{CardType, Color, DamageKind, ManaCost, Zone};
 use crate::effects::ability::{Ability, Cost, CostComponent, Keyword, Timing};
-use crate::effects::target::{CardFilter, ManaSpec, SelectSpec, TargetKind, TargetSpec};
+use crate::effects::target::{ManaSpec, TargetKind, TargetSpec};
 use crate::effects::value::{PlayerRef, ValueExpr};
 use crate::effects::{Effect, EffectTarget};
 use crate::ids::PlayerId;
 use crate::state::{Characteristics, GameState};
+
+/// Shared card-construction fragments (`CardFilter`/`SelectSpec`/`ValueExpr` pieces). Card modules
+/// import from here, never from a sibling card module.
+pub mod helpers;
 
 pub mod misc;
 
@@ -72,43 +76,6 @@ pub mod grp {
     pub const GLADECOVER_SCOUT: u32 = 62;
     pub const BONESPLITTER: u32 = 64;
     pub const PACIFISM: u32 = 65;
-}
-
-/// `SelectSpec` for a static affecting "creatures you control" (the anthem scope). min/max are
-/// unused for statics (they apply to every match).
-pub(crate) fn creatures_you_control() -> SelectSpec {
-    SelectSpec {
-        zone: Zone::Battlefield,
-        filter: CardFilter::All(vec![
-            CardFilter::HasCardType(CardType::Creature),
-            CardFilter::ControlledBy(PlayerRef::Controller),
-        ]),
-        chooser: PlayerRef::Controller,
-        min: ValueExpr::Fixed(0),
-        max: ValueExpr::Fixed(0),
-    }
-}
-
-/// `CardFilter` matching a basic land card (CR 205.4b) — `All([Land, Supertype("Basic")])`.
-/// Shared by every "search your library for a basic land card" effect (fetch lands, Bushwhack,
-/// Lumbering Worldwagon, …).
-pub(crate) fn basic_land_filter() -> CardFilter {
-    CardFilter::All(vec![
-        CardFilter::HasCardType(CardType::Land),
-        CardFilter::Supertype("Basic".to_string()),
-    ])
-}
-
-/// `SelectSpec` for a static affecting "the permanent this Aura/Equipment is attached to"
-/// (CR 702.3e/702.6e) — the source-relative `AttachedHost` filter. min/max unused for statics.
-pub(crate) fn attached_host() -> SelectSpec {
-    SelectSpec {
-        zone: Zone::Battlefield,
-        filter: CardFilter::AttachedHost,
-        chooser: PlayerRef::Controller,
-        min: ValueExpr::Fixed(0),
-        max: ValueExpr::Fixed(0),
-    }
 }
 
 /// A card definition: its printed characteristics + abilities (the Effect IR), plus the

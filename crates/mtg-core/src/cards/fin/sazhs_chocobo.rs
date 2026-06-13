@@ -4,24 +4,15 @@
 //! Fully implemented: a triggered ability on the landfall event (a land you control entering,
 //! C4) putting a fixed +1/+1 counter on itself (C2). No deferred clauses.
 
-use crate::basics::{CardType, Color, CounterKind};
+use crate::basics::{Color, CounterKind};
+use crate::cards::helpers::land_you_control;
 use crate::cards::{creature, mana_cost, CardDb};
 use crate::effects::ability::{Ability, EventPattern};
-use crate::effects::target::CardFilter;
-use crate::effects::value::{PlayerRef, ValueExpr};
+use crate::effects::value::ValueExpr;
 use crate::effects::{Effect, EffectTarget};
 
 /// grp id (per-set ids live near their cards).
 pub const SAZHS_CHOCOBO: u32 = 102;
-
-/// "a land you control" — the landfall event filter (CR 603.2 on a land entering under your
-/// control). Authored here; mirrored by every landfall card.
-pub(crate) fn land_you_control() -> CardFilter {
-    CardFilter::All(vec![
-        CardFilter::HasCardType(CardType::Land),
-        CardFilter::ControlledBy(PlayerRef::Controller),
-    ])
-}
 
 pub fn register(db: &mut CardDb) {
     db.insert(
