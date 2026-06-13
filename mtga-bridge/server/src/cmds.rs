@@ -27,6 +27,7 @@ pub mod cmd_type {
     pub const RANK_GET_COMBINED_RANK_INFO: i32 = 1100;
     pub const RANK_GET_SEASON_AND_RANK_DETAILS: i32 = 1102;
     pub const PERIODIC_REWARDS_GET_STATUS: i32 = 1200;
+    pub const GRAPH_GET_GRAPH_DEFINITIONS: i32 = 1700;
     pub const GRAPH_GET_GRAPH_STATE: i32 = 1701;
     pub const COSMETICS_GET_PLAYER_OWNED_COSMETICS: i32 = 1900;
 
@@ -48,6 +49,7 @@ pub mod cmd_type {
             RANK_GET_COMBINED_RANK_INFO => "RankGetCombinedRankInfo",
             RANK_GET_SEASON_AND_RANK_DETAILS => "RankGetSeasonAndRankDetails",
             PERIODIC_REWARDS_GET_STATUS => "PeriodicRewardsGetStatus",
+            GRAPH_GET_GRAPH_DEFINITIONS => "GraphGetGraphDefinitions",
             GRAPH_GET_GRAPH_STATE => "GraphGetGraphState",
             COSMETICS_GET_PLAYER_OWNED_COSMETICS => "CosmeticsGetPlayerOwnedCosmetics",
             _ => "Unknown",
@@ -88,6 +90,9 @@ pub fn handle(cmd: &Cmd) -> Outcome {
         EVENT_GET_ACTIVE_MATCHES => (r#"{"MatchesV3":[]}"#.into(), false, true),
         QUEST_GET_QUESTS => (r#"{"canSwap":false,"newQuests":0,"quests":[]}"#.into(), false, true),
         PERIODIC_REWARDS_GET_STATUS => (periodic_rewards_response(), false, true),
+        // ClientGraphDefinitionsResponse { List<ClientGraphDefinition> GraphDefinitions }.
+        // Must be a non-null list or the Node Graph Manager NREs on init (black screen).
+        GRAPH_GET_GRAPH_DEFINITIONS => (r#"{"GraphDefinitions":[]}"#.into(), false, true),
         GRAPH_GET_GRAPH_STATE => (r#"{"NodeStates":{},"MilestoneStates":{}}"#.into(), false, true),
         CARD_GET_ALL_CARDS => (r#"{}"#.into(), false, true),
         COSMETICS_GET_PLAYER_OWNED_COSMETICS => (r#"{}"#.into(), false, true),
