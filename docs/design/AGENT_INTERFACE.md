@@ -352,12 +352,17 @@ pub enum DecisionRequest {
     /// Forge: chooseSomeType / vote / chooseSector / chooseSprocket / chooseProtectionType
     ///        / chooseKeywordForPump / chooseCardName / chooseSingleCardFace
     ///        / chooseSingleCardState / chooseSingleSpellForEffect / chooseSpellAbilitiesForEffect.
-    /// GRE:   PromptReq / StringInputReq / "choose option from list" prompts.
+    /// GRE:   SelectNReq carrying a `StaticList` of labels (listType=SelectionListType,
+    ///        idType — *label* selection, not game objects) → SelectNResp; name input =
+    ///        StringInputReq → StringInputResp. NOTE: `PromptReq` is NOT a decision message —
+    ///        `Prompt{promptId, parameters}` is localized display metadata attached to most
+    ///        reqs; the choice itself rides on SelectN/StringInput.
     ChooseOption { reason: OptionReason, options: Vec<OptionLabel>, min: u32, max: u32 },
 
     /// Choose color(s). Separate from ChooseOption so RL gets a clean 5/6-way head.
     /// Forge: chooseColor / chooseColorAllowColorless / chooseColors.
-    /// GRE:   part of choose-option-from-list.
+    /// GRE:   SelectNReq with a color `StaticList`; for mana-type-at-cast it is the
+    ///        `selectManaTypeReq` arm of a `CastingTimeOptionReq` (SelectManaTypeReq).
     ChooseColor { allowed: Vec<Color>, min: u32, max: u32 },
 
     /// A yes/no (or this-or-that binary). `kind` carries what's being confirmed: an
@@ -366,7 +371,8 @@ pub enum DecisionRequest {
     /// Forge: confirmAction / confirmTrigger / confirmReplacementEffect (boolean form) /
     ///        confirmStaticApplication / confirmBidAction / chooseBinary / chooseFlipResult
     ///        / willPutCardOnTop / confirmMulliganScry / confirmPayment.
-    /// GRE:   PromptReq / CHOOSE_BINARY / OptionalActionMessage.
+    /// GRE:   OptionalActionMessage → OptionalResp. (No standalone ConfirmReq in this build;
+    ///        `Prompt` is display metadata, not the decision.)
     Confirm { kind: ConfirmKind },
 }
 ```
@@ -529,7 +535,9 @@ pub struct ActionRef(pub StackId);   // the in-progress cast/activation a sub-de
 ## 6. Coverage matrix (the superset proof)
 
 ### 6.1 MTGA GRE `GREMessageType` request catalog → variant
-(Catalog from `DECOMPILE_PLAN.md` §1. Every server→client `*Req` maps onto a variant.)
+(Catalog validated against `../mtga-re/docs/GRE_DECISIONS.md` + `REQ_RESP_FIELDS.md` +
+`schema/gre_schema.json` — recovered & log-validated, see §9. Every server→client decision
+`*Req` maps onto a variant.)
 
 | GRE `*Req` | `DecisionRequest` variant |
 |---|---|
@@ -542,7 +550,8 @@ pub struct ActionRef(pub StackId);   // the in-progress cast/activation a sub-de
 | `OrderCombatDamageReq` | `OrderObjects{BlockersOf}` / `AssignCombatDamage` |
 | `OrderReq` | `OrderObjects` |
 | `SelectTargetsReq` | `ChooseTargets` |
-| `SelectNReq` | `SelectCards` |
+| `SelectNReq` (object `ids`) | `SelectCards` |
+| `SelectNReq` (label `StaticList`/`SelectionListType`) | `ChooseOption` / `ChooseColor` |
 | `SelectNGroupReq` / `SelectFromGroupsReq` / `GroupReq` | `SelectFromGroups` |
 | `SelectCountersReq` | `ChooseCounterType` |
 | `SelectReplacementReq` | `ChooseReplacement` |
@@ -552,11 +561,11 @@ pub struct ActionRef(pub StackId);   // the in-progress cast/activation a sub-de
 | `CastingTimeOptionsReq` | `CastingTimeOptions` (or decomposed: `ChooseModes`/`ChooseNumber`/`Confirm`) |
 | `NumericInputReq` | `ChooseNumber` |
 | `StringInputReq` | `ChooseOption{NameCard}` (constrained vocabulary) |
-| `PromptReq` | `Confirm` / `ChooseOption` |
+| `OptionalActionMessage` / `AllowForceDraw` / `EdictalMessage` | `Confirm` |
 | `RevealHandReq` | `observe()` (push) / `SelectCards{Reveal}` if a choice is needed |
 | `GatherReq` | `SelectCards` / `SelectFromGroups` |
-| `AllowForceDraw` / `OptionalActionMessage` / `EdictalMessage` | `Confirm` |
-| `IntermissionReq`/`TimeoutMessage`/`TimerStateMessage`/`UIMessage`/`PredictionResp` | not engine decisions — transport/UI; handled at the `MtgaClientAgent` layer, not in the enum |
+| `PromptReq` | **not a decision** — `Prompt{promptId, parameters}` is localized display metadata attached to other reqs; never a standalone variant |
+| `IntermissionReq`/`TimeoutMessage`/`TimerStateMessage`/`UIMessage`/`PredictionResp` | not engine decisions — transport/UI; handled at the GRE-server/`MtgaClientAgent` layer, not in the enum |
 
 ### 6.2 Forge `PlayerController` (107 methods) → variant
 (Grouped; every decision-making method maps. Pure-notification methods map to `observe`.)
@@ -804,6 +813,13 @@ pairing table `../mtga-re/docs/GRE_DECISIONS.md`), recovered from MTGA `2026.59.
   (`minAmount, maxAmount, minPerTarget, targetIds[], requiredDistributionValues[]`) ↔
   `Distribute`; `SelectReplacementReq { replacements[], isOptional, replacementsType }` ↔
   `ChooseReplacement`.
+- **`PromptReq`/confirm/option choices — CORRECTED.** There is **no standalone `PromptReq`
+  decision** in this build: `Prompt { promptId, parameters[] }` is localized *display
+  metadata* attached to most reqs. So: yes/no confirms ↔ `OptionalActionMessage` →
+  `OptionalResp` (mapped to `Confirm`); "choose a type/vote/keyword/color" ↔ a `SelectNReq`
+  carrying a **`StaticList`** of labels (`SelectionListType`/`IdType` mark it as label, not
+  object, selection) (mapped to `ChooseOption`/`ChooseColor`); name-a-card ↔ `StringInputReq`.
+  §3 comments and the §6.1 table are corrected accordingly.
 
 **Net:** the **variant set did not change** — it is a confirmed strict superset of the
 validated catalog. Only `ChooseNumber` gained fields (above). A few finer GRE constraints are
