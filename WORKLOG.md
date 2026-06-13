@@ -5,6 +5,19 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **lead:** **Card-pool push kicked off — Standard Selesnya Landfall** (60-card deck, 18 unique
+  nonbasics). Built a **SQLite card index** (`scripts/build_card_index.py` → `data/scryfall/
+  cards.sqlite`, one row per printing, indexed by name/oracle_id) and wired it into `setup.sh`, so
+  card lookups are instant instead of `jq`-ing the 550MB JSON (~2 min/pass). Spec + per-card data +
+  ease tiers + the interpreter-capability list (C1–C18) → `docs/plans/SELESNYA_LANDFALL_CARDS.md`.
+  Delegated on disjoint file seams: **engine** = interpreter capabilities (whiteboard/effects),
+  **design** = `cards/` refactor (misc/ + per-set folders by first-printing set) + card authoring.
+- **lead:** Implemented the **London mulligan (CR 103.5)** in `start_game::run_mulligans` — rounds
+  in turn order, shuffle-hand-into-library + redraw on mulligan, bottom one card per mulligan on
+  keep, all through the `Agent` boundary (`Mulligan` + `SelectCards{BottomForMulligan}`). RandomAgent
+  keeps every hand (a coin-flip mull is noise for self-play; keeping consumes no RNG so seeded games
+  stay deterministic). The web/CLI projection already handled both requests. 85 mtg-core tests green
+  + a new scripted-mulligan test.
 - **webui:** **play-UX polish from rapid user feedback.** (1) Stop dots are now full-width
   clickable rows (much bigger hit targets, 12px dots) instead of tiny circles; (2) the two
   per-step dots reordered to opponent-on-top / **you-on-bottom** (matches board layout); (3)
