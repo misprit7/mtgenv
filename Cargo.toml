@@ -11,3 +11,7 @@ edition = "2021"
 [workspace.dependencies]
 serde = { version = "1.0", features = ["derive"] }
 thiserror = "1.0"
+
+# Test deps. `expect-test` = inline snapshot ("expect") tests, the Rust analog of Jane
+# Street's ppx_expect; regenerate snapshots with `UPDATE_EXPECT=1 cargo test`.
+expect-test = "1.5"

@@ -47,6 +47,15 @@ implement the full ruleset; near-term it's a tiny card pool with a correct core.
 - Binaries live in their own thin crates/`bin/` with minimal build targets; one canonical
   import path per item (no re-export shims). Build artifacts (`target/`) are gitignored.
 - Test what you write: `cargo build` / `cargo test` (workspace).
+- **Inline expect-style tests for functionality.** Use the `expect-test` crate — the Rust
+  analog of Jane Street's `ppx_expect` — co-located in `#[cfg(test)] mod tests`. For anything
+  with meaningful output (a rendered game state, the enumerated legal options at a decision
+  point, a turn trace, a serialized message), snapshot it:
+  `expect![[r#"...expected..."#]].assert_eq(&actual)` over a `Debug`/`Display` render, and
+  regenerate the expected blocks with `UPDATE_EXPECT=1 cargo test`. `expect-test` is in
+  `[workspace.dependencies]`; add `expect-test.workspace = true` to your crate's
+  `[dev-dependencies]`. Plain `assert!`/`assert_eq!` are fine for simple invariants, but
+  prefer expect snapshots for behaviour/functionality.
 
 ## Prior art on this machine (reference / reuse — don't reinvent)
 
