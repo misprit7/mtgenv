@@ -5,6 +5,21 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **engine:** task #14 checkpoint 1 — **evergreen COMBAT keywords**. Added PRINTED keywords
+  (`Characteristics.keywords: Vec<Keyword>`, seeded into `chars::compute` so the layer system
+  layers grants/removes on top). Implemented: first strike & double strike (combat damage now
+  has the two-substep model, CR 510.4, with an SBA pass between steps so a creature killed in
+  the first-strike step doesn't deal back); trample (assign lethal to blockers, excess to the
+  defender); deathtouch (any nonzero damage lethal — `Object.dealt_deathtouch` + SBA 704.5h,
+  and 1 counts as lethal for trample assignment); lifelink (source's controller gains the
+  damage); vigilance (doesn't tap to attack); menace (single block dropped → stays unblocked);
+  defender (can't attack); + indestructible now prevents the lethal-damage/deathtouch SBA (not
+  the toughness-0 one). Flying/reach were done in M5. Scryfall-verified single-keyword cards:
+  Elvish Archers, Fencing Ace, Argothian Swine, Typhoid Rats, Child of Night, Alaborn
+  Grenadier, Alley Strangler, Wall of Stone. 67 mtg-core tests green, workspace green, clippy
+  clean. No effects/ change (Keyword enum already complete). Next checkpoints: (2) rest of
+  evergreen keywords (haste/flash/hexproof/shroud/ward/indestructible-confirm), (3)
+  auras+equipment, (4) planeswalkers.
 - **gym:** refreshed `docs/plans/GYM_PLAN.md` to a current spec (was a stale sketch). Removed all
   Forge references (abandoned prior attempt); re-anchored on PyO3+maturin + the *implemented* `Agent`
   boundary (`agent.rs`: 21 `DecisionRequest` variants, `PlayerView`, `RandomAgent`). Key updates:
