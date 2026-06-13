@@ -20,6 +20,14 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
   untouched. 49 mtg-core tests green (policy unit tests + an end-to-end spy: minor steps
   elided, full-control prompts everywhere); workspace green, clippy clean. webui pairs the UI
   (stop toggles + full-control + phase/active-stops display).
+  - **Refined to decompile's recovered MTGA spec** (../mtga-re/docs/priority_stops.md):
+    persistent default stops are now **MP1/MP2 only** (declare-attackers/blockers are forced
+    turn-based actions, not priority stops — dropped from defaults vs the task's literal list);
+    added **SmartStops** (per-seat, MTGA default ON) = prompt wherever you have a legal play
+    (replaces "auto-pass unimportant even with an action"; that's now the SmartStops-OFF mode).
+    API adds `set_smart_stops(p, on)`. Deferred (noted): `stackAutoPassOption`
+    (ResolveMyStackEffects — auto-pass after your own cast until opponent acts), yields/answers,
+    transient stops.
 - **engine:** task #11 GENERALIZATION (milestone 4 cont.) — the rewrite pass + triggers are
   now beyond the self-scoped prototype (4 snapshot commits): (1) land plays routed through the
   whiteboard + `Rewrite::EntersTapped`/`Action::TapUntap`; (2) a **dies/LTB trigger** (Exultant
