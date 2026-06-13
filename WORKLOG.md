@@ -5,6 +5,21 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **engine:** task #12 — **Arena-profile priority auto-pass + MTGA-style stops** (decision
+  elision, AGENT_INTERFACE §8.1) layered over the CR-correct priority loop. The engine still
+  grants priority at every window; the policy elides the `Priority` prompt (treats it as a
+  pass without consulting the agent) per `should_auto_pass`: never auto-passes a stop or under
+  full control; with the policy off it always prompts. Rules: auto-pass when no non-pass
+  action (except own MP1, a default stop); auto-pass through unimportant steps (upkeep/draw/
+  begin+end combat/end) even with actions unless a stop is set; default stops = own MP1/MP2,
+  declare-attackers (own turn), declare-blockers (defending). Per-seat `StopConfig`
+  (full-control toggle + per-step overrides) on the `Engine`; API: `set_arena_auto_pass`,
+  `set_full_control`, `set_stop(p, step, Option<bool>)`, `is_stop`, `stop_config`. **Off by
+  default** (paper-CR / deterministic for differential-test + RL replay); a human/UI session
+  enables it. Forced choices (targets/order/discard/mulligan/combat declarations) are
+  untouched. 49 mtg-core tests green (policy unit tests + an end-to-end spy: minor steps
+  elided, full-control prompts everywhere); workspace green, clippy clean. webui pairs the UI
+  (stop toggles + full-control + phase/active-stops display).
 - **engine:** task #11 GENERALIZATION (milestone 4 cont.) — the rewrite pass + triggers are
   now beyond the self-scoped prototype (4 snapshot commits): (1) land plays routed through the
   whiteboard + `Rewrite::EntersTapped`/`Action::TapUntap`; (2) a **dies/LTB trigger** (Exultant
