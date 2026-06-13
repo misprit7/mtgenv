@@ -80,13 +80,17 @@ pub fn collect(state: &GameState) -> Vec<StateBasedAction> {
             });
         }
     }
-    // Creature-death SBAs (CR 704.5f/g). Iterating the arena is deterministic (BTreeMap by
-    // ObjId). Toughness/damage come from base characteristics (the layer system is M5).
+    // Creature-death SBAs (CR 704.5f/g). Toughness/type come from the computed (layered)
+    // characteristics (CR 613) — so anthems, set-base effects and counters all count.
     for o in state.objects.values() {
-        if o.zone != Zone::Battlefield || !o.chars.is_creature() {
+        if o.zone != Zone::Battlefield {
             continue;
         }
-        let toughness = o.effective_toughness();
+        let cc = state.computed(o.id);
+        if !cc.is_creature() {
+            continue;
+        }
+        let toughness = cc.toughness.unwrap_or(0);
         if toughness <= 0 {
             out.push(StateBasedAction::CreatureDies {
                 creature: o.id,

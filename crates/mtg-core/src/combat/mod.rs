@@ -17,6 +17,7 @@ use crate::agent::{
     AttackerOption, BlockerOption, DamageSlot, DecisionRequest, DecisionResponse,
 };
 use crate::basics::{DamageKind, Target};
+use crate::effects::ability::Keyword;
 use crate::effects::action::{Action, ResolutionCtx, Whiteboard, WbReason};
 use crate::ids::{ObjId, PlayerId};
 use crate::priority::Engine;
@@ -65,21 +66,24 @@ impl Engine {
     }
 
     fn creature_power(&self, id: ObjId) -> u32 {
-        self.state
-            .objects
-            .get(&id)
-            .map(|o| o.effective_power())
-            .unwrap_or(0)
-            .max(0) as u32
+        self.state.computed(id).power.unwrap_or(0).max(0) as u32
     }
 
     fn creature_lethal(&self, id: ObjId) -> u32 {
-        let o = match self.state.objects.get(&id) {
-            Some(o) => o,
-            None => return 0,
-        };
-        let tough = o.effective_toughness().max(0) as u32;
-        tough.saturating_sub(o.damage_marked)
+        let tough = self.state.computed(id).toughness.unwrap_or(0).max(0) as u32;
+        let marked = self.state.objects.get(&id).map(|o| o.damage_marked).unwrap_or(0);
+        tough.saturating_sub(marked)
+    }
+
+    /// Whether `blocker` may legally block `attacker` given evasion (CR 509.1b). Milestone 5:
+    /// flying — a creature with flying can only be blocked by creatures with flying or reach.
+    fn can_block(&self, blocker: ObjId, attacker: ObjId) -> bool {
+        if self.state.computed(attacker).has_keyword(Keyword::Flying) {
+            let bk = self.state.computed(blocker);
+            bk.has_keyword(Keyword::Flying) || bk.has_keyword(Keyword::Reach)
+        } else {
+            true
+        }
     }
 
     /// Declare Attackers step (CR 508): a turn-based action, no stack. The active player
@@ -178,7 +182,12 @@ impl Engine {
             .iter()
             .map(|&id| BlockerOption {
                 creature: id,
-                may_block: attacker_ids.clone(),
+                // Evasion-filtered (CR 509.1b): only the attackers this creature may block.
+                may_block: attacker_ids
+                    .iter()
+                    .copied()
+                    .filter(|&atk| self.can_block(id, atk))
+                    .collect(),
                 required: false,
                 block_cost: None,
             })
@@ -318,5 +327,60 @@ impl Engine {
     /// "until end of combat" effects expire (none in milestone 3).
     pub(crate) fn end_combat(&mut self) {
         self.state.combat = None;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::agent::{Agent, RandomAgent};
+    use crate::basics::Zone;
+    use crate::cards::{self, grp};
+
+    fn put_bf(state: &mut crate::state::GameState, owner: PlayerId, grp_id: u32) -> ObjId {
+        let chars = state.card_db().get(grp_id).unwrap().chars.clone();
+        state.add_card(owner, chars, Zone::Battlefield)
+    }
+
+    fn engine() -> Engine {
+        let state = cards::build_game(1, &[&[], &[]]);
+        let agents: Vec<Box<dyn Agent>> =
+            vec![Box::new(RandomAgent::new(1)), Box::new(RandomAgent::new(2))];
+        Engine::new(state, agents)
+    }
+
+    #[test]
+    fn anthem_boosts_combat_damage() {
+        // A 2/2 under Glorious Anthem (computed 3/3) attacks unblocked → 3 damage (CR 613 P/T
+        // reaches combat).
+        let mut e = engine();
+        let bears = put_bf(&mut e.state, PlayerId(0), grp::GRIZZLY_BEARS);
+        put_bf(&mut e.state, PlayerId(0), grp::GLORIOUS_ANTHEM);
+        e.state.active_player = PlayerId(0);
+        e.state.combat = Some(CombatState {
+            attackers: vec![Attack {
+                attacker: bears,
+                defender: Target::Player(PlayerId(1)),
+            }],
+            blocks: vec![],
+        });
+        e.combat_damage();
+        assert_eq!(e.state.player(PlayerId(1)).life, 17, "2/2 + anthem = 3 damage");
+    }
+
+    #[test]
+    fn flying_evasion_masks_blocks() {
+        // A granted-flying attacker (Levitation) can't be blocked by a ground creature, but a
+        // flyer can block it; a non-flying attacker can be blocked normally (CR 509.1b / 702.9).
+        let mut e = engine();
+        let atk = put_bf(&mut e.state, PlayerId(0), grp::GRIZZLY_BEARS);
+        let blk = put_bf(&mut e.state, PlayerId(1), grp::GRIZZLY_BEARS);
+        assert!(e.can_block(blk, atk), "ground blocks ground");
+
+        put_bf(&mut e.state, PlayerId(0), grp::LEVITATION); // P0's creatures gain flying
+        assert!(!e.can_block(blk, atk), "ground can't block a flyer");
+
+        put_bf(&mut e.state, PlayerId(1), grp::LEVITATION); // P1's creatures gain flying too
+        assert!(e.can_block(blk, atk), "a flyer can block a flyer");
     }
 }

@@ -356,6 +356,8 @@ impl Engine {
                     let cur = o.counters.counts.entry(kind).or_insert(0);
                     *cur = (*cur as i32 + n).max(0) as u32;
                 }
+                // +1/+1 / -1/-1 counters change computed P/T (CR 613 layer 7c).
+                self.state.mark_chars_dirty();
             }
             Action::TapUntap { obj, tap } => {
                 if let Some(o) = self.state.objects.get_mut(&obj) {

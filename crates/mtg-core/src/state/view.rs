@@ -33,11 +33,22 @@ fn chars_view(c: &Characteristics, db: &CardDb) -> CharacteristicsView {
     }
 }
 
-/// A fully-perceived object (public zones + the viewer's own hand).
-fn visible(o: &Object, db: &CardDb) -> ObjView {
+/// A fully-perceived object (public zones + the viewer's own hand). On the battlefield, the
+/// shown power/toughness/keywords are the COMPUTED (layered, CR 613) values so the UI sees
+/// anthems/counters/keyword grants; elsewhere the base characteristics are shown.
+fn visible(state: &GameState, o: &Object) -> ObjView {
+    let mut chars = chars_view(&o.chars, &state.card_db);
+    if o.zone == crate::basics::Zone::Battlefield {
+        let computed = state.computed(o.id);
+        chars.power = computed.power;
+        chars.toughness = computed.toughness;
+        chars.card_types = computed.card_types.iter().map(|t| t.as_str().to_string()).collect();
+        chars.colors = computed.colors.clone();
+        chars.keywords = computed.keywords.iter().map(|k| format!("{k:?}")).collect();
+    }
     ObjView::Visible {
         id: o.id,
-        chars: chars_view(&o.chars, db),
+        chars,
         controller: o.controller,
         owner: o.owner,
         zone: o.zone,
@@ -52,7 +63,7 @@ fn visible(o: &Object, db: &CardDb) -> ObjView {
 fn obj_views<'a>(state: &'a GameState, ids: impl IntoIterator<Item = &'a ObjId>) -> Vec<ObjView> {
     ids.into_iter()
         .filter_map(|id| state.objects.get(id))
-        .map(|o| visible(o, &state.card_db))
+        .map(|o| visible(state, o))
         .collect()
 }
 
