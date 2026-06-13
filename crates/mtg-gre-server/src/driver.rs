@@ -178,6 +178,34 @@ pub fn engine_with_stops(
     (engine, handle)
 }
 
+/// Like [`engine_with_stops`] but for a **multi-seat lobby game**: builds the engine, applies each
+/// human seat's [`Stops`] to its own `StopConfig`, and returns the (not-yet-run) engine plus each
+/// human seat's live stop handle (so each seat's socket task can toggle its own stops mid-game). The
+/// engine itself never leaves the game thread (`dyn Agent` isn't `Send`); only the handles cross.
+pub fn room_engine(
+    state: GameState,
+    agents: Vec<Box<dyn Agent>>,
+    humans: &[(PlayerId, Stops)],
+) -> (Engine, Vec<(PlayerId, Arc<Mutex<StopConfig>>)>) {
+    let engine = Engine::new(state, agents);
+    let mut handles = Vec::with_capacity(humans.len());
+    for (seat, stops) in humans {
+        let handle = engine.stops_handle(*seat);
+        {
+            let mut c = handle.lock().unwrap();
+            c.auto_pass = stops.auto_pass;
+            c.full_control = stops.full_control;
+            c.smart_stops = stops.smart_stops;
+            c.resolve_own_stack = stops.resolve_own_stack;
+            for &(step, own, on) in &stops.overrides {
+                c.set_override(step, own, Some(on));
+            }
+        }
+        handles.push((*seat, handle));
+    }
+    (engine, handles)
+}
+
 /// Play a prepared engine to completion (used by the web path, which runs it on its own thread
 /// after extracting the live stop handle via [`engine_with_stops`]).
 pub fn finish_game(mut engine: Engine) -> Outcome {
@@ -210,6 +238,17 @@ pub fn state_for_decks(p0: Option<&str>, p1: Option<&str>, seed: u64) -> GameSta
     };
     let (d0, d1) = (pick(p0), pick(p1));
     mtg_core::cards::build_game(seed, &[&d0, &d1])
+}
+
+/// Build a game from N per-seat preset deck names (`"burn"`/`"bears"`/`"demo"`); any unknown name
+/// falls back to the demo deck. Used by the lobby (arbitrary seat count). Decks are `grp_id` lists.
+pub fn state_for_deck_names(seed: u64, names: &[&str]) -> GameState {
+    let decks: Vec<Vec<u32>> = names
+        .iter()
+        .map(|n| mtg_core::cards::preset_deck(n).unwrap_or_else(mtg_core::cards::demo_deck))
+        .collect();
+    let refs: Vec<&[u32]> = decks.iter().map(|d| d.as_slice()).collect();
+    mtg_core::cards::build_game(seed, &refs)
 }
 
 #[cfg(test)]

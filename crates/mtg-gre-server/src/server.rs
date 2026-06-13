@@ -15,10 +15,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
-use axum::extract::Query;
+use axum::extract::{Query, State};
 use axum::response::{Html, IntoResponse};
 use axum::routing::get;
 use axum::Router;
+use futures_util::stream::{SplitSink, SplitStream};
 use futures_util::{SinkExt, StreamExt};
 use mtg_core::agent::{Agent, RandomAgent};
 use mtg_core::basics::Phase;
@@ -32,8 +33,12 @@ use crate::session::{ClientResponse, GreSessionAgent};
 use mtg_core::priority::StopConfig;
 use mtg_core::state::GameState;
 
-/// The self-contained, no-build client served when `web/dist/` is absent.
+/// The self-contained, no-build **game** client served at `/play` when `web/dist/` is absent.
 const EMBEDDED_CLIENT: &str = include_str!("embedded_client.html");
+
+/// The self-contained **lobby** landing page (served at `/`). Vanilla JS, no build step — it talks
+/// to the REST API (`/api/games`) and links into the game client at `/play`.
+const LOBBY_HTML: &str = include_str!("lobby_client.html");
 
 /// Batch-resolved Scryfall art manifest (grp_id → art_crop/normal/artist). Generated once by
 /// the resolver script and baked in, so the client never queries the Scryfall API at runtime —
@@ -43,23 +48,49 @@ const CARD_ART: &str = include_str!("../card-art.json");
 /// A per-connection seed, so successive games vary while staying replayable.
 static SEED: AtomicU64 = AtomicU64::new(1);
 
-/// Build the axum app: a `/ws` endpoint plus static serving of the front end.
+/// Build the axum app: the lobby (`/` + `/api/games`), the game client (`/play`), the game
+/// WebSocket (`/ws`), and static serving (`/assets`, art) — all sharing the [`Lobby`] state.
+///
+/// [`Lobby`]: crate::lobby::Lobby
 pub fn app() -> Router {
+    let lobby = crate::lobby::Lobby::new();
     let dist = Path::new(env!("CARGO_MANIFEST_DIR")).join("web/dist");
     let mut router = Router::new()
+        .route("/", get(lobby_page))
+        .route("/play", get(game_page))
         .route("/ws", get(ws_handler))
-        .route("/card-art.json", get(card_art));
+        .route("/card-art.json", get(card_art))
+        .route(
+            "/api/games",
+            get(crate::lobby::list_games).post(crate::lobby::create_game),
+        )
+        .route("/api/games/:id", get(crate::lobby::game_detail));
     if dist.join("index.html").exists() {
-        // Built Vite front end available — serve it, falling back to the embedded client only
-        // for unmatched routes.
+        // Built Vite front end available — serve its /assets/* (and any stray path) via ServeDir.
         router = router.fallback_service(ServeDir::new(dist).fallback(get(embedded)));
     } else {
         router = router.fallback(get(embedded));
     }
-    router
+    router.with_state(lobby)
 }
 
-/// Serve the embedded no-build client.
+/// The lobby landing page (`/`).
+async fn lobby_page() -> impl IntoResponse {
+    Html(LOBBY_HTML)
+}
+
+/// The game client (`/play`): the built Vite `index.html` if present, else the embedded client.
+/// Read at request time so a fresh `npm run build` is picked up without restarting the server
+/// (mirrors how `ServeDir` serves assets).
+async fn game_page() -> impl IntoResponse {
+    let idx = Path::new(env!("CARGO_MANIFEST_DIR")).join("web/dist/index.html");
+    match std::fs::read_to_string(&idx) {
+        Ok(html) => Html(html).into_response(),
+        Err(_) => Html(EMBEDDED_CLIENT).into_response(),
+    }
+}
+
+/// Serve the embedded no-build game client (also the static fallback).
 async fn embedded() -> impl IntoResponse {
     Html(EMBEDDED_CLIENT)
 }
@@ -73,7 +104,7 @@ async fn card_art() -> impl IntoResponse {
 /// draws opening hands), grouped by card with counts. This is for the human's debug zone viewer
 /// only — it is read straight from `GameState`, never via `PlayerView`, so it can't leak into the
 /// agent boundary. Library *order* is discarded (grouped), so nothing about draw order is exposed.
-fn decklist_for(state: &GameState, seat: PlayerId) -> Vec<DeckEntry> {
+pub(crate) fn decklist_for(state: &GameState, seat: PlayerId) -> Vec<DeckEntry> {
     use std::collections::BTreeMap;
     // grp_id → (count, representative chars). Group by printing so duplicates collapse to a count.
     let mut groups: BTreeMap<u32, (u32, DeckCardView)> = BTreeMap::new();
@@ -118,7 +149,7 @@ fn decklist_for(state: &GameState, seat: PlayerId) -> Vec<DeckEntry> {
 
 /// Build the stop-config echo (the engine's live `StopConfig` for the human seat) the UI renders
 /// the phase bar / toggles from. Read straight off the shared handle the engine re-reads each window.
-fn stops_msg(s: &StopConfig) -> ServerMsg {
+pub(crate) fn stops_msg(s: &StopConfig) -> ServerMsg {
     // Both turn sides of each step, zipped into one `(step, on_my_turn, on_opp_turn)` row so the
     // phase bar renders two independent dots per step. `effective_steps` yields the same ordered
     // step list for either side, so zipping them is well-defined.
@@ -146,15 +177,16 @@ pub async fn serve(addr: &str) -> std::io::Result<()> {
     axum::serve(listener, app()).await
 }
 
-/// `/ws?p0=<deck>&p1=<deck>` — deck names (`burn`/`bears`/`demo`) pick each seat's deck; unset =
-/// demo. `?autopass=0` plays paper-CR (prompt every window); `?fullcontrol=1` stops everywhere.
-/// Seat 0 is the human (browser), seat 1 the `RandomAgent`.
+/// `GET /ws` — the game socket. Two shapes:
+/// - **Lobby:** `?game=<id>&seat=<n>` claims human seat `n` of an existing lobby game (the room
+///   auto-starts once all its human seats connect). See [`crate::lobby::handle_lobby_socket`].
+/// - **Legacy/quick:** no `game` → an ephemeral one-off game, browser = seat 0 (human), seat 1 a
+///   `RandomAgent`; `?p0=`/`?p1=` pick decks. Either way `?autopass=0` plays paper-CR, etc.
 async fn ws_handler(
     ws: WebSocketUpgrade,
+    State(lobby): State<Arc<crate::lobby::Lobby>>,
     Query(params): Query<HashMap<String, String>>,
-) -> impl IntoResponse {
-    let p0 = params.get("p0").cloned();
-    let p1 = params.get("p1").cloned();
+) -> axum::response::Response {
     let truthy = |v: &str| v == "1" || v.eq_ignore_ascii_case("on") || v.eq_ignore_ascii_case("true");
     let flag = |key: &str, dflt: bool| params.get(key).map(|v| truthy(v)).unwrap_or(dflt);
     // Defaults come from `Stops::default()` (single source of truth — SmartStops OFF + the default
@@ -187,6 +219,19 @@ async fn ws_handler(
         resolve_own_stack: flag("resolvestack", def.resolve_own_stack),
         overrides,
     };
+    // Lobby path: join a specific game's seat.
+    if let Some(game) = params.get("game").and_then(|g| g.parse::<u64>().ok()) {
+        let seat = params
+            .get("seat")
+            .and_then(|s| s.parse::<usize>().ok())
+            .unwrap_or(0);
+        return ws.on_upgrade(move |socket| {
+            crate::lobby::handle_lobby_socket(socket, lobby, game, seat, stops)
+        });
+    }
+    // Legacy/quick path: ephemeral human-vs-RandomAgent game.
+    let p0 = params.get("p0").cloned();
+    let p1 = params.get("p1").cloned();
     ws.on_upgrade(move |socket| handle_socket(socket, p0, p1, stops))
 }
 
@@ -203,7 +248,7 @@ async fn handle_socket(
 
     // server→client pushes (unbounded; sent from the sync game thread) and client→server
     // responses (std mpsc; blocking-recv on the game thread).
-    let (to_client_tx, mut to_client_rx) = tokio::sync::mpsc::unbounded_channel::<ServerMsg>();
+    let (to_client_tx, to_client_rx) = tokio::sync::mpsc::unbounded_channel::<ServerMsg>();
     let (from_client_tx, from_client_rx) = std::sync::mpsc::channel::<ClientResponse>();
 
     let result_tx = to_client_tx.clone(); // game thread → client (final GameOver frame)
@@ -247,8 +292,22 @@ async fn handle_socket(
     // Echo the initial stop config so the phase bar / toggles render the live state.
     let _ = echo_tx.send(stops_msg(&stops_handle.lock().unwrap()));
 
-    let (mut sink, mut stream) = socket.split();
+    let (sink, stream) = socket.split();
+    run_player_socket(sink, stream, to_client_rx, from_client_tx, echo_tx, stops_handle).await;
+}
 
+/// Drive one human seat's WebSocket once its game is running: forward engine pushes
+/// (`to_client_rx` → socket) and relay client input (socket → `from_client_tx` responses /
+/// live `SetStop`/`SetOption` stop edits, echoed back). Shared by the legacy single-game path
+/// ([`handle_socket`]) and the lobby room path (`crate::lobby::handle_lobby_socket`).
+pub(crate) async fn run_player_socket(
+    mut sink: SplitSink<WebSocket, Message>,
+    mut stream: SplitStream<WebSocket>,
+    mut to_client_rx: tokio::sync::mpsc::UnboundedReceiver<ServerMsg>,
+    from_client_tx: std::sync::mpsc::Sender<ClientResponse>,
+    echo_tx: tokio::sync::mpsc::UnboundedSender<ServerMsg>,
+    stops_handle: Arc<Mutex<StopConfig>>,
+) {
     // Forward server→client messages onto the socket as JSON text frames.
     let mut send_task = tokio::spawn(async move {
         while let Some(msg) = to_client_rx.recv().await {

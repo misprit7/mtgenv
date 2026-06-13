@@ -23,4 +23,5 @@ pub mod cli;
 pub mod human;
 pub mod session;
 pub mod driver;
+pub mod lobby;
 pub mod server;

@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>mtgenv — lobby</title>
+<style>
+  :root { --bg:#0e1411; --panel:#16201b; --rail:#101713; --line:#23302a; --ink:#e7efe9;
+    --muted:#7e948a; --accent:#39d98a; --accent2:#2bb3ff; --warn:#b9821f; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.5 ui-sans-serif,system-ui,Segoe UI,Roboto,sans-serif; }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 22px 18px 60px; }
+  h1 { font-size: 22px; margin: 0 0 2px; }
+  h1 .tag { color: var(--accent); }
+  .sub { color: var(--muted); margin: 0 0 22px; font-size: 13px; }
+  .panel { background: var(--panel); border:1px solid var(--line); border-radius: 12px; padding: 16px 18px; margin-bottom: 22px; }
+  .panel h2 { margin: 0 0 12px; font-size: 15px; }
+  .seats { display:flex; gap:14px; flex-wrap: wrap; }
+  .seat { background: var(--rail); border:1px solid var(--line); border-radius: 10px; padding: 12px; min-width: 220px; flex:1; }
+  .seat h3 { margin:0 0 8px; font-size: 13px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing:.04em; }
+  label { display:block; font-size: 12px; color: var(--muted); margin: 8px 0 3px; }
+  select, input[type=text] { width:100%; background:#0c120f; color:var(--ink); border:1px solid var(--line);
+    border-radius:7px; padding:7px 8px; font-size: 13px; }
+  .row { display:flex; gap:12px; align-items:flex-end; margin-top:14px; flex-wrap: wrap; }
+  .row .grow { flex:1; min-width: 200px; }
+  button { background: var(--accent); color:#06140b; border:none; border-radius:8px; padding:9px 16px;
+    font-weight:700; font-size: 13px; cursor:pointer; }
+  button:hover { filter: brightness(1.07); }
+  button.ghost { background: transparent; color: var(--ink); border:1px solid var(--line); }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  .games { display:flex; flex-direction:column; gap:12px; }
+  .game { background: var(--rail); border:1px solid var(--line); border-radius:10px; padding:12px 14px;
+    display:flex; align-items:center; gap:14px; flex-wrap: wrap; }
+  .game .gid { font-weight:800; }
+  .game .gname { color: var(--muted); }
+  .badge { font-size:11px; padding:2px 8px; border-radius:999px; font-weight:700; }
+  .badge.waiting { background:#2a2410; color:#e8c55b; }
+  .badge.running { background:#0f2a1c; color:var(--accent); }
+  .badge.finished { background:#101d2a; color:var(--accent2); }
+  .chips { display:flex; gap:6px; flex-wrap:wrap; }
+  .chip { font-size:11px; padding:2px 8px; border-radius:6px; border:1px solid var(--line); background:#0c120f; }
+  .chip.human { border-color:#2f5; }
+  .chip.open { border-color: var(--warn); color:#e8c55b; }
+  .spacer { flex:1; }
+  .acts { display:flex; gap:8px; align-items:center; }
+  a.joinbtn { background: var(--accent2); color:#04121d; text-decoration:none; border-radius:8px; padding:7px 12px; font-weight:700; font-size:12px; }
+  a.joinbtn:hover { filter:brightness(1.08); }
+  .winner { color: var(--accent2); font-weight:700; }
+  .empty { color: var(--muted); padding: 8px 2px; }
+  .hint { color: var(--muted); font-size: 12px; margin-top: 10px; }
+  .links a { color: var(--accent2); }
+  #newlinks { margin-top: 10px; font-size: 13px; }
+  #newlinks a { color: var(--accent2); margin-right: 12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>mtg<span class="tag">env</span> · lobby</h1>
+  <p class="sub">Set up a game and choose who plays each seat. Open one browser tab per human seat —
+    games start automatically once every human seat is connected.</p>
+
+  <div class="panel">
+    <h2>New game</h2>
+    <div class="seats" id="seatForm"></div>
+    <div class="row">
+      <div class="grow">
+        <label for="gname">Name (optional)</label>
+        <input type="text" id="gname" placeholder="Game name…" />
+      </div>
+      <button id="createBtn">Create game</button>
+    </div>
+    <div id="newlinks"></div>
+    <div class="hint">Tip: pick <b>Human</b> for both seats and open both seat links to play both
+      sides yourself. Pick a <b>Test agent</b> for an opponent that plays itself.</div>
+  </div>
+
+  <div class="panel">
+    <h2>Games</h2>
+    <div class="games" id="games"><div class="empty">Loading…</div></div>
+  </div>
+</div>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const KINDS = [["human", "Human"], ["random", "Test agent (random)"], ["rl", "RL AI (not trained — random)"]];
+const DECKS = ["demo", "burn", "bears"];
+const SEAT_COUNT = 2;
+
+// Build the per-seat create form.
+function buildForm() {
+  const host = $("seatForm");
+  host.innerHTML = "";
+  for (let i = 0; i < SEAT_COUNT; i++) {
+    const seat = el("div", "seat");
+    seat.appendChild(el("h3", null, "Seat " + i + (i === 0 ? "  (Player 0)" : "  (Player 1)")));
+    const kl = el("label", null, "Played by"); seat.appendChild(kl);
+    const ks = el("select"); ks.id = "kind" + i;
+    KINDS.forEach(([v, t]) => { const o = el("option", null, t); o.value = v; ks.appendChild(o); });
+    ks.value = i === 0 ? "human" : "random";
+    seat.appendChild(ks);
+    const dl = el("label", null, "Deck"); seat.appendChild(dl);
+    const ds = el("select"); ds.id = "deck" + i;
+    DECKS.forEach((d) => { const o = el("option", null, d); o.value = d; ds.appendChild(o); });
+    ds.value = i === 0 ? "burn" : "bears";
+    seat.appendChild(ds);
+    host.appendChild(seat);
+  }
+}
+
+async function createGame() {
+  const seats = [];
+  for (let i = 0; i < SEAT_COUNT; i++) {
+    seats.push({ kind: $("kind" + i).value, deck: $("deck" + i).value });
+  }
+  const name = $("gname").value.trim();
+  const body = { seats };
+  if (name) body.name = name;
+  $("createBtn").disabled = true;
+  try {
+    const res = await fetch("/api/games", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+    });
+    if (!res.ok) { alert("create failed: " + (await res.text())); return; }
+    const { id } = await res.json();
+    showNewLinks(id, seats);
+    await refresh();
+  } finally {
+    $("createBtn").disabled = false;
+  }
+}
+
+// After creating, surface direct "open seat" links (open each human seat in its own tab).
+function showNewLinks(id, seats) {
+  const host = $("newlinks");
+  host.innerHTML = "";
+  const humans = seats.map((s, i) => [s, i]).filter(([s]) => s.kind === "human");
+  if (!humans.length) {
+    host.appendChild(document.createTextNode("Created game #" + id + " (agent-only — it runs on its own; see below)."));
+    return;
+  }
+  host.appendChild(document.createTextNode("Created game #" + id + " — open: "));
+  humans.forEach(([, i]) => {
+    const a = el("a", null, "▶ Seat " + i);
+    a.href = "/play?game=" + id + "&seat=" + i;
+    a.target = "_blank";
+    host.appendChild(a);
+  });
+}
+
+async function refresh() {
+  let games = [];
+  try { games = await (await fetch("/api/games")).json(); } catch (e) { return; }
+  const host = $("games");
+  host.innerHTML = "";
+  if (!games.length) { host.appendChild(el("div", "empty", "No games yet — create one above.")); return; }
+  games.slice().reverse().forEach((g) => host.appendChild(gameRow(g)));
+}
+
+function gameRow(g) {
+  const row = el("div", "game");
+  row.appendChild(el("span", "gid", "#" + g.id));
+  row.appendChild(el("span", "gname", g.name));
+  row.appendChild(statusBadge(g.status));
+  const chips = el("div", "chips");
+  g.seats.forEach((s, i) => {
+    const open = s.human && !s.filled;
+    const c = el("div", "chip" + (s.human ? " human" : "") + (open ? " open" : ""),
+      "S" + i + ": " + kindLabel(s.kind) + " · " + s.deck + (open ? " · OPEN" : (s.human ? " · in" : "")));
+    chips.appendChild(c);
+  });
+  row.appendChild(chips);
+  row.appendChild(el("div", "spacer"));
+  const acts = el("div", "acts");
+  // Join links for open human seats (only while waiting).
+  if (g.status.state === "waiting") {
+    g.seats.forEach((s, i) => {
+      if (s.human && !s.filled) {
+        const a = el("a", "joinbtn", "Join seat " + i);
+        a.href = "/play?game=" + g.id + "&seat=" + i; a.target = "_blank";
+        acts.appendChild(a);
+      }
+    });
+  }
+  // Spectate stub (not implemented yet).
+  const spec = el("button", "ghost", "Spectate");
+  spec.disabled = true; spec.title = "Spectating running games is coming soon";
+  acts.appendChild(spec);
+  row.appendChild(acts);
+  return row;
+}
+
+function statusBadge(st) {
+  if (st.state === "waiting") return el("span", "badge waiting", "waiting");
+  if (st.state === "running") return el("span", "badge running", "running");
+  const w = st.winner == null ? "draw" : ("P" + st.winner + " won");
+  const b = el("span", "badge finished", "finished");
+  const wrap = document.createElement("span");
+  wrap.appendChild(b); wrap.appendChild(document.createTextNode(" "));
+  wrap.appendChild(el("span", "winner", w));
+  return wrap;
+}
+
+function kindLabel(k) { return k === "human" ? "Human" : k === "rl" ? "RL(random)" : "Agent"; }
+
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+}
+
+buildForm();
+$("createBtn").onclick = createGame;
+refresh();
+setInterval(refresh, 2000);
+</script>
+</body>
+</html>
