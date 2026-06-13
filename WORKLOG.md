@@ -5,6 +5,21 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **webui:** **play-UX polish from rapid user feedback.** (1) Stop dots are now full-width
+  clickable rows (much bigger hit targets, 12px dots) instead of tiny circles; (2) the two
+  per-step dots reordered to opponent-on-top / **you-on-bottom** (matches board layout); (3)
+  **target-selection feedback** — fixed the missing `button.opt.sel` style so a chosen option is
+  visibly highlighted, made the board's player panels click-targets (glow + "🎯 target" badge) for
+  player-targeting choices, selected board cards get a 🎯 corner badge, and the prompt shows a
+  "🎯 Chosen: …" summary; (4) **Space submits a valid in-progress selection** (declare
+  attackers/targets/order/number), not just pass; (5) **SmartStops OFF by default** (`Stops::default`
+  + server flag defaults tied to it) — users found "stop wherever I *could* cast" too chatty.
+  Verified via Playwright (20 dots, opp/you legend, 18px rows, Bolt→player target highlights on
+  panel+button+summary, Space→`picks` frame) + WS (smart_stops=false echo). NOTE: fully honoring
+  "no priority on non-stop steps regardless of castable spells" needs an engine tweak — with
+  SmartStops off the engine still falls back to `is_unimportant_step`, so it prompts at the
+  opponent's main phases + combat steps when you hold an instant. Proposal sent to engine (make
+  SmartStops-off auto-pass all non-stop empty-stack windows). 10 web tests green. Commit 81bb8e7.
 - **webui:** **per-turn-side stops in the UI + MTGA keybindings.** Consumed the engine's new
   per-`(Phase, own_turn)` stop API: `ServerMsg::Stops.per_step` now carries both sides as
   `(step, on_my_turn, on_opp_turn)`; `ClientMsg::SetStop` gained an `own` flag;
