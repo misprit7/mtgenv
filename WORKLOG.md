@@ -5,6 +5,14 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **engine:** **C19 DONE (#28) — `mana_colors` shortcut fully retired; mana production is 100% IR.**
+  With design's card-side migration complete (basics → intrinsic CR 305.6 subtype mana;
+  Llanowar/Hushwood → `Activated{is_mana}`), removed the `mana_colors` field from `CardDef`, the
+  fallback union in `mana::producible_colors`, and trimmed `is_mana_source` to the authored-ability
+  check. Mana colour now comes ONLY from IR mana abilities + intrinsic basic-type mana (computed
+  subtypes). Migrated the summoning-sick dork test to a real `{T}: Add {G}` ability; cleaned a
+  pre-existing dead `CounterKind` import. 105 tests green, workspace builds. `ManaSpec.one_of`
+  deferred by mutual agreement (no current/planned card needs constrained "add A or B" mana).
 - **engine:** **CR 305.6 — basic-land-type mana is intrinsic, derived from computed subtypes**
   (C19/#28 follow-through, lead-flagged). `mana::mana_sources` now unions three colour sources:
   IR mana abilities (`Ability::Activated{is_mana}`, condition-aware), the **intrinsic** basic-type
