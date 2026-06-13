@@ -5,6 +5,13 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **webui:** **new default stop set** (user request): your Main 1 + Main 2 (engine Arena default,
+  own-turn) PLUS the opponent's Begin-Combat + End step (the instant-speed windows). Made
+  `driver::Stops.overrides` per-`(step, own_turn)` (`Vec<(Phase, bool, bool)>`), seeded the two
+  opp-side stops in `Stops::default`, applied via `set_stop_side`/`set_override`; server `?stops=`
+  param now layers on the defaults and supports a `Name@you|opp:val` side suffix (bare = both
+  sides). CLI `stop` cmd toggles both sides + shows the side. Verified the wire echo matches exactly
+  (MP1/MP2 mine-only, BeginCombat/End opp-only, rest off). 10 web tests green. Commit 3c4d5a2.
 - **engine:** **card-push capabilities, batch 1 (C1–C4, C6, C9-Count)** — all additive-only, no IR
   change (the Effect/ValueExpr nodes existed but were no-ops). C1: mana.rs gates a creature mana
   dork by summoning sickness (CR 302.6). C2: `Effect::PutCounters` → `Action::AddCounters`. C3:
