@@ -9,6 +9,7 @@
 //! agent decision can replace this later without touching callers.)
 
 use crate::basics::{Color, ManaCost};
+use crate::effects::ability::Keyword;
 use crate::ids::{ObjId, PlayerId};
 use crate::state::GameState;
 
@@ -25,11 +26,16 @@ fn mana_sources(state: &GameState, p: PlayerId) -> Vec<(ObjId, Vec<Color>)> {
                 return None;
             }
             let def = state.card_db.get(o.chars.grp_id)?;
-            if def.is_mana_source() {
-                Some((id, def.mana_colors.clone()))
-            } else {
-                None
+            if !def.is_mana_source() {
+                return None;
             }
+            // CR 302.6: a creature's `{T}` mana ability can't be activated while it's summoning
+            // sick (unless it has haste). Lands/artifacts are never sick, so this only gates
+            // creature mana dorks (Llanowar Elves). The simplified mana model assumes `{T}`.
+            if o.summoning_sick && !state.computed(id).has_keyword(Keyword::Haste) {
+                return None;
+            }
+            Some((id, def.mana_colors.clone()))
         })
         .collect()
 }
@@ -151,5 +157,44 @@ mod tests {
         assert!(auto_pay(&mut state, PlayerId(0), &cost(1, &[(Color::Green, 1)])));
         let untapped_after = state.player(PlayerId(0)).battlefield.iter().filter(|&&id| !state.objects[&id].status.tapped).count();
         assert_eq!(untapped_after, 2, "two lands tapped to pay {{1}}{{G}}");
+    }
+
+    #[test]
+    fn summoning_sick_creature_cannot_tap_for_mana() {
+        // C1 / CR 302.6: a creature mana dork that entered this turn can't tap for mana yet.
+        use crate::basics::CardType;
+        use crate::state::Characteristics;
+        let mut db = cards::starter_db();
+        db.insert(cards::CardDef {
+            chars: Characteristics {
+                name: "Test Dork".into(),
+                card_types: vec![CardType::Creature],
+                colors: vec![Color::Green],
+                power: Some(1),
+                toughness: Some(1),
+                grp_id: 9000,
+                ..Default::default()
+            },
+            abilities: Vec::new(),
+            mana_colors: vec![Color::Green],
+            text: String::new(),
+        });
+        let mut state = GameState::new(2, 1);
+        state.set_card_db(Arc::new(db));
+        let chars = state.card_db().get(9000).unwrap().chars.clone();
+        let dork = state.add_card(PlayerId(0), chars, Zone::Battlefield);
+
+        // Entered this turn → summoning sick → not a usable mana source.
+        state.objects.get_mut(&dork).unwrap().summoning_sick = true;
+        assert!(
+            !can_pay(&state, PlayerId(0), &cost(0, &[(Color::Green, 1)])),
+            "a summoning-sick dork can't tap for {{G}}"
+        );
+        // Sickness gone → it can tap.
+        state.objects.get_mut(&dork).unwrap().summoning_sick = false;
+        assert!(
+            can_pay(&state, PlayerId(0), &cost(0, &[(Color::Green, 1)])),
+            "an un-sick dork taps for {{G}}"
+        );
     }
 }
