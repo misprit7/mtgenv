@@ -16,6 +16,7 @@ use crate::agent::{
     SelectReason, TargetSlot,
 };
 use crate::basics::{CardType, Phase, Target, Zone};
+use crate::effects::ability::{Ability, EventPattern};
 use crate::effects::action::{ResolutionCtx, WbReason};
 use crate::effects::target::{TargetKind, TargetSpec};
 use crate::effects::{Effect, EffectTarget};
@@ -627,8 +628,29 @@ impl Engine {
                     });
                 }
             }
-            // An ability that has finished resolving simply ceases to exist (CR 608.2n).
-            StackObjectKind::Ability => {}
+            StackObjectKind::Ability { index } => {
+                // A triggered ability on the stack: run its effect, then it ceases to exist
+                // (CR 608.2n). The effect is looked up from the source's CardDef by `grp_id`
+                // (persists across zones, so dies-triggers resolve too).
+                let effect = obj.source.and_then(|src| {
+                    self.state.def_of(src).and_then(|d| match d.abilities.get(index as usize) {
+                        Some(Ability::Triggered { effect, .. }) => Some(effect.clone()),
+                        _ => None,
+                    })
+                });
+                if let (Some(effect), Some(src)) = (effect, obj.source) {
+                    if self.targets_still_legal(&obj.targets) {
+                        let ctx = ResolutionCtx {
+                            controller: Some(obj.controller),
+                            source: Some(src),
+                            x: None,
+                            chosen_targets: obj.targets.clone(),
+                            chosen_modes: Vec::new(),
+                        };
+                        self.resolve_effect(&effect, &ctx, WbReason::Resolve(obj.id));
+                    }
+                }
+            }
         }
     }
 
@@ -795,7 +817,8 @@ impl Engine {
         self.agents[p.0 as usize].decide(&view, req)
     }
 
-    /// Push a public event to every seat's `observe` channel (CR: the GRE diff stream).
+    /// Push a public event to every seat's `observe` channel (CR: the GRE diff stream), and
+    /// collect any triggered abilities that watch this event (CR 603.2).
     pub(crate) fn broadcast(&mut self, ev: GameEvent) {
         if self.record_events {
             self.event_log.push(ev.clone());
@@ -804,6 +827,44 @@ impl Engine {
             let pid = self.state.players[seat].id;
             let view = view_for(&self.state, pid);
             self.agents[seat].observe(&view, &ev);
+        }
+        self.collect_triggers(&ev);
+    }
+
+    /// Scan for triggered abilities whose pattern matches `ev` and queue them (CR 603.2/603.3):
+    /// they go on the stack the next time a player would get priority (the agenda loop drains
+    /// `pending_triggers`). Milestone-4 prototype handles `SelfEnters` and `SelfDies`.
+    fn collect_triggers(&mut self, ev: &GameEvent) {
+        // Map the event to the object whose own triggers might fire, and the pattern.
+        let (subject, want): (ObjId, EventPattern) = match ev {
+            GameEvent::ObjectMoved { obj, to: Zone::Battlefield } => (*obj, EventPattern::SelfEnters),
+            GameEvent::PermanentDied { obj } => (*obj, EventPattern::SelfDies),
+            _ => return,
+        };
+        let Some(def) = self.state.def_of(subject) else {
+            return;
+        };
+        // Indices of this object's triggered abilities matching the event.
+        let matches: Vec<u32> = def
+            .abilities
+            .iter()
+            .enumerate()
+            .filter(|(_, a)| matches!(a, Ability::Triggered { event, .. } if *event == want))
+            .map(|(i, _)| i as u32)
+            .collect();
+        if matches.is_empty() {
+            return;
+        }
+        let controller = self.state.object(subject).controller;
+        for index in matches {
+            let id = self.state.mint_stack();
+            self.state.pending_triggers.push(StackObject {
+                id,
+                controller,
+                source: Some(subject),
+                kind: StackObjectKind::Ability { index },
+                targets: Vec::new(),
+            });
         }
     }
 }
@@ -1154,6 +1215,60 @@ mod expect_tests {
     fn put(state: &mut GameState, owner: PlayerId, grp_id: u32, zone: Zone) -> crate::ids::ObjId {
         let chars = state.card_db().get(grp_id).unwrap().chars.clone();
         state.add_card(owner, chars, zone)
+    }
+
+    /// Compact render of the decisive events for a scenario (for expect traces).
+    fn event_trace(events: &[GameEvent]) -> String {
+        let mut out = String::new();
+        for ev in events {
+            let line = match ev {
+                GameEvent::SpellCast { spell, controller } => {
+                    Some(format!("{controller:?} casts {spell:?}"))
+                }
+                GameEvent::ObjectMoved { obj, to } => Some(format!("{obj:?} -> {to:?}")),
+                GameEvent::DrewCards { player, count } => Some(format!("{player:?} draws {count}")),
+                GameEvent::DamageDealt { target, amount, source } => {
+                    Some(format!("{amount} dmg {source:?} -> {target:?}"))
+                }
+                GameEvent::LifeChanged { player, new_total, .. } => {
+                    Some(format!("{player:?} life -> {new_total}"))
+                }
+                GameEvent::PermanentDied { obj } => Some(format!("{obj:?} dies")),
+                GameEvent::GameEnded { winner } => Some(format!("game over: {winner:?}")),
+                _ => None,
+            };
+            if let Some(l) = line {
+                out.push_str(&l);
+                out.push('\n');
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn etb_trigger_draws_a_card() {
+        // Elvish Visionary: "When this creature enters, draw a card." (CR 603.6a ETB trigger.)
+        // Library card is a creature (not a land the aggro agent would then play), so the
+        // drawn card stays in hand and the trigger's effect is observable.
+        let mut state = cards::build_game(1, &[&[grp::GRIZZLY_BEARS], &[]]);
+        put(&mut state, PlayerId(0), grp::FOREST, Zone::Battlefield);
+        put(&mut state, PlayerId(0), grp::FOREST, Zone::Battlefield);
+        let viz = put(&mut state, PlayerId(0), grp::ELVISH_VISIONARY, Zone::Hand);
+        state.active_player = PlayerId(0);
+        state.phase = Phase::PrecombatMain;
+        let mut e = Engine::new(state, vec![Box::new(AggroAgent), Box::new(PassAgent)]);
+        e.record_events(true);
+        e.priority_round();
+
+        assert_eq!(e.state.object(viz).zone, Zone::Battlefield, "Visionary entered");
+        assert_eq!(e.state.player(PlayerId(0)).hand.len(), 1, "ETB trigger drew a card");
+        assert!(e.state.player(PlayerId(0)).library.is_empty(), "drew the only library card");
+        expect![[r#"
+            PlayerId(0) casts StackId(1)
+            ObjId(4) -> Battlefield
+            PlayerId(0) draws 1
+        "#]]
+        .assert_eq(&event_trace(&e.event_log));
     }
 
     #[test]

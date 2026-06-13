@@ -18,8 +18,10 @@ use crate::ids::{ObjId, PlayerId, StackId};
 pub enum StackObjectKind {
     /// A spell — references the card/copy object now on the stack.
     Spell(ObjId),
-    /// An activated or triggered ability on the stack.
-    Ability,
+    /// An activated or triggered ability on the stack. `index` selects which ability of the
+    /// source object (`StackObject::source`) it is — into that object's `CardDef.abilities`,
+    /// looked up by `grp_id` (which persists across zones, so a dies-trigger still resolves).
+    Ability { index: u32 },
 }
 
 /// One object on the stack (CR 405.1).
@@ -75,14 +77,14 @@ mod tests {
             id: StackId(1),
             controller: PlayerId(0),
             source: None,
-            kind: StackObjectKind::Ability,
+            kind: StackObjectKind::Ability { index: 0 },
             targets: vec![],
         });
         s.push(StackObject {
             id: StackId(2),
             controller: PlayerId(1),
             source: None,
-            kind: StackObjectKind::Ability,
+            kind: StackObjectKind::Ability { index: 0 },
             targets: vec![],
         });
         assert_eq!(s.len(), 2);

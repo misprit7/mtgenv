@@ -58,7 +58,7 @@ fn stack_view(state: &GameState, s: &StackObject) -> StackObjView {
             .get(&id)
             .map(|o| chars_view(&o.chars))
             .unwrap_or_default(),
-        StackObjectKind::Ability => CharacteristicsView {
+        StackObjectKind::Ability { .. } => CharacteristicsView {
             name: "Ability".to_string(),
             ..Default::default()
         },

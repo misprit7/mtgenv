@@ -15,7 +15,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use crate::basics::{CardType, Color, DamageKind, ManaCost, Zone};
-use crate::effects::ability::Ability;
+use crate::effects::ability::{Ability, EventPattern};
 use crate::effects::target::{TargetKind, TargetSpec};
 use crate::effects::value::{PlayerRef, ValueExpr};
 use crate::effects::{Effect, EffectTarget};
@@ -34,6 +34,11 @@ pub mod grp {
     pub const DIVINATION: u32 = 21;
     pub const HEALING_SALVE: u32 = 22;
     pub const LIGHTNING_BOLT: u32 = 23;
+    // M4 prototype cards (triggers + replacement effects).
+    pub const ELVISH_VISIONARY: u32 = 30;
+    pub const FLAMETONGUE_KAVU: u32 = 31;
+    pub const SERVANT_OF_THE_SCALE: u32 = 32;
+    pub const FOG_BANK: u32 = 33;
 }
 
 /// A card definition: its printed characteristics + abilities (the Effect IR), plus the
@@ -101,7 +106,8 @@ fn basic_land(grp_id: u32, name: &str, color: Color) -> CardDef {
     }
 }
 
-fn vanilla_creature(
+#[allow(clippy::too_many_arguments)]
+fn creature(
     grp_id: u32,
     name: &str,
     subtype: &str,
@@ -109,6 +115,7 @@ fn vanilla_creature(
     cost: ManaCost,
     power: i32,
     toughness: i32,
+    abilities: Vec<Ability>,
 ) -> CardDef {
     CardDef {
         chars: Characteristics {
@@ -122,9 +129,21 @@ fn vanilla_creature(
             grp_id,
             ..Default::default()
         },
-        abilities: Vec::new(),
+        abilities,
         mana_colors: Vec::new(),
     }
+}
+
+fn vanilla_creature(
+    grp_id: u32,
+    name: &str,
+    subtype: &str,
+    color: Color,
+    cost: ManaCost,
+    power: i32,
+    toughness: i32,
+) -> CardDef {
+    creature(grp_id, name, subtype, color, cost, power, toughness, Vec::new())
 }
 
 fn spell(grp_id: u32, name: &str, ty: CardType, color: Color, cost: ManaCost, effect: Effect) -> CardDef {
@@ -219,6 +238,25 @@ pub fn starter_db() -> CardDb {
             amount: ValueExpr::Fixed(3),
         },
     ));
+    // Elvish Visionary {1}{G} 1/1 — "When this creature enters, draw a card." (ETB trigger.)
+    db.insert(creature(
+        grp::ELVISH_VISIONARY,
+        "Elvish Visionary",
+        "Elf Shaman",
+        Color::Green,
+        mana_cost(1, &[(Color::Green, 1)]),
+        1,
+        1,
+        vec![Ability::Triggered {
+            event: EventPattern::SelfEnters,
+            condition: None,
+            intervening_if: false,
+            effect: Effect::Draw {
+                who: PlayerRef::Controller,
+                count: ValueExpr::Fixed(1),
+            },
+        }],
+    ));
     db
 }
 
@@ -301,7 +339,7 @@ mod tests {
     #[test]
     fn starter_db_has_expected_cards() {
         let db = starter_db();
-        assert_eq!(db.len(), 10);
+        assert_eq!(db.len(), 11);
         assert!(db.get(grp::FOREST).unwrap().is_mana_source());
         assert_eq!(db.get(grp::FOREST).unwrap().mana_colors, vec![Color::Green]);
         // Grizzly Bears is a vanilla 2/2 with no abilities.
