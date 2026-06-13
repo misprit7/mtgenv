@@ -36,6 +36,21 @@ implement the full ruleset; near-term it's a tiny card pool with a correct core.
 - **Headless core.** `mtg-core` has no GUI/Python/IO deps. GUI/bindings/CLI are separate
   crates.
 
+## Scope — first pass (keep it minimal, get it hand-playable)
+
+Do **not** try to implement the whole Comprehensive Rules up front. The near-term goal is a
+**hand-testable playable game, soon**: basic lands + mana, casting vanilla creatures and a few
+simple instants/sorceries (deal damage, draw, gain life), combat (attack / block / damage),
+and win/lose. Get that working and playable by hand (CLI then web) before adding depth.
+
+**Defer — do NOT implement in the first pass:** keyword abilities/mechanics (flying, trample,
+deathtouch, …), the full layer system (CR 613) beyond trivial P/T, complex
+replacement/prevention interactions, double-faced / flip / split / adventure / leveler cards,
+pile/complex-choice cards, mulligans beyond "keep", multiplayer (CR 800s), and variants. The
+architecture must keep these *possible later* (whiteboard + Effect IR + `Native`) — but leave
+them unbuilt for now. When in doubt, pick the smaller slice that lets a human play and verify
+basic functionality.
+
 ## Repo conventions
 
 - **Maintain a linear git history** (rebase, not merge; `--force-with-lease`).
