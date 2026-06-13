@@ -5,6 +5,17 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **engine:** **card-push capabilities, batch 1 (C1–C4, C6, C9-Count)** — all additive-only, no IR
+  change (the Effect/ValueExpr nodes existed but were no-ops). C1: mana.rs gates a creature mana
+  dork by summoning sickness (CR 302.6). C2: `Effect::PutCounters` → `Action::AddCounters`. C3:
+  `Effect::Mill` → real (top N library → graveyard). C4: **landfall** via a new watching-enters
+  trigger scan in `collect_triggers` — on any permanent's ETB it scans battlefield permanents for
+  `PermanentEnters(filter)` triggers, filter evaluated relative to the watcher's controller (so "a
+  land you control enters" works; no `LandEntersControlled` variant needed — proposed reuse to
+  design). C6: `Effect::CreateToken` → real (token onto battlefield, summoning-sick; TokenSpec
+  keywords still a vanilla no-op). C9: `ValueExpr::Count` → real (count objects in a zone by
+  filter + optional controller, e.g. lands you control). 91 mtg-core tests green, clippy clean.
+  Pending in this batch: C5 (Search), C7 (Modal), C8 (Fight) need resolution-time agent decisions.
 - **lead:** **Card-pool push kicked off — Standard Selesnya Landfall** (60-card deck, 18 unique
   nonbasics). Built a **SQLite card index** (`scripts/build_card_index.py` → `data/scryfall/
   cards.sqlite`, one row per printing, indexed by name/oracle_id) and wired it into `setup.sh`, so
