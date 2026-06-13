@@ -51,6 +51,15 @@ architecture must keep these *possible later* (whiteboard + Effect IR + `Native`
 them unbuilt for now. When in doubt, pick the smaller slice that lets a human play and verify
 basic functionality.
 
+## Card data
+
+When authoring a card, **look up its oracle text / cost / types on Scryfall** — do not guess
+or rely on memory for what a card does. API: `https://api.scryfall.com/cards/named?exact=<name>`
+(fields: `oracle_text`, `mana_cost`, `type_line`, `power`/`toughness`, `oracle_id`). Query cards
+individually for now; later we'll ingest Scryfall's bulk `oracle-cards`/`default-cards` data +
+images. Cards are *data* (Characteristics + Effect-IR abilities); the core never matches on a
+card's name.
+
 ## Repo conventions
 
 - **Maintain a linear git history** (rebase, not merge; `--force-with-lease`).
