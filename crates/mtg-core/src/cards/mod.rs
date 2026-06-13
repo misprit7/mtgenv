@@ -28,6 +28,8 @@ pub mod misc;
 
 // Per-first-printing-set folders (real card pool).
 pub mod dsk;
+pub mod fdn;
+pub mod fin;
 pub mod lea;
 
 /// Oracle/printing ids (the `grp_id` linking an object to its [`CardDef`]). Per-set card ids move
@@ -299,6 +301,8 @@ pub fn starter_db() -> CardDb {
     // Per-set real cards (Selesnya Landfall push).
     lea::register(&mut db);
     dsk::register(&mut db);
+    fin::register(&mut db);
+    fdn::register(&mut db);
     db
 }
 
@@ -381,7 +385,7 @@ mod tests {
     #[test]
     fn starter_db_has_expected_cards() {
         let db = starter_db();
-        assert_eq!(db.len(), 40);
+        assert_eq!(db.len(), 42);
         assert!(db.get(grp::FOREST).unwrap().is_mana_source());
         assert_eq!(db.get(grp::FOREST).unwrap().mana_colors, vec![Color::Green]);
         // Grizzly Bears is a vanilla 2/2 with no abilities.
