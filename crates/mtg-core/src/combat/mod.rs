@@ -99,7 +99,8 @@ impl Engine {
             .copied()
             .filter(|&id| {
                 let o = &self.state.objects[&id];
-                o.chars.is_creature() && !o.status.tapped && !o.summoning_sick
+                // Computed type (CR 613) — a land that became a creature can attack.
+                self.state.computed(id).is_creature() && !o.status.tapped && !o.summoning_sick
             })
             .collect();
         if eligible_ids.is_empty() {
@@ -172,7 +173,7 @@ impl Engine {
             .copied()
             .filter(|&id| {
                 let o = &self.state.objects[&id];
-                o.chars.is_creature() && !o.status.tapped
+                self.state.computed(id).is_creature() && !o.status.tapped
             })
             .collect();
         if eligible_ids.is_empty() {

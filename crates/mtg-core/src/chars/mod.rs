@@ -65,80 +65,76 @@ pub fn compute(state: &GameState, id: ObjId) -> ComputedChars {
         keywords: BTreeSet::new(),
     };
 
-    // Gather the static continuous effects that affect this object, tagged with the source
-    // permanent's timestamp (CR 613.7).
-    let mut effects: Vec<(Timestamp, StaticContribution)> = Vec::new();
-    for p in &state.players {
-        for &src_id in &p.battlefield {
-            let src = match state.objects.get(&src_id) {
-                Some(s) => s,
-                None => continue,
-            };
-            let def = match state.card_db.get(src.chars.grp_id) {
-                Some(d) => d,
-                None => continue,
-            };
-            for ab in &def.abilities {
-                if let Ability::Static { contribution, affects, .. } = ab {
-                    if static_affects(state, affects, src_id, src.controller, id) {
-                        effects.push((src.timestamp, contribution.clone()));
-                    }
-                }
-            }
-        }
-    }
-    // Within each (sub)layer, apply in timestamp order (613.7). Stable sort preserves a
-    // deterministic order for equal timestamps.
-    effects.sort_by_key(|(ts, _)| *ts);
+    // Every static continuous effect on the battlefield, in timestamp order (CR 613.7). We do
+    // NOT pre-filter by applicability here: whether an effect applies to `id` is re-checked at
+    // each layer against the characteristics computed THROUGH PRIOR LAYERS (CR 613.8 — e.g. an
+    // anthem's "creatures you control" must see a land that became a creature in layer 4).
+    let effects = gather_statics(state);
 
-    // Layer 4 — type (add card types).
-    for (_, contrib) in &effects {
-        if let StaticContribution::AddType(t) = contrib {
-            if !c.card_types.contains(t) {
+    // Layer 4 — type. A type-changer's own `affects` is evaluated against BASE types (intra-
+    // layer-4 dependency is the deferred hard case); the result is the computed type set.
+    let base_types = base.card_types.clone();
+    for e in &effects {
+        if let StaticContribution::AddType(t) = e.contribution {
+            if affects_matches(state, e, id, &base_types) && !c.card_types.contains(t) {
                 c.card_types.push(*t);
             }
         }
     }
+    // From here on, `c.card_types` is the post-layer-4 type set: subsequent layers read it
+    // (this is the "affects reads computed, not base" fix).
     // Layer 5 — color.
-    for (_, contrib) in &effects {
-        match contrib {
+    for e in &effects {
+        match e.contribution {
             StaticContribution::AddColor(col) => {
-                if !c.colors.contains(col) {
+                if affects_matches(state, e, id, &c.card_types) && !c.colors.contains(col) {
                     c.colors.push(*col);
                 }
             }
-            StaticContribution::SetColor(v) => c.colors = v.clone(),
+            StaticContribution::SetColor(v) => {
+                if affects_matches(state, e, id, &c.card_types) {
+                    c.colors = v.clone();
+                }
+            }
             _ => {}
         }
     }
     // Layer 6 — abilities (grant/remove keywords), in timestamp order.
-    for (_, contrib) in &effects {
-        match contrib {
+    for e in &effects {
+        match e.contribution {
             StaticContribution::GrantKeyword(k) => {
-                c.keywords.insert(*k);
+                if affects_matches(state, e, id, &c.card_types) {
+                    c.keywords.insert(*k);
+                }
             }
             StaticContribution::RemoveKeyword(k) => {
-                c.keywords.remove(k);
+                if affects_matches(state, e, id, &c.card_types) {
+                    c.keywords.remove(k);
+                }
             }
             _ => {}
         }
     }
-    // Layer 7b — set base P/T (and "base P/T" references). Later timestamp wins.
-    for (_, contrib) in &effects {
-        if let StaticContribution::SetBasePT { power, toughness } = contrib {
-            c.power = Some(*power);
-            c.toughness = Some(*toughness);
+    // Layer 7b — set base P/T. Later timestamp wins.
+    for e in &effects {
+        if let StaticContribution::SetBasePT { power, toughness } = e.contribution {
+            if affects_matches(state, e, id, &c.card_types) {
+                c.power = Some(*power);
+                c.toughness = Some(*toughness);
+            }
         }
     }
     // Layer 7c — modify P/T: +N/+N effects (timestamp order) then counters. Both add, so the
     // order among them doesn't change the result for the modeled cards.
-    for (_, contrib) in &effects {
-        if let StaticContribution::ModifyPT { power, toughness } = contrib {
-            if let Some(p) = c.power.as_mut() {
-                *p += power;
-            }
-            if let Some(t) = c.toughness.as_mut() {
-                *t += toughness;
+    for e in &effects {
+        if let StaticContribution::ModifyPT { power, toughness } = e.contribution {
+            if affects_matches(state, e, id, &c.card_types) {
+                if let Some(p) = c.power.as_mut() {
+                    *p += power;
+                }
+                if let Some(t) = c.toughness.as_mut() {
+                    *t += toughness;
+                }
             }
         }
     }
@@ -155,43 +151,86 @@ pub fn compute(state: &GameState, id: ObjId) -> ComputedChars {
     c
 }
 
-/// Whether a static on `src` (controlled by `src_controller`) affects `target` — i.e. the
-/// target is in the static's `affects.zone` and matches its filter (evaluated against base
-/// characteristics, with the source as the `ItSelf`/`ControlledBy(Controller)` context).
-fn static_affects(
-    state: &GameState,
-    affects: &SelectSpec,
+/// A static continuous effect on the battlefield, tagged with its source + timestamp.
+struct StaticEffect<'a> {
+    timestamp: Timestamp,
     src_id: ObjId,
     src_controller: PlayerId,
-    target: ObjId,
-) -> bool {
-    match state.objects.get(&target) {
-        Some(o) if o.zone == affects.zone => {}
-        _ => return false,
-    }
-    matches_filter(state, &affects.filter, target, src_id, src_controller)
+    contribution: &'a StaticContribution,
+    affects: &'a SelectSpec,
 }
 
-/// Evaluate a `CardFilter` against object `obj` (base characteristics), where the filter
-/// belongs to a static on `src` controlled by `src_controller`.
+/// Collect every static continuous effect on the battlefield, timestamp-ordered (CR 613.7).
+fn gather_statics(state: &GameState) -> Vec<StaticEffect<'_>> {
+    let mut v = Vec::new();
+    for p in &state.players {
+        for &src_id in &p.battlefield {
+            let src = match state.objects.get(&src_id) {
+                Some(s) => s,
+                None => continue,
+            };
+            let def = match state.card_db.get(src.chars.grp_id) {
+                Some(d) => d,
+                None => continue,
+            };
+            for ab in &def.abilities {
+                if let Ability::Static { contribution, affects, .. } = ab {
+                    v.push(StaticEffect {
+                        timestamp: src.timestamp,
+                        src_id,
+                        src_controller: src.controller,
+                        contribution,
+                        affects,
+                    });
+                }
+            }
+        }
+    }
+    v.sort_by_key(|e| e.timestamp);
+    v
+}
+
+/// Whether effect `e` applies to `target` — target is in `e.affects.zone` and matches the
+/// filter. `target_types` is the target's card types as computed through the layers applied so
+/// far (so a layer-6/7 effect's "creature" filter sees a land that became a creature in layer 4).
+fn affects_matches(
+    state: &GameState,
+    e: &StaticEffect,
+    target: ObjId,
+    target_types: &[CardType],
+) -> bool {
+    let o = match state.objects.get(&target) {
+        Some(o) if o.zone == e.affects.zone => o,
+        _ => return false,
+    };
+    matches_filter(state, &e.affects.filter, o, target, target_types, e.src_id, e.src_controller)
+}
+
+/// Evaluate a `CardFilter`. `HasCardType` reads `target_types` (the computed-so-far type set);
+/// other characteristic predicates read base characteristics (subtype/color layer-aware
+/// evaluation is deferred). `ItSelf`/`ControlledBy` resolve against the effect's source.
 fn matches_filter(
     state: &GameState,
     filter: &CardFilter,
-    obj: ObjId,
-    src: ObjId,
+    o: &crate::state::Object,
+    target_id: ObjId,
+    target_types: &[CardType],
+    src_id: ObjId,
     src_controller: PlayerId,
 ) -> bool {
-    let o = match state.objects.get(&obj) {
-        Some(o) => o,
-        None => return false,
-    };
     match filter {
         CardFilter::Any => true,
-        CardFilter::ItSelf => obj == src,
-        CardFilter::All(fs) => fs.iter().all(|f| matches_filter(state, f, obj, src, src_controller)),
-        CardFilter::AnyOf(fs) => fs.iter().any(|f| matches_filter(state, f, obj, src, src_controller)),
-        CardFilter::Not(f) => !matches_filter(state, f, obj, src, src_controller),
-        CardFilter::HasCardType(t) => o.chars.card_types.contains(t),
+        CardFilter::ItSelf => target_id == src_id,
+        CardFilter::All(fs) => fs
+            .iter()
+            .all(|f| matches_filter(state, f, o, target_id, target_types, src_id, src_controller)),
+        CardFilter::AnyOf(fs) => fs
+            .iter()
+            .any(|f| matches_filter(state, f, o, target_id, target_types, src_id, src_controller)),
+        CardFilter::Not(f) => {
+            !matches_filter(state, f, o, target_id, target_types, src_id, src_controller)
+        }
+        CardFilter::HasCardType(t) => target_types.contains(t),
         CardFilter::HasSubtype(s) => o.chars.subtypes.contains(s),
         CardFilter::HasColor(col) => o.chars.colors.contains(col),
         CardFilter::ControlledBy(pref) => {
@@ -278,6 +317,33 @@ mod tests {
             .insert(CounterKind::PlusOnePlusOne, 1);
         assert_eq!(compute(&s, bears).power, Some(3), "+1/+1 counter (7c) stacks on top");
         assert_eq!(compute(&s, bears).toughness, Some(3));
+    }
+
+    #[test]
+    fn affects_reads_computed_type_not_base_cr_613_8() {
+        // Nature's Revolt makes all lands 2/2 creatures (layer 4 AddType + 7b SetBasePT).
+        // Glorious Anthem ("creatures you control") must see a land's COMPUTED creature type
+        // to buff it — the affects-reads-computed (CR 613.8) case.
+        let mut s = cards::build_game(1, &[&[], &[]]);
+        let my_forest = put(&mut s, PlayerId(0), grp::FOREST, Zone::Battlefield);
+        let foe_forest = put(&mut s, PlayerId(1), grp::FOREST, Zone::Battlefield);
+        put(&mut s, PlayerId(0), grp::NATURES_REVOLT, Zone::Battlefield);
+
+        assert!(compute(&s, my_forest).is_creature(), "land became a creature (layer 4)");
+        assert_eq!(compute(&s, my_forest).power, Some(2), "and 2/2 (7b)");
+        assert_eq!(compute(&s, foe_forest).power, Some(2));
+
+        put(&mut s, PlayerId(0), grp::GLORIOUS_ANTHEM, Zone::Battlefield);
+        assert_eq!(
+            compute(&s, my_forest).power,
+            Some(3),
+            "anthem buffs the land because its COMPUTED type is Creature"
+        );
+        assert_eq!(
+            compute(&s, foe_forest).power,
+            Some(2),
+            "opponent's land-creature is not buffed by your anthem"
+        );
     }
 
     #[test]

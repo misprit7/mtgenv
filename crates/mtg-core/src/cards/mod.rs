@@ -47,6 +47,7 @@ pub mod grp {
     pub const GLORIOUS_ANTHEM: u32 = 40;
     pub const LEVITATION: u32 = 41;
     pub const HUMILITY: u32 = 42;
+    pub const NATURES_REVOLT: u32 = 43;
 }
 
 /// `SelectSpec` for a static affecting "creatures you control" (the anthem scope). min/max are
@@ -471,6 +472,35 @@ pub fn starter_db() -> CardDb {
             duration: Duration::WhileSourcePresent,
         }],
     ).with_text("All creatures have base power and toughness 1/1. (Lose-all-abilities clause not yet modeled.)"));
+    // Nature's Revolt {3}{G}{G} — "All lands are 2/2 creatures that are still lands." TWO
+    // statics: AddType(Creature) (layer 4) + SetBasePT{2,2} (7b), both over all lands. The
+    // layer-4 type change is what makes an anthem ("creatures you control") see a land as a
+    // creature — the affects-reads-computed (CR 613.8) case.
+    let all_lands = || SelectSpec {
+        zone: Zone::Battlefield,
+        filter: CardFilter::HasCardType(CardType::Land),
+        chooser: PlayerRef::Controller,
+        min: ValueExpr::Fixed(0),
+        max: ValueExpr::Fixed(0),
+    };
+    db.insert(enchantment(
+        grp::NATURES_REVOLT,
+        "Nature's Revolt",
+        Color::Green,
+        mana_cost(3, &[(Color::Green, 2)]),
+        vec![
+            Ability::Static {
+                contribution: StaticContribution::AddType(CardType::Creature),
+                affects: all_lands(),
+                duration: Duration::WhileSourcePresent,
+            },
+            Ability::Static {
+                contribution: StaticContribution::SetBasePT { power: 2, toughness: 2 },
+                affects: all_lands(),
+                duration: Duration::WhileSourcePresent,
+            },
+        ],
+    ).with_text("All lands are 2/2 creatures that are still lands."));
     db
 }
 
@@ -553,7 +583,7 @@ mod tests {
     #[test]
     fn starter_db_has_expected_cards() {
         let db = starter_db();
-        assert_eq!(db.len(), 20);
+        assert_eq!(db.len(), 21);
         assert!(db.get(grp::FOREST).unwrap().is_mana_source());
         assert_eq!(db.get(grp::FOREST).unwrap().mana_colors, vec![Color::Green]);
         // Grizzly Bears is a vanilla 2/2 with no abilities.
