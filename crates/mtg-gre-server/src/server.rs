@@ -119,12 +119,22 @@ fn decklist_for(state: &GameState, seat: PlayerId) -> Vec<DeckEntry> {
 /// Build the stop-config echo (the engine's live `StopConfig` for the human seat) the UI renders
 /// the phase bar / toggles from. Read straight off the shared handle the engine re-reads each window.
 fn stops_msg(s: &StopConfig) -> ServerMsg {
+    // Both turn sides of each step, zipped into one `(step, on_my_turn, on_opp_turn)` row so the
+    // phase bar renders two independent dots per step. `effective_steps` yields the same ordered
+    // step list for either side, so zipping them is well-defined.
+    let mine = s.effective_steps(true);
+    let opp = s.effective_steps(false);
+    let per_step = mine
+        .iter()
+        .zip(opp.iter())
+        .map(|(&(step, m), &(_, o))| (step, m, o))
+        .collect();
     ServerMsg::Stops {
         auto_pass: s.auto_pass,
         full_control: s.full_control,
         smart_stops: s.smart_stops,
         resolve_own_stack: s.resolve_own_stack,
-        per_step: s.effective_steps(),
+        per_step,
     }
 }
 
@@ -265,8 +275,8 @@ async fn handle_socket(
                             }
                             // Live stop changes: mutate the engine's shared StopConfig + echo it
                             // back. The running engine re-reads it at the next priority window.
-                            Ok(ClientMsg::SetStop { step, on }) => {
-                                stops_handle.lock().unwrap().set_override(step, Some(on));
+                            Ok(ClientMsg::SetStop { step, own, on }) => {
+                                stops_handle.lock().unwrap().set_override(step, own, Some(on));
                                 let _ = echo_tx.send(stops_msg(&stops_handle.lock().unwrap()));
                             }
                             Ok(ClientMsg::SetOption { key, on }) => {

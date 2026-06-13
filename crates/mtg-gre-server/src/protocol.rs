@@ -66,12 +66,15 @@ pub enum ServerMsg {
         text: String,
     },
     /// The current (live-mutable) stop config, echoed so the UI phase bar / toggles reflect it.
+    /// `per_step` carries **both turn sides** of each priority step: `(step, on_my_turn,
+    /// on_opp_turn)` — stops are keyed per `(Phase, own_turn)` in the engine, so the phase bar can
+    /// render two independent dots per step (e.g. stop on *my* draw but not the opponent's).
     Stops {
         auto_pass: bool,
         full_control: bool,
         smart_stops: bool,
         resolve_own_stack: bool,
-        per_step: Vec<(Phase, bool)>,
+        per_step: Vec<(Phase, bool, bool)>,
     },
     /// A seat's static starting decklist, for the debug library peek (RL-safe: not in the view).
     Decklist {
@@ -95,9 +98,11 @@ pub enum ClientMsg {
         #[serde(default)]
         order: Vec<u32>,
     },
-    /// Live per-step stop toggle (no game reset).
+    /// Live per-step stop toggle (no game reset). `own` selects the turn side: `true` = the stop on
+    /// *your own* turn's copy of `step`, `false` = the opponent's-turn copy (the two dots per step).
     SetStop {
         step: Phase,
+        own: bool,
         on: bool,
     },
     /// Live toggle of a global stop option (`autopass`/`fullcontrol`/`smartstops`/`resolvestack`).

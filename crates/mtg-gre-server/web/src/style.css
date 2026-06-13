@@ -64,9 +64,20 @@
   .step.clickable { cursor: pointer; }
   .step.clickable:hover { border-color: var(--accent); }
   .step .slabel { font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .step .sdot { width: 8px; height: 8px; border-radius: 50%; margin: 3px auto 0; border: 1px solid var(--muted); }
+  /* two stop dots per step: top = your turn, bottom = opponent's turn (independently toggleable) */
+  .step .sdots { display: flex; flex-direction: column; align-items: center; gap: 2px; margin-top: 3px; }
+  .step .sdot { width: 8px; height: 8px; border-radius: 50%; border: 1px solid var(--muted); cursor: pointer; }
+  .step .sdot.opp { border-style: dashed; } /* opponent's-turn dot reads as a dashed ring when off */
   .step .sdot.on { background: #d23b3b; border-color: #ff7a7a; box-shadow: 0 0 5px #d23b3b; }
+  .step .sdot:hover { border-color: var(--accent); }
   .step.cur .sdot { border-color: #06140b; }
+  .step .dotlbl { font-size: 8px; line-height: 8px; height: 8px; color: var(--muted); }
+  .step.legend { flex: 0 0 auto; min-width: 28px; background: transparent; border-color: transparent; }
+  /* auto-pass-this-turn indicator (Enter) */
+  .autopass-badge { position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%);
+    background: #b9821f; color: #1a1205; font-weight: 700; font-size: 12px; padding: 6px 14px;
+    border-radius: 999px; box-shadow: 0 4px 16px rgba(0,0,0,.5); z-index: 90; display: none; }
+  .autopass-badge::before { content: "⏩ "; }
   .hand { background: var(--rail); border-top: 1px solid var(--line); padding: 8px 12px 10px;
     display: flex; gap: 8px; align-items: flex-end; overflow-x: auto; min-height: 150px; }
   .hand .hlabel { color: var(--muted); font-size: 10px; align-self: center; writing-mode: vertical-rl;

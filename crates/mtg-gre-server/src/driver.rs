@@ -156,8 +156,11 @@ pub fn engine_with_stops(
         c.full_control = stops.full_control;
         c.smart_stops = stops.smart_stops;
         c.resolve_own_stack = stops.resolve_own_stack;
+        // `Stops.overrides` is a both-sides carrier (the web path seeds none — the user toggles
+        // per side live); apply each to both turn sides of the engine's per-`(step, own_turn)` map.
         for &(step, on) in &stops.overrides {
-            c.set_override(step, Some(on));
+            c.set_override(step, true, Some(on));
+            c.set_override(step, false, Some(on));
         }
     }
     (engine, handle)

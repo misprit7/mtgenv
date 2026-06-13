@@ -14,6 +14,7 @@ const multi = new Set<number>();
 let orderSeq: number[] = [];
 let previewUrl: string | null = null;
 let stopsView: Any = null; // live stop config echoed by the server
+let autoPassTurn: number | null = null; // Enter-hold: turn we're passing all priority stops through
 const deckView: Any = {}; // seat → starting decklist (debug peek; RL-safe, pushed once at setup)
 
 // Card art: a baked manifest (grp_id → art_crop/artist), batch-resolved from Scryfall once.
@@ -45,14 +46,22 @@ function setOption(key: string, on: boolean): void { ws.send(JSON.stringify({ ty
 
 const wsProto = location.protocol === "https:" ? "wss://" : "ws://";
 const ws = new WebSocket(`${wsProto}${location.host}/ws${location.search}`);
-ws.onopen = () => ($("conn").textContent = "● connected");
+ws.onopen = () => { $("conn").textContent = "● connected";
+  log("Keys: Space = pass priority / take the only action · Enter = pass through this turn's stops (Esc cancels)"); };
 ws.onclose = () => ($("conn").textContent = "○ disconnected");
 ws.onerror = () => ($("conn").textContent = "connection error");
 ws.onmessage = (e) => handle(JSON.parse(e.data));
 
 function handle(m: Any): void {
   if (m.type === "event") { view = m.view; logEvent(m.event); render(); }
-  else if (m.type === "decide") { view = m.view; cur = m; multi.clear(); orderSeq = []; render(); }
+  else if (m.type === "decide") {
+    view = m.view; cur = m; multi.clear(); orderSeq = [];
+    // Enter-engaged "pass through this turn's stops" lapses when the turn advances (MTGA parity).
+    if (autoPassTurn !== null && view.turn !== autoPassTurn) { autoPassTurn = null; autoPassBadge(); }
+    // While engaged, silently pass priority windows (still surface real choices: targets, blocks, …).
+    if (autoPassEngaged() && isPriorityPrompt(cur.prompt)) { send({ pass: true }); return; }
+    render();
+  }
   else if (m.type === "gameOver") { cur = null; renderEnd(m.winner); }
   else if (m.type === "log") { log(m.text); }
   else if (m.type === "stops") { stopsView = m; renderStopsControl(); if (view) renderStepBar(); }
@@ -119,32 +128,48 @@ const STEPS: Array<{ phase: string; label: string; stop: boolean }> = [
   { phase: "Cleanup", label: "Cleanup", stop: false },
 ];
 function stopMap(): Any {
+  // per_step rows are [phase, on_my_turn, on_opp_turn]; fall back to one-sided shapes gracefully.
   const m: Any = {};
   const src = (stopsView && stopsView.per_step) || (view.stops && view.stops.per_step) || [];
-  src.forEach((p: Any) => (m[p[0]] = p[1]));
+  src.forEach((p: Any) => (m[p[0]] = { mine: !!p[1], opp: p.length > 2 ? !!p[2] : !!p[1] }));
   return m;
 }
 function renderStepBar(): void {
   const bar = $("stepbar");
   bar.innerHTML = "";
   const stops = stopMap();
+  // left legend: which dot is which (top = your turn, bottom = opponent's turn)
+  const legend = el("div", "step legend");
+  legend.appendChild(el("div", "slabel", "stop"));
+  const lz = el("div", "sdots");
+  lz.appendChild(el("div", "dotlbl", "you"));
+  lz.appendChild(el("div", "dotlbl", "opp"));
+  legend.appendChild(lz);
+  bar.appendChild(legend);
   STEPS.forEach((st) => {
     const cell = el("div", "step" + (view.phase === st.phase ? " cur" : ""));
     cell.appendChild(el("div", "slabel", st.label));
     if (st.stop) {
-      cell.appendChild(el("div", "sdot" + (stops[st.phase] ? " on" : "")));
-      cell.classList.add("clickable");
-      const on = !!stops[st.phase];
-      cell.title = (on ? "Remove stop at " : "Stop at ") + st.label + " (get priority there)";
-      cell.onclick = () => toggleStop(st.phase, !on);
+      const s = stops[st.phase] || { mine: false, opp: false };
+      const dots = el("div", "sdots");
+      dots.appendChild(stopDot(st, true, s.mine));   // your turn (top)
+      dots.appendChild(stopDot(st, false, s.opp));   // opponent's turn (bottom)
+      cell.appendChild(dots);
     }
     bar.appendChild(cell);
   });
 }
-function toggleStop(phase: string, on: boolean): void {
-  // LIVE: the server mutates the shared stop config + echoes it; the running game's agent honours
-  // it at the next priority window — no game reset.
-  ws.send(JSON.stringify({ type: "setStop", step: phase, on }));
+function stopDot(st: Any, own: boolean, on: boolean): HTMLElement {
+  const dot = el("div", "sdot" + (own ? " you" : " opp") + (on ? " on" : ""));
+  const side = own ? "YOUR" : "the opponent's";
+  dot.title = (on ? "Remove stop on " : "Stop on ") + side + " " + st.label + " (get priority there)";
+  dot.onclick = (e) => { e.stopPropagation(); toggleStop(st.phase, own, !on); };
+  return dot;
+}
+function toggleStop(phase: string, own: boolean, on: boolean): void {
+  // LIVE: the server mutates the shared per-(step, side) stop config + echoes it; the running game's
+  // agent honours it at the next priority window — no game reset. `own` = your turn's copy of `step`.
+  ws.send(JSON.stringify({ type: "setStop", step: phase, own, on }));
 }
 
 function renderRail(): void {
@@ -529,3 +554,38 @@ function el(tag: string, cls?: string, text?: string): HTMLElement {
 }
 function clamp(n: number, lo: number, hi: number): number { return Math.max(lo, Math.min(hi, isNaN(n) ? lo : n)); }
 function log(line: string): void { const d = $("log"); d.textContent += line + "\n"; d.scrollTop = d.scrollHeight; }
+
+// ── keyboard shortcuts (MTGA-style; see ../mtga-re/docs/priority_stops.md) ─────────────────────
+// Space = pass priority / take the sole default action. Enter = pass through ALL of this turn's
+// remaining priority stops at once (mirrors the GRE's PerformActionResp.autoPassPriority=Yes /
+// AutoPassOption.Turn — a per-turn hold that lapses next turn). Esc cancels the hold.
+function isPriorityPrompt(p: Any): boolean { return !!p && p.mode === "action" && p.canPass; }
+function autoPassEngaged(): boolean { return autoPassTurn !== null && view && view.turn === autoPassTurn; }
+function autoPassBadge(): void {
+  let b = $("autopassBadge");
+  if (!b) { b = el("div", "autopass-badge"); b.id = "autopassBadge"; document.body.appendChild(b); }
+  b.textContent = "Passing this turn's stops — Enter or Esc to cancel";
+  b.style.display = autoPassTurn !== null ? "block" : "none";
+}
+function spacePass(): void {
+  if (!cur) return;
+  const p = cur.prompt;
+  if (p.canPass) { send({ pass: true }); return; }                   // priority/optional → pass (default)
+  if ((p.mode === "action" || p.mode === "selectOne") && (p.options || []).length === 1) {
+    send({ picks: [0] });                                            // sole forced option → take it
+  }
+}
+function toggleAutoPass(): void {
+  if (!view) return;
+  if (autoPassTurn === view.turn) { autoPassTurn = null; autoPassBadge(); return; } // pressed again → off
+  autoPassTurn = view.turn; autoPassBadge();
+  if (cur && isPriorityPrompt(cur.prompt)) send({ pass: true });     // pass the open window now; chain continues
+}
+window.addEventListener("keydown", (e) => {
+  if ($("modal").classList.contains("show")) { if (e.key === "Escape") $("modal").classList.remove("show"); return; }
+  const tag = (e.target as HTMLElement | null)?.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA") return;                  // don't hijack number entry / text fields
+  if (e.code === "Space" || e.key === " ") { e.preventDefault(); spacePass(); }
+  else if (e.key === "Enter") { e.preventDefault(); toggleAutoPass(); }
+  else if (e.key === "Escape") { if (autoPassTurn !== null) { autoPassTurn = null; autoPassBadge(); } }
+});
