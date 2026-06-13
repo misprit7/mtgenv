@@ -96,7 +96,8 @@ cards first.
 | C16 | **Trigger: becomes the target of an opponent's spell/ability** | ability.rs/priority.rs | Surrak |
 | C17 | **Exile from a graveyard + count-card-types-among-exiled dynamic buff** | whiteboard.rs/chars | Keen-Eyed Curator |
 | C18 | **Static permissions** — play an extra land each turn; play lands from graveyard | priority.rs | Icetill Explorer |
-| C19 | **Mana production via real IR mana abilities** (CR 605) — implement `Effect::AddMana` + source/pay mana from `Ability::Activated{is_mana:true}` (cost + restriction/condition + `ManaSpec`), **retiring the `mana_colors` shortcut**; `mana_ability(color)` builder for basics; `ManaSpec.one_of` for "G or W" duals | mana.rs, whiteboard.rs, cards/mod.rs | Hushwood Verge, Llanowar Elves, Temple Garden, Ba Sing Se, + all lands/dorks |
+| C19 | **Mana production via real IR mana abilities** (CR 605) — implement `Effect::AddMana` + source/pay mana from `Ability::Activated{is_mana:true}` (cost + restriction/condition + `ManaSpec`), **retiring the `mana_colors` shortcut**; `ManaSpec.one_of` for "G or W" duals. Use ONLY for **non-type-derived** mana (Llanowar Elves, Hushwood's conditional {W}, any-color/filter lands) | mana.rs, whiteboard.rs, cards/mod.rs | Hushwood Verge, Llanowar Elves, Ba Sing Se, dorks |
+| C20 | **Intrinsic basic-land-type mana** (CR 305.6) — derive `{T}: Add {color}` from each permanent's **computed** subtype (Plains→W/Island→U/Swamp→B/Mountain→R/Forest→G), NOT authored. Basics + typed duals (Temple Garden = `Forest Plains`) get **no** mana ability — it follows the land type, so type-changing effects (animate-land, Urborg, Spreading Seas) work for free | mana.rs, chars/ | all basics, Temple Garden, all typed lands |
 
 ## Fidelity standard (do not approximate)
 
