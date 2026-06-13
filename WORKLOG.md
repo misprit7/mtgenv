@@ -5,6 +5,18 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **engine:** **Subtypes/supertypes flipped from strings → generated enums (CR 205.3/4).** Lead
+  directive; I drove the whole no-fallback flag-day flip in one green commit (5b9f63d), design
+  parked. `Characteristics`/`ComputedChars.subtypes → Vec<Subtype>`, `supertypes → Vec<Supertype>`;
+  `CardFilter::HasSubtype(Subtype)`/`Supertype(Supertype)`; `TokenSpec.subtypes: Vec<Subtype>`.
+  Engine matching mostly survives unchanged (`Vec::contains` is generic); rewrote the string-literal
+  checks (`mana::basic_land_type_color`, sba/priority Aura/Equipment) to enum matches. All card
+  producers + builders migrated (`creature()` takes `CreatureType`; the 7 two-subtype bodies — Human
+  Soldier, Elf Archer, … — set the full subtype line after via a `two_subtype_kw` helper / inline,
+  preserving fidelity). Views Display-convert enums to the canonical type-line string so the wire/
+  webui JSON is byte-identical (also fixed gre-server's `DeckCardView`). Snapshots regen'd. Full
+  workspace green (106+13+9), no new warnings. Kills stringly-typed-subtype typo risk. **design to
+  review cards/+effects/.**
 - **engine:** **`fully_implemented` surfaced in the view (#30, engine side)** + **subtype enums landed
   (step 1).** (1) `CharacteristicsView` gained `fully_implemented: Option<bool>`, populated in
   `view.rs::chars_view` from `CardDef.fully_implemented` (design's 2fdaa77) via grp_id — `Some(true/
