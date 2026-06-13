@@ -41,6 +41,10 @@ pub struct Prompt {
     pub mode: Mode,
     /// The enumerated legal options, already filtered by the engine — the masking, rendered.
     pub options: Vec<String>,
+    /// Parallel to `options`: the board/hand object each option refers to (`None` for options
+    /// with no on-board object, e.g. a player target or a number). Lets the UI highlight the
+    /// legal cards and submit by clicking them (MTGO-style), not just via the button list.
+    pub option_objs: Vec<Option<u64>>,
     pub can_pass: bool,
     /// For [`Mode::SelectMany`]: how many options must be chosen.
     pub min: u32,
@@ -57,12 +61,38 @@ impl Prompt {
             title: title.into(),
             mode,
             options,
+            option_objs: Vec::new(),
             can_pass: false,
             min: 0,
             max,
             num_min: 0,
             num_max: 0,
         }
+    }
+
+    /// Attach the per-option board objects (same length as `options`).
+    fn with_objs(mut self, objs: Vec<Option<u64>>) -> Self {
+        self.option_objs = objs;
+        self
+    }
+}
+
+/// The board object an action refers to (for UI highlighting / click-to-act).
+fn action_obj(a: &PlayableAction) -> Option<u64> {
+    match a {
+        PlayableAction::PlayLand { card } => Some(card.0),
+        PlayableAction::Cast { spell, .. } => Some(spell.0),
+        PlayableAction::Activate { source, .. } | PlayableAction::ActivateMana { source, .. } => {
+            Some(source.0)
+        }
+        PlayableAction::Special { .. } => None,
+    }
+}
+
+fn target_obj(t: &Target) -> Option<u64> {
+    match t {
+        Target::Object(id) => Some(id.0),
+        _ => None,
     }
 }
 
@@ -132,6 +162,7 @@ pub fn prompt_for(view: &PlayerView, req: &DecisionRequest) -> Prompt {
             let opts = actions.iter().map(|a| describe_action(view, a)).collect();
             let mut p = Prompt::new("Priority — choose an action", Mode::Action, opts);
             p.can_pass = *can_pass;
+            p.option_objs = actions.iter().map(action_obj).collect();
             p
         }
         R::ChooseStartingPlayer { candidates } => Prompt::new(
@@ -170,6 +201,7 @@ pub fn prompt_for(view: &PlayerView, req: &DecisionRequest) -> Prompt {
             let mut p = Prompt::new(format!("{description} ({reason:?})"), Mode::SelectMany, opts);
             p.min = *min;
             p.max = *max;
+            p.option_objs = from.iter().map(|id| Some(id.0)).collect();
             p
         }
         R::ChooseModes {
@@ -190,15 +222,16 @@ pub fn prompt_for(view: &PlayerView, req: &DecisionRequest) -> Prompt {
         R::ChooseTargets { slots, .. } => {
             // Flatten slot 0's legal candidates (sufficient for the lands-only scaffold; richer
             // multi-slot targeting arrives with the engine's real targeting in #7).
-            let (opts, min, max) = match slots.first() {
+            let (opts, objs, min, max) = match slots.first() {
                 Some(s) => (
                     s.legal.iter().map(|t| describe_target(view, t)).collect(),
+                    s.legal.iter().map(target_obj).collect(),
                     s.min,
                     s.max,
                 ),
-                None => (vec![], 0, 0),
+                None => (vec![], vec![], 0, 0),
             };
-            let mut p = Prompt::new("Choose target(s)", Mode::SelectMany, opts);
+            let mut p = Prompt::new("Choose target(s)", Mode::SelectMany, opts).with_objs(objs);
             p.min = min;
             p.max = max;
             p
@@ -207,12 +240,14 @@ pub fn prompt_for(view: &PlayerView, req: &DecisionRequest) -> Prompt {
             "Declare attackers",
             Mode::SelectMany,
             eligible.iter().map(|e| name_of(view, e.creature)).collect(),
-        ),
+        )
+        .with_objs(eligible.iter().map(|e| Some(e.creature.0)).collect()),
         R::DeclareBlockers { eligible, .. } => Prompt::new(
             "Declare blockers",
             Mode::SelectMany,
             eligible.iter().map(|e| name_of(view, e.creature)).collect(),
-        ),
+        )
+        .with_objs(eligible.iter().map(|e| Some(e.creature.0)).collect()),
         R::AssignCombatDamage {
             recipients, total, ..
         } => Prompt::new(
@@ -222,12 +257,14 @@ pub fn prompt_for(view: &PlayerView, req: &DecisionRequest) -> Prompt {
                 .iter()
                 .map(|d| format!("{} (lethal {})", describe_target(view, &d.recipient), d.lethal))
                 .collect(),
-        ),
+        )
+        .with_objs(recipients.iter().map(|d| target_obj(&d.recipient)).collect()),
         R::OrderObjects { items, .. } => Prompt::new(
             "Order these objects (first = resolves first)",
             Mode::Order,
             items.iter().map(|id| name_of(view, *id)).collect(),
-        ),
+        )
+        .with_objs(items.iter().map(|id| Some(id.0)).collect()),
         R::ChooseOption {
             reason,
             options,
@@ -488,6 +525,14 @@ mod tests {
                 options: [
                     "Play land — #1",
                     "Cast #2 [Normal]",
+                ],
+                option_objs: [
+                    Some(
+                        1,
+                    ),
+                    Some(
+                        2,
+                    ),
                 ],
                 can_pass: true,
                 min: 0,

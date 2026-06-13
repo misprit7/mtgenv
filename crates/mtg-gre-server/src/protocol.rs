@@ -112,6 +112,9 @@ mod tests {
                 "options": [
                   "Play land — #1"
                 ],
+                "optionObjs": [
+                  1
+                ],
                 "canPass": true,
                 "min": 0,
                 "max": 1,
@@ -157,6 +160,11 @@ mod tests {
                 "#1",
                 "#2",
                 "#3"
+              ],
+              "optionObjs": [
+                1,
+                2,
+                3
               ],
               "canPass": false,
               "min": 1,

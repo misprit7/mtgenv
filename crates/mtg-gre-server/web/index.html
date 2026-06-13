@@ -7,26 +7,46 @@
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
-    <header>
-      <h1>mtgenv</h1>
-      <span class="status" id="conn">connecting…</span>
-      <span class="status" id="decks"></span>
-      <span class="status">new game:
-        <a href="?">demo</a> ·
-        <a href="?p0=burn&amp;p1=bears">play burn (vs bears)</a> ·
-        <a href="?p0=bears&amp;p1=burn">play bears (vs burn)</a></span>
-    </header>
-    <main>
-      <div class="col">
-        <div class="panel" id="opp"></div>
-        <div class="panel"><h2>Stack</h2><div class="zone" id="stack"></div></div>
-        <div class="panel" id="me"></div>
+    <div class="app">
+      <div class="topbar">
+        <h1>mtgenv</h1>
+        <span class="s" id="turn">—</span>
+        <span class="s" id="conn">connecting…</span>
+        <span class="spacer"></span>
+        <span class="s" id="decks"></span>
+        <span class="s">new:
+          <a href="?">demo</a> ·
+          <a href="?p0=burn&amp;p1=bears">burn</a> ·
+          <a href="?p0=bears&amp;p1=burn">bears</a></span>
       </div>
-      <div class="col">
-        <div class="panel" id="prompt"><div class="waiting">Waiting for the game to start…</div></div>
-        <div class="panel"><h2>Log</h2><div id="log"></div></div>
+
+      <div class="rail" id="rail"></div>
+
+      <div class="center">
+        <div class="play">
+          <div class="half oppo" id="oppoHalf"></div>
+          <div class="midline"></div>
+          <div class="half you" id="youHalf"></div>
+          <div class="stack" id="stack"></div>
+        </div>
+        <div class="hand" id="hand"></div>
       </div>
-    </main>
+
+      <div class="logpanel">
+        <div class="promptbox" id="prompt"><div class="waiting">Waiting for the game to start…</div></div>
+        <div class="logtitle">Game log</div>
+        <div id="log"></div>
+      </div>
+    </div>
+
+    <div class="modal" id="modal">
+      <div class="box">
+        <span class="close" id="modalClose">✕ close</span>
+        <h3 id="modalTitle"></h3>
+        <div class="grid" id="modalGrid"></div>
+      </div>
+    </div>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
