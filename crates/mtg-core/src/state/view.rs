@@ -21,9 +21,13 @@ fn chars_view(c: &Characteristics) -> CharacteristicsView {
         supertypes: c.supertypes.clone(),
         colors: c.colors.clone(),
         mana_value: c.mana_value(),
+        mana_cost: c.mana_cost.clone(),
         power: c.power,
         toughness: c.toughness,
         keywords: Vec::new(),
+        // TODO(engine): populate from the card-data layer (a `text` field on
+        // `Characteristics`/`CardDef`) so the UI shows real oracle text.
+        rules_text: String::new(),
         grp_id: c.grp_id,
     }
 }

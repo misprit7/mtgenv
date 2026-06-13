@@ -125,9 +125,19 @@ pub struct CharacteristicsView {
     pub supertypes: Vec<String>,
     pub colors: Vec<Color>,
     pub mana_value: u32,
+    /// The printed mana cost (structured generic + colored pips). `mana_value` is the derived
+    /// scalar; this is what a card-frame UI renders exact pips from (e.g. `{1}{G}` vs `{G}{G}`).
+    /// `None` for objects with no mana cost (lands, abilities, tokens). (Hybrid/Phyrexian costs
+    /// will need a richer `ManaCost` once the engine's cost model supports them — M5+.)
+    #[serde(default)]
+    pub mana_cost: Option<ManaCost>,
     pub power: Option<i32>,
     pub toughness: Option<i32>,
     pub keywords: Vec<String>,
+    /// Printed oracle/rules text, for display. Empty for vanilla cards (and until the card-data
+    /// layer carries text). Populated from the card definition by the view masking function.
+    #[serde(default)]
+    pub rules_text: String,
     /// Oracle id / printing id for embedding-table lookups (RL) and rendering.
     pub grp_id: u32,
 }
