@@ -386,8 +386,8 @@ impl Engine {
         self.state.winner
     }
 
-    /// Pre-game setup: shuffle libraries and draw opening hands (CR 103.5). Mulligans are
-    /// deferred (milestone 2 keeps every opening hand). Idempotent.
+    /// Pre-game setup: shuffle libraries, draw opening hands, run the London mulligan (CR 103.5).
+    /// Idempotent.
     pub fn start_game(&mut self) {
         if self.started {
             return;
@@ -401,6 +401,112 @@ impl Engine {
         // Opening draws are not "draw step" draws and don't risk decking on a normal deck.
         for &p in &seats {
             self.draw(p, hand_size);
+        }
+        self.run_mulligans(&seats, hand_size);
+    }
+
+    /// The London mulligan (CR 103.5). Each player may mulligan any number of times; a mulligan
+    /// shuffles their hand into their library and draws a fresh seven. After keeping, a player
+    /// puts one card on the bottom of their library for each mulligan they took (CR 103.5c).
+    /// Run in rounds in turn order (starting player first) so decisions interleave as the rules
+    /// describe; since hands are hidden, this is equivalent to the simultaneous procedure.
+    ///
+    /// Decisions flow through the normal `Agent` boundary (`Mulligan` → `Bool(true)`=mulligan,
+    /// then `SelectCards{BottomForMulligan}` on keep). `RandomAgent` keeps every hand, so this is
+    /// a no-op for random self-play and existing deterministic tests; a scripted/human/RL agent
+    /// drives real mulligans.
+    fn run_mulligans(&mut self, seats: &[PlayerId], hand_size: u32) {
+        // A 7th mulligan would bottom the entire hand — treat it as a forced keep.
+        const MAX_MULLIGANS: u32 = 7;
+        // Turn order starting from the active (starting) player.
+        let order: Vec<PlayerId> = {
+            let n = seats.len();
+            let s = seats
+                .iter()
+                .position(|&p| p == self.state.active_player)
+                .unwrap_or(0);
+            (0..n).map(|i| seats[(s + i) % n]).collect()
+        };
+        let mut kept = vec![false; seats.len()];
+        let mut mulls = vec![0u32; seats.len()];
+
+        loop {
+            let mut progressed = false;
+            for &p in &order {
+                let i = p.0 as usize;
+                if kept[i] {
+                    continue;
+                }
+                let hand = self.state.player(p).hand.clone();
+                let req = DecisionRequest::Mulligan {
+                    hand,
+                    mulligans_taken: mulls[i],
+                    will_bottom_if_kept: mulls[i].min(hand_size),
+                };
+                let wants_mulligan = mulls[i] < MAX_MULLIGANS
+                    && matches!(self.ask(p, &req), DecisionResponse::Bool(true));
+                if wants_mulligan {
+                    let hand_ids = self.state.player(p).hand.clone();
+                    for id in hand_ids {
+                        self.state.move_object(id, Zone::Library, p);
+                    }
+                    self.state.shuffle_library(p);
+                    self.draw(p, hand_size);
+                    mulls[i] += 1;
+                    progressed = true;
+                } else {
+                    kept[i] = true;
+                }
+            }
+            if kept.iter().all(|&k| k) || !progressed {
+                break;
+            }
+        }
+
+        // Bottoming (CR 103.5c), in turn order: one card per mulligan taken.
+        for &p in &order {
+            let i = p.0 as usize;
+            let n = mulls[i].min(hand_size);
+            if n == 0 {
+                continue;
+            }
+            let hand = self.state.player(p).hand.clone();
+            let req = DecisionRequest::SelectCards {
+                reason: SelectReason::BottomForMulligan,
+                from: hand.clone(),
+                min: n,
+                max: n,
+                description: format!("Put {n} card(s) on the bottom of your library."),
+            };
+            let chosen = match self.ask(p, &req) {
+                DecisionResponse::Indices(ix) => ix.into_iter().map(|x| x as usize).collect(),
+                _ => Vec::new(),
+            };
+            // Validate: distinct, in range; top up to exactly `n` if the agent under-selected.
+            let mut seen = std::collections::BTreeSet::new();
+            let mut picks: Vec<usize> = chosen
+                .into_iter()
+                .filter(|&x| x < hand.len() && seen.insert(x))
+                .take(n as usize)
+                .collect();
+            for x in 0..hand.len() {
+                if picks.len() == n as usize {
+                    break;
+                }
+                if seen.insert(x) {
+                    picks.push(x);
+                }
+            }
+            // Put them on the bottom of the library (front of the vec — `draw` pops the end = top).
+            for id in picks.into_iter().map(|x| hand[x]).collect::<Vec<_>>() {
+                if let Some(pos) = self.state.player_mut(p).hand.iter().position(|&h| h == id) {
+                    self.state.player_mut(p).hand.remove(pos);
+                }
+                if let Some(o) = self.state.objects.get_mut(&id) {
+                    o.zone = Zone::Library;
+                }
+                self.state.player_mut(p).library.insert(0, id);
+            }
         }
     }
 
@@ -1599,6 +1705,61 @@ mod tests {
             7,
             "starting player skips the first draw"
         );
+    }
+
+    /// A scripted agent that mulligans a fixed number of times then keeps, bottoming the first
+    /// `min` cards when asked (CR 103.5c). Passes on everything else.
+    struct MulliganThenKeep {
+        remaining: u32,
+    }
+    impl Agent for MulliganThenKeep {
+        fn decide(&mut self, _v: &PlayerView, req: &DecisionRequest) -> DecisionResponse {
+            match req {
+                DecisionRequest::Mulligan { .. } => {
+                    if self.remaining > 0 {
+                        self.remaining -= 1;
+                        DecisionResponse::Bool(true)
+                    } else {
+                        DecisionResponse::Bool(false)
+                    }
+                }
+                DecisionRequest::SelectCards { min, .. } => {
+                    DecisionResponse::Indices((0..*min).collect())
+                }
+                _ => DecisionResponse::Pass,
+            }
+        }
+    }
+
+    #[test]
+    fn london_mulligan_bottoms_one_card_per_mulligan() {
+        let mut state = GameState::new(2, 5);
+        for seat in 0..2u32 {
+            for _ in 0..30 {
+                state.add_card(PlayerId(seat), Characteristics::basic_land("Forest"), Zone::Library);
+            }
+        }
+        let total = state.objects.len();
+        let agents: Vec<Box<dyn Agent>> = vec![
+            Box::new(MulliganThenKeep { remaining: 2 }), // seat 0 mulligans twice
+            Box::new(MulliganThenKeep { remaining: 0 }), // seat 1 keeps its first hand
+        ];
+        let mut engine = Engine::new(state, agents);
+        engine.start_game();
+
+        // Seat 0: kept a fresh seven, then bottomed two (one per mulligan) → 5 in hand.
+        assert_eq!(engine.state.player(PlayerId(0)).hand.len(), 5);
+        // Seat 1: kept its opening hand untouched.
+        assert_eq!(engine.state.player(PlayerId(1)).hand.len(), 7);
+        // Conservation: every card is still somewhere (hand or library), none lost.
+        let p0 = engine.state.player(PlayerId(0));
+        let p1 = engine.state.player(PlayerId(1));
+        assert_eq!(
+            p0.hand.len() + p0.library.len() + p1.hand.len() + p1.library.len(),
+            total
+        );
+        // The bottomed cards went to the bottom (front of the vec; `draw` pops the end).
+        assert_eq!(engine.state.player(PlayerId(0)).library.len(), 25);
     }
 
     #[test]

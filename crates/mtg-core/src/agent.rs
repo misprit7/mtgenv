@@ -714,7 +714,10 @@ impl Agent for RandomAgent {
             DecisionRequest::ChooseStartingPlayer { candidates } => {
                 DecisionResponse::Index(self.idx(candidates.len()))
             }
-            DecisionRequest::Mulligan { .. } => DecisionResponse::Bool(self.rng.below(2) == 0),
+            // Keep every opening hand: a coin-flip mulligan is meaningless noise for self-play
+            // (a real policy should decide this), and keeping consumes no RNG, so seeded games
+            // stay deterministic. `Bool(false)` = keep; `Bool(true)` = mulligan.
+            DecisionRequest::Mulligan { .. } => DecisionResponse::Bool(false),
             DecisionRequest::Priority { actions, can_pass } => {
                 let want_pass = *can_pass && self.rng.below(2) == 0;
                 if actions.is_empty() || want_pass {
