@@ -2865,7 +2865,6 @@ mod expect_tests {
                     kind: DamageKind::Noncombat,
                 },
             }],
-            mana_colors: Vec::new(),
             text: String::new(),
         });
         let mut state = GameState::new(2, 1);
@@ -2987,7 +2986,6 @@ mod expect_tests {
                     n: ValueExpr::Fixed(1),
                 },
             }],
-            mana_colors: Vec::new(),
             text: String::new(),
         });
         let mut state = GameState::new(2, 1);
@@ -3077,7 +3075,6 @@ mod expect_tests {
                     is_mana: false,
                 },
             ],
-            mana_colors: Vec::new(),
             text: String::new(),
         });
 
@@ -3100,7 +3097,6 @@ mod expect_tests {
                 },
                 rewrite: Rewrite::Prevent,
             }],
-            mana_colors: Vec::new(),
             text: String::new(),
         });
 
@@ -3121,7 +3117,6 @@ mod expect_tests {
                 pattern: ActionPattern::WouldEnterBattlefield(CardFilter::ItSelf),
                 rewrite: Rewrite::EntersWithCounters { kind: CounterKind::PlusOnePlusOne, n: 1 },
             }],
-            mana_colors: Vec::new(),
             text: String::new(),
         });
 
@@ -3151,7 +3146,6 @@ mod expect_tests {
                 host(StaticContribution::ModifyPT { power: 2, toughness: 0 }),
                 host(StaticContribution::GrantKeyword(Keyword::Trample)),
             ],
-            mana_colors: Vec::new(),
             text: String::new(),
         });
 

@@ -58,7 +58,6 @@ pub fn register(db: &mut CardDb) {
                 is_mana: true,
             },
         ],
-        mana_colors: Vec::new(),
         text: "{T}: Add {G}.\n{T}: Add {W}. Activate only if you control a Forest or a Plains."
             .to_string(),
     });
@@ -76,8 +75,7 @@ mod tests {
         let def = db.get(HUSHWOOD_VERGE).unwrap();
         assert_eq!(def.chars.card_types, vec![CardType::Land]);
         assert!(def.chars.mana_cost.is_none()); // lands aren't cast
-        assert!(def.mana_colors.is_empty()); // mana is first-class IR now, not the shortcut
-        assert!(def.is_mana_source());
+        assert!(def.is_mana_source()); // mana is first-class IR (authored {T}: Add … abilities)
         // Two mana abilities: unconditional {G}, and {W} gated on controlling a Forest/Plains.
         expect![[r#"
             [

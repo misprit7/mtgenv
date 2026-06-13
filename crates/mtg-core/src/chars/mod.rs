@@ -336,7 +336,7 @@ fn matches_filter(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::basics::{CounterKind, Zone};
+    use crate::basics::Zone;
     use crate::cards::{self, grp};
 
     fn put(state: &mut GameState, owner: PlayerId, grp_id: u32, zone: Zone) -> ObjId {
@@ -410,7 +410,6 @@ mod tests {
                 host_static(StaticContribution::ModifyPT { power: 2, toughness: 0 }),
                 host_static(StaticContribution::GrantKeyword(Keyword::Trample)),
             ],
-            mana_colors: Vec::new(),
             text: String::new(),
         });
         let mut s = GameState::new(2, 1);
@@ -487,7 +486,6 @@ mod tests {
                 },
                 duration: Duration::WhileSourcePresent,
             }],
-            mana_colors: Vec::new(),
             text: String::new(),
         });
         let mut s = GameState::new(2, 1);

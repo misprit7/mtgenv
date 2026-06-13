@@ -78,16 +78,15 @@ pub mod grp {
     pub const PACIFISM: u32 = 65;
 }
 
-/// A card definition: its printed characteristics + abilities (the Effect IR), plus the
-/// engine-side mana colours a land taps for. Card *data*, not game state — holds `Effect`
-/// trees, so it is `Debug`/`Clone` but not serde.
+/// A card definition: its printed characteristics + abilities (the Effect IR). Card *data*, not
+/// game state — holds `Effect` trees, so it is `Debug`/`Clone` but not serde. Mana production is
+/// expressed entirely in the IR: an explicit `Ability::Activated{is_mana:true}` (Llanowar, filter
+/// lands) or, for basic land types, intrinsic mana the engine derives from the computed subtype
+/// (CR 305.6) — there is no separate `mana_colors` shortcut.
 #[derive(Debug, Clone)]
 pub struct CardDef {
     pub chars: Characteristics,
     pub abilities: Vec<Ability>,
-    /// Non-empty ⇒ this permanent has a "{T}: add one mana of one of these colours" ability
-    /// (CR 605). Empty for non-mana cards.
-    pub mana_colors: Vec<Color>,
     /// Printed oracle/rules text for display (the view's `rules_text`). Reflects what the
     /// engine actually implements (Scryfall-verified where the implementation matches).
     pub text: String,
@@ -107,12 +106,13 @@ impl CardDef {
             _ => None,
         })
     }
+    /// Whether this card has an explicit IR mana ability (`{T}: Add …`). Note: basic-land-type
+    /// mana is intrinsic (CR 305.6, derived from the computed subtype) and is NOT reflected here —
+    /// this only sees authored `Activated{is_mana}` abilities (Llanowar, filter/conditional lands).
     pub fn is_mana_source(&self) -> bool {
-        !self.mana_colors.is_empty()
-            || self
-                .abilities
-                .iter()
-                .any(|a| matches!(a, Ability::Activated { is_mana: true, .. }))
+        self.abilities
+            .iter()
+            .any(|a| matches!(a, Ability::Activated { is_mana: true, .. }))
     }
 }
 
@@ -148,7 +148,7 @@ pub(crate) fn mana_cost(generic: u32, pips: &[(Color, u32)]) -> ManaCost {
 }
 
 /// A plain `{T}: Add {C}` mana ability (CR 605) as first-class Effect IR — the canonical way to
-/// give a land or dork its mana (replacing the legacy `mana_colors` shortcut). The engine reads
+/// give a *non-basic-type* source its mana (Llanowar, filter lands). The engine reads
 /// `Ability::Activated{is_mana:true}` + `Effect::AddMana` to offer the colour and fill the pool.
 /// For conditional/any-color/choice mana, build the `Activated` directly with a `restriction` or
 /// a richer `ManaSpec` (`any_color` / `one_of`).
@@ -177,10 +177,9 @@ pub(crate) fn basic_land(grp_id: u32, name: &str) -> CardDef {
     chars.colors = Vec::new(); // lands are colorless (CR 105.2a)
     CardDef {
         chars,
-        abilities: Vec::new(),
         // Mana is intrinsic: the engine derives `{T}: Add <colour>` from the basic land subtype
-        // (CR 305.6, e.g. Forest → {G}) — no `mana_colors` shortcut, no explicit mana ability.
-        mana_colors: Vec::new(),
+        // (CR 305.6, e.g. Forest → {G}), so a basic needs no explicit mana ability at all.
+        abilities: Vec::new(),
         text: String::new(),
     }
 }
@@ -209,7 +208,6 @@ pub(crate) fn creature(
             ..Default::default()
         },
         abilities,
-        mana_colors: Vec::new(),
         text: String::new(),
     }
 }
@@ -254,7 +252,6 @@ pub(crate) fn enchantment(grp_id: u32, name: &str, color: Color, cost: ManaCost,
             ..Default::default()
         },
         abilities,
-        mana_colors: Vec::new(),
         text: String::new(),
     }
 }
@@ -278,7 +275,6 @@ pub(crate) fn spell(grp_id: u32, name: &str, ty: CardType, color: Color, cost: M
             ..Default::default()
         },
         abilities: vec![Ability::Spell { effect }],
-        mana_colors: Vec::new(),
         text: String::new(),
     }
 }
@@ -393,11 +389,12 @@ mod tests {
         assert_eq!(db.len(), 38);
         // Forest is "type line only": a Basic Land with subtype Forest. Mana is intrinsic
         // (CR 305.6) — the engine derives {T}: Add {G} from the subtype, so the CardDef carries
-        // no mana_colors / mana ability.
+        // no explicit mana ability (and `is_mana_source` only sees authored abilities).
         let forest = db.get(grp::FOREST).unwrap();
         assert_eq!(forest.chars.subtypes, vec!["Forest".to_string()]);
         assert!(forest.chars.supertypes.contains(&"Basic".to_string()));
-        assert!(forest.mana_colors.is_empty());
+        assert!(forest.abilities.is_empty());
+        assert!(!forest.is_mana_source());
         // Grizzly Bears is a vanilla 2/2 with no abilities.
         let bears = db.get(grp::GRIZZLY_BEARS).unwrap();
         assert_eq!(bears.chars.power, Some(2));

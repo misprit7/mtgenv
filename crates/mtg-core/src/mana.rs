@@ -17,10 +17,9 @@ use crate::ids::{ObjId, PlayerId};
 use crate::state::GameState;
 
 /// The untapped mana sources `p` controls: `(permanent, colours it can tap for right now)`.
-/// Colours come from three places, unioned: each source's `{T}`-cost IR mana abilities
-/// (`Ability::Activated{is_mana}`, condition-aware), the **intrinsic** basic-land-type mana
-/// derived from the permanent's COMPUTED subtypes (CR 305.6 — see [`basic_land_type_color`]),
-/// and the legacy `mana_colors` shortcut while cards migrate (C19).
+/// Colours come from two places, unioned: each source's `{T}`-cost IR mana abilities
+/// (`Ability::Activated{is_mana}`, condition-aware), and the **intrinsic** basic-land-type mana
+/// derived from the permanent's COMPUTED subtypes (CR 305.6 — see [`basic_land_type_color`]).
 fn mana_sources(state: &GameState, p: PlayerId) -> Vec<(ObjId, Vec<Color>)> {
     state
         .player(p)
@@ -76,7 +75,8 @@ fn basic_land_type_color(subtype: &str) -> Option<Color> {
 }
 
 /// The colours `def` can currently produce for controller `p` — from its IR mana abilities whose
-/// activation restriction/condition holds, plus the legacy `mana_colors` shortcut (transitional).
+/// activation restriction/condition holds. (Intrinsic basic-land-type mana is added by the caller
+/// from the permanent's computed subtypes; see [`mana_sources`].)
 fn producible_colors(state: &GameState, def: &crate::cards::CardDef, p: PlayerId) -> Vec<Color> {
     let mut colors: Vec<Color> = Vec::new();
     let push = |c: Color, v: &mut Vec<Color>| {
@@ -101,9 +101,6 @@ fn producible_colors(state: &GameState, def: &crate::cards::CardDef, p: PlayerId
                 }
             }
         }
-    }
-    for &c in &def.mana_colors {
-        push(c, &mut colors);
     }
     colors
 }
@@ -269,8 +266,8 @@ mod tests {
                 grp_id: 9000,
                 ..Default::default()
             },
-            abilities: Vec::new(),
-            mana_colors: vec![Color::Green],
+            // C19: mana via a real `{T}: Add {G}` IR ability (the `mana_colors` shortcut is gone).
+            abilities: vec![cards::mana_ability(Color::Green)],
             text: String::new(),
         });
         let mut state = GameState::new(2, 1);
@@ -329,7 +326,6 @@ mod tests {
                 })),
                 is_mana: true,
             }],
-            mana_colors: Vec::new(), // pure IR — no fallback shortcut
             text: String::new(),
         });
         let mut state = GameState::new(2, 1);
@@ -371,7 +367,6 @@ mod tests {
                 ..Default::default()
             },
             abilities: Vec::new(),
-            mana_colors: Vec::new(),
             text: String::new(),
         });
         // A typed dual: subtypes `Forest Plains`, no ability, no shortcut.
@@ -384,7 +379,6 @@ mod tests {
                 ..Default::default()
             },
             abilities: Vec::new(),
-            mana_colors: Vec::new(),
             text: String::new(),
         });
         let mut state = GameState::new(2, 1);

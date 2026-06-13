@@ -102,7 +102,6 @@ pub fn register(db: &mut CardDb) {
                 is_mana: false,
             },
         ],
-        mana_colors: Vec::new(),
         text: String::new(),
     }.with_text("Equipped creature gets +2/+0. Equip {1}"));
     // Pacifism {1}{W} Aura — "Enchanted creature can't attack or block." Two AttachedHost

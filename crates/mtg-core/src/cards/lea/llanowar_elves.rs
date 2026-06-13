@@ -40,7 +40,6 @@ mod tests {
         assert_eq!(def.chars.power, Some(1));
         assert_eq!(def.chars.toughness, Some(1));
         assert_eq!(def.chars.subtypes, vec!["Elf".to_string(), "Druid".to_string()]);
-        assert!(def.mana_colors.is_empty());
         assert!(def.is_mana_source());
         expect![[r#"
             [
