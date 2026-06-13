@@ -43,6 +43,9 @@ MTGA client.
   headless `mtg-core` (#1); **decompile** recovering the GRE schema **and transport** in
   `../mtga-re` (#2); **design** authoring `AGENT_INTERFACE.md` then implementing
   agent/effects (#3,#4); **client** planning the web client + GRE server (#5).
+  **design done with #3:** `docs/design/AGENT_INTERFACE.md` specifies the boundary (one
+  `Agent` trait, superset `DecisionRequest`/`Response`, `PlayerView`, Effect IR + `Native`);
+  #4 (implement it in `mtg-core`) waits on the scaffold (#1).
 - Existing `src/*.rs` is a ~500-line naming skeleton being **replaced** by the workspace
   (kept only as vocabulary reference); `egui`/`eframe` moving out of the core.
 - Docs in place: architecture (`docs/design/WHITEBOARD_MODEL.md`), rules

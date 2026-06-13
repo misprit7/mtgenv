@@ -5,6 +5,14 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **design:** wrote `docs/design/AGENT_INTERFACE.md` — the single `Agent` trait +
+  `DecisionRequest`/`DecisionResponse` enums + `PlayerView` (info-filtered, hidden zones
+  masked) + the Effect IR / whiteboard `Action` / `Native` hatch (Rust sketches). The
+  `DecisionRequest` set is a proven **superset** of Forge's 107-method `PlayerController`
+  AND the recovered MTGA GRE `*Req` catalog (coverage matrices in §6). Masking is the
+  engine's job. Asked `decompile` for field-level GRE Req/Resp shapes (§9 open questions);
+  variant set not expected to change. Task #4 (implement agent.rs + effects/) blocked on
+  the workspace scaffold (#1).
 - **Project bootstrapped from skeleton into a planned project.** Established docs, the
   architecture, and three implementation plans. No engine code written yet (planning phase).
 - Downloaded the MTG Comprehensive Rules (eff. 2026-02-27) → `docs/rules/`
