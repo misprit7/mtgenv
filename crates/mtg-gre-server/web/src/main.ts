@@ -318,6 +318,15 @@ function cardEl(c: Any, ctx: Any): HTMLElement {
   hdr.appendChild(mana);
   d.appendChild(hdr);
 
+  // Dev quality reminder: engine flags a card whose printed text is only partially modeled.
+  // (Forward-compatible: only shows when the view explicitly says `fully_implemented === false`.)
+  if (chars.fully_implemented === false) {
+    d.classList.add("partial");
+    const warn = el("div", "warnbadge", "⚠");
+    warn.title = "Not fully implemented" + (chars.rules_text ? ":\n" + chars.rules_text : "");
+    d.appendChild(warn);
+  }
+
   const art = el("div", "c-art");
   const info = artMap[chars.grp_id];
   if (info && info.art) {

@@ -175,6 +175,10 @@
   .chosen { margin-top: 6px; color: var(--sel); font-weight: 700; font-size: 12px; }
   .card.back { background: repeating-linear-gradient(45deg,#3a2d52,#3a2d52 6px,#473864 6px,#473864 12px);
     border: 1px solid #241c33; }
+  /* dev "not fully implemented" alert — yellow corner badge; tooltip carries the deferred clause */
+  .card .warnbadge { position: absolute; top: 2px; left: 2px; min-width: 15px; height: 15px; padding: 0 2px;
+    border-radius: 4px; background: #f5c518; color: #1a1205; font-size: 11px; line-height: 15px; text-align: center;
+    font-weight: 900; box-shadow: 0 0 4px rgba(0,0,0,.55); cursor: help; z-index: 3; }
   .card .badge { position: absolute; left: 3px; bottom: 2px; font-size: 8px; font-weight: 800;
     padding: 0 3px; border-radius: 4px; }
   .badge.atk { background: #d23b3b; color: #fff; } .badge.blk { background: #3b78d2; color: #fff; }
@@ -567,6 +571,15 @@
     manaPips(chars).forEach(p => mana.appendChild(p));
     hdr.appendChild(mana);
     d.appendChild(hdr);
+
+    // Dev quality reminder: engine flags a card whose printed text is only partially modeled.
+    // (Forward-compatible: only shows when the view explicitly says `fully_implemented === false`.)
+    if (chars.fully_implemented === false) {
+      d.classList.add("partial");
+      const warn = el("div", "warnbadge", "⚠");
+      warn.title = "Not fully implemented" + (chars.rules_text ? ":\n" + chars.rules_text : "");
+      d.appendChild(warn);
+    }
 
     const art = el("div", "c-art");
     const info = artMap[chars.grp_id];
