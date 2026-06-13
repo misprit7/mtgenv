@@ -426,6 +426,7 @@ impl Engine {
         for id in perms {
             if let Some(o) = self.state.objects.get_mut(&id) {
                 o.summoning_sick = false;
+                o.used_once_per_turn = false; // loyalty abilities are usable again (CR 606.3)
             }
         }
     }
@@ -1226,6 +1227,19 @@ impl Engine {
                         o.attached_to = None;
                     }
                     self.state.mark_chars_dirty();
+                }
+                StateBasedAction::PlaneswalkerDies { pw } => {
+                    let owner = match self.state.objects.get(pw) {
+                        Some(o) if o.zone == Zone::Battlefield => o.owner,
+                        _ => continue,
+                    };
+                    if self.state.move_object(*pw, Zone::Graveyard, owner) {
+                        self.broadcast(GameEvent::PermanentDied { obj: *pw });
+                        self.broadcast(GameEvent::ObjectMoved {
+                            obj: *pw,
+                            to: Zone::Graveyard,
+                        });
+                    }
                 }
             }
         }
@@ -2124,6 +2138,43 @@ mod expect_tests {
         e.state.move_object(bears, Zone::Graveyard, PlayerId(0));
         assert_eq!(e.state.object(saw).zone, Zone::Battlefield, "Equipment stays on the battlefield");
         assert_eq!(e.state.object(saw).attached_to, None, "but is no longer attached");
+    }
+
+    #[test]
+    fn planeswalker_enters_with_loyalty_and_dies_at_zero() {
+        // CR 306.5b: a planeswalker enters with loyalty counters equal to printed loyalty.
+        // CR 704.5i: a planeswalker with 0 loyalty is put into its owner's graveyard.
+        use crate::basics::{CardType, CounterKind};
+        let mut state = cards::build_game(1, &[&[], &[]]);
+        let chars = Characteristics {
+            name: "Test Walker".into(),
+            card_types: vec![CardType::Planeswalker],
+            loyalty: Some(3),
+            ..Default::default()
+        };
+        let pw = state.add_card(PlayerId(0), chars, Zone::Battlefield);
+        assert_eq!(
+            state.object(pw).counters.get(&CounterKind::Loyalty),
+            3,
+            "entered with printed loyalty"
+        );
+        let mut e = pass_engine(state);
+        assert!(
+            !sba::collect(&e.state)
+                .iter()
+                .any(|s| matches!(s, StateBasedAction::PlaneswalkerDies { .. })),
+            "alive while loyalty > 0"
+        );
+        // Loyalty drained to 0 → 704.5i.
+        e.state.objects.get_mut(&pw).unwrap().counters.counts.insert(CounterKind::Loyalty, 0);
+        let sbas = sba::collect(&e.state);
+        assert!(
+            sbas.iter()
+                .any(|s| matches!(s, StateBasedAction::PlaneswalkerDies { pw: x } if *x == pw)),
+            "0-loyalty planeswalker is collected as an SBA"
+        );
+        e.perform_sbas(&sbas);
+        assert_eq!(e.state.object(pw).zone, Zone::Graveyard, "0-loyalty planeswalker dies");
     }
 
     /// Put a card (by grp_id) directly into a player's zone, returning its id.

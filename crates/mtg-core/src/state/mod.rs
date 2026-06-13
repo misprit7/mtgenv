@@ -49,6 +49,9 @@ pub struct Characteristics {
     /// Printed keyword abilities (CR 702). The layer system (`chars/`) seeds the computed
     /// keyword set from these, then layers grants/removes (layer 6) on top.
     pub keywords: Vec<Keyword>,
+    /// Printed starting loyalty for a planeswalker (CR 306.5b) — it enters the battlefield with
+    /// this many loyalty counters. `None` for non-planeswalkers.
+    pub loyalty: Option<i32>,
     /// Oracle/printing id for embedding-table lookups (RL) & rendering; 0 = unset.
     pub grp_id: u32,
 }
@@ -114,6 +117,10 @@ pub struct Object {
     /// `None` for unattached permanents and anything off the battlefield. The continuous
     /// effects an attached permanent grants read this via `CardFilter::AttachedHost`.
     pub attached_to: Option<ObjId>,
+    /// Set when an ability with the once-per-turn restriction (a planeswalker loyalty ability,
+    /// CR 606.3) has been activated from this permanent this turn; reset at the start of each
+    /// turn and on any zone change. Blocks a second loyalty activation.
+    pub used_once_per_turn: bool,
 }
 
 impl Object {
@@ -362,15 +369,27 @@ impl GameState {
             summoning_sick: false,
             timestamp,
             attached_to: None,
+            used_once_per_turn: false,
         };
         self.objects.insert(id, obj);
         if let Some(v) = self.player_mut(owner).zone_vec_mut(zone) {
             v.push(id);
         }
         if zone == Zone::Battlefield {
+            self.enter_with_loyalty(id);
             self.mark_chars_dirty();
         }
         id
+    }
+
+    /// CR 306.5b: a planeswalker enters the battlefield with loyalty counters equal to its
+    /// printed loyalty. (Loyalty-modifying replacements like Doubling Season are future.)
+    fn enter_with_loyalty(&mut self, id: ObjId) {
+        if let Some(o) = self.objects.get_mut(&id) {
+            if let Some(loy) = o.chars.loyalty {
+                o.counters.counts.insert(CounterKind::Loyalty, loy.max(0) as u32);
+            }
+        }
     }
 
     /// Move an object between *per-player* zones, keeping the arena and the zone vectors in
@@ -409,6 +428,7 @@ impl GameState {
             o.counters = CounterBag::default();
             o.damage_marked = 0;
             o.dealt_deathtouch = false;
+            o.used_once_per_turn = false; // a fresh object identity (CR 400.7)
             if to == Zone::Battlefield {
                 o.controller = to_owner;
                 o.summoning_sick = o.chars.is_creature();
@@ -417,6 +437,9 @@ impl GameState {
                 o.controller = o.owner;
                 o.summoning_sick = false;
             }
+        }
+        if to == Zone::Battlefield {
+            self.enter_with_loyalty(id); // CR 306.5b, after counters were reset
         }
         if let Some(v) = self.player_mut(to_owner).zone_vec_mut(to) {
             v.push(id);

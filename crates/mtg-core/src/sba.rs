@@ -11,7 +11,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::basics::Zone;
+use crate::basics::{CardType, CounterKind, Zone};
 use crate::ids::{ObjId, PlayerId};
 use crate::state::GameState;
 
@@ -61,6 +61,10 @@ pub enum StateBasedAction {
     /// unattaches it via `move_object`; this covers a host that stops being a creature.)
     EquipmentUnattaches {
         equipment: ObjId,
+    },
+    /// CR 704.5i: a planeswalker with 0 loyalty is put into its owner's graveyard.
+    PlaneswalkerDies {
+        pw: ObjId,
     },
 }
 
@@ -168,6 +172,19 @@ pub fn collect(state: &GameState) -> Vec<StateBasedAction> {
             if !host_ok {
                 out.push(StateBasedAction::EquipmentUnattaches { equipment: o.id });
             }
+        }
+    }
+    // Planeswalker loyalty SBA (CR 704.5i): a planeswalker with 0 loyalty is put into its
+    // owner's graveyard.
+    for o in state.objects.values() {
+        if o.zone != Zone::Battlefield {
+            continue;
+        }
+        if !state.computed(o.id).card_types.contains(&CardType::Planeswalker) {
+            continue;
+        }
+        if o.counters.get(&CounterKind::Loyalty) == 0 {
+            out.push(StateBasedAction::PlaneswalkerDies { pw: o.id });
         }
     }
     out
