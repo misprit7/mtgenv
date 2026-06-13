@@ -11,11 +11,18 @@
 //!   M3  start a match    — accept EventAiBotMatch, hand the client our GRE endpoint
 //!   M4  gameplay         — speak the GRE protocol (later: bridge to mtgenv)
 //!
-//! What's implemented today: the wire foundation common to every channel — the
-//! [`frame`] codec and the FrontDoor [`envelope`] decode. The TLS listener, the
-//! HTTPS login stub, and the FrontDoor command responses are added next, once the
-//! login + startup-command surfaces (currently under reverse-engineering) land.
+//! Module layout:
+//!   - Dependency-free protocol core: [`frame`], [`envelope`], [`cmds`].
+//!   - I/O layer (tokio + rustls + flate2): [`cert`], [`jwt`], [`http_stub`],
+//!     [`frontdoor`]. These speak TLS and drive the live login + FrontDoor flow.
 
+// --- dependency-free protocol core ---
 pub mod cmds;
 pub mod envelope;
 pub mod frame;
+
+// --- I/O layer (async/TLS) ---
+pub mod cert;
+pub mod frontdoor;
+pub mod http_stub;
+pub mod jwt;

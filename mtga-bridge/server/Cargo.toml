@@ -5,9 +5,8 @@ edition = "2021"
 publish = false
 description = "Stub backend that the real MTG Arena client can connect to (interop research). Self-contained; not wired to the mtgenv rules engine yet."
 
-# Intentionally dependency-free for the first milestone (frame + envelope codec).
-# TLS (tokio-rustls + rcgen), the HTTPS PlayFab stub (hyper), protobuf (prost) and
-# gzip (flate2) get added when we wire the live login/FrontDoor flow.
+# The protocol core (frame + envelope + cmds) stays dependency-free. The async/TLS
+# I/O layer (cert / jwt / http_stub / frontdoor / main) uses the deps below.
 
 [lib]
 name = "mtga_bridge"
@@ -18,3 +17,10 @@ name = "mtga-bridge"
 path = "src/main.rs"
 
 [dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "macros", "time"] }
+# Use the `ring` crypto provider (not aws-lc-rs) so the build needs no system C
+# crypto toolchain; rcgen already pulls in `ring`.
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+rcgen = "0.13"
+flate2 = "1"
