@@ -1,0 +1,29 @@
+# Rust
+/target
+**/*.rs.bk
+*.pdb
+
+# Python (training env / bindings — added as the gym layer lands)
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+build/
+dist/
+*.so
+
+# Derived rules text is regenerable from the PDF via pdftotext, but we keep
+# it tracked so agents can grep it without the PDF (see docs/rules/). If this
+# becomes noisy, uncomment:
+# docs/rules/comprules.txt
+
+# Editor / OS
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Node (placeholder lockfile only; no JS toolchain yet)
+node_modules/
