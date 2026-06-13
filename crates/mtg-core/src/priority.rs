@@ -54,6 +54,50 @@ pub struct Outcome {
     pub reason: EndReason,
 }
 
+/// A seat's MTGA-style "stops" configuration for the Arena-profile auto-pass policy
+/// (AGENT_INTERFACE §8.1 decision *elision*). The engine still grants priority at every
+/// window (CR-correct); this policy decides which windows the seat is actually *prompted* at.
+#[derive(Debug, Clone, Default)]
+pub struct StopConfig {
+    /// "Full control": stop at every priority window (nothing auto-passed).
+    pub full_control: bool,
+    /// Per-step override of the Arena default: `Some(true)` = always stop here, `Some(false)`
+    /// = never stop here, `None` = use the Arena default.
+    overrides: std::collections::BTreeMap<Phase, bool>,
+}
+
+impl StopConfig {
+    /// Whether seat `p` stops (is prompted) at `step`, given who is `active`.
+    fn stops_at(&self, p: PlayerId, step: Phase, active: PlayerId) -> bool {
+        if self.full_control {
+            return true;
+        }
+        match self.overrides.get(&step) {
+            Some(&o) => o,
+            None => arena_default_stop(p, step, active),
+        }
+    }
+}
+
+/// MTGA's default stop set: your main phases, declare-attackers on your turn, declare-blockers
+/// when you're defending.
+fn arena_default_stop(p: PlayerId, step: Phase, active: PlayerId) -> bool {
+    match step {
+        Phase::PrecombatMain | Phase::PostcombatMain | Phase::DeclareAttackers => p == active,
+        Phase::DeclareBlockers => p != active,
+        _ => false,
+    }
+}
+
+/// Steps the Arena profile passes through even when the player *has* an action (unless a stop
+/// is set). Untap/Cleanup grant no priority so never reach the policy.
+fn is_unimportant_step(step: Phase) -> bool {
+    matches!(
+        step,
+        Phase::Upkeep | Phase::Draw | Phase::BeginCombat | Phase::EndCombat | Phase::End
+    )
+}
+
 /// The engine: full [`GameState`] plus one [`Agent`] per seat (indexed by `PlayerId.0`).
 /// All player choices flow through the agents; nothing else asks a player anything.
 pub struct Engine {
@@ -64,6 +108,11 @@ pub struct Engine {
     pub event_log: Vec<GameEvent>,
     record_events: bool,
     started: bool,
+    /// Arena-profile auto-pass policy (MTGA stops). Off by default = paper-CR / deterministic
+    /// (every window prompts), which keeps differential-testing and RL replay deterministic;
+    /// a human/UI session enables it. One [`StopConfig`] per seat.
+    arena_auto_pass: bool,
+    stops: Vec<StopConfig>,
 }
 
 impl Engine {
@@ -74,13 +123,67 @@ impl Engine {
             state.players.len(),
             "one agent per seat is required"
         );
+        let stops = vec![StopConfig::default(); state.players.len()];
         Engine {
             state,
             agents,
             event_log: Vec::new(),
             record_events: false,
             started: false,
+            arena_auto_pass: false,
+            stops,
         }
+    }
+
+    // ── Arena-profile auto-pass / stops (MTGA-style; AGENT_INTERFACE §8.1 elision) ───────────
+
+    /// Enable/disable the Arena-profile auto-pass policy. Off (default) = paper-CR: every
+    /// priority window prompts (deterministic for differential-testing / RL replay). On = a
+    /// seat is prompted only at its stops + meaningful (non-priority) decisions.
+    pub fn set_arena_auto_pass(&mut self, on: bool) {
+        self.arena_auto_pass = on;
+    }
+    /// "Full control" for a seat: stop at every priority window (overrides auto-pass).
+    pub fn set_full_control(&mut self, p: PlayerId, on: bool) {
+        self.stops[p.0 as usize].full_control = on;
+    }
+    /// Override a seat's stop at `step`: `Some(true)` = always stop, `Some(false)` = never,
+    /// `None` = revert to the Arena default.
+    pub fn set_stop(&mut self, p: PlayerId, step: Phase, stop: Option<bool>) {
+        let o = &mut self.stops[p.0 as usize].overrides;
+        match stop {
+            Some(v) => {
+                o.insert(step, v);
+            }
+            None => {
+                o.remove(&step);
+            }
+        }
+    }
+    /// A seat's stop configuration (for the UI).
+    pub fn stop_config(&self, p: PlayerId) -> &StopConfig {
+        &self.stops[p.0 as usize]
+    }
+    /// Whether `p` would currently stop at `step` (for the UI to render active stops).
+    pub fn is_stop(&self, p: PlayerId, step: Phase) -> bool {
+        self.stops[p.0 as usize].stops_at(p, step, self.state.active_player)
+    }
+
+    /// The Arena-profile decision: should `p`'s current priority window be auto-passed
+    /// (elided) instead of prompting the agent? Forced/choice decisions never reach here —
+    /// only the priority `Pass`/act window. Never auto-passes a stop or under full control;
+    /// with auto-pass off, always prompts (returns false).
+    fn should_auto_pass(&self, p: PlayerId, has_action: bool) -> bool {
+        if !self.arena_auto_pass {
+            return false;
+        }
+        let step = self.state.phase;
+        if self.stops[p.0 as usize].stops_at(p, step, self.state.active_player) {
+            return false; // a stop → prompt
+        }
+        // Not a stop: auto-pass when there's nothing to do, or when it's an unimportant step
+        // even if something is available (CR-irrelevant windows the player rarely acts in).
+        !has_action || is_unimportant_step(step)
     }
 
     /// Enable recording of broadcast events into [`Engine::event_log`] (for tracing/tests).
@@ -353,11 +456,18 @@ impl Engine {
             self.state.priority_player = Some(p);
 
             let actions = self.legal_priority_actions(p);
-            let req = DecisionRequest::Priority {
-                actions: actions.clone(),
-                can_pass: true,
+            // Arena-profile auto-pass (AGENT_INTERFACE §8.1): elide this window (treat as a
+            // pass without prompting the agent) when the policy says so. Off ⇒ always prompt.
+            let response = if self.should_auto_pass(p, !actions.is_empty()) {
+                DecisionResponse::Pass
+            } else {
+                let req = DecisionRequest::Priority {
+                    actions: actions.clone(),
+                    can_pass: true,
+                };
+                self.ask(p, &req)
             };
-            match self.ask(p, &req) {
+            match response {
                 DecisionResponse::Action(i) if (i as usize) < actions.len() => {
                     self.perform_priority_action(p, &actions[i as usize]);
                     // The player who acted retains priority (CR 117.3c / 116.3): `idx`
@@ -1296,6 +1406,115 @@ mod expect_tests {
 
     fn pass_engine(state: GameState) -> Engine {
         Engine::new(state, vec![Box::new(PassAgent), Box::new(PassAgent)])
+    }
+
+    /// Records the phase of every `Priority` window it is actually prompted at (so a test can
+    /// assert which windows the Arena auto-pass policy elided). Always passes.
+    struct PrioritySpy {
+        prompted: Rc<RefCell<Vec<Phase>>>,
+    }
+    impl Agent for PrioritySpy {
+        fn decide(&mut self, view: &PlayerView, req: &DecisionRequest) -> DecisionResponse {
+            if let DecisionRequest::Priority { .. } = req {
+                self.prompted.borrow_mut().push(view.phase);
+            }
+            match req {
+                DecisionRequest::SelectCards { min, .. } => {
+                    DecisionResponse::Indices((0..*min).collect())
+                }
+                _ => DecisionResponse::Pass,
+            }
+        }
+    }
+
+    #[test]
+    fn auto_pass_policy_follows_arena_rules() {
+        // Direct unit tests of the policy (should_auto_pass), P0 active.
+        let state = cards::build_game(1, &[&[], &[]]);
+        let mut e = Engine::new(state, vec![Box::new(PassAgent), Box::new(PassAgent)]);
+        e.set_arena_auto_pass(true);
+        e.state.active_player = PlayerId(0);
+        let (p0, p1) = (PlayerId(0), PlayerId(1));
+
+        let set_phase = |e: &mut Engine, ph| e.state.phase = ph;
+
+        // Own precombat main is always a stop — never auto-passed, even with no action.
+        set_phase(&mut e, Phase::PrecombatMain);
+        assert!(!e.should_auto_pass(p0, false), "own MP1 is a stop");
+        // Unimportant steps auto-pass whether or not there's an action.
+        set_phase(&mut e, Phase::Upkeep);
+        assert!(e.should_auto_pass(p0, false));
+        assert!(e.should_auto_pass(p0, true), "upkeep auto-passes even with an action");
+        // An important non-stop step (combat damage): auto-pass only when no action.
+        set_phase(&mut e, Phase::CombatDamage);
+        assert!(e.should_auto_pass(p0, false));
+        assert!(!e.should_auto_pass(p0, true), "act in combat damage ⇒ prompt");
+        // Defender stops at declare-blockers; the active player does not.
+        set_phase(&mut e, Phase::DeclareBlockers);
+        assert!(!e.should_auto_pass(p1, false), "defender stops at declare blockers");
+        assert!(e.should_auto_pass(p0, false), "active player auto-passes declare blockers");
+
+        // A manual stop forces a prompt at an otherwise-elided step.
+        e.set_stop(p0, Phase::Upkeep, Some(true));
+        set_phase(&mut e, Phase::Upkeep);
+        assert!(!e.should_auto_pass(p0, false), "manual upkeep stop");
+
+        // Full control stops everywhere.
+        e.set_full_control(p1, true);
+        set_phase(&mut e, Phase::End);
+        assert!(!e.should_auto_pass(p1, false), "full control stops at the end step");
+
+        // With the policy off (paper-CR), nothing is ever auto-passed.
+        e.set_arena_auto_pass(false);
+        assert!(!e.should_auto_pass(p0, false));
+    }
+
+    #[test]
+    fn auto_pass_elides_minor_steps_over_a_turn() {
+        // End-to-end: P0 has no actions all turn; with the Arena profile on, P0 is prompted
+        // only at its default stops (MP1, declare-attackers, MP2), never at upkeep/draw/etc.
+        let prompted = Rc::new(RefCell::new(Vec::new()));
+        let state = cards::build_game(1, &[&[], &[]]); // empty libraries
+        let agents: Vec<Box<dyn Agent>> = vec![
+            Box::new(PrioritySpy { prompted: Rc::clone(&prompted) }),
+            Box::new(PassAgent),
+        ];
+        let mut e = Engine::new(state, agents);
+        e.skip_opening_deal(); // empty hands; no draw on turn 1 (P0 on the play)
+        e.set_arena_auto_pass(true);
+        e.start_game();
+        e.take_turn(); // P0's whole turn
+
+        let seen = prompted.borrow().clone();
+        for elided in [
+            Phase::Upkeep,
+            Phase::Draw,
+            Phase::BeginCombat,
+            Phase::CombatDamage,
+            Phase::EndCombat,
+            Phase::End,
+        ] {
+            assert!(!seen.contains(&elided), "{elided:?} should be auto-passed");
+        }
+        assert!(seen.contains(&Phase::PrecombatMain), "stop at own MP1");
+        assert!(seen.contains(&Phase::PostcombatMain), "stop at own MP2");
+
+        // Full control prompts at the minor steps too.
+        let prompted2 = Rc::new(RefCell::new(Vec::new()));
+        let state2 = cards::build_game(1, &[&[], &[]]);
+        let agents2: Vec<Box<dyn Agent>> = vec![
+            Box::new(PrioritySpy { prompted: Rc::clone(&prompted2) }),
+            Box::new(PassAgent),
+        ];
+        let mut e2 = Engine::new(state2, agents2);
+        e2.skip_opening_deal();
+        e2.set_arena_auto_pass(true);
+        e2.set_full_control(PlayerId(0), true);
+        e2.start_game();
+        e2.take_turn();
+        let seen2 = prompted2.borrow().clone();
+        assert!(seen2.contains(&Phase::Upkeep), "full control stops at upkeep");
+        assert!(seen2.contains(&Phase::BeginCombat), "full control stops at begin combat");
     }
 
     /// Put a card (by grp_id) directly into a player's zone, returning its id.
