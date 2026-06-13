@@ -25,9 +25,16 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
     turn-based actions, not priority stops — dropped from defaults vs the task's literal list);
     added **SmartStops** (per-seat, MTGA default ON) = prompt wherever you have a legal play
     (replaces "auto-pass unimportant even with an action"; that's now the SmartStops-OFF mode).
-    API adds `set_smart_stops(p, on)`. Deferred (noted): `stackAutoPassOption`
-    (ResolveMyStackEffects — auto-pass after your own cast until opponent acts), yields/answers,
-    transient stops.
+    API adds `set_smart_stops(p, on)`.
+  - **stackAutoPassOption = ResolveMyStackEffects** (MTGA default ON, per-seat) now implemented
+    (the in-response-to-your-own-spell nuance the user asked about): while your OWN object is on
+    top of the stack you auto-pass so it resolves — you're not re-prompted to respond to
+    yourself; the opponent is still prompted to respond when they can act; full control / a stop
+    override. `set_resolve_own_stack(p, on)`. Also added the MTGA `AutoPassOption` enum
+    (UnlessAction/UnlessOpponentAction/ResolveMyStackEffects/ResolveAll/FullControl) +
+    `set_auto_pass_option(p, opt)` mapping it onto the seat's flags (vocabulary for the UI; finer
+    Turn/EndStep/ResolveAll distinctions approximated, refined later vs byte-exact defaults).
+    Deferred: yields/answers, transient stops, captured ConnectResp.settings defaults.
 - **engine:** task #11 GENERALIZATION (milestone 4 cont.) — the rewrite pass + triggers are
   now beyond the self-scoped prototype (4 snapshot commits): (1) land plays routed through the
   whiteboard + `Rewrite::EntersTapped`/`Action::TapUntap`; (2) a **dies/LTB trigger** (Exultant
