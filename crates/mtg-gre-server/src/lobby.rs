@@ -54,35 +54,19 @@ impl SpectateHub {
             last_view: Mutex::new(None),
         })
     }
-    /// Publish a board frame (an `Event`): cache it for late joiners and fan it out live.
-    fn publish_view(&self, frame: ServerMsg) {
-        *self.last_view.lock().unwrap() = Some(frame.clone());
-        let _ = self.tx.send(frame); // Err just means "no spectators right now" — fine.
+    /// Publish an omniscient god-view frame (the engine's replay-sink feed): cache it for late
+    /// joiners and fan it out live. Spectators see no hidden information (every zone face-up).
+    fn publish_god(&self, frame: &mtg_core::replay::ReplayFrame) {
+        let msg = ServerMsg::GodFrame {
+            state: frame.state.clone(),
+            label: frame.label.clone(),
+        };
+        *self.last_view.lock().unwrap() = Some(msg.clone());
+        let _ = self.tx.send(msg);
     }
     /// Publish a non-board frame (e.g. `GameOver`) live without disturbing the cached board.
     fn publish(&self, frame: ServerMsg) {
         let _ = self.tx.send(frame);
-    }
-}
-
-/// Wraps a seat's agent and **mirrors every `observe` to the room's [`SpectateHub`]** (the seat-0
-/// agent is wrapped so spectators watch the game from Player 0's perspective). Pure pass-through for
-/// decisions.
-struct SpectatorTee {
-    inner: Box<dyn Agent>,
-    hub: Arc<SpectateHub>,
-}
-
-impl Agent for SpectatorTee {
-    fn decide(&mut self, view: &PlayerView, req: &DecisionRequest) -> DecisionResponse {
-        self.inner.decide(view, req)
-    }
-    fn observe(&mut self, view: &PlayerView, ev: &GameEvent) {
-        self.hub.publish_view(ServerMsg::Event {
-            event: ev.clone(),
-            view: view.clone(),
-        });
-        self.inner.observe(view, ev);
     }
 }
 
@@ -492,7 +476,9 @@ fn spawn_game(seed: u64, room: Arc<Room>, mut slots: Vec<Option<SeatIngredients>
         let delay = Duration::from_millis(room.delay_ms as u64);
         for (i, spec) in room.seats.iter().enumerate() {
             let pid = PlayerId(i as u32);
-            let mut agent: Box<dyn Agent> = match spec.kind {
+            // Spectators watch via the engine's god-view replay sink (installed below), not by
+            // teeing a seat's PlayerView — so they see no hidden information.
+            let agent: Box<dyn Agent> = match spec.kind {
                 SeatKind::Human => {
                     let ing = slots[i].take().expect("human seat ingredients present");
                     senders.push((pid, ing.to_client_tx.clone()));
@@ -511,13 +497,6 @@ fn spawn_game(seed: u64, room: Arc<Room>, mut slots: Vec<Option<SeatIngredients>
                     }
                 }
             };
-            // Seat 0's view stream is what spectators watch (wrap last, so it sees post-delay state).
-            if i == 0 {
-                agent = Box::new(SpectatorTee {
-                    inner: agent,
-                    hub: Arc::clone(&room.spectate),
-                });
-            }
             agents.push(agent);
         }
 
@@ -533,7 +512,7 @@ fn spawn_game(seed: u64, room: Arc<Room>, mut slots: Vec<Option<SeatIngredients>
         }
 
         // Build the engine with each human's stops applied; hand each seat its live stop handle.
-        let (engine, handles) = driver::room_engine(state, agents, &humans);
+        let (mut engine, handles) = driver::room_engine(state, agents, &humans);
         let handle_map: HashMap<u32, Arc<Mutex<StopConfig>>> =
             handles.into_iter().map(|(p, h)| (p.0, h)).collect();
         for (pid, stop_tx) in stop_txs {
@@ -541,6 +520,13 @@ fn spawn_game(seed: u64, room: Arc<Room>, mut slots: Vec<Option<SeatIngredients>
                 let _ = stop_tx.send(Arc::clone(h));
             }
         }
+
+        // Stream omniscient (god-view) frames to spectators live: the engine's replay sink fires
+        // per public event on this game thread, so we forward each god frame to the room's hub
+        // (cached for late joiners). Installing the sink turns recording on, so the same frames
+        // also accumulate for the on-finish auto-save (`replay()`).
+        let spectate = Arc::clone(&room.spectate);
+        engine.set_replay_sink(Box::new(move |frame| spectate.publish_god(frame)));
 
         // Play it out (recording an omniscient replay), then broadcast the result + persist the
         // replay so the lobby's finished-game "▶ Replay" button can play it back.

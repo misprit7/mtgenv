@@ -25,8 +25,9 @@ const params = new URLSearchParams(location.search);
 const gameId = params.get("game");
 const replayId = params.get("replay");
 const spectating = params.get("spectate") === "1" || params.get("spectate") === "true";
-// God-view (no information masking): replays and (once engine lands god_view) spectating.
-let godMode = !!replayId;
+// God-view (no information masking): replays and spectating (the server feeds spectators
+// omniscient god frames, so both hands + ordered libraries render — spectators aren't players).
+let godMode = !!replayId || spectating;
 $("decks").textContent = replayId
   ? `▶ Replay #${replayId}`
   : spectating
@@ -74,6 +75,13 @@ if (replayId) {
 
 function handle(m: Any): void {
   if (m.type === "event") { view = m.view; logEvent(m.event); render(); }
+  else if (m.type === "godFrame") {
+    // Live god-view spectating: omniscient frame (no masking). Render via the same adapter as
+    // replays; surface the label of what just happened in the spectating banner.
+    view = godToView(m.state, 0);
+    if (m.label) $("prompt").innerHTML = `<div class="waiting">👁 ${esc(m.label)}</div>`;
+    render();
+  }
   else if (m.type === "decide") {
     view = m.view; cur = m; multi.clear(); orderSeq = [];
     // Enter-engaged "pass through this turn's stops" lapses when the turn advances (MTGA parity).

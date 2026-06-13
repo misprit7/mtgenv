@@ -57,6 +57,14 @@ pub enum ServerMsg {
         prompt: Prompt,
         view: PlayerView,
     },
+    /// An omniscient (god-view) frame for live spectating — **no information masking**. Carries the
+    /// engine's [`GodView`](mtg_core::replay::GodView) (every zone of every player face-up, libraries
+    /// top-first) + a label of what just happened. Spectators aren't players, so this can't leak to a
+    /// competitor; the spectator client renders it with the same god-view code as the replay viewer.
+    GodFrame {
+        state: mtg_core::replay::GodView,
+        label: String,
+    },
     /// The game ended.
     GameOver {
         winner: Option<PlayerId>,
