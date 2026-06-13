@@ -62,6 +62,21 @@ MTGA client.
   (axum+WS, depends only on `mtg-core`); a human is just a `GreSessionAgent` behind the one
   boundary; mapping reconciled to AGENT_INTERFACE §6.1/§1.1; real-client drop-in via
   endpoint-redirect or Mono patch. Transport/auth details blocked on decompile (#2).
+- **engine done with #12 + #13 + #14 (Arena stops, layer system, breadth).** **#12:** MTGA-style
+  auto-pass / stops (`Engine`'s per-seat `StopConfig`, decision elision) per decompile's
+  `priority_stops.md`; plus a live `Engine::stops_handle(p) -> Arc<Mutex<StopConfig>>` so a UI can
+  toggle stops mid-game (auto_pass now per-seat). **#13:** the CR 613 layer system (`chars/`) —
+  7 layers + timestamps, "affects reads computed-prior-layer types" (613.8), over design's
+  `StaticContribution`; validated on anthems / Levitation / Humility / Nature's Revolt. **#14
+  (engine breadth, DONE):** evergreen keywords (flying/reach, first/double strike with the combat
+  two-substep, trample, deathtouch, lifelink, vigilance, menace, defender, haste, flash, hexproof,
+  indestructible); **auras + equipment** (attachment subsystem: `attached_to`, `CardFilter::
+  AttachedHost`, Aura enters-attached + fall-off SBA, Equipment + the activated-ability path +
+  unattach SBA; a qualification dimension on `ComputedChars` read by combat); **planeswalkers**
+  (printed loyalty, enters-with-loyalty, loyalty abilities once/turn at sorcery speed via
+  `CostComponent::Loyalty`, attackable + combat damage removes loyalty, 704.5i 0-loyalty SBA).
+  ~38-card starter set; 84 mtg-core tests green. Deferred: ward/shroud, layers 1–3, planeswalker
+  ultimates, general enchant restrictions.
 - **engine: milestone 4 prototype validated (#11).** The whiteboard model holds up against
   the CR on concrete cards: triggered abilities (events → APNAP stack → resolve, with
   trigger targeting) and a real materialize→rewrite→commit pass (replacement/prevention) wired
