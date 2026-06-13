@@ -171,14 +171,16 @@ pub(crate) fn mana_ability(color: Color) -> Ability {
     }
 }
 
-pub(crate) fn basic_land(grp_id: u32, name: &str, color: Color) -> CardDef {
+pub(crate) fn basic_land(grp_id: u32, name: &str) -> CardDef {
     let mut chars = Characteristics::basic_land(name);
     chars.grp_id = grp_id;
     chars.colors = Vec::new(); // lands are colorless (CR 105.2a)
     CardDef {
         chars,
         abilities: Vec::new(),
-        mana_colors: vec![color],
+        // Mana is intrinsic: the engine derives `{T}: Add <colour>` from the basic land subtype
+        // (CR 305.6, e.g. Forest → {G}) — no `mana_colors` shortcut, no explicit mana ability.
+        mana_colors: Vec::new(),
         text: String::new(),
     }
 }
@@ -389,8 +391,13 @@ mod tests {
     fn starter_db_has_expected_cards() {
         let db = starter_db();
         assert_eq!(db.len(), 38);
-        assert!(db.get(grp::FOREST).unwrap().is_mana_source());
-        assert_eq!(db.get(grp::FOREST).unwrap().mana_colors, vec![Color::Green]);
+        // Forest is "type line only": a Basic Land with subtype Forest. Mana is intrinsic
+        // (CR 305.6) — the engine derives {T}: Add {G} from the subtype, so the CardDef carries
+        // no mana_colors / mana ability.
+        let forest = db.get(grp::FOREST).unwrap();
+        assert_eq!(forest.chars.subtypes, vec!["Forest".to_string()]);
+        assert!(forest.chars.supertypes.contains(&"Basic".to_string()));
+        assert!(forest.mana_colors.is_empty());
         // Grizzly Bears is a vanilla 2/2 with no abilities.
         let bears = db.get(grp::GRIZZLY_BEARS).unwrap();
         assert_eq!(bears.chars.power, Some(2));
