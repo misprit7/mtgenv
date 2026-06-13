@@ -20,6 +20,7 @@ use axum::routing::get;
 use axum::Router;
 use futures_util::{SinkExt, StreamExt};
 use mtg_core::agent::{Agent, RandomAgent};
+use mtg_core::basics::Phase;
 use mtg_core::ids::PlayerId;
 use tokio::net::TcpListener;
 use tower_http::services::ServeDir;
@@ -84,13 +85,26 @@ async fn ws_handler(
     let p1 = params.get("p1").cloned();
     let truthy = |v: &str| v == "1" || v.eq_ignore_ascii_case("on") || v.eq_ignore_ascii_case("true");
     let flag = |key: &str, dflt: bool| params.get(key).map(|v| truthy(v)).unwrap_or(dflt);
+    // `?stops=PrecombatMain:1,Upkeep:0` — per-step stop overrides (Phase names = serde variants).
+    let overrides: Vec<(Phase, bool)> = params
+        .get("stops")
+        .map(|s| {
+            s.split(',')
+                .filter_map(|tok| {
+                    let (name, val) = tok.split_once(':')?;
+                    let phase: Phase = serde_json::from_str(&format!("\"{name}\"")).ok()?;
+                    Some((phase, val != "0"))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
     let stops = driver::Stops {
         // MTGA defaults for human play; ?autopass=0 opts into every-window prompting.
         auto_pass: flag("autopass", true),
         full_control: flag("fullcontrol", false),
         smart_stops: flag("smartstops", true),
         resolve_own_stack: flag("resolvestack", true),
-        overrides: Vec::new(),
+        overrides,
     };
     ws.on_upgrade(move |socket| handle_socket(socket, p0, p1, stops))
 }

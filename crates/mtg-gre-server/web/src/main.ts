@@ -91,8 +91,56 @@ function render(): void {
   renderHalf("oppoHalf", oppId(), true);
   renderHalf("youHalf", meSeat(), false);
   renderStack();
+  renderStepBar();
   renderHand();
   if (cur) renderPrompt();
+}
+
+// MTGO-style phase/step bar. `stop` = a priority-granting step you can stop at (StopType vocab).
+const STEPS: Array<{ phase: string; label: string; stop: boolean }> = [
+  { phase: "Untap", label: "Untap", stop: false },
+  { phase: "Upkeep", label: "Upkeep", stop: true },
+  { phase: "Draw", label: "Draw", stop: true },
+  { phase: "PrecombatMain", label: "Main 1", stop: true },
+  { phase: "BeginCombat", label: "Combat", stop: true },
+  { phase: "DeclareAttackers", label: "Attack", stop: true },
+  { phase: "DeclareBlockers", label: "Block", stop: true },
+  { phase: "CombatDamage", label: "Damage", stop: true },
+  { phase: "EndCombat", label: "End Cbt", stop: true },
+  { phase: "PostcombatMain", label: "Main 2", stop: true },
+  { phase: "End", label: "End", stop: true },
+  { phase: "Cleanup", label: "Cleanup", stop: false },
+];
+function stopMap(): Any {
+  const m: Any = {};
+  if (view.stops && view.stops.per_step) view.stops.per_step.forEach((p: Any) => (m[p[0]] = p[1]));
+  return m;
+}
+function renderStepBar(): void {
+  const bar = $("stepbar");
+  bar.innerHTML = "";
+  const stops = stopMap();
+  STEPS.forEach((st) => {
+    const cell = el("div", "step" + (view.phase === st.phase ? " cur" : ""));
+    cell.appendChild(el("div", "slabel", st.label));
+    if (st.stop) {
+      cell.appendChild(el("div", "sdot" + (stops[st.phase] ? " on" : "")));
+      cell.classList.add("clickable");
+      const on = !!stops[st.phase];
+      cell.title = (on ? "Remove stop at " : "Stop at ") + st.label + " (get priority there)";
+      cell.onclick = () => toggleStop(st.phase, !on);
+    }
+    bar.appendChild(cell);
+  });
+}
+function toggleStop(phase: string, on: boolean): void {
+  // Per-game via a query param for now; live mid-game toggling lands with the engine stop handle.
+  const p = new URLSearchParams(location.search);
+  const m: Any = {};
+  (p.get("stops") || "").split(",").filter(Boolean).forEach((t) => { const [k, v] = t.split(":"); m[k] = v !== "0"; });
+  m[phase] = on;
+  p.set("stops", Object.entries(m).map(([k, v]) => `${k}:${v ? "1" : "0"}`).join(","));
+  location.search = p.toString();
 }
 
 function renderRail(): void {

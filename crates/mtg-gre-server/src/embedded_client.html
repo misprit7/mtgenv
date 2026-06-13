@@ -62,6 +62,18 @@
     display: flex; gap: 8px; pointer-events: none; }
   .stack .card { box-shadow: 0 8px 24px rgba(0,0,0,.5); }
 
+  /* MTGO-style phase/step bar, just above the hand */
+  .stepbar { display: flex; gap: 3px; padding: 5px 12px; background: var(--rail);
+    border-top: 1px solid var(--line); align-items: stretch; }
+  .step { flex: 1 1 0; min-width: 40px; text-align: center; padding: 3px 2px; border-radius: 6px;
+    background: var(--panel); border: 1px solid var(--line); position: relative; user-select: none; }
+  .step.cur { background: var(--accent); color: #06140b; border-color: var(--accent); font-weight: 800; }
+  .step.clickable { cursor: pointer; }
+  .step.clickable:hover { border-color: var(--accent); }
+  .step .slabel { font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .step .sdot { width: 8px; height: 8px; border-radius: 50%; margin: 3px auto 0; border: 1px solid var(--muted); }
+  .step .sdot.on { background: #d23b3b; border-color: #ff7a7a; box-shadow: 0 0 5px #d23b3b; }
+  .step.cur .sdot { border-color: #06140b; }
   .hand { background: var(--rail); border-top: 1px solid var(--line); padding: 8px 12px 10px;
     display: flex; gap: 8px; align-items: flex-end; overflow-x: auto; min-height: 150px; }
   .hand .hlabel { color: var(--muted); font-size: 10px; align-self: center; writing-mode: vertical-rl;
@@ -189,6 +201,7 @@
       <div class="half you" id="youHalf"></div>
       <div class="stack" id="stack"></div>
     </div>
+    <div class="stepbar" id="stepbar"></div>
     <div class="hand" id="hand"></div>
   </div>
 
@@ -286,8 +299,57 @@
     renderHalf("oppoHalf", oppId(), true);
     renderHalf("youHalf", me(), false);
     renderStack();
+    renderStepBar();
     renderHand();
     if (cur) renderPrompt();
+  }
+
+  // MTGO-style phase/step bar. `stop` = a priority-granting step you can stop at (StopType vocab).
+  const STEPS = [
+    { phase: "Untap", label: "Untap", stop: false },
+    { phase: "Upkeep", label: "Upkeep", stop: true },
+    { phase: "Draw", label: "Draw", stop: true },
+    { phase: "PrecombatMain", label: "Main 1", stop: true },
+    { phase: "BeginCombat", label: "Combat", stop: true },
+    { phase: "DeclareAttackers", label: "Attack", stop: true },
+    { phase: "DeclareBlockers", label: "Block", stop: true },
+    { phase: "CombatDamage", label: "Damage", stop: true },
+    { phase: "EndCombat", label: "End Cbt", stop: true },
+    { phase: "PostcombatMain", label: "Main 2", stop: true },
+    { phase: "End", label: "End", stop: true },
+    { phase: "Cleanup", label: "Cleanup", stop: false },
+  ];
+  function stopMap() {
+    const m = {};
+    if (view.stops && view.stops.per_step) view.stops.per_step.forEach(p => (m[p[0]] = p[1]));
+    return m;
+  }
+  function renderStepBar() {
+    const bar = $("stepbar");
+    bar.innerHTML = "";
+    const stops = stopMap();
+    STEPS.forEach(st => {
+      const cell = el("div", "step" + (view.phase === st.phase ? " cur" : ""));
+      cell.appendChild(el("div", "slabel", st.label));
+      if (st.stop) {
+        cell.appendChild(el("div", "sdot" + (stops[st.phase] ? " on" : "")));
+        cell.classList.add("clickable");
+        const on = !!stops[st.phase];
+        cell.title = (on ? "Remove stop at " : "Stop at ") + st.label + " (get priority there)";
+        cell.onclick = () => toggleStop(st.phase, !on);
+      }
+      bar.appendChild(cell);
+    });
+  }
+  function toggleStop(phase, on) {
+    // For now this applies per-game via a query param (starts a fresh game with the stop set).
+    // Live mid-game toggling (no restart) lights up when the engine exposes a mutable stop handle.
+    const p = new URLSearchParams(location.search);
+    const m = {};
+    (p.get("stops") || "").split(",").filter(Boolean).forEach(t => { const [k, v] = t.split(":"); m[k] = v !== "0"; });
+    m[phase] = on;
+    p.set("stops", Object.entries(m).map(([k, v]) => k + ":" + (v ? "1" : "0")).join(","));
+    location.search = p.toString();
   }
 
   function renderRail() {
