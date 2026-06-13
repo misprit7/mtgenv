@@ -74,6 +74,12 @@ pub enum CardFilter {
     HasCounter(CounterKind),
     /// Matches a specific named card (rare; for the few effects that name a card).
     Named(String),
+    /// Matches iff the candidate object **is the source of the ability/effect doing the
+    /// matching** — i.e. "this" (CR self-referential, e.g. "prevent damage to THIS creature",
+    /// "THIS enters with…"). The engine evaluates it against the matcher's source object. This
+    /// is what lets self-referential replacements live in a *global* rewrite scan (which checks
+    /// every permanent's replacements against an event) without leaking onto other objects.
+    ItSelf,
 }
 
 /// Mana an ability/effect produces (CR 605/106). A simple bag; one entry per produced color.

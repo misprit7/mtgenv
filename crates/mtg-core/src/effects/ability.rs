@@ -91,7 +91,10 @@ pub enum ActionPattern {
     WouldGainLife,
     WouldLoseLife,
     WouldEnterBattlefield(CardFilter),
-    WouldAddCounters(CounterKind),
+    /// Counters of `kind` would be put on an object matching `to` (CR 614.1, e.g. Hardened
+    /// Scales / Doubling Season modify "+1/+1 counters on a creature you control" — the `to`
+    /// filter is the affected-object scope, often `ControlledBy(Controller)` or `ItSelf`).
+    WouldAddCounters { kind: CounterKind, to: CardFilter },
 }
 
 /// How a matched action is rewritten (CR 614.1). Contains an `Effect` in the "instead" case, so
