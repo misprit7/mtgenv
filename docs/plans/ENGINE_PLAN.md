@@ -183,6 +183,15 @@ Backends to implement, in order: `RandomAgent` → `ScriptedAgent` (heuristics) 
 - **Per-player views** computed from full state by a masking function (the only correct
   place to enforce hidden info).
 - **Serialization** of full state + decision log for debugging and differential tests.
+- **Tree-search readiness (forward-looking; not built yet).** Snapshot/restore backtracking
+  already works — `GameState` is `Clone`+`serde`, value-typed (no pointer graphs), card data
+  shared behind `Arc<CardDb>`, RNG a seeded `u64` — so clone-and-discard branching is cheap and
+  replays deterministically. For actual MCTS we'll want two additions, neither foreclosed: (1) a
+  **resumable step API** (advance-to-next-decision → return `(state, legal options)` → apply a
+  response → continue), since the engine is currently push/callback-driven and `decide()` only
+  sees a masked `PlayerView`; and (2) shrinking per-clone cost by storing only *instance* state
+  on `Object` and reading printed characteristics from the shared `CardDb` (today each `Object`
+  duplicates its `Characteristics`). `legal_actions()` already exists as a start.
 
 ## 8. Testing strategy
 

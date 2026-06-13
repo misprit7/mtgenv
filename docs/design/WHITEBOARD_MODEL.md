@@ -258,6 +258,11 @@ decompiled MTGA protocol) answers.
 - Resolution flexibility: do we allow dynamic added steps mid-resolution (the
   Splice/Through-the-Breach problem)? Decide explicitly; default to "no" like MTGA, but
   don't hard-code assumptions that block it.
-- Rule representation for speed: pattern-matching rules vs. compiled closures. Likely
-  closures/enums for hot paths, with a declarative form that lowers to them.
+- **Decided — rule representation:** a **typed effect IR (enums) interpreted by Rust, NOT a
+  CLIPS-style production-rule engine.** We keep the whiteboard *architecture* (card-agnostic
+  core + uniform rewrite of pending actions; cards as data) but implement the "rules" as typed
+  data — `EventPattern → Effect` (triggers), `ActionPattern → Rewrite` (replacements),
+  `StaticContribution` (continuous) — for speed, determinism, and cheap cloning (the RL/MCTS
+  constraint that a general forward-chaining engine fights). A future oracle-text → IR compiler
+  is the GRP analog; the `Native` hatch covers the tail.
 - How much of MTGA's *exact* agenda order to replicate vs. derive straight from CR 117/603/704.
