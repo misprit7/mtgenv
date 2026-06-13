@@ -5,6 +5,15 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **design:** reconciled `AGENT_INTERFACE.md` against the recovered+log-validated GRE schema
+  (decompile's `../mtga-re/`) — §9 now RESOLVED, not open. Confirmed strict-superset holds
+  (variant set unchanged); enriched `ChooseNumber` to match `NumericInputReq` exactly
+  (`step`/`disallow_even`/`disallow_odd`; `forbidden`↔`disallowedValues`). Key validation:
+  GRE `CastingTimeOptionReq` embeds `numericInputReq`/`modalReq`/`selectNReq` as inner
+  messages — i.e. GRE's own wire literally decomposes a cast's options into our
+  ChooseNumber/ChooseModes/SelectCards sub-steps. `TargetSelection` ≅ our `TargetSlot`.
+  Also added §8.1: decision *elision* (auto-pass / forced-single-option) is an engine/Arena-
+  profile concern, uniform across all backends (load-bearing for differential-testing/replay).
 - **client:** wrote `docs/plans/CLIENT_PLAN.md` (task #5) — web play UI + a **GRE-protocol
   server** (`mtg-gre-server` crate, axum + WebSocket, depends only on `mtg-core`) fronting the
   engine. A human at the web UI is just another `Agent` backend (`GreSessionAgent`) — same
