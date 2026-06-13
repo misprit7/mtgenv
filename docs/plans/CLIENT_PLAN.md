@@ -207,12 +207,21 @@ inside the TLS stream:
     oneof { greToClientEvent=8, authenticateResponse=100, error=7, … } }`, where
     **`GreToClientEvent { repeated GREToClientMessage greToClientMessages }`** is the gameplay
     stream our `GreSessionAgent` produces.
+- **Two channels share the §4.2 frame but carry different bodies** (`decompile`, transport.md
+  §2b): the **match/GRE channel** (what our server speaks) carries the *raw*
+  `ClientToMatchServiceMessage`/`MatchServiceToClientMessage` protobuf directly off the frame —
+  **no `Any` wrapper, no compression** (`MatchTcpConnection` does `…Parser.ParseFrom(body)`). The
+  separate **FrontDoor/meta channel** (login/matchmaking/draft/store) carries a
+  `Wizards.Arena.Protocol.Cmd { CmdType, Any payload, optional gzip-JSON }`. Our **GRE server
+  parses the raw match envelope**; the `Cmd`/`Any` path is needed *only* if we also impersonate
+  the FrontDoor for endpoint discovery (§8 Strategy A).
 
 ### 4.3 Handshake, endpoint & session lifecycle (recovered)
-The GRE endpoint is **not hardcoded** — the matchmaking/FrontDoor layer (HTTPS
-`api.platform.wizards.com`) provisions `MatchDoorHost:MatchDoorPort` + `mcFabricUri` + `matchId`
-per match; the client then opens the TLS link to it (`HeadlessClient.ConnectAndJoinMatch(...)` in
-`SharedClientCore` is a ready-made reference for this flow):
+The GRE endpoint is **not hardcoded** — it arrives via a **server push** (`decompile`):
+`pushResponse.MatchInfoV3.MatchEndpointHost/MatchEndpointPort` → `ConnectionConfig
+.MatchDoorHost/Port` (with `mcFabricUri`/`matchId` from `CreateMatchGameRoomResponseV2`, over the
+FrontDoor HTTPS API `api.platform.wizards.com`); the client then opens the TLS link to it
+(`HeadlessClient.ConnectAndJoinMatch(...)` in `SharedClientCore` is a ready-made reference flow):
 
 ```
 1. TCP connect + TLS 1.2 handshake → MatchDoorHost:MatchDoorPort
@@ -437,10 +446,10 @@ patchable) makes both strategies far more tractable than an IL2CPP target would.
 
 ### Strategy A — Protocol-compatible server + endpoint redirect (no binary modification)
 Make `mtg-gre-server`'s TLS-over-TCP transport byte-compatible with MTGA's real GRE server
-(§4.2), then get the client to connect to us. Because the GRE endpoint is **dynamic** — the
-FrontDoor HTTPS API provisions `MatchDoorHost:MatchDoorPort` + `mcFabricUri` + `matchId` per
-match (§4.3) — redirection means controlling *that provisioning response*, not editing a
-baked-in address.
+(§4.2), then get the client to connect to us. Because the GRE endpoint is **dynamic** — it comes
+from a server **push** (`MatchInfoV3.MatchEndpointHost/Port` → `ConnectionConfig.MatchDoorHost/
+Port`, §4.3) — the lever is **steering that `MatchInfoV3` push** to hand the client our
+`host:port`, not editing a baked-in address. Nothing inside the GRE session needs faking.
 
 - **Pros:** client stays *stock* (no ToS-fraught binary modification); survives client updates
   as long as the GRE protocol is stable; the cleanest expression of "the seam is the protocol."
