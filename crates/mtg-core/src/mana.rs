@@ -9,12 +9,16 @@
 //! agent decision can replace this later without touching callers.)
 
 use crate::basics::{Color, ManaCost};
-use crate::effects::ability::Keyword;
+use crate::conditions;
+use crate::effects::ability::{Ability, Keyword, Restriction};
+use crate::effects::target::ManaSpec;
+use crate::effects::Effect;
 use crate::ids::{ObjId, PlayerId};
 use crate::state::GameState;
 
-/// The untapped mana sources `p` controls: `(permanent, colours it can tap for)`. A basic
-/// land produces exactly one colour.
+/// The untapped mana sources `p` controls: `(permanent, colours it can tap for right now)`.
+/// Colours come from each source's `{T}`-cost mana abilities (`Ability::Activated{is_mana}`,
+/// condition-aware), falling back to the legacy `mana_colors` shortcut while cards migrate (C19).
 fn mana_sources(state: &GameState, p: PlayerId) -> Vec<(ObjId, Vec<Color>)> {
     state
         .player(p)
@@ -25,19 +29,73 @@ fn mana_sources(state: &GameState, p: PlayerId) -> Vec<(ObjId, Vec<Color>)> {
             if o.status.tapped {
                 return None;
             }
-            let def = state.card_db.get(o.chars.grp_id)?;
-            if !def.is_mana_source() {
-                return None;
-            }
-            // CR 302.6: a creature's `{T}` mana ability can't be activated while it's summoning
-            // sick (unless it has haste). Lands/artifacts are never sick, so this only gates
-            // creature mana dorks (Llanowar Elves). The simplified mana model assumes `{T}`.
+            // CR 302.6: a summoning-sick creature can't use a `{T}` mana ability (unless haste).
+            // Lands/artifacts are never sick, so this only gates creature mana dorks (Llanowar).
             if o.summoning_sick && !state.computed(id).has_keyword(Keyword::Haste) {
                 return None;
             }
-            Some((id, def.mana_colors.clone()))
+            let def = state.card_db.get(o.chars.grp_id)?;
+            let colors = producible_colors(state, def, p);
+            if colors.is_empty() {
+                None
+            } else {
+                Some((id, colors))
+            }
         })
         .collect()
+}
+
+/// The colours `def` can currently produce for controller `p` — from its IR mana abilities whose
+/// activation restriction/condition holds, plus the legacy `mana_colors` shortcut (transitional).
+fn producible_colors(state: &GameState, def: &crate::cards::CardDef, p: PlayerId) -> Vec<Color> {
+    let mut colors: Vec<Color> = Vec::new();
+    let push = |c: Color, v: &mut Vec<Color>| {
+        if !v.contains(&c) {
+            v.push(c);
+        }
+    };
+    for ab in &def.abilities {
+        if let Ability::Activated {
+            effect: Effect::AddMana { mana, .. },
+            restriction,
+            is_mana: true,
+            ..
+        } = ab
+        {
+            let legal = restriction
+                .as_ref()
+                .is_none_or(|r| restriction_holds(state, r, p));
+            if legal {
+                for c in mana_spec_colors(mana) {
+                    push(c, &mut colors);
+                }
+            }
+        }
+    }
+    for &c in &def.mana_colors {
+        push(c, &mut colors);
+    }
+    colors
+}
+
+/// Which activation restrictions gate a mana ability's availability (CR 605). `OncePerTurn`
+/// isn't tracked for mana sources (mana abilities aren't once-per-turn-limited in practice).
+fn restriction_holds(state: &GameState, r: &Restriction, controller: PlayerId) -> bool {
+    match r {
+        Restriction::OnlyIf(cond) => conditions::holds(state, cond, controller),
+        Restriction::OnlyYourTurn => state.active_player == controller,
+        Restriction::OncePerTurn => true,
+    }
+}
+
+/// The colours a `ManaSpec` can produce (for the source-selection model). `any_color` offers all
+/// five; `produces` lists fixed colours. (`one_of` constrained-choice is wired when design adds it.)
+fn mana_spec_colors(mana: &ManaSpec) -> Vec<Color> {
+    let mut v: Vec<Color> = mana.produces.iter().map(|(c, _)| *c).collect();
+    if mana.any_color.is_some() {
+        v.extend([Color::White, Color::Blue, Color::Black, Color::Red, Color::Green]);
+    }
+    v
 }
 
 /// Greedily select which sources to use to pay `cost`: coloured pips first (each from a
@@ -201,6 +259,65 @@ mod tests {
         assert!(
             can_pay(&state, PlayerId(0), &cost(0, &[(Color::Green, 1)])),
             "an un-sick dork taps for {{G}}"
+        );
+    }
+
+    #[test]
+    fn conditional_mana_ability_is_gated_by_its_condition() {
+        // C19: a land with "{T}: Add {W}, only if you control a Forest" (IR mana ability with
+        // Restriction::OnlyIf) is only a {W} source while the condition holds.
+        use crate::basics::CardType;
+        use crate::effects::ability::{Ability, Cost, CostComponent, Restriction, Timing};
+        use crate::effects::condition::Condition;
+        use crate::effects::target::{CardFilter, ManaSpec};
+        use crate::effects::value::{PlayerRef, ValueExpr};
+        use crate::effects::Effect;
+        use crate::state::Characteristics;
+        let mut db = cards::starter_db();
+        db.insert(cards::CardDef {
+            chars: Characteristics {
+                name: "Conditional Land".into(),
+                card_types: vec![CardType::Land],
+                grp_id: 9400,
+                ..Default::default()
+            },
+            abilities: vec![Ability::Activated {
+                cost: Cost { mana: None, components: vec![CostComponent::TapSelf] },
+                effect: Effect::AddMana {
+                    who: PlayerRef::Controller,
+                    mana: ManaSpec {
+                        produces: vec![(Color::White, ValueExpr::Fixed(1))],
+                        any_color: None,
+                    },
+                },
+                timing: Timing::Instant,
+                restriction: Some(Restriction::OnlyIf(Condition::CountAtLeast {
+                    zone: Zone::Battlefield,
+                    filter: CardFilter::HasSubtype("Forest".into()),
+                    controller: Some(PlayerRef::Controller),
+                    n: ValueExpr::Fixed(1),
+                })),
+                is_mana: true,
+            }],
+            mana_colors: Vec::new(), // pure IR — no fallback shortcut
+            text: String::new(),
+        });
+        let mut state = GameState::new(2, 1);
+        state.set_card_db(Arc::new(db));
+        let c = state.card_db().get(9400).unwrap().chars.clone();
+        state.add_card(PlayerId(0), c, Zone::Battlefield);
+
+        // No Forest → the conditional {W} ability isn't available.
+        assert!(
+            !can_pay(&state, PlayerId(0), &cost(0, &[(Color::White, 1)])),
+            "conditional {{W}} is unavailable without a Forest"
+        );
+        // Control a Forest → the condition holds → {W} becomes payable.
+        let forest = state.card_db().get(grp::FOREST).unwrap().chars.clone();
+        state.add_card(PlayerId(0), forest, Zone::Battlefield);
+        assert!(
+            can_pay(&state, PlayerId(0), &cost(0, &[(Color::White, 1)])),
+            "conditional {{W}} is available once you control a Forest"
         );
     }
 }

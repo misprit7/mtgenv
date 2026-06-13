@@ -13,6 +13,7 @@ pub mod basics;
 pub mod error;
 pub mod state;
 pub mod chars;
+pub mod conditions;
 pub mod stack;
 pub mod turn;
 pub mod priority;
