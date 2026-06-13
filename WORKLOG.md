@@ -5,6 +5,23 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **webui:** **Replay + omniscient-spectate feature (REPLAY_PLAN) — webui half mostly done.** Against
+  engine's locked `crate::replay` schema: (1) **god-view viewer** — a new mode of the game client
+  (`/play?replay=<id>`) that fetches `/api/replays/:id` and plays `frames[i].state` through the
+  existing board render with NO masking (a `godToView` adapter), opponent hand face-up + both
+  players' hand/ordered-library piles openable, playback bar (◀/⏯/▶, frames-per-sec slider, frame
+  label; ←/→ + Space keys), no WebSocket. (2) **lobby** — finished games' button → god-view "▶ Replay";
+  new "AI Training Replays" section listing `source:AiTraining` replays. (3) **serving** — `GET
+  /api/replays` (flattened meta + id + frames, newest-first) + `GET /api/replays/:id` (full;
+  sanitized id, traversal→400, missing→404) over the gitignored `data/replays/*.json` store. (4)
+  **auto-save** — finished lobby games record an omniscient `Replay` (`driver::finish_game_with_replay`
+  → `engine.record_replay`/`replay()`), stamped (names/decks/source=Human/created_at) and written to
+  `data/replays/<game-id>.json`, so the finished-game button plays a real game back. Both clients in
+  sync; tsc/vite + 13 web tests green. Playwright-verified end-to-end on a real 276-frame counters
+  game + on mocked/synthetic frames. Commits c651ec7 (viewer), 6592a08 (lobby), 5bf5fec (serving),
+  0dc9463 (auto-save). REMAINING (#33): **live god-view spectator** — blocked on an engine frame-sink
+  hook (SpectatorTee only sees PlayerView in `observe`; proposed `engine.set_replay_sink`). Flagged
+  frame size to engine (~18 MB / 15-turn game — per-event full-state frames).
 - **engine:** **Replay core landed (REPLAY_PLAN) — schema locked + recorder.** New `crate::replay`
   serde contract (posted to webui+gym first for parallel build): `GodView` (omniscient, every zone
   of every player face-up, libraries top-first) reusing `ObjView`/`CharacteristicsView`; `Replay`
