@@ -296,9 +296,9 @@ each request, what the GRE server *sends down* and what `ClientToGREMessage` it 
 | `ChooseStartingPlayer { candidates }` | `ChooseStartingPlayerReq` | `ChooseStartingPlayerResp` |
 | `Mulligan { .. }` (+ follow-up `SelectCards{BottomForMulligan}`) | `MulliganReq` (`mulliganType`,`freeMulliganCount`,`mulliganCount`) | `MulliganResp` (`MulliganOption`) |
 | `ChooseTargets { for_action, slots }` | `SelectTargetsReq` | `SelectTargetsResp` |
-| `ChooseModes { .. }` | inner `modalReq` of `CastingTimeOptionsReq` | `CastingTimeOptionsResp` |
-| `CastingTimeOptions { for_action, options }` | `CastingTimeOptionsReq` (`CastingTimeOptionType`; embeds `numericInputReq`/`modalReq`/`selectNReq`) | `CastingTimeOptionsResp` |
-| `ChooseNumber { reason, min, max, forbidden }` | `NumericInputReq` | `NumericInputResp` |
+| `ChooseModes { .. }` | inner `modalReq` of `CastingTimeOptionsReq` (when casting) | `CastingTimeOptionsResp` |
+| `CastingTimeOptions { for_action, options }` | `CastingTimeOptionsReq { castingTimeOptionReq[] }` (each a oneof `numericInputReq`/`modalReq`/`selectNReq`/`selectManaTypeReq` keyed by `CastingTimeOptionType`, terminated by `Done`) | `CastingTimeOptionsResp` |
+| `ChooseNumber { reason, min, max, step, forbidden, disallow_even/odd }` | `NumericInputReq` (`stepSize`,`disallowedValues`,`disallowEven/Odd`) | `NumericInputResp` |
 | `Distribute { .. }` | `DistributionReq` (`minAmount`,`maxAmount`,`minPerTarget`,`targetIds`) | `DistributionResp` |
 | `PayCost { cost, mana_sources, non_mana }` | `PayCostsReq` | `PerformActionResp` / `EffectCostResp` (`Make_Payment`/`Activate_Mana`/`FloatMana`/`Special_Payment`) |
 | `DeclareAttackers { eligible }` | `DeclareAttackersReq` | `DeclareAttackersResp` |
@@ -310,9 +310,9 @@ each request, what the GRE server *sends down* and what `ClientToGREMessage` it 
 | `ArrangeCards { reason, cards, destinations }` | scry/surveil (via `SelectN`/`Order`) | `SelectNResp` / `OrderResp` |
 | `ChooseReplacement { event, applicable }` | `SelectReplacementReq` | `SelectReplacementResp` |
 | `ChooseCounterType { options }` | `SelectCountersReq` | `SelectCountersResp` |
-| `ChooseOption { reason, options, min, max }` | `PromptReq` (via `Prompt` header) / `StringInputReq` | `StringInputResp` / option resp |
-| `ChooseColor { allowed, min, max }` | choose-option-from-list prompt | option resp |
-| `Confirm { kind }` | `OptionalActionMessage` / `PromptReq` | `OptionalResp` (`OptionResponse`) |
+| `ChooseOption { reason, options, min, max }` | `SelectNReq` carrying a `StaticList` of labels (`SelectionListType` = label-select); name-a-card → `StringInputReq` | `SelectNResp` / `StringInputResp` |
+| `ChooseColor { allowed, min, max }` | `SelectNReq` (`StaticList` of colors) | `SelectNResp` |
+| `Confirm { kind }` | `OptionalActionMessage` | `OptionalResp` (`OptionResponse`) |
 | (push, no response) state delta | `GameStateMessage{ Full \| Diff }` / `BinaryGameState` | — |
 | (push, no response) reveal / UI | `UIMessage` / `TimerStateMessage` / `IntermissionReq` | (none / ack) |
 
@@ -330,13 +330,21 @@ resolved:
   bottoming is a follow-up selection, confirming `Mulligan` + `SelectCards{BottomForMulligan}`.
 - *Numeric:* `NumericInputReq` carries the bound/constraint fields (min/max + step/disallow) →
   `ChooseNumber.forbidden` maps to `disallowedValues` (design enriched `ChooseNumber` to match).
-- *Cast granularity (the round-trip knob):* **resolved** — GRE's `CastingTimeOptionsReq`
-  *embeds* `numericInputReq`/`modalReq`/`selectNReq` as inner messages, i.e. the wire itself
-  decomposes a cast's options into our `ChooseNumber`/`ChooseModes`/`SelectCards` sub-steps. So
-  our CR 601.2 *sequence* model (§11) is exactly what GRE does; a cast is one
-  `CastingTimeOptionsReq` envelope whose inner reqs the UI walks through.
+- *Cast granularity (the round-trip knob):* **LOCKED** (with `design`, AGENT_INTERFACE §9 +
+  CastingTimeOptions comment) — the engine emits **one batched `CastingTimeOptions` decide() per
+  cast** (modes/X/kicker/bargain/casualty/mana-type bundle), 1:1 with GRE's
+  `CastingTimeOptionsReq { castingTimeOptionReq[] }` whose entries are a oneof
+  (`numericInputReq`/`modalReq`/`selectNReq`/`selectManaTypeReq`) keyed by `CastingTimeOptionType`
+  and terminated by `Done`. Targets (`SelectTargetsReq`) and payment (`PayCostsReq`) stay
+  **separate**, matching CR + GRE. So the cast flow is `Priority → CastingTimeOptions →
+  ChooseTargets → PayCost`, and `GreSessionAgent` is a pure passthrough (no aggregating several
+  engine decisions into one wire `Req`). See §11.
 - *Combat damage:* `AssignDamageReq` + ordering via `OrderReq` (no separate
   `OrderCombatDamageReq` message in this build) → `AssignCombatDamage` + `OrderObjects`.
+- *`PromptReq` is not a decision:* per `design` (REQ_RESP_FIELDS.md), `Prompt{promptId,
+  parameters}` is localized display metadata attached to *other* reqs, not a choice — handled
+  server-side (§4.5), never a `DecisionRequest`. Yes/no `Confirm` ↔ `OptionalActionMessage`;
+  label/type/vote/color picks ↔ `SelectNReq` over a `StaticList`; name-a-card ↔ `StringInputReq`.
 
 The variant set was a correct superset all along; the mapping is now field-exact. (Tracked the
 same in AGENT_INTERFACE §9, which `design` marked RESOLVED against the recovered schema.)
@@ -451,6 +459,11 @@ baked-in address.
     `ClientToMatchDoorConnectRequest`. This is the real scope of Strategy A: a small fake
     matchmaking/FrontDoor shim, not just a GRE server. (Alternatively a MITM proxy that rewrites
     the real provisioning response — but that re-introduces TLS interception on the API channel.)
+  - **The client still completes real WotC/PlayFab login + matchmaking first** (`decompile`): it
+    only reaches the match-dial step *after* that, and learns our endpoint from the matchmaking
+    response. So a redirect either (a) lets real login happen and intercepts/replaces the
+    matchmaking result, or (b) fakes login too for a fully-offline shim. Either way nothing in the
+    *GRE session* needs forging — the dependency is on the pre-match flow, not the protocol.
   - **Service-mesh isolation.** The client also talks to login/assets/telemetry; the shim must
     satisfy enough of the pre-match flow to reach "match found" and provision our endpoint.
 - **Net:** viable as a *local fake FrontDoor + GRE server*; the former blockers (token, cert
@@ -558,13 +571,21 @@ This is **personal research and interoperability** only — the same posture as 
   (`2026.59.30.12801`, build-guid `7ad31cf…`) and treat the recovered schema (`../mtga-re`) as a
   snapshot. Frame version is currently `4`. The web client (milestones 1–3) is insulated from
   drift; only milestone 4 isn't.
-- **Composite vs. atomic decisions — RESOLVED.** See §5: GRE's `CastingTimeOptionsReq` embeds
-  `numericInputReq`/`modalReq`/`selectNReq`, so our CR 601.2 *sequence* of `decide()` calls is
-  exactly the wire's own decomposition (the adapter walks the inner reqs). `GreSessionAgent` may
-  skip the wire round-trip for a lone-option step (answer `Index(0)` locally) but must **not**
-  *elide the decision* — whether a forced single-option decision is issued at all is an
-  engine/Arena-profile concern (auto-pass "stops"), uniform across all backends so the decision
-  log replays identically (differential-testing + replay, ENGINE_PLAN §8, AGENT_INTERFACE §8.1).
+- **Cast decomposition — LOCKED (with `design`).** The cast flow is **`Priority →
+  CastingTimeOptions → ChooseTargets → PayCost`**: cast-*time* options (modes/X/kicker/bargain/
+  casualty/mana-type) are **one batched `CastingTimeOptions` decide()** — 1:1 with GRE's
+  `CastingTimeOptionsReq { castingTimeOptionReq[] }` (oneof inner reqs keyed by
+  `CastingTimeOptionType`, terminated by `Done`) — so `GreSessionAgent` is a pure passthrough,
+  not an aggregator. Targets and payment stay separate (CR + GRE). For the web UI,
+  `CastingTimeOptions` renders as one option panel (X stepper, kicker/bargain checkboxes, mode
+  picker, mana-type) submitted together; each entry's inner oneof picks the widget. Fewer
+  round-trips than a per-choice sequence. To be ratified jointly at #4 with `engine`/`gym` since
+  it sets the engine's round-trip count. (`design` & `lead` flagged.)
+- **Decision elision stays engine-side, not per-agent.** `GreSessionAgent` may skip the wire
+  round-trip for a lone-option step (answer `Index(0)` locally) but must **not** *elide the
+  decision* — whether a forced single-option decision is issued at all is an engine/Arena-profile
+  concern (auto-pass "stops"), uniform across all backends so the decision log replays
+  identically (differential-testing + replay, ENGINE_PLAN §8, AGENT_INTERFACE §8.1).
 - **State-diff fidelity.** Producing correct `GameStateMessage` *diffs* (not just `Full`) from
   `GameEvent`s is non-trivial; start `Full`-only for our web client, add diffs for the
   real-client transport (the real client likely expects diffs).
