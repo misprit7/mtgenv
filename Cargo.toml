@@ -1,9 +1,6 @@
 [workspace]
 resolver = "2"
 members = ["crates/mtg-core", "crates/mtg-cli", "crates/mtg-gre-server", "crates/mtg-py"]
-# Self-contained MTGA-client bridge (stub backend for the real Arena client).
-# Kept out of the workspace on purpose — exploratory, not wired to the engine.
-exclude = ["mtga-bridge/server"]
 
 [workspace.package]
 version = "0.1.0"

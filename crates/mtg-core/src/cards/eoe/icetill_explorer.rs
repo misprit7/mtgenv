@@ -27,10 +27,10 @@ use crate::effects::Effect;
 pub const ICETILL_EXPLORER: u32 = 104;
 
 pub fn register(db: &mut CardDb) {
-    let mut explorer = creature(
+    let explorer = creature(
         ICETILL_EXPLORER,
         "Icetill Explorer",
-        CreatureType::Insect,
+        &[CreatureType::Insect, CreatureType::Scout],
         Color::Green,
         mana_cost(2, &[(Color::Green, 2)]),
         2,
@@ -45,7 +45,6 @@ pub fn register(db: &mut CardDb) {
             },
         }],
     );
-    explorer.chars.subtypes = vec![CreatureType::Insect.into(), CreatureType::Scout.into()];
     // Tracked-incomplete: the two land-play permission statics are deferred (C18 subsystem).
     db.insert(explorer.incomplete().with_text(
         "You may play an additional land on each of your turns.\nYou may play lands from your graveyard.\nLandfall — Whenever a land you control enters, mill a card.",

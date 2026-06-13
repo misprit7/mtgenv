@@ -202,7 +202,7 @@ pub(crate) fn basic_land(grp_id: u32, name: &str) -> CardDef {
 pub(crate) fn creature(
     grp_id: u32,
     name: &str,
-    subtype: CreatureType,
+    subtypes: &[CreatureType],
     color: Color,
     cost: ManaCost,
     power: i32,
@@ -213,7 +213,9 @@ pub(crate) fn creature(
         chars: Characteristics {
             name: name.to_string(),
             card_types: vec![CardType::Creature],
-            subtypes: vec![Subtype::Creature(subtype)],
+            // A creature's subtypes are a *set* (CR 205.3m), no "primary" — pass the full list,
+            // e.g. `&[CreatureType::Human, CreatureType::Soldier]`.
+            subtypes: subtypes.iter().map(|&s| Subtype::Creature(s)).collect(),
             colors: vec![color],
             mana_cost: Some(cost),
             power: Some(power),
@@ -230,13 +232,13 @@ pub(crate) fn creature(
 pub(crate) fn vanilla_creature(
     grp_id: u32,
     name: &str,
-    subtype: CreatureType,
+    subtypes: &[CreatureType],
     color: Color,
     cost: ManaCost,
     power: i32,
     toughness: i32,
 ) -> CardDef {
-    creature(grp_id, name, subtype, color, cost, power, toughness, Vec::new())
+    creature(grp_id, name, subtypes, color, cost, power, toughness, Vec::new())
 }
 
 /// A creature with printed keyword abilities (CR 702) and no other abilities.
@@ -244,14 +246,14 @@ pub(crate) fn vanilla_creature(
 pub(crate) fn kw_creature(
     grp_id: u32,
     name: &str,
-    subtype: CreatureType,
+    subtypes: &[CreatureType],
     color: Color,
     cost: ManaCost,
     power: i32,
     toughness: i32,
     keywords: Vec<Keyword>,
 ) -> CardDef {
-    let mut def = creature(grp_id, name, subtype, color, cost, power, toughness, Vec::new());
+    let mut def = creature(grp_id, name, subtypes, color, cost, power, toughness, Vec::new());
     def.chars.keywords = keywords;
     def
 }

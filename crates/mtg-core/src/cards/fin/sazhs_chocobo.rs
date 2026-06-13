@@ -20,7 +20,7 @@ pub fn register(db: &mut CardDb) {
         creature(
             SAZHS_CHOCOBO,
             "Sazh's Chocobo",
-            CreatureType::Bird,
+            &[CreatureType::Bird],
             Color::Green,
             mana_cost(0, &[(Color::Green, 1)]),
             0,

@@ -27,7 +27,7 @@ pub fn register(db: &mut CardDb) {
     let mut hydra = creature(
         MOSSBORN_HYDRA,
         "Mossborn Hydra",
-        CreatureType::Elemental,
+        &[CreatureType::Elemental, CreatureType::Hydra],
         Color::Green,
         mana_cost(2, &[(Color::Green, 1)]),
         0,
@@ -54,7 +54,6 @@ pub fn register(db: &mut CardDb) {
             },
         ],
     );
-    hydra.chars.subtypes = vec![CreatureType::Elemental.into(), CreatureType::Hydra.into()];
     hydra.chars.keywords = vec![Keyword::Trample];
     db.insert(hydra.with_text(
         "Trample\nThis creature enters with a +1/+1 counter on it.\nLandfall — Whenever a land you control enters, double the number of +1/+1 counters on this creature.",

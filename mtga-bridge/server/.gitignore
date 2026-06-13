@@ -1,4 +1,0 @@
-/target
-/.certs/
-# Cargo.lock IS committed (binary crate): it pins deps to versions that build on
-# the pinned Rust toolchain, since some latest transitive deps require edition 2024.

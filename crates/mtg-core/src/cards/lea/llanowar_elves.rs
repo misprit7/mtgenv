@@ -13,18 +13,19 @@ use crate::subtypes::CreatureType;
 pub const LLANOWAR_ELVES: u32 = 100;
 
 pub fn register(db: &mut CardDb) {
-    let mut elf = creature(
-        LLANOWAR_ELVES,
-        "Llanowar Elves",
-        CreatureType::Elf,
-        Color::Green,
-        mana_cost(0, &[(Color::Green, 1)]),
-        1,
-        1,
-        vec![mana_ability(Color::Green)],
+    db.insert(
+        creature(
+            LLANOWAR_ELVES,
+            "Llanowar Elves",
+            &[CreatureType::Elf, CreatureType::Druid],
+            Color::Green,
+            mana_cost(0, &[(Color::Green, 1)]),
+            1,
+            1,
+            vec![mana_ability(Color::Green)],
+        )
+        .with_text("{T}: Add {G}."),
     );
-    elf.chars.subtypes = vec![CreatureType::Elf.into(), CreatureType::Druid.into()];
-    db.insert(elf.with_text("{T}: Add {G}."));
 }
 
 #[cfg(test)]
