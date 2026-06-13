@@ -86,7 +86,7 @@ pub fn collect(state: &GameState) -> Vec<StateBasedAction> {
         if o.zone != Zone::Battlefield || !o.chars.is_creature() {
             continue;
         }
-        let toughness = o.chars.toughness.unwrap_or(0);
+        let toughness = o.effective_toughness();
         if toughness <= 0 {
             out.push(StateBasedAction::CreatureDies {
                 creature: o.id,

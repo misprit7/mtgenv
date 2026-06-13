@@ -15,9 +15,9 @@ use crate::agent::{
     ActionRef, Agent, CastVariant, DecisionRequest, DecisionResponse, GameEvent, PlayableAction,
     SelectReason, TargetSlot,
 };
-use crate::basics::{CardType, Phase, Target, Zone};
+use crate::basics::{CardType, Phase, Target, Zone, ZonePos};
 use crate::effects::ability::{Ability, EventPattern};
-use crate::effects::action::{ResolutionCtx, WbReason};
+use crate::effects::action::{Action, MoveCause, ResolutionCtx, Whiteboard, WbReason};
 use crate::effects::target::{TargetKind, TargetSpec};
 use crate::effects::{Effect, EffectTarget};
 use crate::ids::{ObjId, PlayerId};
@@ -597,13 +597,22 @@ impl Engine {
                 let owner = self.state.object(id).owner;
                 let is_perm = self.state.object(id).chars.is_permanent();
                 if is_perm {
-                    // Permanent spell → enters the battlefield (CR 608.3). Its ETB-time
-                    // effects (none in M3) would run here.
-                    self.state.move_object(id, Zone::Battlefield, obj.controller);
-                    self.broadcast(GameEvent::ObjectMoved {
+                    // Permanent spell → enters the battlefield (CR 608.3), routed through the
+                    // whiteboard so ETB replacement effects (enters-with-counters / -tapped)
+                    // apply and the ETB event (→ triggers) fires from commit.
+                    let ctx = ResolutionCtx {
+                        controller: Some(obj.controller),
+                        source: Some(id),
+                        ..Default::default()
+                    };
+                    let mut wb = Whiteboard::new(WbReason::Resolve(obj.id), ctx);
+                    wb.push(Action::MoveZone {
                         obj: id,
                         to: Zone::Battlefield,
+                        pos: ZonePos::Any,
+                        cause: MoveCause::Resolved,
                     });
+                    self.commit(wb);
                 } else {
                     // Instant/sorcery: recheck targets (608.2b), run the effect (608.2c),
                     // then put it into its owner's graveyard (608.2n).
@@ -1338,6 +1347,27 @@ mod expect_tests {
             ObjId(1) -> Graveyard
         "#]]
         .assert_eq(&event_trace(&e.event_log));
+    }
+
+    #[test]
+    fn enters_with_counters_replacement_keeps_a_0_0_alive() {
+        // Servant of the Scale: a 0/0 that "enters with a +1/+1 counter". The whiteboard
+        // rewrite pass turns its ETB into entering-with-a-counter, so it's a 1/1 that survives
+        // the toughness-0 SBA. (Straight-through commit would let a 0/0 die immediately.)
+        use crate::basics::CounterKind;
+        let mut state = cards::build_game(3, &[&[], &[]]);
+        put(&mut state, PlayerId(0), grp::FOREST, Zone::Battlefield); // pay {G}
+        let servant = put(&mut state, PlayerId(0), grp::SERVANT_OF_THE_SCALE, Zone::Hand);
+        state.active_player = PlayerId(0);
+        state.phase = Phase::PrecombatMain;
+        let mut e = Engine::new(state, vec![Box::new(AggroAgent), Box::new(PassAgent)]);
+        e.priority_round();
+
+        let s = e.state.object(servant);
+        assert_eq!(s.zone, Zone::Battlefield, "Servant survived (entered with a counter)");
+        assert_eq!(s.counters.get(&CounterKind::PlusOnePlusOne), 1, "entered with one +1/+1");
+        assert_eq!(s.effective_power(), 1);
+        assert_eq!(s.effective_toughness(), 1);
     }
 
     #[test]

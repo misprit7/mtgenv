@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use crate::basics::{CardType, Color, CounterBag, ManaCost, ManaPool, Phase, Status, Zone};
+use crate::basics::{CardType, Color, CounterBag, CounterKind, ManaCost, ManaPool, Phase, Status, Zone};
 use crate::cards::{CardDb, CardDef};
 use crate::combat::CombatState;
 use crate::ids::{ObjId, PlayerId};
@@ -100,6 +100,23 @@ pub struct Object {
     /// Summoning sickness (CR 302.6): can't attack / use `{T}` until controlled since the
     /// start of its controller's most recent turn (unless it has haste).
     pub summoning_sick: bool,
+}
+
+impl Object {
+    /// Net `+1/+1` minus `-1/-1` counters (the only P/T-modifying counters; CR 122.1a).
+    fn counter_pt_delta(&self) -> i32 {
+        self.counters.get(&CounterKind::PlusOnePlusOne) as i32
+            - self.counters.get(&CounterKind::MinusOneMinusOne) as i32
+    }
+    /// Effective power = base power + counter delta. (Trivial pre-layer-system P/T, CR 613
+    /// layer 7c; the full layer system is milestone 5.)
+    pub fn effective_power(&self) -> i32 {
+        self.chars.power.unwrap_or(0) + self.counter_pt_delta()
+    }
+    /// Effective toughness = base toughness + counter delta.
+    pub fn effective_toughness(&self) -> i32 {
+        self.chars.toughness.unwrap_or(0) + self.counter_pt_delta()
+    }
 }
 
 /// One seat. Zones it owns are `ObjId` vectors into [`GameState::objects`]. Library order is

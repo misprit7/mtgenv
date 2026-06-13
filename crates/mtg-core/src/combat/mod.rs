@@ -67,7 +67,7 @@ impl Engine {
         self.state
             .objects
             .get(&id)
-            .and_then(|o| o.chars.power)
+            .map(|o| o.effective_power())
             .unwrap_or(0)
             .max(0) as u32
     }
@@ -77,7 +77,7 @@ impl Engine {
             Some(o) => o,
             None => return 0,
         };
-        let tough = o.chars.toughness.unwrap_or(0).max(0) as u32;
+        let tough = o.effective_toughness().max(0) as u32;
         tough.saturating_sub(o.damage_marked)
     }
 

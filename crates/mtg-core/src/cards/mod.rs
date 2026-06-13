@@ -14,9 +14,9 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use crate::basics::{CardType, Color, DamageKind, ManaCost, Zone};
-use crate::effects::ability::{Ability, EventPattern};
-use crate::effects::target::{TargetKind, TargetSpec};
+use crate::basics::{CardType, Color, CounterKind, DamageKind, ManaCost, Zone};
+use crate::effects::ability::{Ability, ActionPattern, EventPattern, Rewrite};
+use crate::effects::target::{CardFilter, TargetKind, TargetSpec};
 use crate::effects::value::{PlayerRef, ValueExpr};
 use crate::effects::{Effect, EffectTarget};
 use crate::ids::PlayerId;
@@ -283,6 +283,25 @@ pub fn starter_db() -> CardDb {
             },
         }],
     ));
+    // Servant of the Scale {G} 0/0 — "This creature enters with a +1/+1 counter on it."
+    // (ETB replacement; the dies-trigger clause is omitted for the prototype.) Without the
+    // replacement it would be a 0/0 destroyed immediately by the toughness-0 SBA.
+    db.insert(creature(
+        grp::SERVANT_OF_THE_SCALE,
+        "Servant of the Scale",
+        "Human Soldier",
+        Color::Green,
+        mana_cost(0, &[(Color::Green, 1)]),
+        0,
+        0,
+        vec![Ability::Replacement {
+            pattern: ActionPattern::WouldEnterBattlefield(CardFilter::Any),
+            rewrite: Rewrite::EntersWithCounters {
+                kind: CounterKind::PlusOnePlusOne,
+                n: 1,
+            },
+        }],
+    ));
     db
 }
 
@@ -365,7 +384,7 @@ mod tests {
     #[test]
     fn starter_db_has_expected_cards() {
         let db = starter_db();
-        assert_eq!(db.len(), 12);
+        assert_eq!(db.len(), 13);
         assert!(db.get(grp::FOREST).unwrap().is_mana_source());
         assert_eq!(db.get(grp::FOREST).unwrap().mana_colors, vec![Color::Green]);
         // Grizzly Bears is a vanilla 2/2 with no abilities.
