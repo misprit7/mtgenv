@@ -173,15 +173,6 @@ fn arena_default_stop(step: Phase, own_turn: bool) -> bool {
     matches!(step, Phase::PrecombatMain | Phase::PostcombatMain) && own_turn
 }
 
-/// Steps the Arena profile passes through even when the player *has* an action, used only
-/// when SmartStops is OFF. Untap/Cleanup grant no priority so never reach the policy.
-fn is_unimportant_step(step: Phase) -> bool {
-    matches!(
-        step,
-        Phase::Upkeep | Phase::Draw | Phase::BeginCombat | Phase::EndCombat | Phase::End
-    )
-}
-
 /// The engine: full [`GameState`] plus one [`Agent`] per seat (indexed by `PlayerId.0`).
 /// All player choices flow through the agents; nothing else asks a player anything.
 pub struct Engine {
@@ -326,13 +317,10 @@ impl Engine {
         if !has_action {
             return true; // nothing to do → auto-pass
         }
-        // Has an action, not a stop. SmartStops (MTGA default) prompts wherever you can act;
-        // with SmartStops off, auto-pass through unimportant steps anyway.
-        if cfg.smart_stops {
-            false
-        } else {
-            is_unimportant_step(step)
-        }
+        // Has an action, not a stop. SmartStops (MTGA default) prompts wherever you can act; with
+        // SmartStops OFF, "stop only at my explicit stops" — auto-pass EVERY non-stop empty-stack
+        // window regardless of a castable action (per the recovered MTGA behavior / webui).
+        !cfg.smart_stops
     }
 
     /// Enable recording of broadcast events into [`Engine::event_log`] (for tracing/tests).
@@ -2270,13 +2258,16 @@ mod expect_tests {
         set_phase(&mut e, Phase::DeclareBlockers);
         assert!(e.should_auto_pass(p1, false), "declare-blockers not a default priority stop");
 
-        // SmartStops OFF: auto-pass unimportant steps even with an action; still prompt in
-        // important ones.
+        // SmartStops OFF means "only my explicit stops": auto-pass EVERY non-stop empty-stack
+        // window even with an action — including combat damage.
         e.set_smart_stops(p0, false);
         set_phase(&mut e, Phase::Upkeep);
         assert!(e.should_auto_pass(p0, true), "SmartStops off: pass upkeep with an action");
         set_phase(&mut e, Phase::CombatDamage);
-        assert!(!e.should_auto_pass(p0, true), "SmartStops off: still prompt in combat damage");
+        assert!(e.should_auto_pass(p0, true), "SmartStops off: pass combat damage with an action");
+        // …but an actual stop (own main phase) still prompts.
+        set_phase(&mut e, Phase::PrecombatMain);
+        assert!(!e.should_auto_pass(p0, true), "SmartStops off: own MP1 is still a stop");
         e.set_smart_stops(p0, true);
 
         // A manual stop forces a prompt at an otherwise-elided step.
