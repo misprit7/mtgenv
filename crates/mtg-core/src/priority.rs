@@ -387,11 +387,34 @@ impl Engine {
         for &p in &seats {
             self.state.shuffle_library(p);
         }
+        // CR 103.2–103.4: a randomly-chosen player decides who takes the first turn.
+        self.choose_starting_player(&seats);
         // Opening draws are not "draw step" draws and don't risk decking on a normal deck.
         for &p in &seats {
             self.draw(p, hand_size);
         }
         self.run_mulligans(&seats, hand_size);
+    }
+
+    /// CR 103.2–103.4: a player is randomly chosen (the opening die roll / coin flip) to decide
+    /// who takes the first turn, and that player then chooses the starting player (themselves or
+    /// another). The die roll uses the seeded engine RNG (replayable); the choice flows through
+    /// the decider's `Agent` via `ChooseStartingPlayer`. Sets `active_player` to the result.
+    fn choose_starting_player(&mut self, seats: &[PlayerId]) {
+        if seats.is_empty() {
+            return;
+        }
+        // The die roll (CR 103.2): randomly pick which player decides.
+        let decider = seats[self.state.rng.below(seats.len() as u64) as usize];
+        let req = DecisionRequest::ChooseStartingPlayer {
+            candidates: seats.to_vec(),
+        };
+        // The decider chooses who takes the first turn (CR 103.4).
+        let starting = match self.ask(decider, &req) {
+            DecisionResponse::Index(i) => *seats.get(i as usize).unwrap_or(&decider),
+            _ => decider,
+        };
+        self.state.active_player = starting;
     }
 
     /// The London mulligan (CR 103.5). Each player may mulligan any number of times; a mulligan
@@ -1800,13 +1823,15 @@ mod tests {
         assert_eq!(engine.state.player(PlayerId(0)).hand.len(), 7);
         assert_eq!(engine.state.player(PlayerId(1)).hand.len(), 7);
 
-        // Run just the first turn's draw step: the starting player skips it (CR 103.8a).
+        // The starting player (chosen by the opening die roll, CR 103.2–103.4) skips their
+        // first draw (CR 103.8a).
+        let starter = engine.state.active_player;
         engine.begin_turn();
         engine.run_step(Phase::Untap);
         engine.run_step(Phase::Upkeep);
         engine.run_step(Phase::Draw);
         assert_eq!(
-            engine.state.player(PlayerId(0)).hand.len(),
+            engine.state.player(starter).hand.len(),
             7,
             "starting player skips the first draw"
         );
@@ -1871,13 +1896,21 @@ mod tests {
     fn turn_advances_and_alternates_active_player() {
         let mut engine = lands_only_game(30, 3);
         engine.start_game();
-        assert_eq!(engine.state.active_player, PlayerId(0));
+        // Starting player is chosen by the opening die roll (CR 103.2); assert it alternates.
+        let starter = engine.state.active_player;
+        let other = engine
+            .state
+            .players
+            .iter()
+            .map(|p| p.id)
+            .find(|&p| p != starter)
+            .unwrap();
         assert_eq!(engine.state.turn_number, 1);
         engine.take_turn();
-        assert_eq!(engine.state.active_player, PlayerId(1));
+        assert_eq!(engine.state.active_player, other);
         assert_eq!(engine.state.turn_number, 2);
         engine.take_turn();
-        assert_eq!(engine.state.active_player, PlayerId(0));
+        assert_eq!(engine.state.active_player, starter);
         assert_eq!(engine.state.turn_number, 3);
     }
 

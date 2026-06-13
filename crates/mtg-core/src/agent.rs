@@ -715,10 +715,13 @@ impl RandomAgent {
 }
 
 impl Agent for RandomAgent {
-    fn decide(&mut self, _view: &PlayerView, req: &DecisionRequest) -> DecisionResponse {
+    fn decide(&mut self, view: &PlayerView, req: &DecisionRequest) -> DecisionResponse {
         match req {
             DecisionRequest::ChooseStartingPlayer { candidates } => {
-                DecisionResponse::Index(self.idx(candidates.len()))
+                // Choose to go first (generally advantageous). Consumes no RNG, so seeded games
+                // stay deterministic and decision streams are unperturbed.
+                let me = candidates.iter().position(|&c| c == view.seat).unwrap_or(0);
+                DecisionResponse::Index(me as u32)
             }
             // Keep every opening hand: a coin-flip mulligan is meaningless noise for self-play
             // (a real policy should decide this), and keeping consumes no RNG, so seeded games
