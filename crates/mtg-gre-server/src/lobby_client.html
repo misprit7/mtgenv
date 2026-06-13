@@ -92,6 +92,14 @@
     </div>
     <div class="games" id="games"><div class="empty">Loading…</div></div>
   </div>
+
+  <div class="panel">
+    <div class="ghdr">
+      <h2>AI Training Replays</h2>
+      <span class="sub" style="margin:0">god-view playback of self-play games sampled across a training run</span>
+    </div>
+    <div class="games" id="replays"><div class="empty">Loading…</div></div>
+  </div>
 </div>
 
 <script>
@@ -199,15 +207,18 @@ function gameRow(g) {
       }
     });
   }
-  // Spectate (read-only viewer) — available for any game that isn't over.
-  const spec = el("button", "ghost", "👁 Spectate");
+  // Finished → god-view Replay; live → read-only Spectate.
   if (g.status.state === "finished") {
-    spec.disabled = true; spec.title = "Game is over";
+    const rep = el("a", "joinbtn", "▶ Replay");
+    rep.href = "/play?replay=" + g.id; rep.target = "_blank";
+    rep.title = "Watch this finished game as a god-view replay";
+    acts.appendChild(rep);
   } else {
+    const spec = el("button", "ghost", "👁 Spectate");
     spec.title = "Watch this game (read-only)";
     spec.onclick = () => window.open("/play?game=" + g.id + "&spectate=1", "_blank");
+    acts.appendChild(spec);
   }
-  acts.appendChild(spec);
   // Remove this game from the lobby.
   const rm = el("button", "rm", "✕");
   rm.title = "Remove game"; rm.onclick = () => removeGame(g.id);
@@ -227,6 +238,47 @@ async function clearFinished() {
   await Promise.all(games.filter((g) => g.status.state === "finished")
     .map((g) => fetch("/api/games/" + g.id, { method: "DELETE" }).catch(() => {})));
   await refresh();
+}
+
+// AI Training Replays — saved omniscient replays tagged source:AiTraining (the gym writes these
+// across a run). Degrades gracefully until the replay backend (GET /api/replays) is wired.
+async function refreshReplays() {
+  const host = $("replays");
+  let reps = [];
+  try {
+    const r = await fetch("/api/replays");
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    reps = await r.json();
+  } catch (e) {
+    host.innerHTML = "";
+    host.appendChild(el("div", "empty", "No training replays yet (replay backend pending)."));
+    return;
+  }
+  const ai = reps.filter((r) => r.source && r.source.AiTraining);
+  ai.sort((a, b) => (b.source.AiTraining.step || 0) - (a.source.AiTraining.step || 0));
+  host.innerHTML = "";
+  if (!ai.length) { host.appendChild(el("div", "empty", "No AI training replays yet.")); return; }
+  ai.forEach((r) => host.appendChild(replayRow(r)));
+}
+
+function replayRow(r) {
+  const row = el("div", "game");
+  row.appendChild(el("span", "gid", "step " + r.source.AiTraining.step));
+  const chips = el("div", "chips");
+  (r.players || []).forEach((p, i) => chips.appendChild(
+    el("div", "chip", "P" + (p.seat != null ? p.seat : i) + ": " + (p.deck || "?"))));
+  row.appendChild(chips);
+  row.appendChild(el("div", "spacer"));
+  const res = r.result
+    ? (r.result.winner == null ? "draw" : "P" + r.result.winner + " won") + " · " + (r.result.turns || "?") + "t"
+    : "—";
+  row.appendChild(el("span", "gname", res));
+  const acts = el("div", "acts");
+  const a = el("a", "joinbtn", "▶ Replay");
+  a.href = "/play?replay=" + encodeURIComponent(r.id); a.target = "_blank";
+  acts.appendChild(a);
+  row.appendChild(acts);
+  return row;
 }
 
 function statusBadge(st) {
@@ -253,7 +305,9 @@ buildForm();
 $("createBtn").onclick = createGame;
 $("clearFinished").onclick = clearFinished;
 refresh();
+refreshReplays();
 setInterval(refresh, 2000);
+setInterval(refreshReplays, 5000);
 </script>
 </body>
 </html>
