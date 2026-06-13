@@ -130,11 +130,12 @@ pub enum Effect {
     Exile {
         what: EffectTarget,
     },
-    /// Attach the effect's SOURCE onto `to` (sets the source's `attached_to`) — the Equipment
-    /// equip ability (`{cost}: attach this to target creature you control`, sorcery-speed) and
-    /// aura/equipment re-attachment. Lowers to `Action::AttachTo { attachment: source, target }`.
-    /// (If a future card must attach a NON-source object, add a `what: EffectTarget` field.)
+    /// Attach `what` onto `to` (sets `what`'s `attached_to`). `what` is usually `SourceSelf` (the
+    /// Equipment equip ability, `{cost}: attach this to target creature you control`, sorcery-
+    /// speed); the explicit field also covers "attach target Aura/Equipment to …" effects.
+    /// Lowers to `Action::AttachTo { attachment: what, target: to }`.
     Attach {
+        what: EffectTarget,
         to: EffectTarget,
     },
 
