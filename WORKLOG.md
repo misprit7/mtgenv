@@ -27,11 +27,14 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
   regress. `Effect::AddMana` → mana pool (produces + any_color via ChooseColor). 104 mtg-core
   tests green, clippy clean. NEXT (design): add `ManaSpec.one_of` + `basic_mana_ability` builder +
   migrate basics/Llanowar/lands to the IR mana ability; then I wire one_of + remove the fallback.
-- **engine:** **partial-card test purge (started).** Per lead, removing test refs to soon-deleted
-  partial cards. Done: chars/mod.rs — dropped the Humility test (layer 7b covered by Nature's
-  Revolt) and redirected the Rancor aura test to a synthetic aura. REMAINING (priority.rs, design
-  is holding the defs until I clear them): redirect Chandra loyalty + Fog Bank prevention to
-  synthetic test CardDefs (keep coverage), drop the Rancor cast/fall-off + Servant tests.
+- **engine:** **partial-card test purge DONE.** Per lead, cleared all test refs to the 6
+  soon-deleted partial cards (Humility/Rancor/Fog Bank/Servant/Chandra/Healing Salve) from
+  chars/mod.rs + priority.rs + combat/mod.rs. Coverage preserved via self-contained synthetic test
+  CardDefs (a `synth_state()` helper: loyalty planeswalker, combat-damage-prevention 0/2,
+  0/0-enters-with-counter — keeps the whiteboard replacement-pass tests incl. Hardened Scales +
+  CR 616.1f — and a +2/+0-trample aura). Humility test dropped (Nature's Revolt covers 7b). 104
+  mtg-core tests green. design is clear to delete the defs (pinged). Leftover: a "Rancor" doc
+  comment in design's effects/target.rs (their file, harmless).
 - **webui:** **lobby + per-seat agent assignment** (user request). New `lobby.rs`: a server-side
   game registry (`Arc<Lobby>` axum state) where each `Room` configures *both* sides — every seat is
   a `Human`, a `Random` test agent, or `Rl` (stubbed→random for now). REST `GET/POST /api/games`
