@@ -102,10 +102,11 @@ relies on:
 - **`PlayerView` deltas ↔ `GameStateMessage`.** `observe(view, ev)` is the push channel the
   server turns into GRE `GameStateMessage` (Full/Diff) frames; `PlayerView`'s object/zone
   shape (§2) is designed to carry what a `GameObject`/`ZoneInfo`/`PlayerInfo` diff needs.
-- **Field-exactness is pinned against decompile's schema.** The *variant set* is fixed (it is
-  already a superset of the recovered `GREMessageType` catalog); the remaining work when
-  `mtga-re/schema/gre_schema.json` lands is to confirm field-level names/numbers so the
-  adapter's per-variant struct mapping is exact (§9 tracks the open field-shape questions).
+- **Field-exactness is pinned against decompile's schema (done).** The *variant set* is fixed
+  (a confirmed strict superset of the recovered, log-validated `GREMessageType` catalog). The
+  field-level reconciliation against `../mtga-re/schema/gre_schema.json` + `../mtga-re/proto/`
+  is complete — see §9; the per-variant struct mapping is exact and backed by
+  `../mtga-re/docs/GRE_DECISIONS.md`'s tag/field table.
 
 > Net: the web client and the real MTGA client are **the same backend** — clients of one GRE
 > server that is a thin, table-driven (de)serialization adapter over this boundary. No engine
@@ -204,7 +205,10 @@ pub enum DecisionRequest {
     /// the engine immediately issues a `SelectCards{ reason: BottomForMulligan, .. }` for
     /// the N cards to put on the bottom.
     /// Forge: mulliganKeepHand / londonMulliganReturnCards / confirmMulliganScry.
-    /// GRE:   MulliganReq (+ MulliganResp). (Field shape pending decompile — see §9.)
+    /// GRE:   MulliganReq { mulliganType, freeMulliganCount, mulliganCount } →
+    ///        MulliganResp { decision: MulliganOption }. CONFIRMED: the resp carries only
+    ///        the keep/mulligan decision; London bottoming is a separate follow-up
+    ///        (a SelectNReq), exactly as modeled here.
     Mulligan { hand: Vec<ObjId>, mulligans_taken: u32, will_bottom_if_kept: u32 },
 
     // ─── The priority loop (the hot path; most decisions are this) ──────────────────
@@ -224,12 +228,15 @@ pub enum DecisionRequest {
     ChooseModes { for_action: ActionRef, modes: Vec<ModeOption>, min: u32, max: u32, allow_repeat: bool },
 
     /// Choose a number: value of X, cost-reduction amount, keyword-cost N, "choose a
-    /// number" effects. `forbidden` realizes WHITEBOARD_MODEL §2.6 (X with forbidden
-    /// values). The legal set is `[min,max] \ forbidden`.
+    /// number" effects. Legal set = `[min,max]` by `step`, minus `forbidden`, minus the
+    /// parity excluded by `disallow_even`/`disallow_odd`. `forbidden` realizes
+    /// WHITEBOARD_MODEL §2.6 (X with forbidden values) — CONFIRMED real on the GRE wire.
     /// Forge: announceRequirements (X) / chooseNumber / chooseNumberForCostReduction
     ///        / chooseNumberForKeywordCost.
-    /// GRE:   NumericInputReq. (forbidden/min/max field shape pending decompile — §9.)
-    ChooseNumber { reason: NumberReason, min: i64, max: i64, forbidden: Vec<i64> },
+    /// GRE:   NumericInputReq { minValue, maxValue, stepSize, disallowedValues[],
+    ///        disallowEven, disallowOdd, numericInputType } → NumericInputResp.
+    ChooseNumber { reason: NumberReason, min: i64, max: i64, step: u32,
+                   forbidden: Vec<i64>, disallow_even: bool, disallow_odd: bool },
 
     /// Opt into/out of optional costs and pick cast-time options (kicker, buyback,
     /// additional/alternative costs, Phyrexian/hybrid payment choices). Often the engine
@@ -310,7 +317,8 @@ pub enum DecisionRequest {
     /// Stage the top N cards of a library into ordered destinations: scry (top/bottom),
     /// surveil (top/graveyard), fateseal (opponent), generic "look at top N, arrange".
     /// Forge: arrangeForScry / arrangeForSurveil / willPutCardOnTop / orderMoveToZoneList.
-    /// GRE:   (part of SelectN / Scry/Surveil prompts — pending decompile, §9).
+    /// GRE:   no dedicated scry/surveil message in this build — composed from `SelectNReq`
+    ///        (which cards to bottom/graveyard) + `OrderReq` (order the rest on top).
     ArrangeCards { reason: ArrangeReason, cards: Vec<ObjId>, destinations: Vec<ZoneDest> },
 
     /// Choose which replacement/prevention effect (or interacting static) applies to an
@@ -731,29 +739,57 @@ there.
 
 ---
 
-## 9. Open questions / awaiting `decompile`
+## 9. Reconciliation with the recovered GRE schema (RESOLVED)
 
-Resolve as the GRE schema (`mtga-re/schema/gre_schema.json`) lands; provisional choices are
-marked above. I've messaged `decompile` for the field-level shapes:
+`decompile` delivered the full schema (`../mtga-re/schema/gre_schema.json`, `../mtga-re/proto/`,
+pairing table `../mtga-re/docs/GRE_DECISIONS.md`), recovered from MTGA `2026.59.30.12801` and
+**validated against a live game log (2134 messages, 0 mismatches).** Namespace
+`wotc.mtgo.gre.external.messaging`, proto3. The earlier open questions are now resolved:
 
-- **Mulligan encoding.** Is London bottoming a separate GRE message or a field on
-  `MulliganResp`? Provisional: keep/mulligan as `Mulligan`, bottoming as a follow-up
-  `SelectCards{BottomForMulligan}`. Reconcile with `MulliganReq`/`MulliganResp`.
-- **`NumericInputReq` constraints.** Does it carry min/max/forbidden, or just a free integer?
-  This validates the `forbidden` field on `ChooseNumber` (WHITEBOARD §2.6 "forbidden X").
-- **Target encoding in `SelectTargetsReq`.** Target-map vs criteria list; how multi-slot
-  ("up to two target …") is represented → validates `TargetSlot`/`Pairs`.
-- **`AssignDamageReq` + `OrderCombatDamageReq` split.** Is order a separate request or folded
-  into assignment? → confirms `AssignCombatDamage` vs `OrderObjects{BlockersOf}` division.
-- **`PayCostsReq` + `CastingTimeOptionsReq` granularity.** How much is batched vs sub-stepped
-  (X, kicker, alternative/additional costs, Phyrexian/hybrid). `CastingTimeOptionType` enum
-  values → fills `CastOption`.
-- **`SelectN*`/`Group`/`Distribution`/`Replacement` field shapes** → finalize `SelectGroup`,
-  `Distribute`, `ReplacementOption`.
+- **Mulligan — CONFIRMED.** `MulliganReq { mulliganType, freeMulliganCount, mulliganCount }`
+  → `MulliganResp { decision: MulliganOption }`. The response carries only keep/mulligan;
+  London bottoming is a separate follow-up (a `SelectNReq`) — exactly the `Mulligan` +
+  `SelectCards{BottomForMulligan}` two-step modeled here.
+- **`NumericInputReq` — CONFIRMED + ENRICHED.** Real fields: `minValue, maxValue, stepSize,
+  disallowedValues[], suggestedValues[], disallowEven, disallowOdd, numericInputType`. The
+  `forbidden`-X concept (WHITEBOARD §2.6) is real (`disallowedValues`). I enriched
+  `ChooseNumber` to a strict superset: added `step`, `disallow_even`, `disallow_odd`.
+- **`SelectTargetsReq` — CONFIRMED, near-exact match.** `repeated TargetSelection`, where
+  `TargetSelection { targetIdx, targets[], minTargets, maxTargets, prompt, … }` is precisely
+  this doc's `TargetSlot { description, legal, min, max }` — one slot per "target" instance,
+  each with its own candidate list and bounds. No change needed.
+- **`AssignDamageReq` / order split — CONFIRMED.** `OrderCombatDamageReq` is *folded into
+  `OrderReq`* (per `GRE_DECISIONS.md`), and `AssignDamageReq { damageAssigners[] }` carries
+  the assignment. Matches the `AssignCombatDamage` (assignment) + `OrderObjects` (order)
+  division here. *Granularity note:* GRE batches **all** assigners into one message
+  (`repeated DamageAssigner`); this doc's `AssignCombatDamage` is **per-source** (finer — one
+  decision per assigning creature, RL-friendly). The GRE adapter batches the engine's
+  per-source requests into one wire message; both are equivalent and lossless.
+- **`CastingTimeOptionsReq` — CONFIRMED; validates the decomposition design.**
+  `CastingTimeOptionsReq { castingTimeOptionReq[] }`, and each `CastingTimeOptionReq` is a
+  wrapper that **embeds an inner request** via `oneof { numericInputReq | modalReq |
+  selectNReq | selectManaTypeReq }` keyed by `CastingTimeOptionType` (`ChooseX, Kicker,
+  Multikicker, AdditionalCost, OptionalCost, ManaType, Modal, Casualty, Bargain, Done, …`).
+  This is *exactly* the §3.1/§8 design: a cast's options decompose into `ChooseNumber` (X),
+  `ChooseModes` (modal), `SelectCards`, `ChooseColor`(mana type) sub-decisions; GRE's own
+  message literally nests those. So `CastingTimeOptions` is the optional *batched* shape and
+  the sub-step variants are its components — no variant change, design vindicated.
+- **`SelectN*` / `Group` / `Distribution` / `Replacement` — CONFIRMED.** `SelectNReq`
+  (`minSel, maxSel, ids[], context, listType, validationType, …`) ↔ `SelectCards`;
+  `SelectNGroupReq`/`SelectFromGroupsReq`/`GroupReq` ↔ `SelectFromGroups`; `DistributionReq`
+  (`minAmount, maxAmount, minPerTarget, targetIds[], requiredDistributionValues[]`) ↔
+  `Distribute`; `SelectReplacementReq { replacements[], isOptional, replacementsType }` ↔
+  `ChooseReplacement`.
 
-When the schema arrives, the per-variant field details get pinned and the §6.1 table becomes
-an exact field mapping; **the variant set itself is not expected to change** (it is already a
-superset of the recovered catalog), so task #4 can proceed against this design now.
+**Net:** the **variant set did not change** — it is a confirmed strict superset of the
+validated catalog. Only `ChooseNumber` gained fields (above). A few finer GRE constraints are
+worth absorbing during task #4 implementation as a strict-superset courtesy (none affect the
+variant set): weighted selection on `SelectCards` (`SelectNReq.weights/minWeight/maxWeight`),
+`min/maxAttackers` on `BlockerOption` (`Blocker.min/maxAttackers`, for "blocks N"/banding),
+and `Distribute.total` as an optional **range** (`DistributionReq.minAmount..maxAmount`).
+`DamageRecipient`'s `oneof { teamId | playerSystemSeatId | planeswalkerInstanceId }` validates
+the `Target` enum. The §6.1 table is now backed by `../mtga-re/docs/GRE_DECISIONS.md` for the
+exact tag/field mapping; task #4 implements against this reconciled design.
 
 ---
 
