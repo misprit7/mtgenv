@@ -5,6 +5,17 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **webui:** **migrated the web stop policy onto the engine's `stops_handle`** (removes the
+  duplicated client-side policy from the earlier entry). The game thread builds the engine via new
+  `driver::engine_with_stops(state, agents, human, &Stops)` (auto-pass ON for the human seat) and
+  hands the seat's `Arc<Mutex<StopConfig>>` back to the socket task over a tokio oneshot — the
+  Engine never leaves the thread (`dyn Agent` isn't `Send`); only the Send handle crosses.
+  `GreSessionAgent::decide` is now a plain round-trip (engine elides trivial windows itself);
+  `SetStop`→`StopConfig::set_override`, `SetOption`→pub fields, echo reads `StopConfig`. Deleted
+  `driver::Stops::{should_ask,is_stop,effective_steps}` (the web/CLI now share the ONE engine
+  policy — no drift). Verified: engine auto-passes Upkeep/Draw (first prompt at Main 1), live
+  Upkeep toggle lights + yields a real Upkeep prompt with no reset (WS + Playwright); decklist
+  intact; 10 web tests green. Commit d21fc14.
 - **engine:** task #14 checkpoint 4 — **planeswalkers** (DONE → #14 complete). Groundwork:
   `Characteristics.loyalty` (printed), enters-with-loyalty on battlefield entry (CR 306.5b),
   CR 704.5i 0-loyalty SBA, `Object.used_once_per_turn` (CR 606.3) reset each turn. **4a Loyalty

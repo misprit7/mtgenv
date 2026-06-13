@@ -102,8 +102,10 @@ MTGA client.
   `DecisionRequest`/`Response`/`PlayerView` with the engine's legal-option masking. An MTGO-style
   board: real card frames (Scryfall art + official mana-symbol SVGs, baked manifest — no runtime
   API), hand at the bottom, lands/creatures split, a 12-step phase bar, clickable GY/exile/decklist
-  zone viewers, hover→full-card preview, deck picker (Burn/Bears/demo). **MTGA auto-pass/stops live
-  client-side** in `GreSessionAgent` (engine auto-pass off): stops toggle mid-game with no reset.
+  zone viewers, hover→full-card preview, deck picker (Burn/Bears/demo). **MTGA auto-pass/stops are
+  engine-owned**: the socket holds the seat's live `Engine::stops_handle` (`Arc<Mutex<StopConfig>>`,
+  passed out of the game thread via a oneshot) and toggles it mid-game with no reset — web + CLI now
+  share the one engine policy (no duplicated client-side logic).
   **Library peek is RL-safe** — a static starting decklist snapshotted server-side from `GameState`
   (never via `PlayerView`, so it can't leak draws to the RL agent). Ships as a no-build embedded
   client *and* a Vite/TS client (kept in sync). Also an expressive scriptable CLI (`mtg-cli`-style
