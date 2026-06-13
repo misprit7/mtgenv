@@ -60,6 +60,7 @@ pub fn register(db: &mut CardDb) {
         ],
         text: "{T}: Add {G}.\n{T}: Add {W}. Activate only if you control a Forest or a Plains."
             .to_string(),
+        fully_implemented: true,
     });
 }
 

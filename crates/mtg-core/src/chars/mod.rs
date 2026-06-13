@@ -411,6 +411,7 @@ mod tests {
                 host_static(StaticContribution::GrantKeyword(Keyword::Trample)),
             ],
             text: String::new(),
+            ..Default::default()
         });
         let mut s = GameState::new(2, 1);
         s.set_card_db(Arc::new(db));
@@ -487,6 +488,7 @@ mod tests {
                 duration: Duration::WhileSourcePresent,
             }],
             text: String::new(),
+            ..Default::default()
         });
         let mut s = GameState::new(2, 1);
         s.set_card_db(Arc::new(db));

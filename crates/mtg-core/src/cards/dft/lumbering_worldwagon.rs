@@ -88,6 +88,8 @@ pub fn register(db: &mut CardDb) {
             },
         ],
         text: "This Vehicle's power is equal to the number of lands you control.\nWhenever this Vehicle enters or attacks, you may search your library for a basic land card, put it onto the battlefield tapped, then shuffle.\nCrew 4".to_string(),
+        // Tracked-incomplete: Crew 4 is an unbuilt subsystem (see module docs).
+        fully_implemented: false,
     };
     db.insert(def);
 }

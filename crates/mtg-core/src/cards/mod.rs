@@ -83,19 +83,31 @@ pub mod grp {
 /// expressed entirely in the IR: an explicit `Ability::Activated{is_mana:true}` (Llanowar, filter
 /// lands) or, for basic land types, intrinsic mana the engine derives from the computed subtype
 /// (CR 305.6) — there is no separate `mana_colors` shortcut.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct CardDef {
     pub chars: Characteristics,
     pub abilities: Vec<Ability>,
     /// Printed oracle/rules text for display (the view's `rules_text`). Reflects what the
     /// engine actually implements (Scryfall-verified where the implementation matches).
     pub text: String,
+    /// Whether the card is implemented faithfully and completely (every printed clause). `true`
+    /// by construction for vanilla/keyword/simple cards; set `false` when a genuine subsystem is
+    /// deferred (a tracked-incomplete card, e.g. Crew / land-play permissions) — the `text` field
+    /// carries the deferral note. Surfaced in the view so the client can flag partial cards.
+    pub fully_implemented: bool,
 }
 
 impl CardDef {
     /// Builder: set the display rules text.
     pub(crate) fn with_text(mut self, text: &str) -> Self {
         self.text = text.to_string();
+        self
+    }
+
+    /// Builder: mark this card as tracked-incomplete (a genuine subsystem is deferred). The
+    /// builders default `fully_implemented` to `true`; call this on a card that defers a clause.
+    pub(crate) fn incomplete(mut self) -> Self {
+        self.fully_implemented = false;
         self
     }
 
@@ -181,6 +193,7 @@ pub(crate) fn basic_land(grp_id: u32, name: &str) -> CardDef {
         // (CR 305.6, e.g. Forest → {G}), so a basic needs no explicit mana ability at all.
         abilities: Vec::new(),
         text: String::new(),
+        fully_implemented: true,
     }
 }
 
@@ -209,6 +222,7 @@ pub(crate) fn creature(
         },
         abilities,
         text: String::new(),
+        fully_implemented: true,
     }
 }
 
@@ -253,6 +267,7 @@ pub(crate) fn enchantment(grp_id: u32, name: &str, color: Color, cost: ManaCost,
         },
         abilities,
         text: String::new(),
+        fully_implemented: true,
     }
 }
 
@@ -276,6 +291,7 @@ pub(crate) fn spell(grp_id: u32, name: &str, ty: CardType, color: Color, cost: M
         },
         abilities: vec![Ability::Spell { effect }],
         text: String::new(),
+        fully_implemented: true,
     }
 }
 

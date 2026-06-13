@@ -103,6 +103,7 @@ pub fn register(db: &mut CardDb) {
             },
         ],
         text: String::new(),
+        fully_implemented: true,
     }.with_text("Equipped creature gets +2/+0. Equip {1}"));
     // Pacifism {1}{W} Aura — "Enchanted creature can't attack or block." Two AttachedHost
     // statics painting the CantAttack/CantBlock qualifications (CR §2.4), read by combat.

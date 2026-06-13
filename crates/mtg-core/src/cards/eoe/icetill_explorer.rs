@@ -45,7 +45,8 @@ pub fn register(db: &mut CardDb) {
         }],
     );
     explorer.chars.subtypes = vec!["Insect".to_string(), "Scout".to_string()];
-    db.insert(explorer.with_text(
+    // Tracked-incomplete: the two land-play permission statics are deferred (C18 subsystem).
+    db.insert(explorer.incomplete().with_text(
         "You may play an additional land on each of your turns.\nYou may play lands from your graveyard.\nLandfall — Whenever a land you control enters, mill a card.",
     ));
 }

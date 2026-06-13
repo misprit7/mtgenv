@@ -2866,6 +2866,7 @@ mod expect_tests {
                 },
             }],
             text: String::new(),
+            ..Default::default()
         });
         let mut state = GameState::new(2, 1);
         state.set_card_db(Arc::new(db));
@@ -2987,6 +2988,7 @@ mod expect_tests {
                 },
             }],
             text: String::new(),
+            ..Default::default()
         });
         let mut state = GameState::new(2, 1);
         state.set_card_db(Arc::new(db));
@@ -3076,6 +3078,7 @@ mod expect_tests {
                 },
             ],
             text: String::new(),
+            ..Default::default()
         });
 
         // 0/2 that prevents combat damage to itself (Fog Bank stand-in).
@@ -3098,6 +3101,7 @@ mod expect_tests {
                 rewrite: Rewrite::Prevent,
             }],
             text: String::new(),
+            ..Default::default()
         });
 
         // 0/0 that enters with a +1/+1 counter ({G}); drives the replacement-pass tests.
@@ -3118,6 +3122,7 @@ mod expect_tests {
                 rewrite: Rewrite::EntersWithCounters { kind: CounterKind::PlusOnePlusOne, n: 1 },
             }],
             text: String::new(),
+            ..Default::default()
         });
 
         // Aura ({G}): +2/+0 & trample on the enchanted creature.
@@ -3147,6 +3152,7 @@ mod expect_tests {
                 host(StaticContribution::GrantKeyword(Keyword::Trample)),
             ],
             text: String::new(),
+            ..Default::default()
         });
 
         let mut s = GameState::new(2, seed);

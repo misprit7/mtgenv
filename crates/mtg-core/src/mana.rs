@@ -269,6 +269,7 @@ mod tests {
             // C19: mana via a real `{T}: Add {G}` IR ability (the `mana_colors` shortcut is gone).
             abilities: vec![cards::mana_ability(Color::Green)],
             text: String::new(),
+            ..Default::default()
         });
         let mut state = GameState::new(2, 1);
         state.set_card_db(Arc::new(db));
@@ -327,6 +328,7 @@ mod tests {
                 is_mana: true,
             }],
             text: String::new(),
+            ..Default::default()
         });
         let mut state = GameState::new(2, 1);
         state.set_card_db(Arc::new(db));
@@ -368,6 +370,7 @@ mod tests {
             },
             abilities: Vec::new(),
             text: String::new(),
+            ..Default::default()
         });
         // A typed dual: subtypes `Forest Plains`, no ability, no shortcut.
         db.insert(cards::CardDef {
@@ -380,6 +383,7 @@ mod tests {
             },
             abilities: Vec::new(),
             text: String::new(),
+            ..Default::default()
         });
         let mut state = GameState::new(2, 1);
         state.set_card_db(Arc::new(db));
