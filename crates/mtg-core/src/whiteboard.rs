@@ -800,6 +800,14 @@ impl Engine {
                     .filter(|o| self.count_filter_matches(o.id, filter))
                     .count() as i64
             }
+            // C9b: the number of `kind` counters on the effect's source (e.g. Mossborn Hydra
+            // doubling its own +1/+1 counters). For a CDA computing P/T, chars evaluates this
+            // against the object being computed (see chars::compute) — here it's the resolver.
+            ValueExpr::CountersOnSelf(kind) => ctx
+                .source
+                .and_then(|s| self.state.objects.get(&s))
+                .map(|o| o.counters.get(kind) as i64)
+                .unwrap_or(0),
         }
     }
 

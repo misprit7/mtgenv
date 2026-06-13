@@ -3,7 +3,7 @@
 //! application); a `PlayerRef` names a player relative to the effect's source/controller.
 
 use super::target::CardFilter;
-use crate::basics::Zone;
+use crate::basics::{CounterKind, Zone};
 use serde::{Deserialize, Serialize};
 
 /// A player named relative to the resolving effect. Resolved against the `ResolutionCtx` when
@@ -41,6 +41,10 @@ pub enum ValueExpr {
     },
     /// Sum of `a` and `b` (composition so simple arithmetic is expressible without new nodes).
     Sum(Box<ValueExpr>, Box<ValueExpr>),
+    /// The number of counters of `kind` on **this object** — the resolving effect's source at
+    /// resolution time, or the object being computed in a layer-7a CDA (`SetBasePTValue`). Used
+    /// for "P/T = the number of +1/+1 counters on it" and "double the counters on this" effects.
+    CountersOnSelf(CounterKind),
 }
 
 impl ValueExpr {

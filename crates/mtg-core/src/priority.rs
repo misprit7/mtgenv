@@ -2771,6 +2771,41 @@ mod expect_tests {
     }
 
     #[test]
+    fn counters_on_self_doubles_plus_one_counters_c9b() {
+        use crate::basics::CounterKind;
+        use crate::effects::action::{ResolutionCtx, WbReason};
+        use crate::effects::value::ValueExpr;
+        use crate::effects::{Effect, EffectTarget};
+        // Mossborn Hydra's landfall: "double the number of +1/+1 counters on this creature" =
+        // add as many more as it already has — `n: CountersOnSelf(+1/+1)`.
+        let mut state = cards::build_game(1, &[&[], &[]]);
+        let bears = put(&mut state, PlayerId(0), grp::GRIZZLY_BEARS, Zone::Battlefield); // 2/2
+        state
+            .objects
+            .get_mut(&bears)
+            .unwrap()
+            .counters
+            .counts
+            .insert(CounterKind::PlusOnePlusOne, 2);
+        let mut e = pass_engine(state);
+        e.resolve_effect(
+            &Effect::PutCounters {
+                what: EffectTarget::SourceSelf,
+                kind: CounterKind::PlusOnePlusOne,
+                n: ValueExpr::CountersOnSelf(CounterKind::PlusOnePlusOne),
+            },
+            &ResolutionCtx { controller: Some(PlayerId(0)), source: Some(bears), ..Default::default() },
+            WbReason::Resolve(crate::ids::StackId(0)),
+        );
+        assert_eq!(
+            e.state.object(bears).counters.get(&CounterKind::PlusOnePlusOne),
+            4,
+            "doubled 2 → 4 counters"
+        );
+        assert_eq!(e.state.computed(bears).power, Some(6), "base 2/2 + 4 counters = 6/6");
+    }
+
+    #[test]
     fn landfall_triggers_when_a_land_you_control_enters_c4() {
         // C4: a "whenever a land you control enters" trigger (modeled as PermanentEnters of a land
         // you control) fires when you play a land — here, putting a +1/+1 counter on the source.
