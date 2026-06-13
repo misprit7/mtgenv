@@ -5,6 +5,19 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **engine:** **card-push batch 1 COMPLETE (C9b + C10)** — all of C1–C10 now landed. C9b dynamic
+  P/T: `ValueExpr::CountersOnSelf` in eval_value (Mossborn Hydra "double the +1/+1 counters" =
+  `PutCounters{SourceSelf, n: CountersOnSelf(+1/+1)}`); `StaticContribution::SetBasePTValue` as a
+  layer-7a CDA in chars::compute (Lumbering Worldwagon's power = lands you control), with a chars-
+  local ValueExpr evaluator. C10 X-costs: `ManaCost.x`; cast_spell asks `ChooseNumber(ChooseX)`
+  bounded by affordable mana, pays generic + X·x, carries X on `StackObject.x`, and resolve_top
+  sets `ctx.x` so `ValueExpr::X` reads it. (Also added the missing `CounterKind` import to
+  effects/value.rs that design's `CountersOnSelf` addition needed.) 99 mtg-core tests green, clippy
+  clean. **C1–C10 done**; design can author all Tier-1/2/3 cards + Mossborn/Lumbering/Dyadrine.
+  Remaining: C11–C18 subsystems (dual lands, earthbend, crew, warp, target-trigger, exile-types,
+  land permissions) — shaped per-card with design. NOTE: temporarily added a placeholder
+  crates/mtg-py/src/lib.rs to unblock a workspace-wide cargo break (gym's crate had Cargo.toml but
+  no lib.rs); gym has since filled it in.
 - **engine:** **card-push capabilities, batch 2 (C5, C7, C8)**. C7 Modal: added an interactive
   resolution interpreter — `resolve_effect` now drives `interpret()` (asks `ChooseModes`, resolves
   the chosen modes) while still materializing pure leaves with the shared target cursor. C5 Search:
