@@ -102,7 +102,7 @@ pub mod pb {
         Ok(out)
     }
 
-    /// Encode a varint (for tests / future encoder use).
+    /// Encode a varint.
     pub fn write_varint(mut v: u64, out: &mut Vec<u8>) {
         loop {
             let mut b = (v & 0x7F) as u8;
@@ -116,6 +116,45 @@ pub mod pb {
             }
         }
     }
+
+    /// Write a field key (field number + wire type).
+    pub fn write_key(field: u32, wire: u8, out: &mut Vec<u8>) {
+        write_varint(((field as u64) << 3) | (wire as u64 & 0x7), out);
+    }
+
+    /// Write a length-delimited field (wire type 2).
+    pub fn write_len_field(field: u32, bytes: &[u8], out: &mut Vec<u8>) {
+        write_key(field, 2, out);
+        write_varint(bytes.len() as u64, out);
+        out.extend_from_slice(bytes);
+    }
+
+    /// Write a varint field (wire type 0).
+    pub fn write_varint_field(field: u32, v: u64, out: &mut Vec<u8>) {
+        write_key(field, 0, out);
+        write_varint(v, out);
+    }
+}
+
+/// Encode a success `Response` envelope (uncompressed JSON payload).
+///
+/// `Response { rawTransId=1; bytes jsonPayload=3; bool compressed=5 }` — note the
+/// field numbers differ from `Cmd` (transId is 1 not 2, json is 3 not 4). We echo
+/// the request's transId and leave `error` unset (success).
+pub fn encode_response(trans_id: &str, json: &str) -> Vec<u8> {
+    let mut out = Vec::new();
+    pb::write_len_field(1, trans_id.as_bytes(), &mut out); // rawTransId
+    pb::write_len_field(3, json.as_bytes(), &mut out); // jsonPayload (bytes, UTF-8 JSON)
+    out // compressed defaults to false (omitted)
+}
+
+/// Encode a `Cmd` envelope with a JSON payload (used for tests / a future client).
+pub fn encode_cmd(cmd_type: i32, trans_id: &str, json: &str) -> Vec<u8> {
+    let mut out = Vec::new();
+    pb::write_varint_field(1, cmd_type as u64, &mut out); // type
+    pb::write_len_field(2, trans_id.as_bytes(), &mut out); // rawTransId
+    pb::write_len_field(4, json.as_bytes(), &mut out); // jsonPayload
+    out
 }
 
 /// Which arm of the `Cmd`/`Response` payload oneof was set.
@@ -233,6 +272,26 @@ mod tests {
         assert!(dump.contains("#2=str[2](ab)"));
         assert!(dump.contains("#4=str[2]({})"));
         assert!(dump.contains("#5=varint(1)"));
+    }
+
+    #[test]
+    fn response_roundtrip() {
+        let bytes = encode_response("tx-7", r#"{"Attached":true}"#);
+        let fields = pb::fields(&bytes).unwrap();
+        // field 1 = transId, field 3 = jsonPayload
+        let trans = fields.iter().find(|(f, _)| *f == 1).unwrap();
+        let json = fields.iter().find(|(f, _)| *f == 3).unwrap();
+        assert!(matches!(trans.1, pb::Value::Len(b) if b == b"tx-7"));
+        assert!(matches!(json.1, pb::Value::Len(b) if b == br#"{"Attached":true}"#));
+    }
+
+    #[test]
+    fn cmd_encode_decode_roundtrip() {
+        let bytes = encode_cmd(612, "abc", r#"{"deckId":"x"}"#);
+        let cmd = Cmd::decode(&bytes).unwrap();
+        assert_eq!(cmd.cmd_type, 612);
+        assert_eq!(cmd.trans_id, "abc");
+        assert_eq!(cmd.payload, Payload::Json(r#"{"deckId":"x"}"#.to_string()));
     }
 
     #[test]

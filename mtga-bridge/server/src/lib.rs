@@ -16,5 +16,6 @@
 //! HTTPS login stub, and the FrontDoor command responses are added next, once the
 //! login + startup-command surfaces (currently under reverse-engineering) land.
 
+pub mod cmds;
 pub mod envelope;
 pub mod frame;
