@@ -13,7 +13,7 @@
 
 use crate::agent::{
     ActionRef, Agent, CastVariant, DecisionRequest, DecisionResponse, GameEvent, PlayableAction,
-    SelectReason, TargetSlot,
+    PlayerView, SelectReason, StopStateView, TargetSlot,
 };
 use crate::basics::{CardType, Phase, Target, Zone, ZonePos};
 use crate::effects::ability::{Ability, EventPattern};
@@ -1072,8 +1072,31 @@ impl Engine {
     /// Ask seat `p` to decide `req`, presenting its information-filtered view. The single
     /// place the engine consults an agent for a choice.
     pub(crate) fn ask(&mut self, p: PlayerId, req: &DecisionRequest) -> DecisionResponse {
-        let view = view_for(&self.state, p);
+        let view = self.view_for_seat(p);
         self.agents[p.0 as usize].decide(&view, req)
+    }
+
+    /// The info-filtered [`PlayerView`] for `p`, augmented with the seat's Arena stop state
+    /// (the settings-echo — `PlayerView.stops`; `None` when the auto-pass profile is off).
+    /// Used everywhere the engine builds a view (decide/observe).
+    fn view_for_seat(&self, p: PlayerId) -> PlayerView {
+        let mut view = view_for(&self.state, p);
+        if self.arena_auto_pass {
+            let cfg = &self.stops[p.0 as usize];
+            let per_step = TURN_STEPS
+                .iter()
+                .copied()
+                .filter(|&s| step_grants_priority(s))
+                .map(|s| (s, self.is_stop(p, s)))
+                .collect();
+            view.stops = Some(StopStateView {
+                full_control: cfg.full_control,
+                smart_stops: cfg.smart_stops,
+                resolve_own_stack: cfg.resolve_own_stack,
+                per_step,
+            });
+        }
+        view
     }
 
     /// Push a public event to every seat's `observe` channel (CR: the GRE diff stream), and
@@ -1084,7 +1107,7 @@ impl Engine {
         }
         for seat in 0..self.state.players.len() {
             let pid = self.state.players[seat].id;
-            let view = view_for(&self.state, pid);
+            let view = self.view_for_seat(pid);
             self.agents[seat].observe(&view, &ev);
         }
         self.collect_triggers(&ev);
@@ -1620,6 +1643,32 @@ mod expect_tests {
         let seen2 = prompted2.borrow().clone();
         assert!(seen2.contains(&Phase::Upkeep), "full control stops at upkeep");
         assert!(seen2.contains(&Phase::BeginCombat), "full control stops at begin combat");
+    }
+
+    #[test]
+    fn player_view_carries_stop_state_for_the_ui() {
+        // PlayerView.stops echoes the seat's Arena settings (render-only): None when the
+        // profile is off, populated with full_control/smart_stops/resolve_own_stack + the
+        // effective per-step stops when on.
+        let state = cards::build_game(1, &[&[], &[]]);
+        let mut e = Engine::new(state, vec![Box::new(PassAgent), Box::new(PassAgent)]);
+        e.state.active_player = PlayerId(0);
+
+        // Off by default → no stop state echoed.
+        assert!(e.view_for_seat(PlayerId(0)).stops.is_none());
+
+        e.set_arena_auto_pass(true);
+        e.set_stop(PlayerId(0), Phase::Upkeep, Some(true)); // manual extra stop
+        let view = e.view_for_seat(PlayerId(0));
+        let s = view.stops.expect("stops echoed when the profile is on");
+        assert!(s.smart_stops && s.resolve_own_stack && !s.full_control, "MTGA defaults");
+        let stop_at = |ph: Phase| s.per_step.iter().find(|(p, _)| *p == ph).map(|(_, b)| *b);
+        assert_eq!(stop_at(Phase::PrecombatMain), Some(true), "own MP1 default stop");
+        assert_eq!(stop_at(Phase::PostcombatMain), Some(true), "own MP2 default stop");
+        assert_eq!(stop_at(Phase::Upkeep), Some(true), "manual upkeep stop reflected");
+        assert_eq!(stop_at(Phase::Draw), Some(false), "draw not a stop");
+        // Untap/Cleanup grant no priority → not listed.
+        assert!(stop_at(Phase::Untap).is_none());
     }
 
     #[test]
