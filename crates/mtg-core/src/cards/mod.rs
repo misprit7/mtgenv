@@ -45,20 +45,16 @@ pub mod grp {
     pub const HILL_GIANT: u32 = 11;
     pub const SHOCK: u32 = 20;
     pub const DIVINATION: u32 = 21;
-    pub const HEALING_SALVE: u32 = 22;
     pub const LIGHTNING_BOLT: u32 = 23;
     // M4 prototype cards (triggers + replacement effects).
     pub const ELVISH_VISIONARY: u32 = 30;
     pub const FLAMETONGUE_KAVU: u32 = 31;
-    pub const SERVANT_OF_THE_SCALE: u32 = 32;
-    pub const FOG_BANK: u32 = 33;
     pub const EXULTANT_CULTIST: u32 = 34;
     pub const ROOT_MAZE: u32 = 35;
     pub const HARDENED_SCALES: u32 = 36;
     // M5 layer-system cards (continuous effects).
     pub const GLORIOUS_ANTHEM: u32 = 40;
     pub const LEVITATION: u32 = 41;
-    pub const HUMILITY: u32 = 42;
     pub const NATURES_REVOLT: u32 = 43;
     // Evergreen-keyword creatures (#14).
     pub const ELVISH_ARCHERS: u32 = 50;
@@ -74,10 +70,8 @@ pub mod grp {
     pub const RAGING_GOBLIN: u32 = 60;
     pub const KING_CHEETAH: u32 = 61;
     pub const GLADECOVER_SCOUT: u32 = 62;
-    pub const RANCOR: u32 = 63;
     pub const BONESPLITTER: u32 = 64;
     pub const PACIFISM: u32 = 65;
-    pub const CHANDRA_PYROGENIUS: u32 = 66;
 }
 
 /// `SelectSpec` for a static affecting "creatures you control" (the anthem scope). min/max are
@@ -427,7 +421,7 @@ mod tests {
     #[test]
     fn starter_db_has_expected_cards() {
         let db = starter_db();
-        assert_eq!(db.len(), 44);
+        assert_eq!(db.len(), 38);
         assert!(db.get(grp::FOREST).unwrap().is_mana_source());
         assert_eq!(db.get(grp::FOREST).unwrap().mana_colors, vec![Color::Green]);
         // Grizzly Bears is a vanilla 2/2 with no abilities.

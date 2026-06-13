@@ -43,21 +43,6 @@ pub fn register(db: &mut CardDb) {
         )
         .with_text("Draw two cards."),
     );
-    // Simplified to the gain-life mode (the printed card is modal "choose one").
-    db.insert(
-        spell(
-            grp::HEALING_SALVE,
-            "Healing Salve",
-            CardType::Instant,
-            Color::White,
-            mana_cost(0, &[(Color::White, 1)]),
-            Effect::GainLife {
-                who: PlayerRef::Controller,
-                amount: ValueExpr::Fixed(3),
-            },
-        )
-        .with_text("You gain 3 life."),
-    );
     // Murder {1}{B}{B} — "Destroy target creature." (Effect::Destroy.)
     db.insert(
         spell(

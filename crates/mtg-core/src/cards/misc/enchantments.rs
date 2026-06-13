@@ -39,27 +39,6 @@ pub fn register(db: &mut CardDb) {
             duration: Duration::WhileSourcePresent,
         }],
     ).with_text("Creatures you control have flying."));
-    // Humility {2}{W}{W} — "All creatures lose all abilities and have base power and toughness
-    // 1/1." Prototype models the base-P/T clause (layer 7b SetBasePT) over ALL creatures; the
-    // lose-all-abilities clause (a layer-6 RemoveAllAbilities + its dependency tangle) is
-    // deferred — no RemoveAllAbilities contribution in the IR yet.
-    db.insert(enchantment(
-        grp::HUMILITY,
-        "Humility",
-        Color::White,
-        mana_cost(2, &[(Color::White, 2)]),
-        vec![Ability::Static {
-            contribution: StaticContribution::SetBasePT { power: 1, toughness: 1 },
-            affects: SelectSpec {
-                zone: Zone::Battlefield,
-                filter: CardFilter::HasCardType(CardType::Creature),
-                chooser: PlayerRef::Controller,
-                min: ValueExpr::Fixed(0),
-                max: ValueExpr::Fixed(0),
-            },
-            duration: Duration::WhileSourcePresent,
-        }],
-    ).with_text("All creatures have base power and toughness 1/1. (Lose-all-abilities clause not yet modeled.)"));
     // Nature's Revolt {3}{G}{G} — "All lands are 2/2 creatures that are still lands." TWO
     // statics: AddType(Creature) (layer 4) + SetBasePT{2,2} (7b), both over all lands. The
     // layer-4 type change is what makes an anthem ("creatures you control") see a land as a
@@ -89,28 +68,6 @@ pub fn register(db: &mut CardDb) {
             },
         ],
     ).with_text("All lands are 2/2 creatures that are still lands."));
-    // Rancor {G} Aura — "Enchant creature. Enchanted creature gets +2/+0 and has trample." Two
-    // statics over the AttachedHost: layer-7c ModifyPT and layer-6 GrantKeyword(Trample). (The
-    // "return to hand when put into a graveyard" recursion clause needs a ReturnToHand effect +
-    // dies-trigger for non-creatures — deferred.)
-    db.insert(aura(
-        grp::RANCOR,
-        "Rancor",
-        Color::Green,
-        mana_cost(0, &[(Color::Green, 1)]),
-        vec![
-            Ability::Static {
-                contribution: StaticContribution::ModifyPT { power: 2, toughness: 0 },
-                affects: attached_host(),
-                duration: Duration::WhileSourcePresent,
-            },
-            Ability::Static {
-                contribution: StaticContribution::GrantKeyword(Keyword::Trample),
-                affects: attached_host(),
-                duration: Duration::WhileSourcePresent,
-            },
-        ],
-    ).with_text("Enchant creature. Enchanted creature gets +2/+0 and has trample. (Return-to-hand clause not yet modeled.)"));
     // Bonesplitter {1} Artifact — Equipment. "Equipped creature gets +2/+0. Equip {1}." The
     // static buffs the AttachedHost (layer 7c); equip is a sorcery-speed activated ability that
     // attaches this to a creature you control (CR 301.5 / 702.6).

@@ -54,47 +54,6 @@ pub fn register(db: &mut CardDb) {
             },
         }],
     ).with_text("When this creature enters, it deals 4 damage to target creature."));
-    // Servant of the Scale {G} 0/0 — "This creature enters with a +1/+1 counter on it."
-    // (ETB replacement; the dies-trigger clause is omitted for the prototype.) Without the
-    // replacement it would be a 0/0 destroyed immediately by the toughness-0 SBA.
-    db.insert(creature(
-        grp::SERVANT_OF_THE_SCALE,
-        "Servant of the Scale",
-        "Human Soldier",
-        Color::Green,
-        mana_cost(0, &[(Color::Green, 1)]),
-        0,
-        0,
-        vec![Ability::Replacement {
-            // Self-replacement (CR 614.12): only THIS creature, via `ItSelf` (so it doesn't
-            // apply to other creatures under the global scan).
-            pattern: ActionPattern::WouldEnterBattlefield(CardFilter::ItSelf),
-            rewrite: Rewrite::EntersWithCounters {
-                kind: CounterKind::PlusOnePlusOne,
-                n: 1,
-            },
-        }],
-    ).with_text("This creature enters with a +1/+1 counter on it."));
-    // Fog Bank {1}{U} 0/2 — "Prevent all combat damage that would be dealt to and dealt by
-    // this creature." (Prototype models the "dealt to" prevention; Defender/Flying and the
-    // "dealt by" clause — moot at power 0 — are omitted.)
-    db.insert(creature(
-        grp::FOG_BANK,
-        "Fog Bank",
-        "Wall",
-        Color::Blue,
-        mana_cost(1, &[(Color::Blue, 1)]),
-        0,
-        2,
-        vec![Ability::Replacement {
-            // "to THIS creature" — `ItSelf`, so it only prevents damage to Fog Bank itself.
-            pattern: ActionPattern::WouldBeDealtDamage {
-                to: CardFilter::ItSelf,
-                kind: Some(DamageKind::Combat),
-            },
-            rewrite: Rewrite::Prevent,
-        }],
-    ).with_text("Prevent all combat damage that would be dealt to this creature."));
     // Exultant Cultist {2}{U} 2/2 — "When this creature dies, draw a card." (dies/LTB trigger.)
     db.insert(creature(
         grp::EXULTANT_CULTIST,

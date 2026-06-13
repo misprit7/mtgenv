@@ -85,8 +85,8 @@ pub enum CardFilter {
     ItSelf,
     /// Matches iff the candidate object **is the permanent the matcher's SOURCE is attached to**
     /// (its host) — the aura/equipment analogue of `ItSelf`. Lets an aura's/equipment's buff live
-    /// in the normal global static scan with no special-casing: e.g. Rancor's "enchanted creature
-    /// gets +2/+0 and has trample" = a static `affects` filter of `AttachedHost`. The engine
+    /// in the normal global static scan with no special-casing: e.g. an Equipment's "equipped
+    /// creature gets +2/+0" = a static `affects` filter of `AttachedHost`. The engine
     /// resolves it via the source's `attached_to`.
     AttachedHost,
 }

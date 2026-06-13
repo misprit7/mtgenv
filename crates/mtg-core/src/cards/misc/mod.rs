@@ -10,7 +10,6 @@ use crate::cards::CardDb;
 
 pub mod basics;
 pub mod enchantments;
-pub mod planeswalkers;
 pub mod spells;
 pub mod triggers;
 pub mod vanilla;
@@ -22,5 +21,4 @@ pub fn register(db: &mut CardDb) {
     vanilla::register(db);
     triggers::register(db);
     enchantments::register(db);
-    planeswalkers::register(db);
 }
