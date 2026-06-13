@@ -27,6 +27,7 @@ use crate::effects::condition::Duration;
 use crate::effects::value::{PlayerRef, ValueExpr};
 use crate::effects::Effect;
 use crate::state::Characteristics;
+use crate::subtypes::ArtifactType;
 
 /// grp id (per-set ids live near their cards).
 pub const LUMBERING_WORLDWAGON: u32 = 105;
@@ -53,7 +54,7 @@ pub fn register(db: &mut CardDb) {
         chars: Characteristics {
             name: "Lumbering Worldwagon".to_string(),
             card_types: vec![CardType::Artifact],
-            subtypes: vec!["Vehicle".to_string()],
+            subtypes: vec![ArtifactType::Vehicle.into()],
             colors: vec![Color::Green],
             mana_cost: Some(mana_cost(2, &[(Color::Green, 1)])),
             // `*` printed power → base 0; the layer-7a CDA sets the real value.
@@ -105,7 +106,7 @@ mod tests {
         register(&mut db);
         let def = db.get(LUMBERING_WORLDWAGON).unwrap();
         assert_eq!(def.chars.card_types, vec![CardType::Artifact]);
-        assert_eq!(def.chars.subtypes, vec!["Vehicle".to_string()]);
+        assert_eq!(def.chars.subtypes, vec![ArtifactType::Vehicle.into()]);
         assert_eq!(def.chars.toughness, Some(4));
         assert!(!def.is_mana_source());
         expect![[r#"
@@ -160,7 +161,7 @@ mod tests {
                                         Land,
                                     ),
                                     Supertype(
-                                        "Basic",
+                                        Basic,
                                     ),
                                 ],
                             ),
@@ -189,7 +190,7 @@ mod tests {
                                         Land,
                                     ),
                                     Supertype(
-                                        "Basic",
+                                        Basic,
                                     ),
                                 ],
                             ),

@@ -9,6 +9,7 @@
 use crate::basics::{CardType, Zone};
 use crate::effects::target::{CardFilter, SelectSpec};
 use crate::effects::value::{PlayerRef, ValueExpr};
+use crate::subtypes::Supertype;
 
 /// "a land you control" — the landfall event filter (CR 603.2: a land entering under your
 /// control). Shared by every landfall trigger (Sazh's Chocobo, Mossborn Hydra, Icetill Explorer…).
@@ -33,13 +34,13 @@ pub(crate) fn lands_you_control() -> ValueExpr {
     }
 }
 
-/// `CardFilter` matching a basic land card (CR 205.4b) — `All([Land, Supertype("Basic")])`.
+/// `CardFilter` matching a basic land card (CR 205.4b) — `All([Land, Supertype(Basic)])`.
 /// Shared by every "search your library for a basic land card" effect (fetch lands, Bushwhack,
 /// Lumbering Worldwagon…).
 pub(crate) fn basic_land_filter() -> CardFilter {
     CardFilter::All(vec![
         CardFilter::HasCardType(CardType::Land),
-        CardFilter::Supertype("Basic".to_string()),
+        CardFilter::Supertype(Supertype::Basic),
     ])
 }
 

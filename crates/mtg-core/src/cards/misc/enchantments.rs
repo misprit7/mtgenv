@@ -12,6 +12,7 @@ use crate::effects::target::{CardFilter, SelectSpec, TargetKind, TargetSpec};
 use crate::effects::value::{PlayerRef, ValueExpr};
 use crate::effects::{Effect, EffectTarget};
 use crate::state::Characteristics;
+use crate::subtypes::ArtifactType;
 
 pub fn register(db: &mut CardDb) {
     // Glorious Anthem {1}{W}{W} — "Creatures you control get +1/+1." (layer 7c ModifyPT.)
@@ -74,7 +75,7 @@ pub fn register(db: &mut CardDb) {
         chars: Characteristics {
             name: "Bonesplitter".to_string(),
             card_types: vec![CardType::Artifact],
-            subtypes: vec!["Equipment".to_string()],
+            subtypes: vec![ArtifactType::Equipment.into()],
             colors: Vec::new(),
             mana_cost: Some(mana_cost(1, &[])),
             grp_id: grp::BONESPLITTER,

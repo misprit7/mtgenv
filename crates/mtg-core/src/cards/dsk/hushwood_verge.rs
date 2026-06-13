@@ -17,6 +17,7 @@ use crate::effects::target::{CardFilter, ManaSpec};
 use crate::effects::value::{PlayerRef, ValueExpr};
 use crate::effects::Effect;
 use crate::state::Characteristics;
+use crate::subtypes::LandType;
 
 pub const HUSHWOOD_VERGE: u32 = 101;
 
@@ -49,8 +50,8 @@ pub fn register(db: &mut CardDb) {
                 restriction: Some(Restriction::OnlyIf(Condition::CountAtLeast {
                     zone: Zone::Battlefield,
                     filter: CardFilter::AnyOf(vec![
-                        CardFilter::HasSubtype("Forest".to_string()),
-                        CardFilter::HasSubtype("Plains".to_string()),
+                        CardFilter::HasSubtype(LandType::Forest.into()),
+                        CardFilter::HasSubtype(LandType::Plains.into()),
                     ]),
                     controller: Some(PlayerRef::Controller),
                     n: ValueExpr::Fixed(1),
@@ -134,10 +135,14 @@ mod tests {
                                 filter: AnyOf(
                                     [
                                         HasSubtype(
-                                            "Forest",
+                                            Land(
+                                                Forest,
+                                            ),
                                         ),
                                         HasSubtype(
-                                            "Plains",
+                                            Land(
+                                                Plains,
+                                            ),
                                         ),
                                     ],
                                 ),

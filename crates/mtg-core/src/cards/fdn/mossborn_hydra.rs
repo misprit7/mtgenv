@@ -14,6 +14,7 @@
 use crate::basics::{Color, CounterKind};
 use crate::cards::helpers::land_you_control;
 use crate::cards::{creature, mana_cost, CardDb};
+use crate::subtypes::CreatureType;
 use crate::effects::ability::{Ability, ActionPattern, EventPattern, Keyword, Rewrite};
 use crate::effects::target::CardFilter;
 use crate::effects::value::ValueExpr;
@@ -26,7 +27,7 @@ pub fn register(db: &mut CardDb) {
     let mut hydra = creature(
         MOSSBORN_HYDRA,
         "Mossborn Hydra",
-        "Elemental",
+        CreatureType::Elemental,
         Color::Green,
         mana_cost(2, &[(Color::Green, 1)]),
         0,
@@ -53,7 +54,7 @@ pub fn register(db: &mut CardDb) {
             },
         ],
     );
-    hydra.chars.subtypes = vec!["Elemental".to_string(), "Hydra".to_string()];
+    hydra.chars.subtypes = vec![CreatureType::Elemental.into(), CreatureType::Hydra.into()];
     hydra.chars.keywords = vec![Keyword::Trample];
     db.insert(hydra.with_text(
         "Trample\nThis creature enters with a +1/+1 counter on it.\nLandfall — Whenever a land you control enters, double the number of +1/+1 counters on this creature.",
@@ -72,7 +73,7 @@ mod tests {
         let def = db.get(MOSSBORN_HYDRA).unwrap();
         assert_eq!(def.chars.power, Some(0));
         assert_eq!(def.chars.toughness, Some(0));
-        assert_eq!(def.chars.subtypes, vec!["Elemental".to_string(), "Hydra".to_string()]);
+        assert_eq!(def.chars.subtypes, vec![CreatureType::Elemental.into(), CreatureType::Hydra.into()]);
         assert_eq!(def.chars.keywords, vec![Keyword::Trample]);
         assert!(!def.is_mana_source());
         expect![[r#"

@@ -23,6 +23,7 @@ use crate::effects::value::{PlayerRef, ValueExpr};
 use crate::effects::{Effect, EffectTarget};
 use crate::ids::PlayerId;
 use crate::state::{Characteristics, GameState};
+use crate::subtypes::{CreatureType, EnchantmentType, Subtype};
 
 /// Shared card-construction fragments (`CardFilter`/`SelectSpec`/`ValueExpr` pieces). Card modules
 /// import from here, never from a sibling card module.
@@ -201,7 +202,7 @@ pub(crate) fn basic_land(grp_id: u32, name: &str) -> CardDef {
 pub(crate) fn creature(
     grp_id: u32,
     name: &str,
-    subtype: &str,
+    subtype: CreatureType,
     color: Color,
     cost: ManaCost,
     power: i32,
@@ -212,7 +213,7 @@ pub(crate) fn creature(
         chars: Characteristics {
             name: name.to_string(),
             card_types: vec![CardType::Creature],
-            subtypes: vec![subtype.to_string()],
+            subtypes: vec![Subtype::Creature(subtype)],
             colors: vec![color],
             mana_cost: Some(cost),
             power: Some(power),
@@ -229,7 +230,7 @@ pub(crate) fn creature(
 pub(crate) fn vanilla_creature(
     grp_id: u32,
     name: &str,
-    subtype: &str,
+    subtype: CreatureType,
     color: Color,
     cost: ManaCost,
     power: i32,
@@ -243,7 +244,7 @@ pub(crate) fn vanilla_creature(
 pub(crate) fn kw_creature(
     grp_id: u32,
     name: &str,
-    subtype: &str,
+    subtype: CreatureType,
     color: Color,
     cost: ManaCost,
     power: i32,
@@ -275,7 +276,7 @@ pub(crate) fn enchantment(grp_id: u32, name: &str, color: Color, cost: ManaCost,
 /// require an enchant target at cast and to enter the battlefield attached (CR 303.4f / 608.3e).
 pub(crate) fn aura(grp_id: u32, name: &str, color: Color, cost: ManaCost, abilities: Vec<Ability>) -> CardDef {
     let mut def = enchantment(grp_id, name, color, cost, abilities);
-    def.chars.subtypes = vec!["Aura".to_string()];
+    def.chars.subtypes = vec![EnchantmentType::Aura.into()];
     def
 }
 
@@ -407,8 +408,8 @@ mod tests {
         // (CR 305.6) — the engine derives {T}: Add {G} from the subtype, so the CardDef carries
         // no explicit mana ability (and `is_mana_source` only sees authored abilities).
         let forest = db.get(grp::FOREST).unwrap();
-        assert_eq!(forest.chars.subtypes, vec!["Forest".to_string()]);
-        assert!(forest.chars.supertypes.contains(&"Basic".to_string()));
+        assert_eq!(forest.chars.subtypes, vec![crate::subtypes::LandType::Forest.into()]);
+        assert!(forest.chars.supertypes.contains(&crate::subtypes::Supertype::Basic));
         assert!(forest.abilities.is_empty());
         assert!(!forest.is_mana_source());
         // Grizzly Bears is a vanilla 2/2 with no abilities.

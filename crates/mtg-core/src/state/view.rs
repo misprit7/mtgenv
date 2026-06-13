@@ -18,8 +18,10 @@ fn chars_view(c: &Characteristics, db: &CardDb) -> CharacteristicsView {
     CharacteristicsView {
         name: c.name.clone(),
         card_types: c.card_types.iter().map(|t| t.as_str().to_string()).collect(),
-        subtypes: c.subtypes.clone(),
-        supertypes: c.supertypes.clone(),
+        // The view keeps the type line as plain strings (the wire format); Display renders each
+        // enum to its canonical MTG token so the client/webui sees an unchanged JSON shape.
+        subtypes: c.subtypes.iter().map(|s| s.to_string()).collect(),
+        supertypes: c.supertypes.iter().map(|s| s.to_string()).collect(),
         colors: c.colors.clone(),
         mana_value: c.mana_value(),
         mana_cost: c.mana_cost.clone(),

@@ -15,6 +15,7 @@ use crate::effects::target::ManaSpec;
 use crate::effects::Effect;
 use crate::ids::{ObjId, PlayerId};
 use crate::state::GameState;
+use crate::subtypes::{LandType, Subtype};
 
 /// The untapped mana sources `p` controls: `(permanent, colours it can tap for right now)`.
 /// Colours come from two places, unioned: each source's `{T}`-cost IR mana abilities
@@ -60,16 +61,16 @@ fn mana_sources(state: &GameState, p: PlayerId) -> Vec<(ObjId, Vec<Color>)> {
 }
 
 /// CR 305.6: the colour a basic land *type* intrinsically taps for. Returns `None` for
-/// non-basic-type subtypes (e.g. "Vehicle", "Aura"). This is what lets a `Forest` produce `{G}`
+/// non-basic-type subtypes (e.g. Vehicle, Aura). This is what lets a `Forest` produce `{G}`
 /// with no authored mana ability, so basics and typed duals (e.g. Temple Garden = `Forest Plains`)
 /// carry mana purely from their subtype line — and type-changing effects carry it for free.
-fn basic_land_type_color(subtype: &str) -> Option<Color> {
+fn basic_land_type_color(subtype: &Subtype) -> Option<Color> {
     match subtype {
-        "Plains" => Some(Color::White),
-        "Island" => Some(Color::Blue),
-        "Swamp" => Some(Color::Black),
-        "Mountain" => Some(Color::Red),
-        "Forest" => Some(Color::Green),
+        Subtype::Land(LandType::Plains) => Some(Color::White),
+        Subtype::Land(LandType::Island) => Some(Color::Blue),
+        Subtype::Land(LandType::Swamp) => Some(Color::Black),
+        Subtype::Land(LandType::Mountain) => Some(Color::Red),
+        Subtype::Land(LandType::Forest) => Some(Color::Green),
         _ => None,
     }
 }
@@ -321,7 +322,7 @@ mod tests {
                 timing: Timing::Instant,
                 restriction: Some(Restriction::OnlyIf(Condition::CountAtLeast {
                     zone: Zone::Battlefield,
-                    filter: CardFilter::HasSubtype("Forest".into()),
+                    filter: CardFilter::HasSubtype(LandType::Forest.into()),
                     controller: Some(PlayerRef::Controller),
                     n: ValueExpr::Fixed(1),
                 })),
@@ -363,8 +364,8 @@ mod tests {
             chars: Characteristics {
                 name: "Plain Forest".into(),
                 card_types: vec![CardType::Land],
-                supertypes: vec!["Basic".into()],
-                subtypes: vec!["Forest".into()],
+                supertypes: vec![crate::subtypes::Supertype::Basic],
+                subtypes: vec![LandType::Forest.into()],
                 grp_id: 9401,
                 ..Default::default()
             },
@@ -377,7 +378,7 @@ mod tests {
             chars: Characteristics {
                 name: "Type Garden".into(),
                 card_types: vec![CardType::Land],
-                subtypes: vec!["Forest".into(), "Plains".into()],
+                subtypes: vec![LandType::Forest.into(), LandType::Plains.into()],
                 grp_id: 9402,
                 ..Default::default()
             },

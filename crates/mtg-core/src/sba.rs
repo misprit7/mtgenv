@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use crate::basics::{CardType, CounterKind, Zone};
 use crate::ids::{ObjId, PlayerId};
 use crate::state::GameState;
+use crate::subtypes::{ArtifactType, EnchantmentType, Subtype};
 
 /// Why a player loses the game (CR 704.5a–c). Serde-able because the engine records the
 /// game's ending reason in `GameState` for the `Outcome` (a snapshot field).
@@ -139,7 +140,7 @@ pub fn collect(state: &GameState) -> Vec<StateBasedAction> {
         if o.zone != Zone::Battlefield {
             continue;
         }
-        if !o.chars.subtypes.iter().any(|s| s == "Aura") {
+        if !o.chars.subtypes.contains(&Subtype::Enchantment(EnchantmentType::Aura)) {
             continue;
         }
         let legal_host = o.attached_to.is_some_and(|h| {
@@ -160,7 +161,7 @@ pub fn collect(state: &GameState) -> Vec<StateBasedAction> {
         if o.zone != Zone::Battlefield {
             continue;
         }
-        if !o.chars.subtypes.iter().any(|s| s == "Equipment") {
+        if !o.chars.subtypes.contains(&Subtype::Artifact(ArtifactType::Equipment)) {
             continue;
         }
         if let Some(h) = o.attached_to {

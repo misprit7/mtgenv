@@ -20,6 +20,7 @@ use crate::effects::ability::Keyword;
 use crate::combat::CombatState;
 use crate::ids::{ObjId, PlayerId, Timestamp};
 use crate::rng::Rng;
+use crate::subtypes::{LandType, Subtype, Supertype};
 use crate::stack::{Stack, StackObject};
 
 pub mod view;
@@ -40,8 +41,8 @@ pub const DEFAULT_HAND_SIZE: usize = 7;
 pub struct Characteristics {
     pub name: String,
     pub card_types: Vec<CardType>,
-    pub subtypes: Vec<String>,
-    pub supertypes: Vec<String>,
+    pub subtypes: Vec<Subtype>,
+    pub supertypes: Vec<Supertype>,
     pub colors: Vec<Color>,
     pub mana_cost: Option<ManaCost>,
     pub power: Option<i32>,
@@ -78,13 +79,15 @@ impl Characteristics {
         }
     }
 
-    /// A basic land card (no abilities yet; mana abilities arrive in milestone 3).
+    /// A basic land card. Its single basic land-type subtype is derived from the name (CR 305.6);
+    /// the engine reads that subtype to grant the intrinsic `{T}: Add <colour>` mana ability.
     pub fn basic_land(name: &str) -> Self {
+        let land_type: LandType = name.parse().expect("basic land name must be a basic land type");
         Characteristics {
             name: name.to_string(),
             card_types: vec![CardType::Land],
-            supertypes: vec!["Basic".to_string()],
-            subtypes: vec![name.to_string()],
+            supertypes: vec![Supertype::Basic],
+            subtypes: vec![land_type.into()],
             ..Default::default()
         }
     }

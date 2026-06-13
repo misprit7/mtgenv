@@ -7,6 +7,7 @@
 
 use crate::basics::Color;
 use crate::cards::{creature, mana_ability, mana_cost, CardDb};
+use crate::subtypes::CreatureType;
 
 /// grp id (per-set ids live near their cards).
 pub const LLANOWAR_ELVES: u32 = 100;
@@ -15,14 +16,14 @@ pub fn register(db: &mut CardDb) {
     let mut elf = creature(
         LLANOWAR_ELVES,
         "Llanowar Elves",
-        "Elf",
+        CreatureType::Elf,
         Color::Green,
         mana_cost(0, &[(Color::Green, 1)]),
         1,
         1,
         vec![mana_ability(Color::Green)],
     );
-    elf.chars.subtypes = vec!["Elf".to_string(), "Druid".to_string()];
+    elf.chars.subtypes = vec![CreatureType::Elf.into(), CreatureType::Druid.into()];
     db.insert(elf.with_text("{T}: Add {G}."));
 }
 
@@ -39,7 +40,7 @@ mod tests {
         // A 1/1 Elf Druid whose `{T}: Add {G}` is a real mana ability (no `mana_colors` shortcut).
         assert_eq!(def.chars.power, Some(1));
         assert_eq!(def.chars.toughness, Some(1));
-        assert_eq!(def.chars.subtypes, vec!["Elf".to_string(), "Druid".to_string()]);
+        assert_eq!(def.chars.subtypes, vec![CreatureType::Elf.into(), CreatureType::Druid.into()]);
         assert!(def.is_mana_source());
         expect![[r#"
             [

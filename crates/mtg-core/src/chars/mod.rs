@@ -22,6 +22,7 @@ use crate::effects::target::{CardFilter, SelectSpec};
 use crate::effects::value::{PlayerRef, ValueExpr};
 use crate::ids::{ObjId, PlayerId, Timestamp};
 use crate::state::{Characteristics, GameState};
+use crate::subtypes::Subtype;
 
 /// The post-layer computed characteristics of an object (CR 613 output). Milestone 5 fills
 /// P/T, keywords, types and colors; the rest of the closed characteristic list (CR 109.3)
@@ -31,7 +32,7 @@ pub struct ComputedChars {
     pub power: Option<i32>,
     pub toughness: Option<i32>,
     pub card_types: Vec<CardType>,
-    pub subtypes: Vec<String>,
+    pub subtypes: Vec<Subtype>,
     pub colors: Vec<Color>,
     pub keywords: BTreeSet<Keyword>,
     /// Qualification markers painted by static abilities (CR 613 layer 6 / §2.4) — the
@@ -402,7 +403,7 @@ mod tests {
             chars: Characteristics {
                 name: "Test Aura".into(),
                 card_types: vec![CardType::Enchantment],
-                subtypes: vec!["Aura".into()],
+                subtypes: vec![crate::subtypes::EnchantmentType::Aura.into()],
                 grp_id: 9500,
                 ..Default::default()
             },
@@ -467,7 +468,7 @@ mod tests {
             chars: Characteristics {
                 name: "Test Wagon".into(),
                 card_types: vec![CardType::Artifact],
-                subtypes: vec!["Vehicle".into()],
+                subtypes: vec![crate::subtypes::ArtifactType::Vehicle.into()],
                 power: Some(0),
                 toughness: Some(4),
                 grp_id: 9200,

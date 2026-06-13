@@ -18,6 +18,7 @@
 use crate::basics::Color;
 use crate::cards::helpers::land_you_control;
 use crate::cards::{creature, mana_cost, CardDb};
+use crate::subtypes::CreatureType;
 use crate::effects::ability::{Ability, EventPattern};
 use crate::effects::value::{PlayerRef, ValueExpr};
 use crate::effects::Effect;
@@ -29,7 +30,7 @@ pub fn register(db: &mut CardDb) {
     let mut explorer = creature(
         ICETILL_EXPLORER,
         "Icetill Explorer",
-        "Insect",
+        CreatureType::Insect,
         Color::Green,
         mana_cost(2, &[(Color::Green, 2)]),
         2,
@@ -44,7 +45,7 @@ pub fn register(db: &mut CardDb) {
             },
         }],
     );
-    explorer.chars.subtypes = vec!["Insect".to_string(), "Scout".to_string()];
+    explorer.chars.subtypes = vec![CreatureType::Insect.into(), CreatureType::Scout.into()];
     // Tracked-incomplete: the two land-play permission statics are deferred (C18 subsystem).
     db.insert(explorer.incomplete().with_text(
         "You may play an additional land on each of your turns.\nYou may play lands from your graveyard.\nLandfall — Whenever a land you control enters, mill a card.",
@@ -63,7 +64,7 @@ mod tests {
         let def = db.get(ICETILL_EXPLORER).unwrap();
         assert_eq!(def.chars.power, Some(2));
         assert_eq!(def.chars.toughness, Some(4));
-        assert_eq!(def.chars.subtypes, vec!["Insect".to_string(), "Scout".to_string()]);
+        assert_eq!(def.chars.subtypes, vec![CreatureType::Insect.into(), CreatureType::Scout.into()]);
         assert!(!def.is_mana_source());
         // Only the faithful landfall-mill ability is present (land-play permissions are TRACKED
         // incomplete, C18 — see module docs).

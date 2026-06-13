@@ -16,6 +16,7 @@ use crate::agent::{
     NumberReason, PlayableAction, PlayerView, SelectReason, StopStateView, TargetSlot,
 };
 use crate::basics::{CardType, CounterKind, ManaCost, Phase, Target, Zone, ZonePos};
+use crate::subtypes::{EnchantmentType, Subtype};
 use crate::effects::ability::{Ability, Cost, CostComponent, EventPattern, Keyword, Restriction, Timing};
 use crate::effects::action::{Action, MoveCause, ResolutionCtx, Whiteboard, WbReason};
 use crate::effects::target::{CardFilter, TargetKind, TargetSpec};
@@ -1163,7 +1164,7 @@ impl Engine {
         self.state
             .objects
             .get(&id)
-            .is_some_and(|o| o.chars.subtypes.iter().any(|s| s == "Aura"))
+            .is_some_and(|o| o.chars.subtypes.contains(&Subtype::Enchantment(EnchantmentType::Aura)))
     }
 
     /// CR 608.2b: a spell/ability resolves unless *every* target is illegal. (Returns true if
@@ -2682,7 +2683,7 @@ mod expect_tests {
                 spec: TokenSpec {
                     name: "Bird".into(),
                     card_types: vec![CardType::Creature],
-                    subtypes: vec!["Bird".into()],
+                    subtypes: vec![crate::subtypes::CreatureType::Bird.into()],
                     colors: vec![Color::White],
                     power: 1,
                     toughness: 1,
@@ -2776,7 +2777,7 @@ mod expect_tests {
                 zone: Zone::Library,
                 filter: CardFilter::All(vec![
                     CardFilter::HasCardType(CardType::Land),
-                    CardFilter::Supertype("Basic".into()),
+                    CardFilter::Supertype(crate::subtypes::Supertype::Basic),
                 ]),
                 min: 1,
                 max: 1,
@@ -2967,7 +2968,7 @@ mod expect_tests {
             chars: Characteristics {
                 name: "Landfall Bird".into(),
                 card_types: vec![CardType::Creature],
-                subtypes: vec!["Bird".into()],
+                subtypes: vec![crate::subtypes::CreatureType::Bird.into()],
                 colors: vec![Color::Green],
                 power: Some(0),
                 toughness: Some(1),
@@ -3086,7 +3087,7 @@ mod expect_tests {
             chars: Characteristics {
                 name: "Test Fog".into(),
                 card_types: vec![CardType::Creature],
-                subtypes: vec!["Wall".into()],
+                subtypes: vec![crate::subtypes::CreatureType::Wall.into()],
                 colors: vec![Color::Blue],
                 power: Some(0),
                 toughness: Some(2),
@@ -3109,7 +3110,7 @@ mod expect_tests {
             chars: Characteristics {
                 name: "Test Scaler".into(),
                 card_types: vec![CardType::Creature],
-                subtypes: vec!["Test".into()],
+                subtypes: vec![], // synthetic stand-in; subtype irrelevant to the replacement-pass test
                 colors: vec![Color::Green],
                 mana_cost: Some(cards::mana_cost(0, &[(Color::Green, 1)])),
                 power: Some(0),
@@ -3141,7 +3142,7 @@ mod expect_tests {
             chars: Characteristics {
                 name: "Test Aura".into(),
                 card_types: vec![CardType::Enchantment],
-                subtypes: vec!["Aura".into()],
+                subtypes: vec![crate::subtypes::EnchantmentType::Aura.into()],
                 colors: vec![Color::Green],
                 mana_cost: Some(cards::mana_cost(0, &[(Color::Green, 1)])),
                 grp_id: synth::TRAMPLE_AURA,

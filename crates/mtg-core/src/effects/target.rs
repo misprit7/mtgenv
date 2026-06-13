@@ -6,6 +6,7 @@
 
 use super::value::{PlayerRef, ValueExpr};
 use crate::basics::{CardType, Color, CounterKind, Zone};
+use crate::subtypes::{Subtype, Supertype};
 use serde::{Deserialize, Serialize};
 
 /// What kind of thing a "target" word accepts (CR 115). The engine turns this + a `CardFilter`
@@ -61,10 +62,10 @@ pub enum CardFilter {
     /// Negation.
     Not(Box<CardFilter>),
     HasCardType(CardType),
-    HasSubtype(String),
-    /// Matches a supertype on the object (CR 205.4) — `"Basic"`, `"Legendary"`, `"Snow"`, …
-    /// e.g. a basic land = `All([HasCardType(Land), Supertype("Basic".into())])`.
-    Supertype(String),
+    HasSubtype(Subtype),
+    /// Matches a supertype on the object (CR 205.4) — `Basic`, `Legendary`, `Snow`, …
+    /// e.g. a basic land = `All([HasCardType(Land), Supertype(Supertype::Basic)])`.
+    Supertype(Supertype),
     HasColor(Color),
     Colorless,
     /// Mana value within `[min, max]` (inclusive); `None` = unbounded.
@@ -106,7 +107,7 @@ pub struct ManaSpec {
 pub struct TokenSpec {
     pub name: String,
     pub card_types: Vec<CardType>,
-    pub subtypes: Vec<String>,
+    pub subtypes: Vec<Subtype>,
     pub colors: Vec<Color>,
     pub power: i32,
     pub toughness: i32,

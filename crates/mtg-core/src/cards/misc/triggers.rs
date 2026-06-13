@@ -7,13 +7,14 @@ use crate::effects::ability::{Ability, ActionPattern, EventPattern, Rewrite};
 use crate::effects::target::{CardFilter, TargetKind, TargetSpec};
 use crate::effects::value::{PlayerRef, ValueExpr};
 use crate::effects::{Effect, EffectTarget};
+use crate::subtypes::CreatureType;
 
 pub fn register(db: &mut CardDb) {
     // Elvish Visionary {1}{G} 1/1 — "When this creature enters, draw a card." (ETB trigger.)
-    db.insert(creature(
+    let mut visionary = creature(
         grp::ELVISH_VISIONARY,
         "Elvish Visionary",
-        "Elf Shaman",
+        CreatureType::Elf,
         Color::Green,
         mana_cost(1, &[(Color::Green, 1)]),
         1,
@@ -27,13 +28,15 @@ pub fn register(db: &mut CardDb) {
                 count: ValueExpr::Fixed(1),
             },
         }],
-    ).with_text("When this creature enters, draw a card."));
+    );
+    visionary.chars.subtypes = vec![CreatureType::Elf.into(), CreatureType::Shaman.into()];
+    db.insert(visionary.with_text("When this creature enters, draw a card."));
     // Flametongue Kavu {3}{R} 4/2 — "When this creature enters, it deals 4 damage to target
     // creature." (ETB trigger that targets — chosen as it goes on the stack, CR 603.3d.)
     db.insert(creature(
         grp::FLAMETONGUE_KAVU,
         "Flametongue Kavu",
-        "Kavu",
+        CreatureType::Kavu,
         Color::Red,
         mana_cost(3, &[(Color::Red, 1)]),
         4,
@@ -55,10 +58,10 @@ pub fn register(db: &mut CardDb) {
         }],
     ).with_text("When this creature enters, it deals 4 damage to target creature."));
     // Exultant Cultist {2}{U} 2/2 — "When this creature dies, draw a card." (dies/LTB trigger.)
-    db.insert(creature(
+    let mut cultist = creature(
         grp::EXULTANT_CULTIST,
         "Exultant Cultist",
-        "Human Wizard",
+        CreatureType::Human,
         Color::Blue,
         mana_cost(2, &[(Color::Blue, 1)]),
         2,
@@ -72,7 +75,9 @@ pub fn register(db: &mut CardDb) {
                 count: ValueExpr::Fixed(1),
             },
         }],
-    ).with_text("When this creature dies, draw a card."));
+    );
+    cultist.chars.subtypes = vec![CreatureType::Human.into(), CreatureType::Wizard.into()];
+    db.insert(cultist.with_text("When this creature dies, draw a card."));
     // Root Maze {G} Enchantment — "Artifacts and lands enter tapped." (GLOBAL replacement,
     // affects all players' artifacts/lands.)
     db.insert(enchantment(

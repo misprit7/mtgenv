@@ -7,6 +7,7 @@
 use crate::basics::{Color, CounterKind};
 use crate::cards::helpers::land_you_control;
 use crate::cards::{creature, mana_cost, CardDb};
+use crate::subtypes::CreatureType;
 use crate::effects::ability::{Ability, EventPattern};
 use crate::effects::value::ValueExpr;
 use crate::effects::{Effect, EffectTarget};
@@ -19,7 +20,7 @@ pub fn register(db: &mut CardDb) {
         creature(
             SAZHS_CHOCOBO,
             "Sazh's Chocobo",
-            "Bird",
+            CreatureType::Bird,
             Color::Green,
             mana_cost(0, &[(Color::Green, 1)]),
             0,
@@ -51,7 +52,7 @@ mod tests {
         let def = db.get(SAZHS_CHOCOBO).unwrap();
         assert_eq!(def.chars.power, Some(0));
         assert_eq!(def.chars.toughness, Some(1));
-        assert_eq!(def.chars.subtypes, vec!["Bird".to_string()]);
+        assert_eq!(def.chars.subtypes, vec![CreatureType::Bird.into()]);
         assert!(!def.is_mana_source());
         expect![[r#"
             [

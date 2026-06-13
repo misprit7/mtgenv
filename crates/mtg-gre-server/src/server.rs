@@ -127,8 +127,10 @@ pub(crate) fn decklist_for(state: &GameState, seat: PlayerId) -> Vec<DeckEntry> 
                     mana_cost: c.mana_cost.clone(),
                     colors: c.colors.clone(),
                     card_types: c.card_types.clone(),
-                    subtypes: c.subtypes.clone(),
-                    supertypes: c.supertypes.clone(),
+                    // Subtypes/supertypes are now enums (CR 205.3/4); render to their canonical
+                    // type-line strings for this string-typed deck view (wire stays unchanged).
+                    subtypes: c.subtypes.iter().map(|s| s.to_string()).collect(),
+                    supertypes: c.supertypes.iter().map(|s| s.to_string()).collect(),
                     mana_value,
                 },
             )
