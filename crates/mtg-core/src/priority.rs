@@ -32,6 +32,27 @@ use crate::turn::{is_main_phase, step_grants_priority, TURN_STEPS};
 /// ends the game as a draw.
 const MAX_TURNS: u32 = 2000;
 
+/// Why the game ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EndReason {
+    /// A player reached 0 or less life (CR 704.5a).
+    ZeroLife,
+    /// A player drew from an empty library (CR 704.5b).
+    Decked,
+    /// A player had ten or more poison counters (CR 704.5c).
+    Poison,
+    /// No winner: a draw, or the turn-cap was reached.
+    DrawOrCapped,
+}
+
+/// The result of a finished game (a convenience read of the final state).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Outcome {
+    pub winner: Option<PlayerId>,
+    pub turns: u32,
+    pub reason: EndReason,
+}
+
 /// The engine: full [`GameState`] plus one [`Agent`] per seat (indexed by `PlayerId.0`).
 /// All player choices flow through the agents; nothing else asks a player anything.
 pub struct Engine {
@@ -64,6 +85,36 @@ impl Engine {
     /// Enable recording of broadcast events into [`Engine::event_log`] (for tracing/tests).
     pub fn record_events(&mut self, on: bool) {
         self.record_events = on;
+    }
+
+    /// Skip the pre-game opening-hand deal: a later `run_game`/`start_game` will not shuffle
+    /// or draw. Use this to play from a hand-built scenario (exact hands/board/libraries)
+    /// without decking out on an empty library. (webui's scenario CLI / expect-tests.)
+    pub fn skip_opening_deal(&mut self) {
+        self.started = true;
+    }
+
+    /// The result of the game so far (meaningful once `game_over`). A convenience over
+    /// reading `engine.state` directly.
+    pub fn outcome(&self) -> Outcome {
+        let reason = match self.state.end_reason {
+            Some(crate::sba::LossReason::ZeroOrLessLife) => EndReason::ZeroLife,
+            Some(crate::sba::LossReason::DrewFromEmptyLibrary) => EndReason::Decked,
+            Some(crate::sba::LossReason::TenPoison) => EndReason::Poison,
+            None => EndReason::DrawOrCapped,
+        };
+        Outcome {
+            winner: self.state.winner,
+            turns: self.state.turn_number,
+            reason,
+        }
+    }
+
+    /// The legal actions a player could take if they had priority right now (cast/play-land),
+    /// already masked by the engine. Public so a UI can pre-render the options before a
+    /// `Priority` decision arrives; the same list is delivered in the `Priority` request.
+    pub fn legal_actions(&self, p: PlayerId) -> Vec<PlayableAction> {
+        self.legal_priority_actions(p)
     }
 
     // ── top-level driver ────────────────────────────────────────────────────────────────
@@ -636,6 +687,10 @@ impl Engine {
                     if *reason == LossReason::DrewFromEmptyLibrary {
                         pl.drew_from_empty = false;
                     }
+                    // Record the first loss reason for the game's Outcome.
+                    if self.state.end_reason.is_none() {
+                        self.state.end_reason = Some(*reason);
+                    }
                 }
                 StateBasedAction::CreatureDies { creature, .. } => {
                     let owner = match self.state.objects.get(creature) {
@@ -956,6 +1011,36 @@ mod tests {
                 "≤1 survivor (seed {seed})"
             );
         }
+    }
+
+    #[test]
+    fn skip_opening_deal_leaves_a_built_scenario_untouched() {
+        // The scenario hook (webui): no shuffle, no opening draw, so an exact hand/board can
+        // be placed without decking out.
+        let state = crate::cards::two_player_demo_game(1);
+        let mut engine = Engine::new(
+            state,
+            vec![Box::new(RandomAgent::new(1)), Box::new(RandomAgent::new(2))],
+        );
+        engine.skip_opening_deal();
+        engine.start_game(); // no-op now
+        assert!(engine.state.player(PlayerId(0)).hand.is_empty(), "no opening deal");
+        assert_eq!(
+            engine.state.player(PlayerId(0)).library.len(),
+            30,
+            "library untouched (no shuffle/draw)"
+        );
+    }
+
+    #[test]
+    fn outcome_reports_winner_and_reason() {
+        let mut engine = lands_only_game(12, 5);
+        engine.start_game();
+        engine.state.player_mut(PlayerId(1)).life = 0;
+        engine.run_agenda();
+        let outcome = engine.outcome();
+        assert_eq!(outcome.winner, Some(PlayerId(0)));
+        assert_eq!(outcome.reason, super::EndReason::ZeroLife);
     }
 }
 

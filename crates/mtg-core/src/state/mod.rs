@@ -178,6 +178,9 @@ pub struct GameState {
     pub combat: Option<CombatState>,
     pub game_over: bool,
     pub winner: Option<PlayerId>,
+    /// Why the game ended (the loss reason of the first player to lose), or `None` while the
+    /// game is in progress or if it ended by draw / turn-cap.
+    pub end_reason: Option<crate::sba::LossReason>,
     pub rng: Rng,
     /// The card definitions (abilities = Effect IR) for cards in this game. Card *data*, not
     /// snapshot state: shared via `Arc` (clone is O(1)) and **not serialized** (a snapshot
@@ -208,6 +211,7 @@ impl GameState {
             combat: None,
             game_over: false,
             winner: None,
+            end_reason: None,
             rng: Rng::new(seed),
             card_db: Arc::new(CardDb::default()),
             next_obj: 1,

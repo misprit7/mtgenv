@@ -9,12 +9,15 @@
 //! returned actions "simultaneously as a single event" (704.3) and repeats until none
 //! apply.
 
+use serde::{Deserialize, Serialize};
+
 use crate::basics::Zone;
 use crate::ids::{ObjId, PlayerId};
 use crate::state::GameState;
 
-/// Why a player loses the game (CR 704.5a–c).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Why a player loses the game (CR 704.5a–c). Serde-able because the engine records the
+/// game's ending reason in `GameState` for the `Outcome` (a snapshot field).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum LossReason {
     /// 704.5a — life total 0 or less.
     ZeroOrLessLife,
