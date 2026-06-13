@@ -83,10 +83,13 @@ async fn ws_handler(
     let p0 = params.get("p0").cloned();
     let p1 = params.get("p1").cloned();
     let truthy = |v: &str| v == "1" || v.eq_ignore_ascii_case("on") || v.eq_ignore_ascii_case("true");
+    let flag = |key: &str, dflt: bool| params.get(key).map(|v| truthy(v)).unwrap_or(dflt);
     let stops = driver::Stops {
-        // Auto-pass on by default for human play; ?autopass=0 opts into every-window prompting.
-        auto_pass: params.get("autopass").map(|v| truthy(v)).unwrap_or(true),
-        full_control: params.get("fullcontrol").map(|v| truthy(v)).unwrap_or(false),
+        // MTGA defaults for human play; ?autopass=0 opts into every-window prompting.
+        auto_pass: flag("autopass", true),
+        full_control: flag("fullcontrol", false),
+        smart_stops: flag("smartstops", true),
+        resolve_own_stack: flag("resolvestack", true),
         overrides: Vec::new(),
     };
     ws.on_upgrade(move |socket| handle_socket(socket, p0, p1, stops))

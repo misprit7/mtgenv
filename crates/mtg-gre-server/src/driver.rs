@@ -32,22 +32,34 @@ pub struct Stops {
     pub auto_pass: bool,
     /// Stop at every priority window (overrides the default stops).
     pub full_control: bool,
+    /// SmartStops (MTGA default ON): stop at any step where you have a legal play.
+    pub smart_stops: bool,
+    /// ResolveMyStackEffects (MTGA default ON): auto-pass while your own object is on top of the
+    /// stack (don't re-prompt to respond to yourself).
+    pub resolve_own_stack: bool,
     /// Per-step overrides of the Arena defaults (`true` = always stop here, `false` = never).
     pub overrides: Vec<(Phase, bool)>,
 }
 
 impl Default for Stops {
     fn default() -> Self {
-        // Human play: Arena auto-pass on, default stops (own MP1/MP2, your attackers, defending
-        // blockers). The user can change these via the CLI `stops` commands / web toggles.
-        Stops { auto_pass: true, full_control: false, overrides: Vec::new() }
+        // Human play, MTGA defaults: auto-pass on, SmartStops on, resolve-own-stack on, default
+        // persistent stops = your two main phases only (declare-attackers/blockers are forced
+        // turn-based decisions, always presented anyway — not priority stops).
+        Stops {
+            auto_pass: true,
+            full_control: false,
+            smart_stops: true,
+            resolve_own_stack: true,
+            overrides: Vec::new(),
+        }
     }
 }
 
 impl Stops {
     /// Paper Comprehensive-Rules: prompt at every priority window (auto-pass off).
     pub fn full_control() -> Self {
-        Stops { auto_pass: false, full_control: false, overrides: Vec::new() }
+        Stops { auto_pass: false, ..Default::default() }
     }
 }
 
@@ -56,6 +68,8 @@ pub fn apply_stops(engine: &mut Engine, stops: &Stops, human_seats: &[PlayerId])
     engine.set_arena_auto_pass(stops.auto_pass);
     for &p in human_seats {
         engine.set_full_control(p, stops.full_control);
+        engine.set_smart_stops(p, stops.smart_stops);
+        engine.set_resolve_own_stack(p, stops.resolve_own_stack);
         for &(step, val) in &stops.overrides {
             engine.set_stop(p, step, Some(val));
         }

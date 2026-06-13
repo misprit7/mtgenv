@@ -20,15 +20,21 @@ fetch("/card-art.json").then((r) => r.json()).then((m) => { artMap = m; render()
 
 const params = new URLSearchParams(location.search);
 $("decks").textContent = `P0=${params.get("p0") || "demo"} · P1=${params.get("p1") || "demo"}`;
-// MTGA-style stops: auto-pass on by default; toggle links start a new game with the new setting.
+// MTGA-style stops: toggle links start a new game with the new setting (live mid-game toggling
+// is Phase 2). Defaults match MTGA: auto-pass/smart/resolve on, full-control off.
 {
-  const ap = params.get("autopass") !== "0";
-  const fc = ["1", "on", "true"].includes((params.get("fullcontrol") || "").toLowerCase());
+  const on = (key: string, dflt: boolean): boolean => {
+    const v = params.get(key); return v == null ? dflt : ["1", "on", "true"].includes(v.toLowerCase());
+  };
   const link = (label: string, key: string, cur: boolean): string => {
     const p = new URLSearchParams(location.search); p.set(key, cur ? "0" : "1");
     return `<a href="?${p.toString()}">${label}: ${cur ? "on" : "off"}</a>`;
   };
-  $("stops").innerHTML = `stops: ${link("auto-pass", "autopass", ap)} · ${link("full-control", "fullcontrol", fc)}`;
+  $("stops").innerHTML = "stops: " +
+    `${link("auto-pass", "autopass", on("autopass", true))} · ` +
+    `${link("smart", "smartstops", on("smartstops", true))} · ` +
+    `${link("full-ctrl", "fullcontrol", on("fullcontrol", false))} · ` +
+    `${link("resolve-stack", "resolvestack", on("resolvestack", true))}`;
 }
 
 const wsProto = location.protocol === "https:" ? "wss://" : "ws://";
