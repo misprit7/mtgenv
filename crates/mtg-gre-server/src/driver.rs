@@ -41,24 +41,32 @@ pub struct Stops {
     /// ResolveMyStackEffects (MTGA default ON): auto-pass while your own object is on top of the
     /// stack (don't re-prompt to respond to yourself).
     pub resolve_own_stack: bool,
-    /// Per-step overrides of the Arena defaults (`true` = always stop here, `false` = never).
-    pub overrides: Vec<(Phase, bool)>,
+    /// Per-`(step, own_turn)` overrides of the Arena defaults (`own_turn` = the seat's own turn;
+    /// `true` = always stop here, `false` = never). Applied at session start over the engine's
+    /// `arena_default_stop`.
+    pub overrides: Vec<(Phase, bool, bool)>,
 }
 
 impl Default for Stops {
     fn default() -> Self {
-        // Human play: auto-pass on, resolve-own-stack on, default persistent stops = your two main
-        // phases only. SmartStops is OFF by default here (diverges from MTGA's on-by-default): users
-        // found "stop at every step where I *could* cast something" (e.g. holding a Shock with red
-        // mana open) far too chatty — they want priority only at steps they've actually marked. Flip
-        // it back on with the "smart" toggle. (declare-attackers/blockers are forced turn-based
-        // decisions, always presented anyway — not priority stops.)
+        // Human play: auto-pass on, resolve-own-stack on. SmartStops is OFF by default here
+        // (diverges from MTGA's on-by-default): users found "stop at every step where I *could* cast
+        // something" (e.g. holding a Shock with red mana open) far too chatty — they want priority
+        // only at steps they've actually marked. Flip it back on with the "smart" toggle.
+        //
+        // Default stop set = your Main 1 + Main 2 (from the engine's Arena default, own-turn only)
+        // PLUS the opponent's Beginning of Combat + End step (seeded here) — the classic instant-
+        // speed windows you want to act in on their turn. Everything else is off both sides.
+        // (declare-attackers/blockers are forced turn-based decisions, presented anyway.)
         Stops {
             auto_pass: true,
             full_control: false,
             smart_stops: false,
             resolve_own_stack: true,
-            overrides: Vec::new(),
+            overrides: vec![
+                (Phase::BeginCombat, false, true), // opponent's beginning of combat
+                (Phase::End, false, true),         // opponent's end step
+            ],
         }
     }
 }
@@ -82,8 +90,8 @@ pub fn apply_stops(engine: &mut Engine, stops: &Stops, human_seats: &[PlayerId])
         engine.set_full_control(p, stops.full_control);
         engine.set_smart_stops(p, stops.smart_stops);
         engine.set_resolve_own_stack(p, stops.resolve_own_stack);
-        for &(step, val) in &stops.overrides {
-            engine.set_stop(p, step, Some(val));
+        for &(step, own, on) in &stops.overrides {
+            engine.set_stop_side(p, step, own, Some(on));
         }
     }
 }
@@ -161,11 +169,10 @@ pub fn engine_with_stops(
         c.full_control = stops.full_control;
         c.smart_stops = stops.smart_stops;
         c.resolve_own_stack = stops.resolve_own_stack;
-        // `Stops.overrides` is a both-sides carrier (the web path seeds none — the user toggles
-        // per side live); apply each to both turn sides of the engine's per-`(step, own_turn)` map.
-        for &(step, on) in &stops.overrides {
-            c.set_override(step, true, Some(on));
-            c.set_override(step, false, Some(on));
+        // Seed the per-`(step, own_turn)` stop overrides (default set + any URL overrides). The user
+        // then toggles individual sides live (`SetStop`), which mutate this same shared config.
+        for &(step, own, on) in &stops.overrides {
+            c.set_override(step, own, Some(on));
         }
     }
     (engine, handle)

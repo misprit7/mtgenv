@@ -157,22 +157,29 @@ async fn ws_handler(
     let p1 = params.get("p1").cloned();
     let truthy = |v: &str| v == "1" || v.eq_ignore_ascii_case("on") || v.eq_ignore_ascii_case("true");
     let flag = |key: &str, dflt: bool| params.get(key).map(|v| truthy(v)).unwrap_or(dflt);
-    // `?stops=PrecombatMain:1,Upkeep:0` — per-step stop overrides (Phase names = serde variants).
-    let overrides: Vec<(Phase, bool)> = params
-        .get("stops")
-        .map(|s| {
-            s.split(',')
-                .filter_map(|tok| {
-                    let (name, val) = tok.split_once(':')?;
-                    let phase: Phase = serde_json::from_str(&format!("\"{name}\"")).ok()?;
-                    Some((phase, val != "0"))
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-    // Defaults come from `Stops::default()` (single source of truth — incl. SmartStops OFF); query
-    // params override per-flag, e.g. ?autopass=0 prompts every window, ?smartstops=1 re-enables it.
+    // Defaults come from `Stops::default()` (single source of truth — SmartStops OFF + the default
+    // stop set: your Main 1/2 and the opponent's Begin-Combat/End). Query params override per-flag,
+    // e.g. ?autopass=0 prompts every window, ?smartstops=1 re-enables it.
     let def = driver::Stops::default();
+    // `?stops=PrecombatMain:1,BeginCombat@opp:0` — per-step stop overrides layered on the defaults.
+    // A bare `Name:val` sets BOTH turn sides; `Name@you:val` / `Name@opp:val` sets one side only.
+    let mut overrides = def.overrides.clone();
+    if let Some(s) = params.get("stops") {
+        for tok in s.split(',') {
+            let Some((lhs, val)) = tok.split_once(':') else { continue };
+            let on = val != "0";
+            let (name, side) = match lhs.split_once('@') {
+                Some((n, "you")) => (n, Some(true)),
+                Some((n, "opp")) => (n, Some(false)),
+                _ => (lhs, None),
+            };
+            let Ok(phase) = serde_json::from_str::<Phase>(&format!("\"{name}\"")) else { continue };
+            match side {
+                Some(o) => overrides.push((phase, o, on)),
+                None => overrides.extend([(phase, true, on), (phase, false, on)]),
+            }
+        }
+    }
     let stops = driver::Stops {
         auto_pass: flag("autopass", def.auto_pass),
         full_control: flag("fullcontrol", def.full_control),

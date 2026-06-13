@@ -397,10 +397,11 @@ Lines starting with '#' are comments. At a decision prompt: an index, 'p'/Enter 
         let Some(step) = parse_step(step_s) else {
             return self.say(&format!("unknown step '{step_s}' (mp1|mp2|upkeep|draw|attackers|blockers|begincombat|combatdamage|endcombat|end|cleanup|untap)"));
         };
-        self.stops.overrides.retain(|(s, _)| *s != step);
+        // The CLI `stop` command toggles BOTH turn sides of a step (the web UI does per-side live).
+        self.stops.overrides.retain(|(s, _, _)| *s != step);
         match *val_s {
-            "on" | "always" => { self.stops.overrides.push((step, true)); self.say(&format!("stop at {step:?}: always")); }
-            "off" | "never" => { self.stops.overrides.push((step, false)); self.say(&format!("stop at {step:?}: never")); }
+            "on" | "always" => { self.stops.overrides.extend([(step, true, true), (step, false, true)]); self.say(&format!("stop at {step:?}: always")); }
+            "off" | "never" => { self.stops.overrides.extend([(step, true, false), (step, false, false)]); self.say(&format!("stop at {step:?}: never")); }
             "default" => self.say(&format!("stop at {step:?}: Arena default")),
             _ => self.say("usage: stop <step> on|off|default"),
         }
@@ -413,14 +414,14 @@ Lines starting with '#' are comments. At a decision prompt: an index, 'p'/Enter 
         out += &format!("  smart stops:   {}\n", if s.smart_stops { "on (stop where you have a play)" } else { "off" });
         out += &format!("  full control:  {}\n", if s.full_control { "on (stop everywhere)" } else { "off" });
         out += &format!("  resolve stack: {}\n", if s.resolve_own_stack { "on (auto-pass your own stack)" } else { "off (respond to self)" });
-        out += "  default stops: precombat-main, postcombat-main (your two main phases)\n";
+        out += "  default stops: your main 1 + main 2, opponent's begin-combat + end step\n";
         out += "  (declare-attackers/blockers are always presented as forced decisions)\n";
         if s.overrides.is_empty() {
             out += "  overrides:     (none)";
         } else {
             out.push_str("  overrides:    ");
-            for (st, v) in &s.overrides {
-                out += &format!(" {st:?}={}", if *v { "always" } else { "never" });
+            for (st, own, v) in &s.overrides {
+                out += &format!(" {st:?}@{}={}", if *own { "you" } else { "opp" }, if *v { "always" } else { "never" });
             }
         }
         self.say(&out);
