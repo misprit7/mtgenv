@@ -1551,16 +1551,26 @@ impl Engine {
     /// they go on the stack the next time a player would get priority (the agenda loop drains
     /// `pending_triggers`). Milestone-4 prototype handles `SelfEnters` and `SelfDies`.
     fn collect_triggers(&mut self, ev: &GameEvent) {
-        // Map the event to the object whose own triggers might fire, and the pattern.
-        let (subject, want): (ObjId, EventPattern) = match ev {
-            GameEvent::ObjectMoved { obj, to: Zone::Battlefield } => (*obj, EventPattern::SelfEnters),
-            GameEvent::PermanentDied { obj } => (*obj, EventPattern::SelfDies),
-            _ => return,
-        };
+        match ev {
+            GameEvent::ObjectMoved { obj, to: Zone::Battlefield } => {
+                // The entering object's own ETB triggers (CR 603.6a)…
+                self.queue_self_triggers(*obj, EventPattern::SelfEnters);
+                // …plus every other permanent watching "a [filter] enters" (CR 603.2), e.g.
+                // landfall = PermanentEnters(a land you control). C4.
+                self.queue_watching_enters_triggers(*obj);
+            }
+            GameEvent::PermanentDied { obj } => {
+                self.queue_self_triggers(*obj, EventPattern::SelfDies);
+            }
+            _ => {}
+        }
+    }
+
+    /// Queue `subject`'s own triggered abilities matching `want` (the Self* patterns).
+    fn queue_self_triggers(&mut self, subject: ObjId, want: EventPattern) {
         let Some(def) = self.state.def_of(subject) else {
             return;
         };
-        // Indices of this object's triggered abilities matching the event.
         let matches: Vec<u32> = def
             .abilities
             .iter()
@@ -1581,6 +1591,79 @@ impl Engine {
                 kind: StackObjectKind::Ability { index },
                 targets: Vec::new(),
             });
+        }
+    }
+
+    /// Queue every battlefield permanent's `PermanentEnters(filter)` trigger that matches the
+    /// just-entered object (CR 603.2). The filter is evaluated relative to the WATCHER's
+    /// controller, so "a land you control enters" (landfall) means the watcher's controller.
+    fn queue_watching_enters_triggers(&mut self, entered: ObjId) {
+        let watchers: Vec<ObjId> = self
+            .state
+            .players
+            .iter()
+            .flat_map(|p| p.battlefield.iter().copied())
+            .collect();
+        for watcher in watchers {
+            let wctrl = self.state.object(watcher).controller;
+            // Clone the (index, filter) of this watcher's PermanentEnters triggers so the `def`
+            // borrow is released before we mutate `pending_triggers`.
+            let candidates: Vec<(u32, CardFilter)> = match self.state.def_of(watcher) {
+                Some(def) => def
+                    .abilities
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, a)| match a {
+                        Ability::Triggered { event: EventPattern::PermanentEnters(f), .. } => {
+                            Some((i as u32, f.clone()))
+                        }
+                        _ => None,
+                    })
+                    .collect(),
+                None => continue,
+            };
+            for (index, filter) in candidates {
+                if self.enter_filter_matches(entered, &filter, wctrl) {
+                    let id = self.state.mint_stack();
+                    self.state.pending_triggers.push(StackObject {
+                        id,
+                        controller: wctrl,
+                        source: Some(watcher),
+                        kind: StackObjectKind::Ability { index },
+                        targets: Vec::new(),
+                    });
+                }
+            }
+        }
+    }
+
+    /// Whether the just-entered object matches a `PermanentEnters` filter, with `ControlledBy`
+    /// resolved against the watching permanent's controller (`watcher_controller`).
+    fn enter_filter_matches(&self, obj: ObjId, filter: &CardFilter, watcher_controller: PlayerId) -> bool {
+        let cc = self.state.computed(obj);
+        match filter {
+            CardFilter::Any => true,
+            CardFilter::HasCardType(t) => cc.card_types.contains(t),
+            CardFilter::HasSubtype(s) => cc.subtypes.contains(s),
+            CardFilter::HasColor(c) => cc.colors.contains(c),
+            CardFilter::Colorless => cc.colors.is_empty(),
+            CardFilter::ControlledBy(pref) => {
+                let want = match pref {
+                    PlayerRef::Opponent | PlayerRef::EachOpponent => self
+                        .state
+                        .players
+                        .iter()
+                        .map(|p| p.id)
+                        .find(|&q| q != watcher_controller)
+                        .unwrap_or(watcher_controller),
+                    _ => watcher_controller, // Controller / Owner
+                };
+                self.state.objects.get(&obj).map(|o| o.controller) == Some(want)
+            }
+            CardFilter::All(fs) => fs.iter().all(|f| self.enter_filter_matches(obj, f, watcher_controller)),
+            CardFilter::AnyOf(fs) => fs.iter().any(|f| self.enter_filter_matches(obj, f, watcher_controller)),
+            CardFilter::Not(f) => !self.enter_filter_matches(obj, f, watcher_controller),
+            _ => false,
         }
     }
 }
@@ -2572,6 +2655,62 @@ mod expect_tests {
             WbReason::Resolve(crate::ids::StackId(0)),
         );
         assert_eq!(e.state.player(PlayerId(1)).life, 17, "3 lands you control → 3 damage");
+    }
+
+    #[test]
+    fn landfall_triggers_when_a_land_you_control_enters_c4() {
+        // C4: a "whenever a land you control enters" trigger (modeled as PermanentEnters of a land
+        // you control) fires when you play a land — here, putting a +1/+1 counter on the source.
+        use crate::basics::{CardType, Color, CounterKind};
+        use crate::effects::ability::{Ability, EventPattern};
+        use crate::effects::target::CardFilter;
+        use crate::effects::value::{PlayerRef, ValueExpr};
+        use crate::effects::{Effect, EffectTarget};
+        use std::sync::Arc;
+        let mut db = cards::starter_db();
+        db.insert(cards::CardDef {
+            chars: Characteristics {
+                name: "Landfall Bird".into(),
+                card_types: vec![CardType::Creature],
+                subtypes: vec!["Bird".into()],
+                colors: vec![Color::Green],
+                power: Some(0),
+                toughness: Some(1),
+                grp_id: 9100,
+                ..Default::default()
+            },
+            abilities: vec![Ability::Triggered {
+                event: EventPattern::PermanentEnters(CardFilter::All(vec![
+                    CardFilter::HasCardType(CardType::Land),
+                    CardFilter::ControlledBy(PlayerRef::Controller),
+                ])),
+                condition: None,
+                intervening_if: false,
+                effect: Effect::PutCounters {
+                    what: EffectTarget::SourceSelf,
+                    kind: CounterKind::PlusOnePlusOne,
+                    n: ValueExpr::Fixed(1),
+                },
+            }],
+            mana_colors: Vec::new(),
+            text: String::new(),
+        });
+        let mut state = GameState::new(2, 1);
+        state.set_card_db(Arc::new(db));
+        let bird_chars = state.card_db().get(9100).unwrap().chars.clone();
+        let bird = state.add_card(PlayerId(0), bird_chars, Zone::Battlefield);
+        let forest_chars = state.card_db().get(grp::FOREST).unwrap().chars.clone();
+        state.add_card(PlayerId(0), forest_chars, Zone::Hand);
+        state.active_player = PlayerId(0);
+        state.phase = Phase::PrecombatMain;
+        let mut e = Engine::new(state, vec![Box::new(AggroAgent), Box::new(PassAgent)]);
+        e.priority_round(); // P0 plays the land → landfall trigger → counter
+
+        assert_eq!(
+            e.state.object(bird).counters.get(&CounterKind::PlusOnePlusOne),
+            1,
+            "playing a land you control fired landfall (a +1/+1 counter)"
+        );
     }
 
     /// Put a card (by grp_id) directly into a player's zone, returning its id.
