@@ -23,7 +23,10 @@ let artMap: Any = {};
 fetch("/card-art.json").then((r) => r.json()).then((m) => { artMap = m; render(); }).catch(() => {});
 
 const params = new URLSearchParams(location.search);
-$("decks").textContent = `P0=${params.get("p0") || "demo"} · P1=${params.get("p1") || "demo"}`;
+const gameId = params.get("game");
+$("decks").textContent = gameId
+  ? `Game #${gameId} · you are Player ${params.get("seat") || "0"}`
+  : `P0=${params.get("p0") || "demo"} · P1=${params.get("p1") || "demo"}`;
 // Stops control (top bar): LIVE toggles — send setOption; the server echoes the new config and
 // the running game's agent honours it at the next window (no reset). Rendered from stopsView.
 const OPT: Array<[string, string, string]> = [
