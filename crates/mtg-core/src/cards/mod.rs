@@ -257,6 +257,32 @@ pub fn starter_db() -> CardDb {
             },
         }],
     ));
+    // Flametongue Kavu {3}{R} 4/2 — "When this creature enters, it deals 4 damage to target
+    // creature." (ETB trigger that targets — chosen as it goes on the stack, CR 603.3d.)
+    db.insert(creature(
+        grp::FLAMETONGUE_KAVU,
+        "Flametongue Kavu",
+        "Kavu",
+        Color::Red,
+        mana_cost(3, &[(Color::Red, 1)]),
+        4,
+        2,
+        vec![Ability::Triggered {
+            event: EventPattern::SelfEnters,
+            condition: None,
+            intervening_if: false,
+            effect: Effect::DealDamage {
+                amount: ValueExpr::Fixed(4),
+                to: EffectTarget::Target(TargetSpec {
+                    kind: TargetKind::Creature(crate::effects::target::CardFilter::Any),
+                    min: 1,
+                    max: 1,
+                    distinct: true,
+                }),
+                kind: DamageKind::Noncombat,
+            },
+        }],
+    ));
     db
 }
 
@@ -339,7 +365,7 @@ mod tests {
     #[test]
     fn starter_db_has_expected_cards() {
         let db = starter_db();
-        assert_eq!(db.len(), 11);
+        assert_eq!(db.len(), 12);
         assert!(db.get(grp::FOREST).unwrap().is_mana_source());
         assert_eq!(db.get(grp::FOREST).unwrap().mana_colors, vec![Color::Green]);
         // Grizzly Bears is a vanilla 2/2 with no abilities.

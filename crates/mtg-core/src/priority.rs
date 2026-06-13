@@ -681,7 +681,7 @@ impl Engine {
             let triggers = self.drain_pending_triggers();
             if !triggers.is_empty() {
                 for t in triggers {
-                    self.state.stack.push(t);
+                    self.put_trigger_on_stack(t);
                 }
                 continue;
             }
@@ -730,6 +730,46 @@ impl Engine {
             }
         }
         self.check_game_end();
+    }
+
+    /// Put a triggered ability on the stack, choosing its targets now if it targets
+    /// (CR 603.3d). A trigger that requires a target but has none is removed (not put on the
+    /// stack, CR 603.3c).
+    fn put_trigger_on_stack(&mut self, mut t: StackObject) {
+        let effect = match (t.source, &t.kind) {
+            (Some(src), StackObjectKind::Ability { index }) => {
+                self.state.def_of(src).and_then(|d| match d.abilities.get(*index as usize) {
+                    Some(Ability::Triggered { effect, .. }) => Some(effect.clone()),
+                    _ => None,
+                })
+            }
+            _ => None,
+        };
+        if let Some(effect) = effect {
+            let specs = collect_target_specs(&effect);
+            if !specs.is_empty() {
+                let slots: Vec<TargetSlot> = specs
+                    .iter()
+                    .map(|spec| TargetSlot {
+                        description: String::new(),
+                        legal: self.target_candidates(spec, t.controller),
+                        min: spec.min,
+                        max: spec.max,
+                    })
+                    .collect();
+                // No legal target for a required slot ⇒ the trigger is removed (CR 603.3c).
+                if slots.iter().any(|s| s.min > 0 && s.legal.is_empty()) {
+                    return;
+                }
+                let req = DecisionRequest::ChooseTargets {
+                    for_action: ActionRef(t.id),
+                    slots: slots.clone(),
+                };
+                let resp = self.ask(t.controller, &req);
+                t.targets = parse_targets(&slots, &resp);
+            }
+        }
+        self.state.stack.push(t);
     }
 
     /// Drain triggers waiting to go on the stack, APNAP-ordered (CR 603.3b): the active
@@ -1267,6 +1307,35 @@ mod expect_tests {
             PlayerId(0) casts StackId(1)
             ObjId(4) -> Battlefield
             PlayerId(0) draws 1
+        "#]]
+        .assert_eq(&event_trace(&e.event_log));
+    }
+
+    #[test]
+    fn etb_trigger_targets_and_kills_a_creature() {
+        // Flametongue Kavu: ETB deals 4 to target creature. The trigger targets when it goes
+        // on the stack (603.3d); the aggro agent picks the enemy 2/2, which then dies to the
+        // lethal-damage SBA (704.5g).
+        let mut state = cards::build_game(2, &[&[], &[]]);
+        let prey = put(&mut state, PlayerId(1), grp::GRIZZLY_BEARS, Zone::Battlefield);
+        for _ in 0..4 {
+            put(&mut state, PlayerId(0), grp::MOUNTAIN, Zone::Battlefield); // pay {3}{R}
+        }
+        let ftk = put(&mut state, PlayerId(0), grp::FLAMETONGUE_KAVU, Zone::Hand);
+        state.active_player = PlayerId(0);
+        state.phase = Phase::PrecombatMain;
+        let mut e = Engine::new(state, vec![Box::new(AggroAgent), Box::new(PassAgent)]);
+        e.record_events(true);
+        e.priority_round();
+
+        assert_eq!(e.state.object(ftk).zone, Zone::Battlefield, "FTK entered");
+        assert_eq!(e.state.object(prey).zone, Zone::Graveyard, "FTK's ETB killed the enemy 2/2");
+        expect![[r#"
+            PlayerId(0) casts StackId(1)
+            ObjId(6) -> Battlefield
+            4 dmg ObjId(6) -> Object(ObjId(1))
+            ObjId(1) dies
+            ObjId(1) -> Graveyard
         "#]]
         .assert_eq(&event_trace(&e.event_log));
     }
