@@ -4,10 +4,11 @@
 //! options (masking is the engine's job).
 //!
 //! Spec & rationale: `docs/design/AGENT_INTERFACE.md`. The `DecisionRequest` set is a strict
-//! superset of MTGA's GRE `*Req` catalog (validated against `../mtga-re/`) **and** Forge's
-//! `PlayerController`. All types derive `serde` so a non-in-process backend (the GRE-protocol
-//! server fronting the web client / real MTGA client, a Forge-style socket) sits behind the
-//! trait via a thin, lossless, table-driven adapter (§1.1).
+//! superset of MTGA's GRE `*Req` catalog (validated against `../mtga-re/`); its granularity is
+//! driven by that catalog + the Comprehensive Rules + the engine's own decision points. All
+//! types derive `serde` so a non-in-process backend (the GRE-protocol server fronting the web
+//! client / real MTGA client, or any other socket agent) sits behind the trait via a thin,
+//! lossless, table-driven adapter (§1.1).
 //!
 //! Layering: this module depends only on `ids` + `basics` — NOT on the Effect IR (`effects`).
 //! The boundary is expressible independent of card data; the engine resolves effect choice
@@ -155,8 +156,8 @@ pub struct CombatView {
 // ════════════════════════════════════════════════════════════════════════════════════════
 
 /// The closed set of every choice the engine can ask. Each variant pre-enumerates the legal
-/// options. See `docs/design/AGENT_INTERFACE.md` §3/§6.1 for the GRE `*Req` and Forge
-/// `PlayerController` each variant subsumes.
+/// options. See `docs/design/AGENT_INTERFACE.md` §3/§6.1 for the GRE `*Req` each variant
+/// subsumes.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum DecisionRequest {
     /// Pick who takes the first turn. GRE: `ChooseStartingPlayerReq`.

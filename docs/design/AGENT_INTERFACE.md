@@ -350,8 +350,8 @@ pub enum DecisionRequest {
 ### 3.1 Multi-select & autoregression note
 
 The engine variants carry the *full batched* choice (e.g. `DeclareAttackers` with all
-attackers at once) — this matches both Forge (`declareAttackers` fills the whole `Combat`)
-and GRE (`DeclareAttackersReq` → one `SubmitAttackersResp`). The RL action-space layer
+attackers at once) — this matches GRE (`DeclareAttackersReq` → one `SubmitAttackersResp`).
+The RL action-space layer
 (GYM_PLAN §4) may *internally* decompose a batched multi-select into autoregressive
 single-index sub-steps for a flat PPO action space; that is a `PyAgent`-side concern and does
 **not** change the engine boundary. Keeping the engine request batched is what preserves the
@@ -409,8 +409,9 @@ pub enum DecisionResponse {
 **Validation contract:** the engine validates each response against the request it answers
 (in-range indices, count ∈ `min..=max`, amounts sum to `total`, permutation is complete). A
 violation is an *engine/agent-implementation bug*, not a game event — surfaced as
-`EngineError::IllegalResponse`, never silently coerced. (This is the fix for Forge's
-`Box(10,)`-modulo hack that ignored legality; GYM_PLAN §3.)
+`EngineError::IllegalResponse`, never silently coerced. Because the engine enumerated only
+legal options, an index-based response is legal by construction — RL gets a constant-width
+action mask for free (GYM_PLAN §3).
 
 ---
 
@@ -537,38 +538,11 @@ pub struct ActionRef(pub StackId);   // the in-progress cast/activation a sub-de
 | `PromptReq` | **not a decision** — `Prompt{promptId, parameters}` is localized display metadata attached to other reqs; never a standalone variant |
 | `IntermissionReq`/`TimeoutMessage`/`TimerStateMessage`/`UIMessage`/`PredictionResp` | not engine decisions — transport/UI; handled at the GRE-server/`MtgaClientAgent` layer, not in the enum. (`Prediction` is MTGA's speculative-action feature with deliberately *reversed* naming — server slot `predictionResp=59`, client slot `predictionReq=46`, decompile-confirmed — and is **not** a player choice the engine surfaces.) |
 
-### 6.2 Forge `PlayerController` (107 methods) → variant
-(Grouped; every decision-making method maps. Pure-notification methods map to `observe`.)
-
-| Forge method(s) | variant |
-|---|---|
-| `getAbilityToPlay`, `chooseSpellAbilityToPlay`, `playChosenSpellAbility`, `playSaFromPlayEffect`, `orderAndPlaySimultaneousSa` | `Priority` (+ `OrderObjects{SimultaneousSpellAbilities}`) |
-| `chooseModeForAbility` | `ChooseModes` |
-| `announceRequirements`, `chooseNumber`(×3), `chooseNumberForCostReduction`, `chooseNumberForKeywordCost` | `ChooseNumber` |
-| `chooseOptionalCosts` | `CastingTimeOptions` |
-| `chooseTargetsFor`, `chooseNewTargetsFor`, `chooseTarget`, `chooseSingleEntityForEffect`, `chooseEntitiesForEffect` | `ChooseTargets` |
-| `divideShield`, divide-damage | `Distribute` |
-| `payManaCost`(×2), `payCombatCost`, `payCostToPreventEffect`, `payCostDuringRoll`, `confirmPayment`, `specifyManaCombo`, `chooseManaFromPool`, `chooseCardsForConvokeOrImprovise`, `chooseCardsToDelve`, `orderCosts`, `helpPayForAssistSpell`, `choosePlayerToAssistPayment` | `PayCost` (+ `OrderObjects{CostSequence}`) |
-| `declareAttackers`, `exertAttackers`, `enlistAttackers` | `DeclareAttackers` |
-| `declareBlockers` | `DeclareBlockers` |
-| `assignCombatDamage` | `AssignCombatDamage` |
-| `orderBlockers`, `orderBlocker`, `orderAttackers`, `orderMoveToZoneList` | `OrderObjects` |
-| `choosePermanentsToSacrifice`, `choosePermanentsToDestroy`, `chooseCardsForEffect`, `chooseCardsToDiscardFrom`, `chooseCardsToDiscardUnlessType`, `chooseCardsToDiscardToMaximumHandSize`, `chooseCardsToRevealFromHand`, `chooseSaToActivateFromOpeningHand`, `chooseSpellAbilitiesForEffect` | `SelectCards` |
-| `chooseCardsForEffectMultiple` | `SelectFromGroups` |
-| `arrangeForScry`, `arrangeForSurveil`, `willPutCardOnTop` | `ArrangeCards` (+ `Confirm{PutOnTop}`) |
-| `chooseSingleReplacementEffect`, `confirmReplacementEffect`, `chooseSingleStaticAbility`, `confirmStaticApplication` | `ChooseReplacement` / `Confirm` |
-| `chooseCounterType` | `ChooseCounterType` |
-| `chooseSomeType`, `chooseSector`, `chooseSprocket`, `chooseProtectionType`, `chooseKeywordForPump`, `chooseCardName`, `chooseSingleCardFace`, `chooseSingleCardState`, `chooseSingleSpellForEffect`, `vote`, `chooseContraptionsToCrank` | `ChooseOption` |
-| `chooseColor`, `chooseColorAllowColorless`, `chooseColors` | `ChooseColor` |
-| `confirmAction`(×3), `confirmTrigger`, `confirmBidAction`, `chooseBinary`(×3), `chooseFlipResult`, `confirmMulliganScry`, `chooseCardsPile` | `Confirm` |
-| `mulliganKeepHand`, `londonMulliganReturnCards` | `Mulligan` (+ `SelectCards{BottomForMulligan}`) |
-| `chooseStartingPlayer`, `chooseStartingHand` | `ChooseStartingPlayer` / setup |
-| `reveal`(×4), `notifyOfValue`, `revealAnte`, `revealAISkipCards`, `resetAtEndOfTurn` | `observe` (push-only) |
-| `sideboard`, `chooseCardsYouWonToAddToDeck` | deck-construction, outside the in-game boundary (handle at match setup) |
-| dice: `choosePDRollToIgnore`, `chooseRollToIgnore`, `chooseDiceToReroll`, `chooseRollToModify`, `chooseRollToSwap`, `chooseRollSwapValue` | `ChooseOption`/`SelectCards`/`ChooseNumber` (deferred — niche, CR 705/706) |
-
-**Result:** every Forge decision method and every GRE `*Req` is covered. The enum is a strict
-superset of both, as the laws require.
+**Result:** every recovered, log-validated GRE decision `*Req` maps onto a variant — the enum
+is a strict superset of the GRE request catalog, as the laws require. Granularity beyond the
+catalog (e.g. the per-source `AssignCombatDamage` split, the `reason`/`kind` routing tags) is
+driven by the Comprehensive Rules and the engine's own decision points, not by any external
+client's API.
 
 ---
 
@@ -719,7 +693,7 @@ forced decision that has exactly one legal option) is decided by the **engine, g
 Arena profile** (ENGINE_PLAN §9) — *uniformly for every backend*. This is load-bearing for the
 "interchangeable backends" guarantee and for differential-testing/replay (ENGINE_PLAN §8): all
 backends must be consulted at the **same** decision points so the decision log replays
-identically and a Forge-oracle diff compares like-for-like. A backend must **not** invent its
+identically and the differential/replay trace compares like-for-like. A backend must **not** invent its
 own elision (e.g. a GRE/web agent silently resolving a forced choice the engine never issued
 while the RL agent sees a different call sequence) — that would desync the decision streams.
 
