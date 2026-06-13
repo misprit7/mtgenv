@@ -602,15 +602,11 @@ fn grp_for_name(name: &str) -> Option<u32> {
         "giant" | "hill" => grp::HILL_GIANT,
         "shock" => grp::SHOCK,
         "divination" | "div" => grp::DIVINATION,
-        "salve" | "healing" => grp::HEALING_SALVE,
         "bolt" | "lightning" => grp::LIGHTNING_BOLT,
         "visionary" | "elvish" => grp::ELVISH_VISIONARY,
         "kavu" | "flametongue" | "ftk" => grp::FLAMETONGUE_KAVU,
-        "servant" | "scale" => grp::SERVANT_OF_THE_SCALE,
-        "fogbank" | "fog" => grp::FOG_BANK,
         "anthem" | "glorious" | "gloriousanthem" => grp::GLORIOUS_ANTHEM,
         "levitation" | "levitate" => grp::LEVITATION,
-        "humility" => grp::HUMILITY,
         _ => return None,
     })
 }
