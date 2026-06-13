@@ -1,32 +1,33 @@
-//! The starter card set — card behaviour as **data** (Characteristics + design's Effect-IR
-//! abilities). The core never matches on card names; it interprets these definitions.
+//! Card data — card behaviour as **data** (Characteristics + design's Effect-IR abilities). The
+//! core never matches on card names; it interprets these definitions.
 //!
-//! Milestone 3 keeps this tiny (CLAUDE.md "Scope — first pass"): basic lands, two vanilla
-//! creatures, a damage instant, a draw sorcery, a gain-life instant. A [`CardDef`] bundles a
-//! card's [`Characteristics`] with its [`Ability`]s; a [`CardDb`] is the registry keyed by
-//! `grp_id`. Game objects reference their definition through `chars.grp_id`, so the (non-
-//! serializable, fn-pointer-bearing) ability data lives out of the serializable `GameState`.
+//! Organization (per the card-push spec): this module owns the [`CardDef`]/[`CardDb`] types, the
+//! card *builders* (`creature`/`spell`/`aura`/…), the `grp::` id constants, and the deck builders.
+//! The card *definitions* live in submodules — [`misc`] for the prototype/starter pool (grouped by
+//! mechanic), and `<setcode>/` folders for real cards keyed by their first-printing set.
+//! [`starter_db`] aggregates them all.
 //!
-//! Mana abilities are represented engine-side for now (a land "taps for one of these colors")
-//! rather than via the full `Ability::Activated{is_mana}` IR — the minimal slice the M3
-//! auto-tap payment needs (the IR path stays open).
+//! A [`CardDef`] bundles a card's [`Characteristics`] with its [`Ability`]s; a [`CardDb`] is the
+//! registry keyed by `grp_id`. Game objects reference their definition through `chars.grp_id`, so
+//! the (non-serializable, fn-pointer-bearing) ability data lives out of the serializable
+//! `GameState`. Mana abilities are represented engine-side for now (a land "taps for one of these
+//! colours") rather than via the full `Ability::Activated{is_mana}` IR.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use crate::basics::{CardType, Color, CounterKind, DamageKind, ManaCost, Zone};
-use crate::effects::ability::{
-    Ability, ActionPattern, Cost, CostComponent, EventPattern, Keyword, Qualification, Restriction,
-    Rewrite, StaticContribution, Timing,
-};
-use crate::effects::condition::Duration;
+use crate::basics::{CardType, Color, DamageKind, ManaCost, Zone};
+use crate::effects::ability::{Ability, Keyword};
 use crate::effects::target::{CardFilter, SelectSpec, TargetKind, TargetSpec};
 use crate::effects::value::{PlayerRef, ValueExpr};
 use crate::effects::{Effect, EffectTarget};
 use crate::ids::PlayerId;
 use crate::state::{Characteristics, GameState};
 
-/// Oracle/printing ids for the starter set (the `grp_id` linking an object to its [`CardDef`]).
+pub mod misc;
+
+/// Oracle/printing ids (the `grp_id` linking an object to its [`CardDef`]). Per-set card ids move
+/// near their cards in the `<setcode>/` folders; the prototype/starter ids stay here.
 pub mod grp {
     pub const PLAINS: u32 = 1;
     pub const ISLAND: u32 = 2;
@@ -73,7 +74,7 @@ pub mod grp {
 
 /// `SelectSpec` for a static affecting "creatures you control" (the anthem scope). min/max are
 /// unused for statics (they apply to every match).
-fn creatures_you_control() -> SelectSpec {
+pub(crate) fn creatures_you_control() -> SelectSpec {
     SelectSpec {
         zone: Zone::Battlefield,
         filter: CardFilter::All(vec![
@@ -88,7 +89,7 @@ fn creatures_you_control() -> SelectSpec {
 
 /// `SelectSpec` for a static affecting "the permanent this Aura/Equipment is attached to"
 /// (CR 702.3e/702.6e) — the source-relative `AttachedHost` filter. min/max unused for statics.
-fn attached_host() -> SelectSpec {
+pub(crate) fn attached_host() -> SelectSpec {
     SelectSpec {
         zone: Zone::Battlefield,
         filter: CardFilter::AttachedHost,
@@ -115,7 +116,7 @@ pub struct CardDef {
 
 impl CardDef {
     /// Builder: set the display rules text.
-    fn with_text(mut self, text: &str) -> Self {
+    pub(crate) fn with_text(mut self, text: &str) -> Self {
         self.text = text.to_string();
         self
     }
@@ -153,7 +154,9 @@ impl CardDb {
     }
 }
 
-fn mana_cost(generic: u32, pips: &[(Color, u32)]) -> ManaCost {
+// ── Card builders (shared by the card-definition submodules) ──────────────────────────────────
+
+pub(crate) fn mana_cost(generic: u32, pips: &[(Color, u32)]) -> ManaCost {
     let mut colored = BTreeMap::new();
     for &(c, n) in pips {
         *colored.entry(c).or_insert(0) += n;
@@ -161,7 +164,7 @@ fn mana_cost(generic: u32, pips: &[(Color, u32)]) -> ManaCost {
     ManaCost { generic, colored }
 }
 
-fn basic_land(grp_id: u32, name: &str, color: Color) -> CardDef {
+pub(crate) fn basic_land(grp_id: u32, name: &str, color: Color) -> CardDef {
     let mut chars = Characteristics::basic_land(name);
     chars.grp_id = grp_id;
     chars.colors = Vec::new(); // lands are colorless (CR 105.2a)
@@ -174,7 +177,7 @@ fn basic_land(grp_id: u32, name: &str, color: Color) -> CardDef {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn creature(
+pub(crate) fn creature(
     grp_id: u32,
     name: &str,
     subtype: &str,
@@ -202,7 +205,7 @@ fn creature(
     }
 }
 
-fn vanilla_creature(
+pub(crate) fn vanilla_creature(
     grp_id: u32,
     name: &str,
     subtype: &str,
@@ -216,7 +219,7 @@ fn vanilla_creature(
 
 /// A creature with printed keyword abilities (CR 702) and no other abilities.
 #[allow(clippy::too_many_arguments)]
-fn kw_creature(
+pub(crate) fn kw_creature(
     grp_id: u32,
     name: &str,
     subtype: &str,
@@ -231,7 +234,7 @@ fn kw_creature(
     def
 }
 
-fn enchantment(grp_id: u32, name: &str, color: Color, cost: ManaCost, abilities: Vec<Ability>) -> CardDef {
+pub(crate) fn enchantment(grp_id: u32, name: &str, color: Color, cost: ManaCost, abilities: Vec<Ability>) -> CardDef {
     CardDef {
         chars: Characteristics {
             name: name.to_string(),
@@ -249,13 +252,13 @@ fn enchantment(grp_id: u32, name: &str, color: Color, cost: ManaCost, abilities:
 
 /// An Aura (CR 303): an Enchantment with the "Aura" subtype. The engine reads the subtype to
 /// require an enchant target at cast and to enter the battlefield attached (CR 303.4f / 608.3e).
-fn aura(grp_id: u32, name: &str, color: Color, cost: ManaCost, abilities: Vec<Ability>) -> CardDef {
+pub(crate) fn aura(grp_id: u32, name: &str, color: Color, cost: ManaCost, abilities: Vec<Ability>) -> CardDef {
     let mut def = enchantment(grp_id, name, color, cost, abilities);
     def.chars.subtypes = vec!["Aura".to_string()];
     def
 }
 
-fn spell(grp_id: u32, name: &str, ty: CardType, color: Color, cost: ManaCost, effect: Effect) -> CardDef {
+pub(crate) fn spell(grp_id: u32, name: &str, ty: CardType, color: Color, cost: ManaCost, effect: Effect) -> CardDef {
     CardDef {
         chars: Characteristics {
             name: name.to_string(),
@@ -272,7 +275,7 @@ fn spell(grp_id: u32, name: &str, ty: CardType, color: Color, cost: ManaCost, ef
 }
 
 /// "deal N to any target" (CR 115.4 "any target") — one target, locked at cast.
-fn deal_to_any(amount: i64) -> Effect {
+pub(crate) fn deal_to_any(amount: i64) -> Effect {
     Effect::DealDamage {
         amount: ValueExpr::Fixed(amount),
         to: EffectTarget::Target(TargetSpec {
@@ -285,452 +288,10 @@ fn deal_to_any(amount: i64) -> Effect {
     }
 }
 
-/// Build the starter card registry.
+/// Build the full card registry (all submodules).
 pub fn starter_db() -> CardDb {
     let mut db = CardDb::default();
-    db.insert(basic_land(grp::PLAINS, "Plains", Color::White).with_text("({T}: Add {W}.)"));
-    db.insert(basic_land(grp::ISLAND, "Island", Color::Blue).with_text("({T}: Add {U}.)"));
-    db.insert(basic_land(grp::MOUNTAIN, "Mountain", Color::Red).with_text("({T}: Add {R}.)"));
-    db.insert(basic_land(grp::FOREST, "Forest", Color::Green).with_text("({T}: Add {G}.)"));
-    db.insert(vanilla_creature(
-        grp::GRIZZLY_BEARS,
-        "Grizzly Bears",
-        "Bear",
-        Color::Green,
-        mana_cost(1, &[(Color::Green, 1)]),
-        2,
-        2,
-    ));
-    db.insert(vanilla_creature(
-        grp::HILL_GIANT,
-        "Hill Giant",
-        "Giant",
-        Color::Red,
-        mana_cost(3, &[(Color::Red, 1)]),
-        3,
-        3,
-    ));
-    db.insert(spell(
-        grp::SHOCK,
-        "Shock",
-        CardType::Instant,
-        Color::Red,
-        mana_cost(0, &[(Color::Red, 1)]),
-        deal_to_any(2),
-    ).with_text("Shock deals 2 damage to any target."));
-    db.insert(spell(
-        grp::LIGHTNING_BOLT,
-        "Lightning Bolt",
-        CardType::Instant,
-        Color::Red,
-        mana_cost(0, &[(Color::Red, 1)]),
-        deal_to_any(3),
-    ).with_text("Lightning Bolt deals 3 damage to any target."));
-    db.insert(spell(
-        grp::DIVINATION,
-        "Divination",
-        CardType::Sorcery,
-        Color::Blue,
-        mana_cost(2, &[(Color::Blue, 1)]),
-        Effect::Draw {
-            who: PlayerRef::Controller,
-            count: ValueExpr::Fixed(2),
-        },
-    ).with_text("Draw two cards."));
-    // Simplified to the gain-life mode (the printed card is modal "choose one").
-    db.insert(spell(
-        grp::HEALING_SALVE,
-        "Healing Salve",
-        CardType::Instant,
-        Color::White,
-        mana_cost(0, &[(Color::White, 1)]),
-        Effect::GainLife {
-            who: PlayerRef::Controller,
-            amount: ValueExpr::Fixed(3),
-        },
-    ).with_text("You gain 3 life."));
-    // Elvish Visionary {1}{G} 1/1 — "When this creature enters, draw a card." (ETB trigger.)
-    db.insert(creature(
-        grp::ELVISH_VISIONARY,
-        "Elvish Visionary",
-        "Elf Shaman",
-        Color::Green,
-        mana_cost(1, &[(Color::Green, 1)]),
-        1,
-        1,
-        vec![Ability::Triggered {
-            event: EventPattern::SelfEnters,
-            condition: None,
-            intervening_if: false,
-            effect: Effect::Draw {
-                who: PlayerRef::Controller,
-                count: ValueExpr::Fixed(1),
-            },
-        }],
-    ).with_text("When this creature enters, draw a card."));
-    // Flametongue Kavu {3}{R} 4/2 — "When this creature enters, it deals 4 damage to target
-    // creature." (ETB trigger that targets — chosen as it goes on the stack, CR 603.3d.)
-    db.insert(creature(
-        grp::FLAMETONGUE_KAVU,
-        "Flametongue Kavu",
-        "Kavu",
-        Color::Red,
-        mana_cost(3, &[(Color::Red, 1)]),
-        4,
-        2,
-        vec![Ability::Triggered {
-            event: EventPattern::SelfEnters,
-            condition: None,
-            intervening_if: false,
-            effect: Effect::DealDamage {
-                amount: ValueExpr::Fixed(4),
-                to: EffectTarget::Target(TargetSpec {
-                    kind: TargetKind::Creature(crate::effects::target::CardFilter::Any),
-                    min: 1,
-                    max: 1,
-                    distinct: true,
-                }),
-                kind: DamageKind::Noncombat,
-            },
-        }],
-    ).with_text("When this creature enters, it deals 4 damage to target creature."));
-    // Servant of the Scale {G} 0/0 — "This creature enters with a +1/+1 counter on it."
-    // (ETB replacement; the dies-trigger clause is omitted for the prototype.) Without the
-    // replacement it would be a 0/0 destroyed immediately by the toughness-0 SBA.
-    db.insert(creature(
-        grp::SERVANT_OF_THE_SCALE,
-        "Servant of the Scale",
-        "Human Soldier",
-        Color::Green,
-        mana_cost(0, &[(Color::Green, 1)]),
-        0,
-        0,
-        vec![Ability::Replacement {
-            // Self-replacement (CR 614.12): only THIS creature, via `ItSelf` (so it doesn't
-            // apply to other creatures under the global scan).
-            pattern: ActionPattern::WouldEnterBattlefield(CardFilter::ItSelf),
-            rewrite: Rewrite::EntersWithCounters {
-                kind: CounterKind::PlusOnePlusOne,
-                n: 1,
-            },
-        }],
-    ).with_text("This creature enters with a +1/+1 counter on it."));
-    // Fog Bank {1}{U} 0/2 — "Prevent all combat damage that would be dealt to and dealt by
-    // this creature." (Prototype models the "dealt to" prevention; Defender/Flying and the
-    // "dealt by" clause — moot at power 0 — are omitted.)
-    db.insert(creature(
-        grp::FOG_BANK,
-        "Fog Bank",
-        "Wall",
-        Color::Blue,
-        mana_cost(1, &[(Color::Blue, 1)]),
-        0,
-        2,
-        vec![Ability::Replacement {
-            // "to THIS creature" — `ItSelf`, so it only prevents damage to Fog Bank itself.
-            pattern: ActionPattern::WouldBeDealtDamage {
-                to: CardFilter::ItSelf,
-                kind: Some(DamageKind::Combat),
-            },
-            rewrite: Rewrite::Prevent,
-        }],
-    ).with_text("Prevent all combat damage that would be dealt to this creature."));
-    // Exultant Cultist {2}{U} 2/2 — "When this creature dies, draw a card." (dies/LTB trigger.)
-    db.insert(creature(
-        grp::EXULTANT_CULTIST,
-        "Exultant Cultist",
-        "Human Wizard",
-        Color::Blue,
-        mana_cost(2, &[(Color::Blue, 1)]),
-        2,
-        2,
-        vec![Ability::Triggered {
-            event: EventPattern::SelfDies,
-            condition: None,
-            intervening_if: false,
-            effect: Effect::Draw {
-                who: PlayerRef::Controller,
-                count: ValueExpr::Fixed(1),
-            },
-        }],
-    ).with_text("When this creature dies, draw a card."));
-    // Root Maze {G} Enchantment — "Artifacts and lands enter tapped." (GLOBAL replacement,
-    // affects all players' artifacts/lands.)
-    db.insert(enchantment(
-        grp::ROOT_MAZE,
-        "Root Maze",
-        Color::Green,
-        mana_cost(1, &[]),
-        vec![Ability::Replacement {
-            pattern: ActionPattern::WouldEnterBattlefield(CardFilter::AnyOf(vec![
-                CardFilter::HasCardType(CardType::Artifact),
-                CardFilter::HasCardType(CardType::Land),
-            ])),
-            rewrite: Rewrite::EntersTapped,
-        }],
-    ).with_text("Artifacts and lands enter tapped."));
-    // Hardened Scales {G} Enchantment — "If one or more +1/+1 counters would be put on a
-    // creature you control, that many plus one are put on it instead." (GLOBAL counter
-    // modifier scoped to creatures the controller controls.)
-    db.insert(enchantment(
-        grp::HARDENED_SCALES,
-        "Hardened Scales",
-        Color::Green,
-        mana_cost(0, &[(Color::Green, 1)]),
-        vec![Ability::Replacement {
-            pattern: ActionPattern::WouldAddCounters {
-                kind: CounterKind::PlusOnePlusOne,
-                to: CardFilter::ControlledBy(PlayerRef::Controller),
-            },
-            rewrite: Rewrite::AddAmount(1),
-        }],
-    ).with_text("If one or more +1/+1 counters would be put on a creature you control, that many plus one +1/+1 counters are put on it instead."));
-    // Glorious Anthem {1}{W}{W} — "Creatures you control get +1/+1." (layer 7c ModifyPT.)
-    db.insert(enchantment(
-        grp::GLORIOUS_ANTHEM,
-        "Glorious Anthem",
-        Color::White,
-        mana_cost(1, &[(Color::White, 2)]),
-        vec![Ability::Static {
-            contribution: StaticContribution::ModifyPT { power: 1, toughness: 1 },
-            affects: creatures_you_control(),
-            duration: Duration::WhileSourcePresent,
-        }],
-    ).with_text("Creatures you control get +1/+1."));
-    // Levitation {2}{U}{U} — "Creatures you control have flying." (layer 6 GrantKeyword.)
-    db.insert(enchantment(
-        grp::LEVITATION,
-        "Levitation",
-        Color::Blue,
-        mana_cost(2, &[(Color::Blue, 2)]),
-        vec![Ability::Static {
-            contribution: StaticContribution::GrantKeyword(Keyword::Flying),
-            affects: creatures_you_control(),
-            duration: Duration::WhileSourcePresent,
-        }],
-    ).with_text("Creatures you control have flying."));
-    // Humility {2}{W}{W} — "All creatures lose all abilities and have base power and toughness
-    // 1/1." Prototype models the base-P/T clause (layer 7b SetBasePT) over ALL creatures; the
-    // lose-all-abilities clause (a layer-6 RemoveAllAbilities + its dependency tangle) is
-    // deferred — no RemoveAllAbilities contribution in the IR yet.
-    db.insert(enchantment(
-        grp::HUMILITY,
-        "Humility",
-        Color::White,
-        mana_cost(2, &[(Color::White, 2)]),
-        vec![Ability::Static {
-            contribution: StaticContribution::SetBasePT { power: 1, toughness: 1 },
-            affects: SelectSpec {
-                zone: Zone::Battlefield,
-                filter: CardFilter::HasCardType(CardType::Creature),
-                chooser: PlayerRef::Controller,
-                min: ValueExpr::Fixed(0),
-                max: ValueExpr::Fixed(0),
-            },
-            duration: Duration::WhileSourcePresent,
-        }],
-    ).with_text("All creatures have base power and toughness 1/1. (Lose-all-abilities clause not yet modeled.)"));
-    // Nature's Revolt {3}{G}{G} — "All lands are 2/2 creatures that are still lands." TWO
-    // statics: AddType(Creature) (layer 4) + SetBasePT{2,2} (7b), both over all lands. The
-    // layer-4 type change is what makes an anthem ("creatures you control") see a land as a
-    // creature — the affects-reads-computed (CR 613.8) case.
-    let all_lands = || SelectSpec {
-        zone: Zone::Battlefield,
-        filter: CardFilter::HasCardType(CardType::Land),
-        chooser: PlayerRef::Controller,
-        min: ValueExpr::Fixed(0),
-        max: ValueExpr::Fixed(0),
-    };
-    db.insert(enchantment(
-        grp::NATURES_REVOLT,
-        "Nature's Revolt",
-        Color::Green,
-        mana_cost(3, &[(Color::Green, 2)]),
-        vec![
-            Ability::Static {
-                contribution: StaticContribution::AddType(CardType::Creature),
-                affects: all_lands(),
-                duration: Duration::WhileSourcePresent,
-            },
-            Ability::Static {
-                contribution: StaticContribution::SetBasePT { power: 2, toughness: 2 },
-                affects: all_lands(),
-                duration: Duration::WhileSourcePresent,
-            },
-        ],
-    ).with_text("All lands are 2/2 creatures that are still lands."));
-    // Evergreen-keyword creatures (Scryfall-verified single-keyword bodies).
-    db.insert(kw_creature(grp::ELVISH_ARCHERS, "Elvish Archers", "Elf Archer", Color::Green,
-        mana_cost(1, &[(Color::Green, 1)]), 2, 1, vec![Keyword::FirstStrike]).with_text("First strike"));
-    db.insert(kw_creature(grp::FENCING_ACE, "Fencing Ace", "Human Soldier", Color::White,
-        mana_cost(1, &[(Color::White, 1)]), 1, 1, vec![Keyword::DoubleStrike]).with_text("Double strike"));
-    db.insert(kw_creature(grp::ARGOTHIAN_SWINE, "Argothian Swine", "Boar", Color::Green,
-        mana_cost(3, &[(Color::Green, 1)]), 3, 3, vec![Keyword::Trample]).with_text("Trample"));
-    db.insert(kw_creature(grp::TYPHOID_RATS, "Typhoid Rats", "Rat", Color::Black,
-        mana_cost(0, &[(Color::Black, 1)]), 1, 1, vec![Keyword::Deathtouch]).with_text("Deathtouch"));
-    db.insert(kw_creature(grp::CHILD_OF_NIGHT, "Child of Night", "Vampire", Color::Black,
-        mana_cost(1, &[(Color::Black, 1)]), 2, 1, vec![Keyword::Lifelink]).with_text("Lifelink"));
-    db.insert(kw_creature(grp::ALABORN_GRENADIER, "Alaborn Grenadier", "Human Soldier", Color::White,
-        mana_cost(0, &[(Color::White, 2)]), 2, 2, vec![Keyword::Vigilance]).with_text("Vigilance"));
-    db.insert(kw_creature(grp::ALLEY_STRANGLER, "Alley Strangler", "Human Assassin", Color::Black,
-        mana_cost(2, &[(Color::Black, 1)]), 2, 3, vec![Keyword::Menace]).with_text("Menace"));
-    db.insert(kw_creature(grp::WALL_OF_STONE, "Wall of Stone", "Wall", Color::Red,
-        mana_cost(1, &[(Color::Red, 2)]), 0, 8, vec![Keyword::Defender]).with_text("Defender"));
-    db.insert(kw_creature(grp::RAGING_GOBLIN, "Raging Goblin", "Goblin", Color::Red,
-        mana_cost(0, &[(Color::Red, 1)]), 1, 1, vec![Keyword::Haste]).with_text("Haste"));
-    db.insert(kw_creature(grp::KING_CHEETAH, "King Cheetah", "Cat", Color::Green,
-        mana_cost(3, &[(Color::Green, 1)]), 3, 2, vec![Keyword::Flash]).with_text("Flash"));
-    db.insert(kw_creature(grp::GLADECOVER_SCOUT, "Gladecover Scout", "Elf Scout", Color::Green,
-        mana_cost(0, &[(Color::Green, 1)]), 1, 1, vec![Keyword::Hexproof]).with_text("Hexproof"));
-    // Darksteel Myr — colorless Artifact Creature, indestructible.
-    let mut myr = kw_creature(grp::DARKSTEEL_MYR, "Darksteel Myr", "Myr", Color::White,
-        mana_cost(3, &[]), 0, 1, vec![Keyword::Indestructible]);
-    myr.chars.card_types = vec![CardType::Artifact, CardType::Creature];
-    myr.chars.colors = Vec::new();
-    db.insert(myr.with_text("Indestructible"));
-    // Murder {1}{B}{B} — "Destroy target creature." (Effect::Destroy.)
-    db.insert(spell(
-        grp::MURDER,
-        "Murder",
-        CardType::Instant,
-        Color::Black,
-        mana_cost(1, &[(Color::Black, 2)]),
-        Effect::Destroy {
-            what: EffectTarget::Target(TargetSpec {
-                kind: TargetKind::Creature(CardFilter::Any),
-                min: 1,
-                max: 1,
-                distinct: true,
-            }),
-        },
-    ).with_text("Destroy target creature."));
-    // Rancor {G} Aura — "Enchant creature. Enchanted creature gets +2/+0 and has trample." Two
-    // statics over the AttachedHost: layer-7c ModifyPT and layer-6 GrantKeyword(Trample). (The
-    // "return to hand when put into a graveyard" recursion clause needs a ReturnToHand effect +
-    // dies-trigger for non-creatures — deferred.)
-    db.insert(aura(
-        grp::RANCOR,
-        "Rancor",
-        Color::Green,
-        mana_cost(0, &[(Color::Green, 1)]),
-        vec![
-            Ability::Static {
-                contribution: StaticContribution::ModifyPT { power: 2, toughness: 0 },
-                affects: attached_host(),
-                duration: Duration::WhileSourcePresent,
-            },
-            Ability::Static {
-                contribution: StaticContribution::GrantKeyword(Keyword::Trample),
-                affects: attached_host(),
-                duration: Duration::WhileSourcePresent,
-            },
-        ],
-    ).with_text("Enchant creature. Enchanted creature gets +2/+0 and has trample. (Return-to-hand clause not yet modeled.)"));
-    // Bonesplitter {1} Artifact — Equipment. "Equipped creature gets +2/+0. Equip {1}." The
-    // static buffs the AttachedHost (layer 7c); equip is a sorcery-speed activated ability that
-    // attaches this to a creature you control (CR 301.5 / 702.6).
-    db.insert(CardDef {
-        chars: Characteristics {
-            name: "Bonesplitter".to_string(),
-            card_types: vec![CardType::Artifact],
-            subtypes: vec!["Equipment".to_string()],
-            colors: Vec::new(),
-            mana_cost: Some(mana_cost(1, &[])),
-            grp_id: grp::BONESPLITTER,
-            ..Default::default()
-        },
-        abilities: vec![
-            Ability::Static {
-                contribution: StaticContribution::ModifyPT { power: 2, toughness: 0 },
-                affects: attached_host(),
-                duration: Duration::WhileSourcePresent,
-            },
-            Ability::Activated {
-                cost: Cost { mana: Some(mana_cost(1, &[])), components: Vec::new() },
-                effect: Effect::Attach {
-                    what: EffectTarget::SourceSelf,
-                    to: EffectTarget::Target(TargetSpec {
-                        kind: TargetKind::Creature(CardFilter::ControlledBy(PlayerRef::Controller)),
-                        min: 1,
-                        max: 1,
-                        distinct: true,
-                    }),
-                },
-                timing: Timing::Sorcery,
-                restriction: None,
-                is_mana: false,
-            },
-        ],
-        mana_colors: Vec::new(),
-        text: String::new(),
-    }.with_text("Equipped creature gets +2/+0. Equip {1}"));
-    // Pacifism {1}{W} Aura — "Enchanted creature can't attack or block." Two AttachedHost
-    // statics painting the CantAttack/CantBlock qualifications (CR §2.4), read by combat.
-    db.insert(aura(
-        grp::PACIFISM,
-        "Pacifism",
-        Color::White,
-        mana_cost(1, &[(Color::White, 1)]),
-        vec![
-            Ability::Static {
-                contribution: StaticContribution::Qualification(Qualification::CantAttack),
-                affects: attached_host(),
-                duration: Duration::WhileSourcePresent,
-            },
-            Ability::Static {
-                contribution: StaticContribution::Qualification(Qualification::CantBlock),
-                affects: attached_host(),
-                duration: Duration::WhileSourcePresent,
-            },
-        ],
-    ).with_text("Enchant creature. Enchanted creature can't attack or block."));
-    // Chandra, Pyrogenius {4}{R}{R} Planeswalker — loyalty 5. Two loyalty abilities (sorcery-
-    // speed, once per turn): +2 deals 2 to each opponent; −3 deals 4 to target creature. The
-    // −10 ultimate (multi-target sweep) is deferred.
-    db.insert(CardDef {
-        chars: Characteristics {
-            name: "Chandra, Pyrogenius".to_string(),
-            card_types: vec![CardType::Planeswalker],
-            supertypes: vec!["Legendary".to_string()],
-            subtypes: vec!["Chandra".to_string()],
-            colors: vec![Color::Red],
-            mana_cost: Some(mana_cost(4, &[(Color::Red, 2)])),
-            loyalty: Some(5),
-            grp_id: grp::CHANDRA_PYROGENIUS,
-            ..Default::default()
-        },
-        abilities: vec![
-            Ability::Activated {
-                cost: Cost { mana: None, components: vec![CostComponent::Loyalty(2)] },
-                effect: Effect::DealDamage {
-                    amount: ValueExpr::Fixed(2),
-                    to: EffectTarget::Player(PlayerRef::EachOpponent),
-                    kind: DamageKind::Noncombat,
-                },
-                timing: Timing::Sorcery,
-                restriction: Some(Restriction::OncePerTurn),
-                is_mana: false,
-            },
-            Ability::Activated {
-                cost: Cost { mana: None, components: vec![CostComponent::Loyalty(-3)] },
-                effect: Effect::DealDamage {
-                    amount: ValueExpr::Fixed(4),
-                    to: EffectTarget::Target(TargetSpec {
-                        kind: TargetKind::Creature(CardFilter::Any),
-                        min: 1,
-                        max: 1,
-                        distinct: true,
-                    }),
-                    kind: DamageKind::Noncombat,
-                },
-                timing: Timing::Sorcery,
-                restriction: Some(Restriction::OncePerTurn),
-                is_mana: false,
-            },
-        ],
-        mana_colors: Vec::new(),
-        text: String::new(),
-    }.with_text("+2: Chandra deals 2 damage to each opponent. −3: Chandra deals 4 damage to target creature. (−10 ultimate not yet modeled.)"));
+    misc::register(&mut db);
     db
 }
 
