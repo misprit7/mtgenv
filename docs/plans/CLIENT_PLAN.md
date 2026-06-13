@@ -207,42 +207,56 @@ options*, and submitting one `ClientToGREMessage` per decision.
 
 ## 5. DecisionRequest ⇄ GRE message mapping
 
-> **⚠ COORDINATING WITH DESIGN (task #3).** `docs/design/AGENT_INTERFACE.md` (owned by
-> `design`) is the source of truth for the `DecisionRequest`/`DecisionResponse` enum names.
-> The table below uses the variant names from ENGINE_PLAN §6 / GYM_PLAN §3 / DECOMPILE_PLAN
-> §5 as placeholders and will be reconciled to AGENT_INTERFACE.md's final names. The mapping
-> matters because keeping our `DecisionRequest` structurally aligned to the GRE `*Req` set is
-> exactly what makes the real-client drop-in an adapter, not a rewrite (DECOMPILE_PLAN §5).
+> **Canonical mapping lives in `docs/design/AGENT_INTERFACE.md` §6.1** (owned by `design`,
+> task #3, now landed). That table maps every recovered GRE `*Req` onto a `DecisionRequest`
+> variant and proves the enum is a strict *superset* of the GRE catalog. The variant names
+> below are reconciled to that document — do not let them drift. Keeping our `DecisionRequest`
+> structurally aligned to the GRE `*Req` set is exactly what makes the real-client drop-in an
+> adapter, not a rewrite (DECOMPILE_PLAN §5, AGENT_INTERFACE §0 law #4).
 
-| Engine `DecisionRequest` | Server→client GRE `*Req` | Client→server response |
+This plan's contribution on top of AGENT_INTERFACE §6.1 is the **wire round-trip** view: for
+each request, what the GRE server *sends down* and what `ClientToGREMessage` it expects *back*
+(the response direction the engine sees as a `DecisionResponse`):
+
+| Engine `DecisionRequest` (AGENT_INTERFACE §3) | Server→client GRE `*Req` | Client→server (ClientToGRE) |
 |---|---|---|
-| `Priority { actions, can_pass }` | `ActionsAvailableReq` | `ClientToGREMessage{ ActionType: Pass/Play/Cast.../Activate... }` |
-| `ChooseTargets { slots }` | `SelectTargetsReq` | `SubmitTargetsResp` |
-| `PayCost { cost, sources }` | `PayCostsReq` / `CastingTimeOptionsReq` | `Make_Payment` / `Special_Payment` action |
+| `Priority { actions, can_pass }` | `ActionsAvailableReq` | action w/ `ActionType` Pass/Play/Cast*/Activate/Activate_Mana/Special |
+| `ChooseStartingPlayer { candidates }` | `ChooseStartingPlayerReq` | choose-player response |
+| `Mulligan { .. }` (+ follow-up `SelectCards{BottomForMulligan}`) | `MulliganReq` | `MulliganResp` |
+| `ChooseTargets { for_action, slots }` | `SelectTargetsReq` | `SubmitTargetsResp` |
+| `ChooseModes { .. }` | part of `CastingTimeOptionsReq` | options response |
+| `CastingTimeOptions { for_action, options }` | `CastingTimeOptionsReq` (`CastingTimeOptionType`) | cast-options response |
+| `ChooseNumber { reason, min, max, forbidden }` | `NumericInputReq` | numeric response |
+| `Distribute { .. }` | `DistributionReq` | distribution response |
+| `PayCost { cost, mana_sources, non_mana }` | `PayCostsReq` | `Make_Payment`/`Activate_Mana`/`FloatMana`/`Special_Payment` |
 | `DeclareAttackers { eligible }` | `DeclareAttackersReq` | `SubmitAttackersResp` |
 | `DeclareBlockers { eligible, attackers }` | `DeclareBlockersReq` | `SubmitBlockersResp` |
-| `AssignDamage { attacker, recipients, total }` | `AssignDamageReq` / `OrderCombatDamageReq` | `AssignDamageConfirmation` / `OrderDamageConfirmation` |
-| `OrderObjects { items }` (triggers/blockers/damage) | `OrderReq` | `OrderResp` |
-| `Mulligan { hand_digest, london_to_bottom }` | `MulliganReq` | mulligan resp |
-| `ChooseModes { modes, min, max }` | part of `CastingTimeOptionsReq` / `SelectNReq` | `SelectN`/option response |
-| `ChooseCards { options, min, max }` | `SelectNReq` / `SelectNGroupReq` / `SearchReq` | select/search response |
-| `ChooseNumber { min, max, forbidden }` | `NumericInputReq` | numeric response |
-| `Distribute { among, total, min_each }` | `DistributionReq` | distribution response |
-| `ChooseColor`/`ChooseOption` | `SelectReplacementReq` / option-from-list | option response |
-| `Confirm { prompt }` (yes/no, optional trigger) | `PromptReq` / `OptionalActionMessage` | confirm response |
-| (setup) choose starting player | `ChooseStartingPlayerReq` | choose-player response |
-| (push, no response) state delta | `GameStateMessage{ Full | Diff }` | — |
-| (push, no response) reveal/log | `RevealHandReq` / `UIMessage` | (ack or none) |
+| `AssignCombatDamage { .. }` | `AssignDamageReq` (+ `OrderCombatDamageReq`) | `AssignDamageConfirmation` / `OrderDamageConfirmation` |
+| `OrderObjects { kind, items }` | `OrderReq` (combat: `OrderCombatDamageReq`) | `OrderResp` |
+| `SelectCards { reason, from, min, max, filter }` | `SelectNReq` / `SearchReq` / `RevealHandReq` | `SubmitN`/search response |
+| `SelectFromGroups { reason, groups }` | `SelectNGroupReq` / `SelectFromGroupsReq` / `GroupReq` | group response |
+| `ArrangeCards { reason, cards, destinations }` | scry/surveil prompt (pending decompile) | arrange response |
+| `ChooseReplacement { event, applicable }` | `SelectReplacementReq` | replacement response |
+| `ChooseCounterType { options }` | `SelectCountersReq` | counter-type response |
+| `ChooseOption { reason, options, min, max }` | `PromptReq` / `StringInputReq` | option response |
+| `ChooseColor { allowed, min, max }` | choose-option-from-list prompt | color response |
+| `Confirm { kind }` | `PromptReq` / `OptionalActionMessage` / `AllowForceDraw` | binary response |
+| (push, no response) state delta | `GameStateMessage{ Full \| Diff }` | — |
+| (push, no response) reveal / UI | `RevealHandReq` / `UIMessage` / `TimerStateMessage` | (none / ack) |
 
-`DecisionResponse` is **index-based** (GYM_PLAN §3: `Index`/`Indices`/`Pairs`/`Number`/`Pass`)
-— the server translates those indices back into the GRE response payloads the protocol
-expects (object ids, target maps, damage splits). Index-based responses keep the web client
-and the RL policy structurally identical on the answer side.
+`DecisionResponse` is **selection-into-options** (AGENT_INTERFACE §4: `Pass`/`Index`/`Indices`/
+`Number`/`Bool`/`Pairs`/`Amounts`/`Order`/`Arrangement`/`Payment`/`Action`). The GRE server
+translates those selections back into the concrete GRE response payloads the protocol expects
+(object ids, target maps, damage splits, payment specs). Selection-based responses keep the
+web client and the RL policy structurally identical on the answer side — both only ever pick
+among engine-enumerated legal options.
 
-**Open mapping questions for `design`:** final variant names; whether `Priority` maps to
-`ActionsAvailableReq` or a thinner "you have priority" prompt; how multi-step casting (target
-→ modes → X → costs) is decomposed into separate `decide()` calls vs. one composite (affects
-how many GRE round-trips a single cast takes).
+**Field-level shapes still pending decompile** (shared open list with AGENT_INTERFACE §9):
+mulligan/London bottoming encoding, `NumericInputReq` min/max/forbidden, `SelectTargetsReq`
+target-map vs criteria, `AssignDamageReq`/`OrderCombatDamageReq` split, and
+`PayCostsReq`/`CastingTimeOptionsReq` batched-vs-substepped granularity (this last one sets how
+many GRE round-trips a single cast costs and how the web UI sequences its prompts). The
+*variant set* is settled; only field details remain.
 
 ---
 
