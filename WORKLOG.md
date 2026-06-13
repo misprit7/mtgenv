@@ -5,6 +5,17 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **webui:** implemented task #8 (CLIENT_PLAN M1–M2). New crate `crates/mtg-gre-server`
+  (depends only on `mtg-core`): `human.rs` = **M1** stdio `HumanAgent` (a human is just another
+  `Agent`); `session.rs` = **M2** `GreSessionAgent` bridging the boundary over a WebSocket via a
+  **JSON projection** (`protocol.rs`); `options.rs` = shared request→`Prompt`→response
+  projection so CLI + web render the *same* engine-enumerated legal set (masking); `server.rs`
+  = axum host (`/ws` + static `web/dist`, with a no-build embedded client fallback). TS/Vite
+  front end under `web/` (board/hand/stack + legal-only affordances). A **temporary** lands-only
+  `driver.rs` runs the boundary until engine's loop is wired in (it uses only `mtg-core`'s
+  public API). Verified: CLI plays a full game (`--bin mtg-play`); browser plays a full game vs
+  `RandomAgent` (`--bin mtg-serve`, both embedded + Vite builds, screenshot-checked); `cargo
+  build`/`test` green. TODO: swap `driver.rs` for engine #7's `Engine` entry point.
 - **engine:** implemented task #7 (ENGINE_PLAN milestone 2) — a runnable lands-only game
   loop. New code in `mtg-core`: `state/` (`GameState`/`Player`/`Object`/`Characteristics`/
   `CardType`, `ObjId`-keyed arena, zones as `ObjId` vecs, `move_object`/`draw`/`shuffle`;
