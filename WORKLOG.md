@@ -5,6 +5,14 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **engine:** **C11–C18 cap: `PlayerRef::ControllerOfTarget(n)`** (632982e, atomic per design's bless) —
+  resolves to the controller of the Nth object target, **snapshotted into `ResolutionCtx.target_controllers`
+  at resolution start** (in `resolve_top`) so it survives that object leaving play mid-resolution.
+  `eval_player` reads the snapshot; the static `conditions`/`pt_controller` matchers fall through their
+  wildcards. Unblocks **Erode** ("Destroy target creature. Its controller may search…"). Test:
+  `Sequence[Destroy, GainLife(ControllerOfTarget(0))]` gives life to the destroyed creature's controller,
+  not the caster. 114 mtg-core tests green. (design's fetch lands landed first-try against the prior
+  sac-cost cap, d96ec72.) Next: Dyadrine's `EventPattern::YouAttack`.
 - **engine:** **C11–C18 cap: `CostComponent::Sacrifice` as an activation cost** (0451182) — pivoted to
   #21 and landed design's #1 gap. `can_pay_cost`/`pay_cost` (which only paid TapSelf/Loyalty) now
   resolve chooser-controlled battlefield permanents matching the spec filter (source-aware: `ItSelf`
