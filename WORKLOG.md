@@ -5,6 +5,14 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **engine:** **C11 cap: conditional enters-tapped rewrites** (b98afdc) — two `Rewrite` variants on
+  `WouldEnterBattlefield(ItSelf)`: `EntersTappedUnless(Condition)` (check lands — taps iff condition
+  fails, no choice) and `EntersTappedUnlessPay{life}` (shock lands — Confirm as it enters; pay→LoseLife
+  +untapped, decline→tapped). Made `apply_rewrite` `&mut self` so the shock land can `self.ask`
+  mid-ETB-replacement (the architectural bit). Tests cover all 4 branches. Unblocks Temple Garden +
+  Ba Sing Se's tapped clause. 118 mtg-core green. (4 caps landed today: Sacrifice, ControllerOfTarget,
+  attachments-view, C11.)
+
 - **webui:** **Board visualizations + floating mana (user).** (1) **Stack→target arrows:** spells/
   abilities on the stack draw curved red SVG arrows (full-viewport overlay) from the stack card to
   each target (creature card / player panel), from the already-populated `StackObjView.targets`;
