@@ -12,14 +12,9 @@
 //!   intrinsic and needs the explicit ability).
 //! - "{2}{G}, {T}: Earthbend 2. Activate only as a sorcery." — an `Ability::Activated`
 //!   ({2}{G} mana + `TapSelf`, `Timing::Sorcery`) over `Effect::Earthbend{target: land you control,
-//!   n: 2}` (C12). The land becomes a 0/0 haste land-creature with two +1/+1 counters.
-//!
-//! INCOMPLETE — TRACKED (one clause, pending an imminent engine commit): the earthbend interpreter
-//! does not yet register the companion "when it dies or is exiled, return it tapped" delayed trigger
-//! (CR 603.7) — engine's earthbend **commit C**. The card IR is complete and faithful; only that
-//! engine-internal materialization step is pending, after which this card flips to
-//! `fully_implemented: true` with **no card change**. Until then an earthbent land that dies stays
-//! dead instead of returning tapped — the one observable gap, tracked (not approximated).
+//!   n: 2}` (C12, fully landed). The land becomes a 0/0 haste land-creature with two +1/+1 counters,
+//!   and the engine's earthbend interpreter registers the "when it dies or is exiled, return it
+//!   tapped" delayed trigger (CR 603.7) — so this card is **fully implemented**.
 
 use crate::basics::{CardType, Color, Zone};
 use crate::cards::helpers::{basic_land_filter, earthbend};
@@ -68,7 +63,8 @@ pub fn register(db: &mut CardDb) {
             },
         ],
         text: "This land enters tapped unless you control a basic land.\n{T}: Add {G}.\n{2}{G}, {T}: Earthbend 2. Activate only as a sorcery.".to_string(),
-        fully_implemented: false,
+        // Fully implemented: all three clauses faithful, and C12 earthbend (incl. return-tapped) landed.
+        fully_implemented: true,
     });
 }
 
@@ -84,9 +80,9 @@ mod tests {
         let def = db.get(BA_SING_SE).unwrap();
         assert_eq!(def.chars.card_types, vec![CardType::Land]);
         assert!(def.is_mana_source()); // explicit {T}: Add {G} IR ability
-        // Earthbend ability authored (C12); still false only because earthbend's return-tapped
-        // delayed trigger is pending engine commit C — flips to true with no card change then.
-        assert!(!def.fully_implemented);
+        // Fully implemented: enters-tapped-unless (C11) + {T}:Add{G} (C19) + earthbend 2 (C12, incl.
+        // return-tapped) are all faithful.
+        assert!(def.fully_implemented);
         expect![[r#"
             [
                 Activated {

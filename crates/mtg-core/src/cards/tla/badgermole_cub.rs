@@ -9,17 +9,15 @@
 //!
 //! IMPLEMENTED:
 //! - "When this creature enters, **earthbend 1**" — a `Triggered{SelfEnters}` over
-//!   `Effect::Earthbend{target: target land you control, n: 1}` (C12). The targeted land becomes a
-//!   0/0 haste land-creature with one +1/+1 counter.
+//!   `Effect::Earthbend{target: target land you control, n: 1}` (C12, fully landed incl. the
+//!   "dies/exiled → return tapped" delayed trigger). The targeted land becomes a 0/0 haste
+//!   land-creature with one +1/+1 counter.
 //!
-//! INCOMPLETE — TRACKED (`fully_implemented: false`), two distinct gaps, neither approximated:
-//!   1. **"Whenever you tap a creature for mana, add an additional {G}."** A *reflexive mana
-//!      trigger* (CR 605 / a trigger on the "tap a creature for mana" event that itself adds mana) —
-//!      an unbuilt subsystem (no `EventPattern` for "tapped a creature for mana", and mana-adding
-//!      triggers are a special no-stack case). Omitted entirely until that cap lands. Flagged to engine.
-//!   2. Earthbend's companion **"when it dies or is exiled, return it tapped"** delayed trigger is
-//!      pending engine's earthbend **commit C** (an engine-internal materialization step; no card
-//!      change when it lands).
+//! INCOMPLETE — TRACKED (`fully_implemented: false`), one gap, not approximated:
+//!   - **"Whenever you tap a creature for mana, add an additional {G}."** A *reflexive mana
+//!     trigger* (CR 605 / a trigger on the "tap a creature for mana" event that itself adds mana) —
+//!     an unbuilt subsystem (no `EventPattern` for "tapped a creature for mana", and mana-adding
+//!     triggers are a special no-stack case). Omitted entirely until that cap lands. Flagged to engine.
 
 use crate::basics::Color;
 use crate::cards::helpers::earthbend;
@@ -50,8 +48,8 @@ pub fn register(db: &mut CardDb) {
         ],
     );
     def.text = "When this creature enters, earthbend 1. (Target land you control becomes a 0/0 creature with haste that's still a land. Put a +1/+1 counter on it. When it dies or is exiled, return it to the battlefield tapped.)\nWhenever you tap a creature for mana, add an additional {G}.".to_string();
-    // Tracked-incomplete: the reflexive "tap a creature for mana → add {G}" trigger is an unbuilt
-    // subsystem; earthbend's return-tapped clause is pending engine commit C. See module docs.
+    // Tracked-incomplete: only the reflexive "tap a creature for mana → add {G}" trigger is unbuilt
+    // (earthbend, incl. return-tapped, fully landed in C12). See module docs.
     def.fully_implemented = false;
     db.insert(def);
 }
@@ -74,7 +72,7 @@ mod tests {
             vec![Subtype::Creature(CreatureType::Badger), Subtype::Creature(CreatureType::Mole)]
         );
         assert_eq!((def.chars.power, def.chars.toughness), (Some(2), Some(2)));
-        // Tracked-incomplete: reflexive mana trigger unbuilt + earthbend return-tapped pending C.
+        // Tracked-incomplete: only the reflexive "tap a creature for mana" trigger is unbuilt.
         assert!(!def.fully_implemented);
         // Only the ETB earthbend trigger is materialized; the reflexive mana trigger is deliberately
         // absent (no silent approximation). Earthbend targets "a land you control".

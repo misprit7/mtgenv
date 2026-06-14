@@ -12,13 +12,15 @@
 //!   put it onto the battlefield tapped, then shuffle." — a `Triggered{SelfEnters}` over
 //!   `Sequence[ Earthbend{target: land you control, n: 2}, fetch_basic_tapped() ]` (C12 + C5).
 //!
-//! INCOMPLETE — TRACKED (`fully_implemented: false`), two gaps, neither approximated:
-//!   1. The **Landfall → quest-counter → reflexive "when you do" → intervening-if(≥4) → +1/+1 on
-//!      target creature + trample-until-EOT** chain. Needs several unbuilt pieces: a `quest` counter
-//!      kind, a *reflexive* ("when you do") trigger, an intervening-if on `CountersOnSelf ≥ 4`, and a
-//!      grant-keyword-until-end-of-turn (trample). Omitted entirely until those caps land. Flagged.
-//!   2. Earthbend's companion **"when it dies or is exiled, return it tapped"** delayed trigger is
-//!      pending engine's earthbend **commit C** (engine-internal; no card change when it lands).
+//! (Earthbend, incl. its "dies/exiled → return tapped" delayed trigger, fully landed in C12.)
+//!
+//! INCOMPLETE — TRACKED (`fully_implemented: false`), one gap, not approximated:
+//!   - The **Landfall → quest-counter → reflexive "when you do" → intervening-if(≥4) → +1/+1 on
+//!     target creature + trample-until-EOT** chain. Still needs several unbuilt pieces: a `quest`
+//!     counter kind, a *reflexive* ("when you do") trigger, and an intervening-if on
+//!     `CountersOnSelf ≥ 4`. (The trailing grant-trample-until-EOT *sub-piece* is now buildable via
+//!     the C12 floating-continuous registry, but it can't be authored in isolation — the enclosing
+//!     reflexive/quest structure must exist first.) Omitted entirely until those caps land. Flagged.
 
 use crate::basics::Color;
 use crate::cards::helpers::{earthbend, fetch_basic_tapped};
@@ -47,8 +49,8 @@ pub fn register(db: &mut CardDb) {
         ],
     );
     def.text = "When this enchantment enters, earthbend 2. Then search your library for a basic land card, put it onto the battlefield tapped, then shuffle.\nLandfall — Whenever a land you control enters, put a quest counter on this enchantment. When you do, if it has four or more quest counters on it, put a +1/+1 counter on target creature you control. It gains trample until end of turn.".to_string();
-    // Tracked-incomplete: the landfall/quest-counter/reflexive chain is unbuilt; earthbend's
-    // return-tapped clause is pending engine commit C. See module docs.
+    // Tracked-incomplete: only the landfall/quest-counter/reflexive chain is unbuilt (earthbend,
+    // incl. return-tapped, fully landed in C12). See module docs.
     def.fully_implemented = false;
     db.insert(def);
 }
@@ -65,7 +67,7 @@ mod tests {
         register(&mut db);
         let def = db.get(EARTHBENDER_ASCENSION).unwrap();
         assert_eq!(def.chars.card_types, vec![CardType::Enchantment]);
-        // Tracked-incomplete: landfall/quest chain unbuilt + earthbend return-tapped pending C.
+        // Tracked-incomplete: only the landfall/quest-counter chain is unbuilt.
         assert!(!def.fully_implemented);
         // Only the ETB earthbend-then-fetch is materialized; the landfall chain is deliberately
         // absent (no silent approximation).
