@@ -16,9 +16,12 @@
 
 use std::collections::BTreeSet;
 
-use crate::basics::{CardType, Color};
+use serde::{Deserialize, Serialize};
+
+use crate::basics::{CardType, Color, Zone};
 use crate::effects::ability::{Ability, Keyword, Qualification, StaticContribution};
-use crate::effects::target::{CardFilter, SelectSpec};
+use crate::effects::condition::Duration;
+use crate::effects::target::CardFilter;
 use crate::effects::value::{PlayerRef, ValueExpr};
 use crate::ids::{ObjId, PlayerId, Timestamp};
 use crate::state::{Characteristics, GameState};
@@ -50,6 +53,37 @@ impl ComputedChars {
     pub fn has_qualification(&self, q: Qualification) -> bool {
         self.qualifications.contains(&q)
     }
+}
+
+/// A continuous effect created by a **resolved spell or ability** (CR 611) rather than by a
+/// printed [`Ability::Static`]. It "floats" in [`GameState`] until its [`Duration`] ends, and is
+/// folded into the layer computation ([`compute`]) alongside printed statics.
+///
+/// Unlike a printed static, its affected set is **fixed at creation** (`affected`): resolution
+/// already chose the objects (CR 611.2c), so it does not re-evaluate a filter on each recompute.
+/// This is the reusable home for resolution-granted continuous effects — "until end of turn"
+/// pumps, animations (Earthbend's land→creature), keyword grants, and so on.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ContinuousEffect {
+    /// Stable identity, for targeted removal (an effect that ends early, e.g. the granting
+    /// permanent leaving for a "while" effect).
+    pub id: u64,
+    /// Layer timestamp (CR 613.7) — orders this effect against printed statics and other floating
+    /// effects within a sublayer. Minted when the effect is created, so a later animation wins.
+    pub timestamp: Timestamp,
+    /// The object/ability that created it (for LKI / "while source present"); `None` if sourceless.
+    pub source: Option<ObjId>,
+    /// The controller of the effect, for `Duration::UntilYourNextTurn` expiry and player-relative
+    /// reads.
+    pub controller: PlayerId,
+    /// The fixed set of objects this effect applies to (CR 611.2c) — chosen at resolution.
+    pub affected: Vec<ObjId>,
+    /// The layer contributions, same vocabulary as a printed static (CR 613).
+    pub contributions: Vec<StaticContribution>,
+    /// How long it lasts (CR 611.2).
+    pub duration: Duration,
+    /// The turn number on which it was created — for `UntilEndOfTurn`/`UntilYourNextTurn` expiry.
+    pub start_turn: u32,
 }
 
 /// Compute an object's characteristics by applying every applicable continuous effect in
@@ -228,16 +262,28 @@ fn pt_base_filter(chars: &Characteristics, filter: &CardFilter) -> bool {
     }
 }
 
-/// A static continuous effect on the battlefield, tagged with its source + timestamp.
+/// How a [`StaticEffect`]'s affected set is determined.
+enum Scope<'a> {
+    /// A printed static: re-evaluate the filter against the candidate at each layer (CR 613.8),
+    /// scoped to a zone.
+    Filter { zone: Zone, filter: &'a CardFilter },
+    /// A floating continuous effect (CR 611): a fixed object set chosen at resolution.
+    Fixed(&'a [ObjId]),
+}
+
+/// A static continuous effect on the battlefield, tagged with its source + timestamp. Covers both
+/// printed [`Ability::Static`] (via `Scope::Filter`) and resolution-granted [`ContinuousEffect`]
+/// (via `Scope::Fixed`), so the layer system folds them in uniformly.
 struct StaticEffect<'a> {
     timestamp: Timestamp,
     src_id: ObjId,
     src_controller: PlayerId,
     contribution: &'a StaticContribution,
-    affects: &'a SelectSpec,
+    scope: Scope<'a>,
 }
 
-/// Collect every static continuous effect on the battlefield, timestamp-ordered (CR 613.7).
+/// Collect every static continuous effect on the battlefield, timestamp-ordered (CR 613.7) —
+/// printed statics first, then floating resolution-granted effects, all merged by timestamp.
 fn gather_statics(state: &GameState) -> Vec<StaticEffect<'_>> {
     let mut v = Vec::new();
     for p in &state.players {
@@ -257,30 +303,49 @@ fn gather_statics(state: &GameState) -> Vec<StaticEffect<'_>> {
                         src_id,
                         src_controller: src.controller,
                         contribution,
-                        affects,
+                        scope: Scope::Filter { zone: affects.zone, filter: &affects.filter },
                     });
                 }
             }
+        }
+    }
+    // Floating continuous effects created by resolution (CR 611). Each contribution becomes its
+    // own `StaticEffect` over the effect's fixed affected set.
+    for ce in &state.continuous_effects {
+        for contribution in &ce.contributions {
+            v.push(StaticEffect {
+                timestamp: ce.timestamp,
+                src_id: ce.source.unwrap_or(ObjId(0)),
+                src_controller: ce.controller,
+                contribution,
+                scope: Scope::Fixed(&ce.affected),
+            });
         }
     }
     v.sort_by_key(|e| e.timestamp);
     v
 }
 
-/// Whether effect `e` applies to `target` — target is in `e.affects.zone` and matches the
-/// filter. `target_types` is the target's card types as computed through the layers applied so
-/// far (so a layer-6/7 effect's "creature" filter sees a land that became a creature in layer 4).
+/// Whether effect `e` applies to `target`. For a printed static the target must be in the
+/// effect's zone and match its filter; `target_types` is the target's card types as computed
+/// through the layers applied so far (so a layer-6/7 effect's "creature" filter sees a land that
+/// became a creature in layer 4). For a floating effect the affected set is fixed.
 fn affects_matches(
     state: &GameState,
     e: &StaticEffect,
     target: ObjId,
     target_types: &[CardType],
 ) -> bool {
-    let o = match state.objects.get(&target) {
-        Some(o) if o.zone == e.affects.zone => o,
-        _ => return false,
-    };
-    matches_filter(state, &e.affects.filter, o, target, target_types, e.src_id, e.src_controller)
+    match &e.scope {
+        Scope::Fixed(ids) => ids.contains(&target),
+        Scope::Filter { zone, filter } => {
+            let o = match state.objects.get(&target) {
+                Some(o) if o.zone == *zone => o,
+                _ => return false,
+            };
+            matches_filter(state, filter, o, target, target_types, e.src_id, e.src_controller)
+        }
+    }
 }
 
 /// Evaluate a `CardFilter`. `HasCardType` reads `target_types` (the computed-so-far type set);
@@ -337,8 +402,8 @@ fn matches_filter(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::basics::Zone;
     use crate::cards::{self, grp};
+    use crate::effects::target::SelectSpec;
 
     fn put(state: &mut GameState, owner: PlayerId, grp_id: u32, zone: Zone) -> ObjId {
         let chars = state.card_db().get(grp_id).unwrap().chars.clone();
@@ -530,6 +595,74 @@ mod tests {
             Some(2),
             "opponent's land-creature is not buffed by your anthem"
         );
+    }
+
+    #[test]
+    fn floating_effect_animates_a_land_into_a_creature_cr_611() {
+        // A resolution-granted continuous effect (the Earthbend animation) makes a land a 0/0
+        // creature with haste that is STILL a land; +1/+1 counters then set its size. Exercises
+        // the floating-continuous-effect subsystem folded into the layer computation alongside
+        // printed statics — the reusable mechanism, independent of the Earthbend IR leaf.
+        use crate::basics::CounterKind;
+        let mut s = cards::build_game(1, &[&[], &[]]);
+        let forest = put(&mut s, PlayerId(0), grp::FOREST, Zone::Battlefield);
+
+        let before = compute(&s, forest);
+        assert!(!before.is_creature(), "a vanilla land is not a creature");
+        assert_eq!(before.power, None, "and has no P/T");
+
+        s.add_continuous_effect(
+            Some(forest),
+            PlayerId(0),
+            vec![forest],
+            vec![
+                StaticContribution::AddType(CardType::Creature),
+                StaticContribution::SetBasePT { power: 0, toughness: 0 },
+                StaticContribution::GrantKeyword(Keyword::Haste),
+            ],
+            Duration::Permanent,
+        );
+
+        let animated = compute(&s, forest);
+        assert!(animated.is_creature(), "the land became a creature (layer 4)");
+        assert!(animated.card_types.contains(&CardType::Land), "and is still a land");
+        assert!(
+            animated.subtypes.contains(&crate::subtypes::LandType::Forest.into()),
+            "keeps its Forest land subtype"
+        );
+        assert_eq!(animated.power, Some(0), "0/0 base (layer 7b)");
+        assert_eq!(animated.toughness, Some(0));
+        assert!(animated.has_keyword(Keyword::Haste), "with haste (layer 6)");
+
+        // Two +1/+1 counters → a 2/2 (layer 7c counter delta over the 0/0 base).
+        s.objects.get_mut(&forest).unwrap().counters.counts.insert(CounterKind::PlusOnePlusOne, 2);
+        let pumped = compute(&s, forest);
+        assert_eq!(pumped.power, Some(2));
+        assert_eq!(pumped.toughness, Some(2));
+
+        // The effect only reaches its fixed affected set: another land is untouched.
+        let other = put(&mut s, PlayerId(0), grp::FOREST, Zone::Battlefield);
+        assert!(!compute(&s, other).is_creature(), "an unaffected land stays a land");
+    }
+
+    #[test]
+    fn expire_drops_floating_effects_whose_objects_have_left() {
+        // When the animated permanent leaves the battlefield its floating effect is moot and is
+        // garbage-collected on the next recompute (keeps the list bounded; CR 611.2c/400.7).
+        let mut s = cards::build_game(1, &[&[], &[]]);
+        let forest = put(&mut s, PlayerId(0), grp::FOREST, Zone::Battlefield);
+        s.add_continuous_effect(
+            Some(forest),
+            PlayerId(0),
+            vec![forest],
+            vec![StaticContribution::AddType(CardType::Creature)],
+            Duration::Permanent,
+        );
+        assert_eq!(s.continuous_effects.len(), 1);
+        // Send it to the graveyard, then sweep.
+        s.move_object(forest, Zone::Graveyard, PlayerId(0));
+        s.expire_continuous_effects();
+        assert!(s.continuous_effects.is_empty(), "the effect was dropped once its object left");
     }
 
     #[test]

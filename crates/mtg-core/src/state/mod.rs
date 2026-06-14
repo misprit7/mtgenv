@@ -217,6 +217,10 @@ pub struct GameState {
     pub pending_triggers: Vec<StackObject>,
     /// Combat state during a combat phase (CR 506–511); `None` outside combat.
     pub combat: Option<CombatState>,
+    /// Continuous effects created by resolution (CR 611) that aren't printed `Ability::Static` —
+    /// "until end of turn" pumps, animations (Earthbend), etc. Folded into the layer system
+    /// (`chars::compute`) alongside printed statics. Real game state (serialized for snapshot/replay).
+    pub continuous_effects: Vec<crate::chars::ContinuousEffect>,
     pub game_over: bool,
     pub winner: Option<PlayerId>,
     /// Why the game ended (the loss reason of the first player to lose), or `None` while the
@@ -231,6 +235,7 @@ pub struct GameState {
     next_obj: u64,
     next_stack: u64,
     next_timestamp: u64,
+    next_effect_id: u64,
     /// Layer-system cache (CR 613): computed characteristics per battlefield object, rebuilt
     /// on the dirty signal. Derived data — not serialized; recomputed on demand after load.
     #[serde(skip)]
@@ -259,6 +264,7 @@ impl GameState {
             starting_player: PlayerId(0),
             pending_triggers: Vec::new(),
             combat: None,
+            continuous_effects: Vec::new(),
             game_over: false,
             winner: None,
             end_reason: None,
@@ -267,6 +273,7 @@ impl GameState {
             next_obj: 1,
             next_stack: 1,
             next_timestamp: 1,
+            next_effect_id: 1,
             chars_cache: BTreeMap::new(),
             chars_dirty: true,
         }
@@ -335,8 +342,10 @@ impl GameState {
         crate::chars::compute(self, id)
     }
     /// Rebuild the layer-system cache for every battlefield object and clear the dirty flag
-    /// (the agenda's recompute step, WHITEBOARD_MODEL §2.4).
+    /// (the agenda's recompute step, WHITEBOARD_MODEL §2.4). Sweeps dead floating continuous
+    /// effects first so the cache never reflects an effect whose objects have all left.
     pub(crate) fn recompute_continuous(&mut self) {
+        self.expire_continuous_effects();
         let ids: Vec<ObjId> = self
             .players
             .iter()
@@ -348,6 +357,57 @@ impl GameState {
         }
         self.chars_cache = cache;
         self.chars_dirty = false;
+    }
+
+    /// Register a continuous effect created by resolution (CR 611) over a fixed set of objects.
+    /// Mints a fresh layer timestamp (CR 613.7d — a resolution-created effect orders after every
+    /// effect that already existed) and marks the layer cache dirty. Returns the effect's id (for
+    /// later targeted removal). See [`crate::chars::ContinuousEffect`].
+    // Wired into the whiteboard by the Earthbend materializer (`Action::GrantContinuous`); used by
+    // tests until then.
+    #[allow(dead_code)]
+    pub(crate) fn add_continuous_effect(
+        &mut self,
+        source: Option<ObjId>,
+        controller: PlayerId,
+        affected: Vec<ObjId>,
+        contributions: Vec<crate::effects::ability::StaticContribution>,
+        duration: crate::effects::condition::Duration,
+    ) -> u64 {
+        let id = self.next_effect_id;
+        self.next_effect_id += 1;
+        let timestamp = self.mint_timestamp();
+        let start_turn = self.turn_number;
+        self.continuous_effects.push(crate::chars::ContinuousEffect {
+            id,
+            timestamp,
+            source,
+            controller,
+            affected,
+            contributions,
+            duration,
+            start_turn,
+        });
+        self.mark_chars_dirty();
+        id
+    }
+
+    /// Drop floating continuous effects that no longer apply to anything: an effect all of whose
+    /// affected objects have left the battlefield is moot (CR 611.2c/400.7 — the object it was
+    /// pinned to is a different object now), so it's garbage-collected to keep the list bounded.
+    /// Duration-based expiry (cleanup / your-next-turn) is handled by the turn machinery.
+    pub(crate) fn expire_continuous_effects(&mut self) {
+        let on_bf: std::collections::BTreeSet<ObjId> = self
+            .players
+            .iter()
+            .flat_map(|p| p.battlefield.iter().copied())
+            .collect();
+        let before = self.continuous_effects.len();
+        self.continuous_effects
+            .retain(|ce| ce.affected.iter().any(|id| on_bf.contains(id)));
+        if self.continuous_effects.len() != before {
+            self.chars_dirty = true;
+        }
     }
 
     /// Create an object owned by `owner` and place it (appended) into one of that player's
