@@ -28,6 +28,9 @@
   .pinfo .you { color: var(--accent); font-size: 11px; }
   .pinfo .life { font-size: 26px; font-weight: 800; line-height: 1; margin: 4px 0 6px; }
   .pinfo .life.low { color: #ff7a7a; }
+  .pinfo .floatmana { display: flex; gap: 2px; flex-wrap: wrap; align-items: center; margin: 0 0 6px;
+    padding: 3px 5px; background: var(--felt2); border: 1px solid var(--line); border-radius: 7px; }
+  .pinfo .floatmana .ms { height: 16px; width: 16px; }
   .piles { display: flex; gap: 6px; }
   .pile { flex: 1; background: var(--felt2); border: 1px solid var(--line); border-radius: 7px;
     padding: 5px 4px; text-align: center; cursor: pointer; }

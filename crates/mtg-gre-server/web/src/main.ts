@@ -323,6 +323,14 @@ function pinfoEl(p: Any, you: boolean): HTMLElement {
     (targeted ? ' <span class="tgtbadge">🎯 target</span>' : "");
   d.appendChild(who);
   d.appendChild(el("div", "life" + (p.life <= 5 ? " low" : ""), `♥ ${p.life}`));
+  // Floating (unspent) mana in this player's pool — visible so you can see what's available.
+  const pips = poolPips(p.mana_pool || p.manaPool);
+  if (pips.length) {
+    const mp = el("div", "floatmana");
+    mp.title = `Floating mana — ${pips.length} in pool (empties as steps/phases end)`;
+    pips.forEach((s) => mp.appendChild(s));
+    d.appendChild(mp);
+  }
   const piles = el("div", "piles");
   const deck = you ? deckView[p.player] : null; // your starting decklist (debug peek)
   // God-view (replay/spectate): the library is fully visible IN ORDER (top = index 0) and the hand
@@ -563,6 +571,13 @@ function manaPips(chars: Any): HTMLElement[] {
   return out;
 }
 // Replace {T}/{G}/… tokens in oracle text with their Scryfall symbol SVGs.
+// Floating mana in a player's pool → real mana symbols (one per mana, by colour).
+function poolPips(pool: Any): HTMLElement[] {
+  const out: HTMLElement[] = [];
+  const amts = (pool && pool.amounts) || {};
+  WUBRG.forEach((c) => { const n = amts[c] || 0; for (let i = 0; i < n; i++) out.push(symImg(CODE[c])); });
+  return out;
+}
 function renderText(text: string): string {
   return esc(text).replace(/\{([^}]+)\}/g, (m, code) => {
     const c = code.toUpperCase().replace(/\//g, "");

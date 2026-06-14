@@ -35,6 +35,9 @@
   .pinfo .you { color: var(--accent); font-size: 11px; }
   .pinfo .life { font-size: 26px; font-weight: 800; line-height: 1; margin: 4px 0 6px; }
   .pinfo .life.low { color: #ff7a7a; }
+  .pinfo .floatmana { display: flex; gap: 2px; flex-wrap: wrap; align-items: center; margin: 0 0 6px;
+    padding: 3px 5px; background: var(--felt2); border: 1px solid var(--line); border-radius: 7px; }
+  .pinfo .floatmana .ms { height: 16px; width: 16px; }
   .piles { display: flex; gap: 6px; }
   .pile { flex: 1; background: var(--felt2); border: 1px solid var(--line); border-radius: 7px;
     padding: 5px 4px; text-align: center; cursor: pointer; }
@@ -614,6 +617,14 @@
     d.appendChild(who);
     const life = el("div", "life" + (p.life <= 5 ? " low" : ""), "♥ " + p.life);
     d.appendChild(life);
+    // Floating (unspent) mana in this player's pool — visible so you can see what's available.
+    const pips = poolPips(p.mana_pool || p.manaPool);
+    if (pips.length) {
+      const mp = el("div", "floatmana");
+      mp.title = "Floating mana — " + pips.length + " in pool (empties as steps/phases end)";
+      pips.forEach(s => mp.appendChild(s));
+      d.appendChild(mp);
+    }
     const piles = el("div", "piles");
     const libCount = p.library_count != null ? p.library_count : p.libraryCount;
     const deck = you ? deckView[p.player] : null; // your starting decklist (debug peek)
@@ -855,6 +866,13 @@
     const generic = Math.max(0, cmc - cols.length);
     if (generic > 0 || cmc === 0) out.push(symImg(String(generic)));
     cols.forEach(c => out.push(symImg(CODE[c] || "C")));
+    return out;
+  }
+  // Floating mana in a player's pool → real mana symbols (one per mana, by colour).
+  function poolPips(pool) {
+    const out = [];
+    const amts = (pool && pool.amounts) || {};
+    WUBRG.forEach(c => { const n = amts[c] || 0; for (let i = 0; i < n; i++) out.push(symImg(CODE[c])); });
     return out;
   }
   // Replace {T}/{G}/… tokens in oracle text with their Scryfall symbol SVGs.
