@@ -1372,6 +1372,15 @@ impl Engine {
                 })
                 .map(|o| Target::Object(o.id))
         };
+        // Every battlefield permanent (not just creatures) — for `TargetKind::Permanent` (e.g.
+        // "target land you control"). Filtered by the spec's `CardFilter` below.
+        let permanents = || {
+            self.state
+                .objects
+                .values()
+                .filter(|o| o.zone == Zone::Battlefield && self.targetable_by(o.id, caster))
+                .map(|o| Target::Object(o.id))
+        };
         let players = || {
             self.state
                 .players
@@ -1382,7 +1391,10 @@ impl Engine {
         match &spec.kind {
             TargetKind::Any => creatures().chain(players()).collect(),
             TargetKind::Player => players().collect(),
-            TargetKind::Creature(filter) | TargetKind::Permanent(filter) => creatures()
+            TargetKind::Creature(filter) => creatures()
+                .filter(|t| self.target_matches_filter(t, filter, caster))
+                .collect(),
+            TargetKind::Permanent(filter) => permanents()
                 .filter(|t| self.target_matches_filter(t, filter, caster))
                 .collect(),
             // StackObject / CardInZone: not needed by the starter set.
@@ -1390,21 +1402,29 @@ impl Engine {
         }
     }
 
-    /// Apply the subset of a `CardFilter` that targeting needs (the engine still pre-masks
-    /// hexproof in `targetable_by`). Currently honours `ControlledBy` (e.g. equip's "creature
-    /// you control"); other predicates aren't yet enforced at target time and pass through.
+    /// Apply the `CardFilter` that targeting needs (the engine also pre-masks hexproof in
+    /// `targetable_by`). Enforces control, card type, subtype, color and supertype so a "target
+    /// land you control" can't be satisfied by a creature etc.; characteristic predicates read the
+    /// COMPUTED chars (CR 613) so an animated land counts as a creature/land. Genuinely-niche
+    /// predicates (tapped/counters/mana-value) still pass through until a card needs them.
     fn target_matches_filter(&self, t: &Target, filter: &CardFilter, caster: PlayerId) -> bool {
         let Target::Object(id) = t else { return true };
         let Some(o) = self.state.objects.get(id) else {
             return false;
         };
         match filter {
+            CardFilter::Any => true,
             CardFilter::ControlledBy(PlayerRef::Controller | PlayerRef::Owner) => {
                 o.controller == caster
             }
             CardFilter::ControlledBy(PlayerRef::Opponent | PlayerRef::EachOpponent) => {
                 o.controller != caster
             }
+            CardFilter::HasCardType(ct) => self.state.computed(*id).card_types.contains(ct),
+            CardFilter::HasSubtype(s) => self.state.computed(*id).subtypes.contains(s),
+            CardFilter::HasColor(c) => self.state.computed(*id).colors.contains(c),
+            CardFilter::Colorless => self.state.computed(*id).colors.is_empty(),
+            CardFilter::Supertype(s) => o.chars.supertypes.contains(s),
             CardFilter::All(fs) => fs.iter().all(|f| self.target_matches_filter(t, f, caster)),
             CardFilter::AnyOf(fs) => fs.iter().any(|f| self.target_matches_filter(t, f, caster)),
             CardFilter::Not(f) => !self.target_matches_filter(t, f, caster),
@@ -3884,6 +3904,49 @@ mod expect_tests {
         };
         assert_eq!(named(forest).as_deref(), Some("Forest"), "the candidate is revealed by name");
         assert!(named(hidden).is_none(), "the rest of the library stays masked");
+    }
+
+    #[test]
+    fn target_candidates_enforce_type_and_control_filters() {
+        use crate::effects::target::{CardFilter, TargetKind, TargetSpec};
+        use crate::effects::value::PlayerRef;
+        // Earthbend's "target land you control" must offer lands you control — NOT creatures (the
+        // Permanent base over all battlefield permanents + an enforced HasCardType filter). And
+        // Bushwhack's "creature you don't control" must exclude your own creatures.
+        let mut state = cards::build_game(1, &[&[], &[]]);
+        let my_forest = put(&mut state, PlayerId(0), grp::FOREST, Zone::Battlefield);
+        let _my_bears = put(&mut state, PlayerId(0), grp::GRIZZLY_BEARS, Zone::Battlefield);
+        let foe_bears = put(&mut state, PlayerId(1), grp::GRIZZLY_BEARS, Zone::Battlefield);
+        let e = pass_engine(state);
+
+        let land_you_control = TargetSpec {
+            kind: TargetKind::Permanent(CardFilter::All(vec![
+                CardFilter::HasCardType(CardType::Land),
+                CardFilter::ControlledBy(PlayerRef::Controller),
+            ])),
+            min: 1,
+            max: 1,
+            distinct: true,
+        };
+        assert_eq!(
+            e.target_candidates(&land_you_control, PlayerId(0)),
+            vec![Target::Object(my_forest)],
+            "earthbend offers only the land you control — not your creatures"
+        );
+
+        let creature_you_dont_control = TargetSpec {
+            kind: TargetKind::Creature(CardFilter::Not(Box::new(CardFilter::ControlledBy(
+                PlayerRef::Controller,
+            )))),
+            min: 1,
+            max: 1,
+            distinct: true,
+        };
+        assert_eq!(
+            e.target_candidates(&creature_you_dont_control, PlayerId(0)),
+            vec![Target::Object(foe_bears)],
+            "Bushwhack's fight target offers only creatures you don't control"
+        );
     }
 
     #[test]
