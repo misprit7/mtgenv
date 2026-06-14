@@ -36,7 +36,10 @@ def record_game(model, deck, step, out_dir, run_name=None, seed=12_345, self_pla
     """Record one game with the current policy on seat 0. With ``self_play`` the opponent (seat 1)
     is the *same* policy (true self-play — the agent vs itself); otherwise a random opponent."""
     opponent = ModelOpponent(model, deterministic=False) if self_play else "random"
-    env = MtgEnv(deck=deck, record_replay=True, replay_step=step, opponent=opponent)
+    # Explicit per-game decision cap (defense-in-depth): truncates a between-games non-terminating
+    # game to a draw. (It can't catch an in-engine, in-step loop — control never returns to Python —
+    # but the recording env should carry the same cap the training env does.)
+    env = MtgEnv(deck=deck, record_replay=True, replay_step=step, opponent=opponent, max_decisions=3000)
     obs, info = env.reset(seed=seed + step)
     done = False
     while not done:
