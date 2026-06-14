@@ -143,17 +143,22 @@ class MtgEnv(_GymEnv):
             return spaces.Box(low=0, high=_INT_HIGH, shape=shape, dtype=np.int64)
         return spaces.Box(low=-np.inf, high=np.inf, shape=shape, dtype=np.float32)
 
-    def export_replay(self, out_dir, created_at_ms, names=None, decks=None):
+    def export_replay(self, out_dir, created_at_ms, names=None, decks=None, run_name=None):
         """Write the just-finished game's omniscient replay JSON to ``out_dir`` (training-replay
-        export, REPLAY_PLAN §3). Requires ``record_replay=True`` and a terminated episode. Returns
-        the written path, or ``None`` if no replay was recorded."""
+        export, REPLAY_PLAN §3). Requires ``record_replay=True`` and a terminated episode. The
+        filename embeds ``run_name`` (e.g. the TensorBoard run ``MaskablePPO_2``) so replays from
+        different runs stay distinguishable in the lobby. Returns the written path, or ``None`` if
+        no replay was recorded."""
         js = self._game.replay_json(int(created_at_ms), names, decks)
         if js is None:
             return None
         import os
 
         os.makedirs(out_dir, exist_ok=True)
-        path = os.path.join(out_dir, f"aitrain-{self.deck}-step{self.replay_step:07d}-{created_at_ms}.json")
+        run = f"{run_name}-" if run_name else ""
+        path = os.path.join(
+            out_dir, f"aitrain-{run}{self.deck}-step{self.replay_step:07d}-{created_at_ms}.json"
+        )
         with open(path, "w") as f:
             f.write(js)
         return path

@@ -25,7 +25,7 @@ def _now_ms() -> int:
     return int(time.time() * 1000)
 
 
-def record_game(model, deck, step, out_dir, seed=12_345):
+def record_game(model, deck, step, out_dir, run_name=None, seed=12_345):
     """Play one recorded game with the current policy (seat 0) vs random (seat 1); write its replay."""
     env = MtgEnv(deck=deck, record_replay=True, replay_step=step)
     obs, info = env.reset(seed=seed + step)
@@ -35,7 +35,16 @@ def record_game(model, deck, step, out_dir, seed=12_345):
         obs, _r, term, trunc, info = env.step(int(action))
         done = term or trunc
     sides = deck.split("_vs_") if "_vs_" in deck else [deck, deck]
-    return env.export_replay(out_dir, _now_ms(), names=[f"PPO@{step}", "random"], decks=sides[:2])
+    label = f"PPO@{run_name}:{step}" if run_name else f"PPO@{step}"
+    return env.export_replay(
+        out_dir, _now_ms(), names=[label, "random"], decks=sides[:2], run_name=run_name
+    )
+
+
+def _run_name(model) -> str:
+    """The TensorBoard run folder (e.g. ``MaskablePPO_2``) so replay filenames match TB runs."""
+    logdir = getattr(getattr(model, "logger", None), "dir", None)
+    return os.path.basename(logdir) if logdir else "run"
 
 
 class ReplayCheckpoint(BaseCallback):
@@ -46,14 +55,18 @@ class ReplayCheckpoint(BaseCallback):
         self.deck = deck
         self.out_dir = out_dir
         self.every_calls = max(record_every // n_envs, 1)
+        self.run_name = "run"
 
     def _on_training_start(self) -> None:
+        self.run_name = _run_name(self.model)
         # An initial, pre-training (random-policy) checkpoint at step 0.
-        record_game(self.model, self.deck, 0, self.out_dir)
+        record_game(self.model, self.deck, 0, self.out_dir, run_name=self.run_name)
 
     def _on_step(self) -> bool:
         if self.n_calls % self.every_calls == 0:
-            path = record_game(self.model, self.deck, self.num_timesteps, self.out_dir)
+            path = record_game(
+                self.model, self.deck, self.num_timesteps, self.out_dir, run_name=self.run_name
+            )
             if self.verbose:
                 print(f"  step {self.num_timesteps:>6}: {os.path.basename(path)}")
         return True
