@@ -39,9 +39,10 @@ if (spectating) $("prompt").innerHTML = '<div class="waiting">👁 Spectating �
 if (replayId) $("prompt").innerHTML = '<div class="waiting">▶ Replay — god-view playback (no hidden information). Use the bar below.</div>';
 // Stops control (top bar): LIVE toggles — send setOption; the server echoes the new config and
 // the running game's agent honours it at the next window (no reset). Rendered from stopsView.
+// The only user-facing stop toggle is Full Control (stop at every priority window). Auto-pass /
+// smart / resolve-own are no longer toggles — the web stop policy is fixed (see priorityAutoPass).
 const OPT: Array<[string, string, string]> = [
-  ["auto-pass", "auto_pass", "autopass"], ["smart", "smart_stops", "smartstops"],
-  ["full-ctrl", "full_control", "fullcontrol"], ["resolve", "resolve_own_stack", "resolvestack"],
+  ["full ctrl", "full_control", "fullcontrol"],
 ];
 function renderStopsControl(): void {
   const host = $("stops"); host.innerHTML = "";
@@ -86,8 +87,12 @@ function handle(m: Any): void {
     view = m.view; cur = m; multi.clear(); orderSeq = [];
     // Enter-engaged "pass through this turn's stops" lapses when the turn advances (MTGA parity).
     if (autoPassTurn !== null && view.turn !== autoPassTurn) { autoPassTurn = null; autoPassBadge(); }
-    // While engaged, silently pass priority windows (still surface real choices: targets, blocks, …).
-    if (autoPassEngaged() && isPriorityPrompt(cur.prompt)) { send({ pass: true }); return; }
+    // Priority windows: apply the stop policy (Enter-hold passes the rest of the turn; otherwise the
+    // fixed rule). Forced choices (targets/blocks/order/number) aren't priority prompts → shown.
+    if (isPriorityPrompt(cur.prompt)) {
+      if (autoPassEngaged()) { send({ pass: true }); return; }
+      if (priorityAutoPass(cur.prompt)) { send({ pass: true }); return; }
+    }
     render();
   }
   else if (m.type === "gameOver") { cur = null; renderEnd(m.winner); }
@@ -299,12 +304,7 @@ const STEP_ABBR: Any = {
 function stopsSummary(ss: Any): string {
   if (ss.full_control) return "🛑 full control";
   const active = (ss.per_step || []).filter((s: Any) => s[1]).map((s: Any) => STEP_ABBR[s[0]] || s[0]);
-  let s = "stops: " + (active.length ? active.join(", ") : "—");
-  const flags: string[] = [];
-  if (ss.smart_stops) flags.push("smart");
-  if (!ss.resolve_own_stack) flags.push("respond-self");
-  if (flags.length) s += " · " + flags.join(", ");
-  return s;
+  return "stops: " + (active.length ? active.join(", ") : "—");
 }
 
 function pinfoEl(p: Any, you: boolean): HTMLElement {
@@ -870,6 +870,24 @@ function log(line: string): void { const d = $("log"); d.textContent += line + "
 // remaining priority stops at once (mirrors the GRE's PerformActionResp.autoPassPriority=Yes /
 // AutoPassOption.Turn — a per-turn hold that lapses next turn). Esc cancels the hold.
 function isPriorityPrompt(p: Any): boolean { return !!p && p.mode === "action" && p.canPass; }
+
+// The web stop policy (client-side filter over the engine's superset of surfaced windows): STOP
+// (prompt) iff [ we're in a phase marked as a stop OR an opponent-controlled spell/ability is on
+// top of the stack ] AND [ we have a usable spell or non-mana ability available ]. Full Control
+// overrides → always stop. Returns true = auto-pass this priority window.
+function priorityAutoPass(p: Any): boolean {
+  if (stopsView && stopsView.full_control) return false;     // full control → stop at every window
+  if ((p.options || []).length === 0) return true;            // no usable (non-mana) action → pass
+  const st = view.stack || [];
+  const oppTop = st.length > 0 && st[st.length - 1].controller !== view.seat; // top of stack = last
+  const phaseStop = st.length === 0 && currentPhaseIsStop();
+  return !(oppTop || phaseStop);
+}
+function currentPhaseIsStop(): boolean {
+  const e = stopMap()[view.phase];
+  if (!e) return false;
+  return view.active_player === view.seat ? e.mine : e.opp;
+}
 function autoPassEngaged(): boolean { return autoPassTurn !== null && view && view.turn === autoPassTurn; }
 function autoPassBadge(): void {
   let b = $("autopassBadge");

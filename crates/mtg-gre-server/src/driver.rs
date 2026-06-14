@@ -167,7 +167,11 @@ pub fn engine_with_stops(
         let mut c = handle.lock().unwrap();
         c.auto_pass = stops.auto_pass;
         c.full_control = stops.full_control;
-        c.smart_stops = stops.smart_stops;
+        // The engine surfaces a SUPERSET of stop windows (smart_stops on = marked-phases + any
+        // window where you have a play + opp-respond) and the web client filters it down to the
+        // actual rule client-side (stop iff [marked phase OR opp spell on top] AND you have a usable
+        // spell/non-mana ability). So we force smart on here regardless of the carrier.
+        c.smart_stops = true;
         c.resolve_own_stack = stops.resolve_own_stack;
         // Seed the per-`(step, own_turn)` stop overrides (default set + any URL overrides). The user
         // then toggles individual sides live (`SetStop`), which mutate this same shared config.
@@ -195,7 +199,9 @@ pub fn room_engine(
             let mut c = handle.lock().unwrap();
             c.auto_pass = stops.auto_pass;
             c.full_control = stops.full_control;
-            c.smart_stops = stops.smart_stops;
+            // Force smart on (engine surfaces a superset of windows; the web client filters down to
+            // the actual stop rule). See `engine_with_stops`.
+            c.smart_stops = true;
             c.resolve_own_stack = stops.resolve_own_stack;
             for &(step, own, on) in &stops.overrides {
                 c.set_override(step, own, Some(on));
