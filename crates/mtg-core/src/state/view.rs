@@ -51,6 +51,15 @@ fn visible(state: &GameState, o: &Object) -> ObjView {
         chars.colors = computed.colors.clone();
         chars.keywords = computed.keywords.iter().map(|k| format!("{k:?}")).collect();
     }
+    // The objects attached to this one (auras/equipment on a host, CR 303/301.5) — so the UI can
+    // render them behind their host. Battlefield only; iterated in battlefield order (stable).
+    let attachments: Vec<ObjId> = state
+        .players
+        .iter()
+        .flat_map(|p| &p.battlefield)
+        .copied()
+        .filter(|&id| state.objects.get(&id).and_then(|x| x.attached_to) == Some(o.id))
+        .collect();
     ObjView::Visible {
         id: o.id,
         chars,
@@ -60,7 +69,7 @@ fn visible(state: &GameState, o: &Object) -> ObjView {
         status: o.status,
         counters: o.counters.clone(),
         damage_marked: o.damage_marked,
-        attachments: Vec::new(),
+        attachments,
         summoning_sick: o.summoning_sick,
     }
 }
@@ -232,5 +241,43 @@ mod tests {
         assert_eq!(full.fully_implemented, Some(true), "implemented card → Some(true), no marker");
         assert_eq!(partial.fully_implemented, Some(false), "deferred-clause card → Some(false), ⚠");
         assert_eq!(no_card.fully_implemented, None, "no card data → None, no marker");
+    }
+
+    #[test]
+    fn attachments_list_objects_attached_to_a_host() {
+        // The view exposes, per battlefield object, the ids of objects attached to it (auras /
+        // equipment), so the client can render them behind their host.
+        use crate::basics::{CardType, Zone};
+        let mut state = GameState::new(2, 1);
+        let host = state.add_card(
+            PlayerId(0),
+            Characteristics {
+                name: "Bear".into(),
+                card_types: vec![CardType::Creature],
+                power: Some(2),
+                toughness: Some(2),
+                ..Default::default()
+            },
+            Zone::Battlefield,
+        );
+        let aura = state.add_card(
+            PlayerId(0),
+            Characteristics {
+                name: "Pacifism".into(),
+                card_types: vec![CardType::Enchantment],
+                ..Default::default()
+            },
+            Zone::Battlefield,
+        );
+        state.objects.get_mut(&aura).unwrap().attached_to = Some(host);
+
+        let attachments_of = |id| {
+            god_view(&state).battlefield.into_iter().find_map(|o| match o {
+                ObjView::Visible { id: oid, attachments, .. } if oid == id => Some(attachments),
+                _ => None,
+            })
+        };
+        assert_eq!(attachments_of(host), Some(vec![aura]), "host lists its aura");
+        assert_eq!(attachments_of(aura), Some(vec![]), "the aura itself has no attachers");
     }
 }
