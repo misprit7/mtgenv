@@ -140,4 +140,35 @@ mod tests {
             ]"#]]
         .assert_eq(&format!("{:#?}", def.abilities));
     }
+
+    /// Behaviour: the reflexive "whenever you tap a creature for mana" ability adds an extra {G} to
+    /// your mana pool when it resolves.
+    #[test]
+    fn badgermole_reflexive_mana_adds_green() {
+        use crate::agent::RandomAgent;
+        use crate::basics::{Color, Zone};
+        use crate::cards::build_game;
+        use crate::effects::ability::Ability;
+        use crate::effects::action::{ResolutionCtx, WbReason};
+        use crate::ids::{PlayerId, StackId};
+        use crate::priority::Engine;
+        let mut state = build_game(1, &[&[], &[]]);
+        let chars = state.card_db().get(BADGERMOLE_CUB).unwrap().chars.clone();
+        let badger = state.add_card(PlayerId(0), chars, Zone::Battlefield);
+        let add_mana = match &state.card_db().get(BADGERMOLE_CUB).unwrap().abilities[1] {
+            Ability::Triggered { effect, .. } => effect.clone(),
+            o => panic!("expected TapCreatureForMana Triggered, got {o:?}"),
+        };
+        let mut e = Engine::new(
+            state,
+            vec![Box::new(RandomAgent::new(0)), Box::new(RandomAgent::new(1))],
+        );
+        assert_eq!(e.state.players[0].mana_pool.amounts.get(&Color::Green), None);
+        e.resolve_effect(
+            &add_mana,
+            &ResolutionCtx { controller: Some(PlayerId(0)), source: Some(badger), ..Default::default() },
+            WbReason::Resolve(StackId(0)),
+        );
+        assert_eq!(e.state.players[0].mana_pool.amounts.get(&Color::Green), Some(&1)); // +{G}
+    }
 }

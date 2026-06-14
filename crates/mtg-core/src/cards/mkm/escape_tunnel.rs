@@ -180,4 +180,52 @@ mod tests {
                 },
             ]"#]].assert_eq(&format!("{:#?}", def.abilities));
     }
+
+    /// Behaviour: resolving the fetch ability tutors a basic land from your library onto the
+    /// battlefield tapped.
+    #[test]
+    fn escape_tunnel_fetches_a_basic_tapped() {
+        use crate::agent::{Agent, DecisionRequest, DecisionResponse, PlayerView};
+        use crate::cards::{build_game, grp};
+        use crate::effects::action::{ResolutionCtx, WbReason};
+        use crate::ids::{PlayerId, StackId};
+        use crate::priority::Engine;
+        use expect_test::expect;
+
+        #[derive(Clone)]
+        struct TakeItAgent;
+        impl Agent for TakeItAgent {
+            fn decide(&mut self, _v: &PlayerView, req: &DecisionRequest) -> DecisionResponse {
+                match req {
+                    DecisionRequest::Confirm { .. } => DecisionResponse::Bool(true),
+                    DecisionRequest::SelectCards { from, min, max, .. } => {
+                        let n = (*min).max(1).min(*max).min(from.len() as u32);
+                        DecisionResponse::Indices((0..n).collect())
+                    }
+                    _ => DecisionResponse::Pass,
+                }
+            }
+        }
+
+        let mut state = build_game(1, &[&[grp::FOREST], &[]]); // P0 library = one Forest
+        let fetch = match &state.card_db().get(ESCAPE_TUNNEL).unwrap().abilities[0] {
+            Ability::Activated { effect, .. } => effect.clone(),
+            o => panic!("expected fetch Activated, got {o:?}"),
+        };
+        let mut e = Engine::new(state, vec![Box::new(TakeItAgent), Box::new(TakeItAgent)]);
+        e.resolve_effect(
+            &fetch,
+            &ResolutionCtx { controller: Some(PlayerId(0)), ..Default::default() },
+            WbReason::Resolve(StackId(0)),
+        );
+        let land = e.state.players[0].battlefield.first().copied();
+        let tapped = land.map(|l| e.state.objects.get(&l).unwrap().status.tapped);
+        let render = format!(
+            "library={} battlefield={} fetched_tapped={:?}",
+            e.state.players[0].library.len(),
+            e.state.players[0].battlefield.len(),
+            tapped,
+        );
+        expect![["library=0 battlefield=1 fetched_tapped=Some(true)"]].assert_eq(&render);
+    }
 }
