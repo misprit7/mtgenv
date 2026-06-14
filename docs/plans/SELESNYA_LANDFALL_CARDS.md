@@ -226,10 +226,10 @@ current behaviour test (resolve-level or otherwise) that the audit must add.
 | 104 | Icetill Explorer | cast → play a land | landfall mill 1; +1 land/turn; **play lands from graveyard** | cast only | **both land-permission statics** |
 | 105 | Lumbering Worldwagon | cast → crew → attack | power = #lands (CDA); ETB *or* attack fetch basic tapped; Crew 4 | cast only | — |
 | 106 | Fabled Passage | `{T},Sac` ability | fetch basic tapped; if ≥4 lands → untap it | **no** | — (✅ full-activation tested) |
-| 107 | Escape Tunnel | two `{T},Sac` abilities | fetch basic tapped; **power≤2 target can't be blocked this turn** | no | **unblockable ability** |
-| 108 | Erode | cast sorcery | destroy target creature/pw; **its controller may fetch basic tapped** (order #61) | cast only | **controller-fetch sub-clause** |
+| 107 | Escape Tunnel | two `{T},Sac` abilities | fetch basic tapped; **power≤2 target can't be blocked this turn** | no | ~~unblockable~~ resolve-tested ✅; activate-path pending |
+| 108 | Erode | cast sorcery | destroy target creature/pw; **its controller may fetch basic tapped** (order #61 ✅) | cast only | ~~controller-fetch~~ resolve-tested ✅; cast-path pending |
 | 109 | Temple Garden | play land | ETB: pay 2 life → untapped **else tapped**; taps G/W | no | **ETB life/tapped behaviour** |
-| 110 | Ba Sing Se | play land → abilities | ETB tapped unless control basic; `{T}:G`; `{2}{G},{T}` earthbend 2 (#57) | earthbend leg | **ETB-tapped + `{T}:G` behaviour** |
+| 110 | Ba Sing Se | play land → abilities | ETB tapped unless control basic; `{T}:G`; `{2}{G},{T}` earthbend 2 (#57) | earthbend leg | `{T}:G` resolve-tested ✅; **ETB-tapped** pending |
 | 111 | Bushwhack | cast sorcery (modal) | mode A fetch basic to **hand** (revealed); mode B fight (your vs their) | cast only | — |
 | 112 | Surrak | cast → opp targets it | can't-be-countered [**deferred, sanctioned**]; Trample; becomes-targeted → draw | cast only | — |
 | 113 | Badgermole Cub | cast → tap for mana | ETB earthbend 1; tap-creature-for-mana → **extra {G}** (#56 affordability) | cast + mana trigger | — |

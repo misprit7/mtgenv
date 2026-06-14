@@ -221,4 +221,34 @@ mod tests {
         assert_eq!(cc.power, Some(2)); // 0/0 base + two +1/+1 counters
         assert_eq!(cc.toughness, Some(2));
     }
+
+    /// Behaviour: resolving Ba Sing Se's `{T}: Add {G}` mana ability (`abilities[0]`) adds exactly one
+    /// green to the controller's pool. Ba Sing Se has no basic land type, so this mana is the explicit
+    /// IR ability — not intrinsic — and must be exercised directly. (The `{T}` cost double-count bug
+    /// #57 is a *payment-side* issue exercised only when this {T} source pays the earthbend `{2}{G}`.)
+    #[test]
+    fn ba_sing_se_taps_for_green() {
+        use crate::agent::RandomAgent;
+        use crate::basics::{Color, Zone};
+        use crate::effects::action::{ResolutionCtx, WbReason};
+        use crate::ids::{PlayerId, StackId};
+        use crate::priority::Engine;
+        let mut state = crate::cards::build_game(1, &[&[], &[]]);
+        let chars = state.card_db().get(BA_SING_SE).unwrap().chars.clone();
+        let land = state.add_card(PlayerId(0), chars, Zone::Battlefield);
+        let mana = match &state.card_db().get(BA_SING_SE).unwrap().abilities[0] {
+            Ability::Activated { effect, is_mana: true, .. } => effect.clone(),
+            other => panic!("expected the {{T}}: Add {{G}} mana Activated, got {other:?}"),
+        };
+        let mut e = Engine::new(
+            state,
+            vec![Box::new(RandomAgent::new(0)), Box::new(RandomAgent::new(1))],
+        );
+        e.resolve_effect(
+            &mana,
+            &ResolutionCtx { controller: Some(PlayerId(0)), source: Some(land), ..Default::default() },
+            WbReason::Resolve(StackId(0)),
+        );
+        assert_eq!(e.state.players[0].mana_pool.amounts.get(&Color::Green), Some(&1));
+    }
 }
