@@ -338,6 +338,11 @@ function pinfoEl(p: Any, you: boolean): HTMLElement {
   const godLib = godMode && view._god ? p._library : null;
   if (godMode && view._god) {
     piles.appendChild(pileEl("Hand", (p._hand || []).length, p._hand || [], `P${p.player} hand`, false));
+  } else {
+    // Normal play: your hand opens face-up; the opponent's hand opens as N card backs (hidden).
+    const handCount = p.hand_count != null ? p.hand_count : (p.handCount || 0);
+    const handObjs = you ? (view.me.hand || []) : null;
+    piles.appendChild(pileEl("Hand", you ? (view.me.hand || []).length : handCount, handObjs, `P${p.player} hand`, !you));
   }
   const libPile = pileEl("Lib", p.library_count ?? p.libraryCount, godLib,
     `P${p.player} library${godLib ? " (top first)" : ""}`, !godLib);
@@ -358,7 +363,8 @@ function pileEl(label: string, n: number, objs: Any[] | null, title: string, hid
   const d = el("div", "pile");
   d.innerHTML = `<div class="n">${n}</div><div class="l">${label}</div>`;
   // stopPropagation so opening a zone doesn't also toggle a player-target on the parent panel.
-  d.onclick = (e) => { e.stopPropagation(); openZone(title, hidden ? null : objs || []); };
+  // Hidden zones (opp hand, your library) open as `n` card backs rather than nothing.
+  d.onclick = (e) => { e.stopPropagation(); openZone(title, hidden ? null : objs || [], hidden ? n : 0); };
   return d;
 }
 // The prompt-option index that targets player `pid` (a "Player N" option with no board object), or
@@ -694,11 +700,14 @@ function renderEnd(winner: number | null): void {
 }
 
 // ── zone viewer modal ─────────────────────────────────────────────────────────
-function openZone(title: string, objs: Any[] | null): void {
+function openZone(title: string, objs: Any[] | null, backs?: number): void {
   const g = $("modalGrid"); g.innerHTML = "";
   if (objs == null) {
-    $("modalTitle").textContent = `${title} (hidden)`;
-    g.innerHTML = '<div class="waiting">This zone is hidden — its contents aren\'t in your view.</div>';
+    // Hidden zone: show one generic card back per card (the count is known even if contents aren't).
+    const n = backs || 0;
+    $("modalTitle").textContent = `${title} (${n}${n ? " · hidden" : ""})`;
+    if (n > 0) { for (let i = 0; i < n; i++) g.appendChild(el("div", "card back")); }
+    else { g.innerHTML = '<div class="waiting">This zone is hidden — its contents aren\'t in your view.</div>'; }
   } else if (!objs.length) {
     $("modalTitle").textContent = `${title} (0)`;
     g.innerHTML = '<div class="waiting">(empty)</div>';

@@ -7,6 +7,9 @@
     --cMulti:#efd98a; --cColorless:#d8dadd; --cLand:#d8c3a0;
   }
   * { box-sizing: border-box; }
+  /* The `hidden` attribute must win over component `display` rules (e.g. .replaybar/.hand use
+     display:flex, which would otherwise override the UA [hidden]{display:none} and show them). */
+  [hidden] { display: none !important; }
   html,body { height: 100%; }
   body { margin: 0; background: var(--felt2); color: var(--ink);
     font: 13px/1.4 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; overflow: hidden; }
