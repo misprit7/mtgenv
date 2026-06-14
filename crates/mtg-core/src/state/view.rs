@@ -25,6 +25,13 @@ fn chars_view(c: &Characteristics, db: &CardDb) -> CharacteristicsView {
         colors: c.colors.clone(),
         mana_value: c.mana_value(),
         mana_cost: c.mana_cost.clone(),
+        // The card's warp cost (CR 702.x), if any — so a UI can label the warp cast option.
+        warp_cost: db.get(c.grp_id).and_then(|d| {
+            d.abilities.iter().find_map(|a| match a {
+                crate::effects::ability::Ability::Warp { cost } => Some(cost.clone()),
+                _ => None,
+            })
+        }),
         power: c.power,
         toughness: c.toughness,
         keywords: Vec::new(),

@@ -8,9 +8,9 @@
 //! terminal client (`human`) and the WebSocket client (`session`/web) never disagree.
 
 use mtg_core::agent::{
-    DecisionRequest, DecisionResponse, ObjView, PlayableAction, PlayerView,
+    CastVariant, DecisionRequest, DecisionResponse, ObjView, PlayableAction, PlayerView,
 };
-use mtg_core::basics::Target;
+use mtg_core::basics::{ManaCost, Target};
 use mtg_core::ids::ObjId;
 use serde::Serialize;
 
@@ -154,6 +154,23 @@ pub fn name_of(view: &PlayerView, id: ObjId) -> String {
     format!("#{}", id.0)
 }
 
+/// The mana cost a given cast `variant` of `id` would pay — the warp cost for `Warp`, else the
+/// printed mana cost — for labelling the cast option (`None` if the object isn't in the view).
+fn cast_cost_of(view: &PlayerView, id: ObjId, variant: CastVariant) -> Option<ManaCost> {
+    for o in all_objs(view) {
+        if let ObjView::Visible { id: oid, chars, .. } = o {
+            if *oid == id {
+                return if variant == CastVariant::Warp {
+                    chars.warp_cost.clone()
+                } else {
+                    chars.mana_cost.clone()
+                };
+            }
+        }
+    }
+    None
+}
+
 fn describe_target(view: &PlayerView, t: &Target) -> String {
     match t {
         Target::Player(p) => format!("Player {}", p.0),
@@ -166,7 +183,12 @@ fn describe_action(view: &PlayerView, a: &PlayableAction) -> String {
     match a {
         PlayableAction::PlayLand { card } => format!("Play land — {}", name_of(view, *card)),
         PlayableAction::Cast { spell, variant } => {
-            format!("Cast {} [{variant:?}]", name_of(view, *spell))
+            // Label with the variant's actual cost: "Cast {2}{G}{G}" / "Warp {2}{G}".
+            let verb = if *variant == CastVariant::Warp { "Warp" } else { "Cast" };
+            let cost = cast_cost_of(view, *spell, *variant)
+                .map(|c| format!(" {c}"))
+                .unwrap_or_default();
+            format!("{verb} {}{cost}", name_of(view, *spell))
         }
         PlayableAction::Activate { source, ability } => {
             format!("Activate {} ability #{}", name_of(view, *source), ability.0)
@@ -611,7 +633,7 @@ mod tests {
                 mode: Action,
                 options: [
                     "Play land — #1",
-                    "Cast #2 [Normal]",
+                    "Cast #2",
                 ],
                 option_objs: [
                     Some(
@@ -648,7 +670,7 @@ mod tests {
         assert_eq!(p.options.len(), 2, "both cast variants surfaced");
         assert_eq!(p.option_objs, vec![Some(5), Some(5)], "both reference the same card");
         assert_ne!(p.options[0], p.options[1], "labels distinguish the variants");
-        assert!(p.options[0].contains("Normal") && p.options[1].contains("Warp"));
+        assert!(p.options[0].starts_with("Cast") && p.options[1].starts_with("Warp"));
         // Each maps back to its own action index (the client picks one variant → that action).
         for (i, want) in [(0u32, 0u32), (1, 1)] {
             let sel = Selection { picks: vec![i], ..Default::default() };

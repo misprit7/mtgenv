@@ -135,6 +135,10 @@ pub struct CharacteristicsView {
     /// will need a richer `ManaCost` once the engine's cost model supports them — M5+.)
     #[serde(default)]
     pub mana_cost: Option<ManaCost>,
+    /// The card's warp cost (CR 702.x `Ability::Warp`), if any — so a UI can label the warp cast
+    /// option with its actual cost ("Warp {2}{G}") rather than the normal mana cost. `None` otherwise.
+    #[serde(default)]
+    pub warp_cost: Option<ManaCost>,
     pub power: Option<i32>,
     pub toughness: Option<i32>,
     pub keywords: Vec<String>,

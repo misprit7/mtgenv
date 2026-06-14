@@ -138,6 +138,41 @@ pub struct ManaCost {
     pub x: u32,
 }
 
+impl Color {
+    /// The single-letter mana symbol (CR 107.4): W/U/B/R/G, and C for colorless.
+    pub fn symbol(self) -> char {
+        match self {
+            Color::White => 'W',
+            Color::Blue => 'U',
+            Color::Black => 'B',
+            Color::Red => 'R',
+            Color::Green => 'G',
+            Color::Colorless => 'C',
+        }
+    }
+}
+
+impl std::fmt::Display for ManaCost {
+    /// Render as MTG mana symbols (CR 107), e.g. `{2}{G}{G}` / `{X}{R}`; an empty cost is `{0}`.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for _ in 0..self.x {
+            write!(f, "{{X}}")?;
+        }
+        if self.generic > 0 {
+            write!(f, "{{{}}}", self.generic)?;
+        }
+        for (color, n) in &self.colored {
+            for _ in 0..*n {
+                write!(f, "{{{}}}", color.symbol())?;
+            }
+        }
+        if self.x == 0 && self.generic == 0 && self.colored.is_empty() {
+            write!(f, "{{0}}")?;
+        }
+        Ok(())
+    }
+}
+
 /// A mana pool (CR 106.4): mana currently available to a player, by color. Empties as each
 /// step/phase ends (CR 500.5).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
