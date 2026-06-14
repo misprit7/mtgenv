@@ -5,6 +5,18 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-14
 
+- **design (quality pass):** **Behaviour-test coverage expanded across the pool + post-flip self-play
+  re-validation.** Added resolve-level behaviour tests (exercise the *resolved* effect, not just IR) for the
+  distinct mechanic types: Sazh's Chocobo (landfall → +1/+1 on self), Mossborn Hydra (landfall → double
+  +1/+1 counters, a `CountersOnSelf` value), Icetill Explorer (landfall → mill top of library), Keen-Eyed
+  Curator (`{1}: Exile` a graveyard card → owner's exile), Erode (destroy target → graveyard) — joining the
+  earlier Lumbering CDA+Crew, Mightform double-power, Ba Sing Se earthbend. **10 behaviour tests across 8
+  cards** now, covering CDA / crew / pump / earthbend / landfall-counter / double-counter / mill / exile /
+  destroy. (Remaining cards' resolved effects — Search-tutoring, mana abilities, Optional/ForEach, reflexive
+  triggers, land-permission legality — are covered by engine's cap tests + IR snapshots; card-level tests for
+  them would need fragile agent-scripting.) Commits 45de0b2/27a5c1d/+. **188 tests green.** Re-validated the
+  full 18/18 deck in self-play (seeds 5/13/88, post Dyadrine/Surrak flips): clean finishes (21–26 turns),
+  zero panics — no regressions.
 - **gym obs — card-identity one-hot (#50).** Audit first: `grp_id` identity WAS present + effective
   (policy embeds `grp_id % 4096`), just in the `*_ids` field (not the feat arrays the user inspected)
   and hashed. Added an explicit **deck-determined one-hot** per card row: categories = union of both
