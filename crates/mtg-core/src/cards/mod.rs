@@ -3,15 +3,16 @@
 //!
 //! Organization (per the card-push spec): this module owns the [`CardDef`]/[`CardDb`] types, the
 //! card *builders* (`creature`/`spell`/`aura`/…), the `grp::` id constants, and the deck builders.
-//! The card *definitions* live in submodules — [`misc`] for the prototype/starter pool (grouped by
-//! mechanic), and `<setcode>/` folders for real cards keyed by their first-printing set.
+//! The card *definitions* live in submodules — [`misc`] holds only the basic lands; every other
+//! card lives in a `<setcode>/` folder keyed by its first-printing set (one file per card).
 //! [`starter_db`] aggregates them all.
 //!
 //! A [`CardDef`] bundles a card's [`Characteristics`] with its [`Ability`]s; a [`CardDb`] is the
 //! registry keyed by `grp_id`. Game objects reference their definition through `chars.grp_id`, so
 //! the (non-serializable, fn-pointer-bearing) ability data lives out of the serializable
-//! `GameState`. Mana abilities are represented engine-side for now (a land "taps for one of these
-//! colours") rather than via the full `Ability::Activated{is_mana}` IR.
+//! `GameState`. Mana production is first-class Effect IR — `Ability::Activated{is_mana:true}` +
+//! `Effect::AddMana` (dorks, conditional/filter lands), or intrinsic basic-land-type mana the
+//! engine derives from the computed subtype (CR 305.6); there is no `mana_colors` shortcut.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
