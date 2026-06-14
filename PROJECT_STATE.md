@@ -56,9 +56,12 @@ MTGA client.
   engine supports **delayed triggered abilities** (CR 603.7, `GameState.delayed_triggers` →
   `StackObjectKind::DelayedAbility` carrying concrete Actions). Earthbend (`Effect::Earthbend`)
   uses both: animate a target land to a 0/0 haste land-creature + N counters, with "when it dies or
-  is exiled, return it tapped". Ba Sing Se is now fully implementable with no card change; the
-  earthbend gap on Badgermole Cub + Earthbender Ascension is closed (those stay incomplete only on
-  their other unbuilt mechanics). Card pool ~14 across tdm/tla; 157 mtg-core tests green.
+  is exiled, return it tapped". **design flipped Ba Sing Se → `fully_implemented: true`** (b524244, no
+  card change); the earthbend gap on Badgermole Cub + Earthbender Ascension is closed (those stay
+  incomplete only on their other unbuilt mechanics — reflexive-mana trigger / quest-counter chain).
+  16 distinct landfall-push cards authored (12 landfall + Surrak + Badgermole + Earthbender Ascension +
+  Ba Sing Se), all in the selesnya preset where playable; 157 mtg-core tests green. Remaining 2 (Dyadrine,
+  Mightform) + Keen-Eyed Curator wait on caps C14/C15/C16/C17 + reflexive-mana/quest subsystems.
 - **Phase: parallel build kicked off** via a tmux agent team (`mtgenv`, lead + 4 teammates).
   Active workstreams (shared task board): **engine** scaffolding the Cargo workspace +
   headless `mtg-core` (#1); **decompile** recovering the GRE schema **and transport** in
