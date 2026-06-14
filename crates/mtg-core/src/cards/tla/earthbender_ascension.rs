@@ -299,4 +299,162 @@ mod tests {
         assert_eq!((cc.power, cc.toughness), (Some(2), Some(2))); // 0/0 + two +1/+1 counters
         assert_eq!(e.state.players[0].library.len(), 0); // the basic was fetched out of the library
     }
+
+    /// #60 end-to-end (REAL cast → ETB trigger): cast Earthbender Ascension `{2}{G}`; on entering, its
+    /// "earthbend 2, then fetch a basic" trigger goes on the stack (prompting `ChooseTargets` for the
+    /// land to earthbend) and resolves — the chosen land becomes a 2/2 land-creature and a basic is
+    /// fetched onto the battlefield tapped. Drives `cast_spell` → `resolve_top` → `run_agenda` → drain.
+    #[test]
+    fn earthbender_etb_via_real_cast() {
+        use crate::agent::{Agent, CastVariant, DecisionRequest, DecisionResponse, PlayerView};
+        use crate::basics::{CardType, Target, Zone};
+        use crate::cards::{grp, starter_db};
+        use crate::ids::{ObjId, PlayerId};
+        use crate::priority::Engine;
+        use crate::state::GameState;
+        use std::sync::Arc;
+
+        #[derive(Clone)]
+        struct PlayAgent {
+            land: ObjId,
+        }
+        impl Agent for PlayAgent {
+            fn decide(&mut self, _v: &PlayerView, req: &DecisionRequest) -> DecisionResponse {
+                match req {
+                    DecisionRequest::ChooseTargets { slots, .. } => {
+                        let i = slots[0]
+                            .legal
+                            .iter()
+                            .position(|t| matches!(t, Target::Object(o) if *o == self.land))
+                            .unwrap_or(0);
+                        DecisionResponse::Pairs(vec![(0, i as u32)])
+                    }
+                    DecisionRequest::SelectCards { from, min, max, .. } => {
+                        let n = (*min).max(1).min(*max).min(from.len() as u32);
+                        DecisionResponse::Indices((0..n).collect())
+                    }
+                    DecisionRequest::Confirm { .. } => DecisionResponse::Bool(true),
+                    _ => DecisionResponse::Pass,
+                }
+            }
+        }
+
+        let mut state = GameState::new(2, 1);
+        state.set_card_db(Arc::new(starter_db()));
+        let asc = {
+            let c = state.card_db().get(EARTHBENDER_ASCENSION).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, Zone::Hand)
+        };
+        let _ = asc;
+        for _ in 0..3 {
+            let c = state.card_db().get(grp::FOREST).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, Zone::Battlefield); // pays {2}{G}
+        }
+        let target_land = {
+            let c = state.card_db().get(grp::FOREST).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, Zone::Battlefield) // the land to earthbend
+        };
+        {
+            let c = state.card_db().get(grp::PLAINS).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, Zone::Library); // a basic to fetch
+        }
+        let mut e = Engine::new(
+            state,
+            vec![Box::new(PlayAgent { land: target_land }), Box::new(PlayAgent { land: target_land })],
+        );
+
+        e.cast_spell(PlayerId(0), e.state.players[0].hand[0], CastVariant::Normal);
+        e.resolve_top(); // Earthbender enters
+        e.run_agenda();
+        while !e.state.stack.items.is_empty() {
+            e.resolve_top();
+            e.run_agenda();
+        }
+
+        let cc = e.state.computed(target_land);
+        assert!(cc.is_creature() && cc.card_types.contains(&CardType::Land), "earthbent land-creature");
+        assert_eq!((cc.power, cc.toughness), (Some(2), Some(2)), "earthbend 2 → 2/2");
+        // The fetched basic (a Plains) is on the battlefield tapped; the library is empty.
+        assert!(e.state.players[0].library.is_empty(), "basic fetched out of the library");
+        let plains: Vec<_> = e.state.players[0]
+            .battlefield
+            .iter()
+            .filter(|&&o| e.state.object(o).chars.grp_id == grp::PLAINS)
+            .copied()
+            .collect();
+        assert_eq!(plains.len(), 1, "exactly one basic fetched");
+        assert!(e.state.object(plains[0]).status.tapped, "the fetched basic enters tapped");
+    }
+
+    /// #60 end-to-end (REAL land drop → landfall + reflexive reward): with Earthbender already holding
+    /// 3 quest counters, playing a land fires landfall — "put a quest counter (→ 4); when you do, if it
+    /// has 4+ quest counters, put a +1/+1 counter on target creature you control and it gains trample."
+    /// Drives `play_land` → `run_agenda` (stacks the trigger, prompting the reflexive target) →
+    /// `resolve_top`: the 4th quest counter lands AND the chosen 2/2 becomes a 3/3 with trample.
+    #[test]
+    fn earthbender_landfall_quest_reward_via_real_land_drop() {
+        use crate::agent::{Agent, DecisionRequest, DecisionResponse, PlayerView};
+        use crate::basics::{CounterKind, Target, Zone};
+        use crate::cards::{grp, starter_db};
+        use crate::effects::ability::Keyword;
+        use crate::ids::{ObjId, PlayerId};
+        use crate::priority::Engine;
+        use crate::state::GameState;
+        use std::sync::Arc;
+
+        #[derive(Clone)]
+        struct TargetAgent {
+            want: ObjId,
+        }
+        impl Agent for TargetAgent {
+            fn decide(&mut self, _v: &PlayerView, req: &DecisionRequest) -> DecisionResponse {
+                match req {
+                    DecisionRequest::ChooseTargets { slots, .. } => {
+                        let i = slots[0]
+                            .legal
+                            .iter()
+                            .position(|t| matches!(t, Target::Object(o) if *o == self.want))
+                            .unwrap_or(0);
+                        DecisionResponse::Pairs(vec![(0, i as u32)])
+                    }
+                    DecisionRequest::Confirm { .. } => DecisionResponse::Bool(true),
+                    _ => DecisionResponse::Pass,
+                }
+            }
+        }
+
+        let mut state = GameState::new(2, 1);
+        state.set_card_db(Arc::new(starter_db()));
+        let asc = {
+            let c = state.card_db().get(EARTHBENDER_ASCENSION).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, Zone::Battlefield)
+        };
+        let bears = {
+            let c = state.card_db().get(grp::GRIZZLY_BEARS).unwrap().chars.clone(); // 2/2
+            state.add_card(PlayerId(0), c, Zone::Battlefield)
+        };
+        let land = {
+            let c = state.card_db().get(grp::FOREST).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, Zone::Hand)
+        };
+        // Pre-seed 3 quest counters so this land drop pushes it to the 4+ reward threshold.
+        let quest = CounterKind::Named("quest".into());
+        state.objects.get_mut(&asc).unwrap().counters.counts.insert(quest.clone(), 3);
+
+        let mut e = Engine::new(
+            state,
+            vec![Box::new(TargetAgent { want: bears }), Box::new(TargetAgent { want: bears })],
+        );
+        e.play_land(PlayerId(0), land);
+        e.run_agenda();
+        while !e.state.stack.items.is_empty() {
+            e.resolve_top();
+            e.run_agenda();
+        }
+
+        assert_eq!(e.state.object(asc).counters.get(&quest), 4, "landfall added the 4th quest counter");
+        let cc = e.state.computed(bears);
+        assert_eq!((cc.power, cc.toughness), (Some(3), Some(3)), "≥4 quest → +1/+1 on the target (2/2 → 3/3)");
+        assert!(cc.has_keyword(Keyword::Trample), "and it gains trample until end of turn");
+    }
 }
