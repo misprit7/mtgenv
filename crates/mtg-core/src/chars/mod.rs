@@ -297,14 +297,38 @@ fn gather_statics(state: &GameState) -> Vec<StaticEffect<'_>> {
                 None => continue,
             };
             for ab in &def.abilities {
-                if let Ability::Static { contribution, affects, .. } = ab {
-                    v.push(StaticEffect {
-                        timestamp: src.timestamp,
-                        src_id,
-                        src_controller: src.controller,
-                        contribution,
-                        scope: Scope::Filter { zone: affects.zone, filter: &affects.filter },
-                    });
+                match ab {
+                    Ability::Static { contribution, affects, .. } => {
+                        v.push(StaticEffect {
+                            timestamp: src.timestamp,
+                            src_id,
+                            src_controller: src.controller,
+                            contribution,
+                            scope: Scope::Filter { zone: affects.zone, filter: &affects.filter },
+                        });
+                    }
+                    // A conditional static contributes only while its condition holds, evaluated
+                    // relative to the source permanent (CR 604.3) — Keen-Eyed's ≥4-exiled-types gate.
+                    Ability::ConditionalStatic { contribution, affects, condition, .. } => {
+                        if crate::conditions::holds_for_source(
+                            state,
+                            condition,
+                            src.controller,
+                            Some(src_id),
+                        ) {
+                            v.push(StaticEffect {
+                                timestamp: src.timestamp,
+                                src_id,
+                                src_controller: src.controller,
+                                contribution,
+                                scope: Scope::Filter {
+                                    zone: affects.zone,
+                                    filter: &affects.filter,
+                                },
+                            });
+                        }
+                    }
+                    _ => {}
                 }
             }
         }

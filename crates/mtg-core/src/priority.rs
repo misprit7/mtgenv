@@ -3963,6 +3963,83 @@ mod expect_tests {
     }
 
     #[test]
+    fn conditional_static_buffs_on_four_exiled_card_types_c17() {
+        use crate::effects::ability::{Ability, Keyword, StaticContribution};
+        use crate::effects::condition::{Condition, Duration};
+        use crate::effects::target::{CardFilter, SelectSpec};
+        use crate::effects::value::{PlayerRef, ValueExpr};
+        use std::sync::Arc;
+        // Keen-Eyed Curator's static: "+4/+4 and has trample as long as there are four or more card
+        // types among cards exiled with this creature." Two ConditionalStatic on ItSelf, gated on
+        // `ValueAtLeast(DistinctCardTypesAmongExiledWith, 4)`, evaluated relative to the source.
+        let cond = Condition::ValueAtLeast(
+            ValueExpr::DistinctCardTypesAmongExiledWith,
+            ValueExpr::Fixed(4),
+        );
+        let itself = || SelectSpec {
+            zone: Zone::Battlefield,
+            filter: CardFilter::ItSelf,
+            chooser: PlayerRef::Controller,
+            min: ValueExpr::Fixed(0),
+            max: ValueExpr::Fixed(0),
+        };
+        let mut db = cards::starter_db();
+        db.insert(cards::CardDef {
+            chars: Characteristics {
+                name: "Keen-Eyed (test)".into(),
+                card_types: vec![CardType::Creature],
+                power: Some(3),
+                toughness: Some(3),
+                grp_id: 9900,
+                ..Default::default()
+            },
+            abilities: vec![
+                Ability::ConditionalStatic {
+                    contribution: StaticContribution::ModifyPT { power: 4, toughness: 4 },
+                    affects: itself(),
+                    duration: Duration::WhileSourcePresent,
+                    condition: cond.clone(),
+                },
+                Ability::ConditionalStatic {
+                    contribution: StaticContribution::GrantKeyword(Keyword::Trample),
+                    affects: itself(),
+                    duration: Duration::WhileSourcePresent,
+                    condition: cond.clone(),
+                },
+            ],
+            text: String::new(),
+            ..Default::default()
+        });
+        let mut state = GameState::new(2, 1);
+        state.set_card_db(Arc::new(db));
+        let keen = {
+            let c = state.card_db().get(9900).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, Zone::Battlefield)
+        };
+        let mut exile_typed = |state: &mut GameState, t: CardType| {
+            let chars = Characteristics { card_types: vec![t], ..Default::default() };
+            let id = state.add_card(PlayerId(0), chars, Zone::Exile);
+            state.objects.get_mut(&id).unwrap().exiled_with = Some(keen);
+            state.mark_chars_dirty();
+        };
+
+        assert_eq!(state.computed(keen).power, Some(3), "no exiled cards → plain 3/3");
+        assert!(!state.computed(keen).has_keyword(Keyword::Trample));
+
+        // Three distinct types among cards exiled with it — still < 4, no buff.
+        exile_typed(&mut state, CardType::Creature);
+        exile_typed(&mut state, CardType::Land);
+        exile_typed(&mut state, CardType::Artifact);
+        assert_eq!(state.computed(keen).power, Some(3), "3 distinct types < 4 → no buff");
+
+        // A fourth distinct type flips the condition on → +4/+4 and trample.
+        exile_typed(&mut state, CardType::Enchantment);
+        assert_eq!(state.computed(keen).power, Some(7), "≥4 types → +4/+4");
+        assert_eq!(state.computed(keen).toughness, Some(7));
+        assert!(state.computed(keen).has_keyword(Keyword::Trample), "and has trample");
+    }
+
+    #[test]
     fn target_candidates_enforce_type_and_control_filters() {
         use crate::effects::target::{CardFilter, TargetKind, TargetSpec};
         use crate::effects::value::PlayerRef;

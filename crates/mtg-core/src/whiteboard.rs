@@ -796,12 +796,17 @@ impl Engine {
                     self.state.mark_chars_dirty();
                 }
             }
-            Action::Exile { obj, .. } => {
+            Action::Exile { obj, source } => {
                 let owner = match self.state.objects.get(&obj) {
                     Some(o) => o.owner,
                     None => return,
                 };
                 if self.state.move_object(obj, Zone::Exile, owner) {
+                    // Record which permanent exiled it (move_object cleared the field) — Keen-Eyed's
+                    // "cards exiled with this creature".
+                    if let Some(o) = self.state.objects.get_mut(&obj) {
+                        o.exiled_with = source;
+                    }
                     self.broadcast(GameEvent::ObjectMoved { obj, to: Zone::Exile });
                 }
             }
@@ -997,6 +1002,10 @@ impl Engine {
                 .and_then(|s| self.state.objects.get(&s))
                 .map(|o| o.mana_spent as i64)
                 .unwrap_or(0),
+            // Distinct card types among cards exiled with the source — Keen-Eyed Curator.
+            ValueExpr::DistinctCardTypesAmongExiledWith => {
+                crate::conditions::distinct_card_types_among_exiled_with(&self.state, ctx.source)
+            }
         }
     }
 

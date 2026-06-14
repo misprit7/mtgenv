@@ -241,4 +241,14 @@ pub enum Ability {
         affects: SelectSpec,
         duration: Duration,
     },
+    /// A static effect that applies **only while `condition` holds** (CR 604.3) — e.g. Keen-Eyed
+    /// Curator's "+4/+4 and trample as long as there are four or more card types among cards exiled
+    /// with this creature." The condition is evaluated relative to the source permanent each
+    /// recompute, so the contribution toggles on/off; otherwise identical to [`Ability::Static`].
+    ConditionalStatic {
+        contribution: StaticContribution,
+        affects: SelectSpec,
+        duration: Duration,
+        condition: Condition,
+    },
 }
