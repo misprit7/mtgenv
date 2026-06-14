@@ -93,6 +93,10 @@ impl Engine {
         if self.state.computed(blocker).has_qualification(Qualification::CantBlock) {
             return false;
         }
+        // "Can't be blocked" (CR 509.1b, e.g. Escape Tunnel) — no creature may block this attacker.
+        if self.state.computed(attacker).has_qualification(Qualification::CantBeBlocked) {
+            return false;
+        }
         if self.state.computed(attacker).has_keyword(Keyword::Flying) {
             let bk = self.state.computed(blocker);
             bk.has_keyword(Keyword::Flying) || bk.has_keyword(Keyword::Reach)
@@ -564,6 +568,38 @@ mod tests {
                 .map(|&b| Block { blocker: b, attacker })
                 .collect(),
         });
+    }
+
+    #[test]
+    fn cant_be_blocked_until_eot_escape_tunnel() {
+        use crate::effects::ability::Qualification;
+        use crate::effects::action::{ResolutionCtx, WbReason};
+        use crate::effects::condition::Duration;
+        use crate::effects::{Effect, EffectTarget};
+        // Escape Tunnel: "target creature can't be blocked this turn." Granting CantBeBlocked makes
+        // can_block(any blocker) false until cleanup (CR 509.1b / 514.2).
+        let mut e = engine();
+        let atk = put_bf(&mut e.state, PlayerId(0), grp::GRIZZLY_BEARS);
+        let blk = put_bf(&mut e.state, PlayerId(1), grp::GRIZZLY_BEARS);
+        assert!(e.can_block(blk, atk), "normally the blocker can block");
+
+        e.resolve_effect(
+            &Effect::GrantQualification {
+                what: EffectTarget::ChosenIndex(0),
+                qualification: Qualification::CantBeBlocked,
+                duration: Duration::UntilEndOfTurn,
+            },
+            &ResolutionCtx {
+                controller: Some(PlayerId(0)),
+                chosen_targets: vec![Target::Object(atk)],
+                ..Default::default()
+            },
+            WbReason::Resolve(crate::ids::StackId(0)),
+        );
+        assert!(!e.can_block(blk, atk), "the attacker can't be blocked this turn");
+
+        e.state.end_of_turn_continuous_cleanup();
+        assert!(e.can_block(blk, atk), "blockable again after cleanup");
     }
 
     #[test]

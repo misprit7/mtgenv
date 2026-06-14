@@ -100,6 +100,13 @@ pub enum Effect {
         keyword: Keyword,
         duration: Duration,
     },
+    /// Paint a qualification on the target for a duration (CR 611 / §2.4) — e.g. "target creature
+    /// can't be blocked this turn." Lowers to `GrantContinuous{ Qualification(q), duration }`.
+    GrantQualification {
+        what: EffectTarget,
+        qualification: self::ability::Qualification,
+        duration: Duration,
+    },
     AddMana {
         who: PlayerRef,
         mana: ManaSpec,

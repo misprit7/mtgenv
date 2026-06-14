@@ -70,6 +70,8 @@ pub enum CardFilter {
     Colorless,
     /// Mana value within `[min, max]` (inclusive); `None` = unbounded.
     ManaValue { min: Option<u32>, max: Option<u32> },
+    /// Computed power at most `n` (CR — "creature with power 2 or less"). Escape Tunnel.
+    PowerAtMost(i32),
     /// Controlled by the named player.
     ControlledBy(PlayerRef),
     Tapped,

@@ -473,6 +473,19 @@ impl Engine {
                     });
                 }
             }
+            // Paint a qualification for a duration — "can't be blocked this turn" (Escape Tunnel).
+            Effect::GrantQualification { what, qualification, duration } => {
+                if let Some(Target::Object(obj)) = self.resolve_target(what, ctx, cursor) {
+                    let controller = ctx.controller.unwrap_or(PlayerId(0));
+                    wb.push(Action::GrantContinuous {
+                        source: ctx.source,
+                        controller,
+                        affected: vec![obj],
+                        contributions: vec![StaticContribution::Qualification(*qualification)],
+                        duration: *duration,
+                    });
+                }
+            }
             // Intervening-"if" (CR 603.4) / conditional effect: run `then` when the condition holds
             // (evaluated source-aware), else `otherwise`. A *targeted* `then` is a reflexive trigger
             // (CR 603.7c): its target is chosen only if/when the condition is met, so it's deferred

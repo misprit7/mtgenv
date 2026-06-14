@@ -206,6 +206,8 @@ pub enum Qualification {
     CantAttack,
     MustAttack,
     CantBlock,
+    /// This creature can't be blocked (CR 509.1b) — combat reads it on the attacker. Escape Tunnel.
+    CantBeBlocked,
     CantBeCountered,
     PhasedOut,
 }

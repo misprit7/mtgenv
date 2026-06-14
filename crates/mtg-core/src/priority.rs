@@ -1494,6 +1494,7 @@ impl Engine {
             CardFilter::HasSubtype(s) => self.state.computed(*id).subtypes.contains(s),
             CardFilter::HasColor(c) => self.state.computed(*id).colors.contains(c),
             CardFilter::Colorless => self.state.computed(*id).colors.is_empty(),
+            CardFilter::PowerAtMost(n) => self.state.computed(*id).power.unwrap_or(0) <= *n,
             CardFilter::Supertype(s) => o.chars.supertypes.contains(s),
             CardFilter::All(fs) => fs.iter().all(|f| self.target_matches_filter(t, f, caster)),
             CardFilter::AnyOf(fs) => fs.iter().any(|f| self.target_matches_filter(t, f, caster)),
@@ -2399,7 +2400,9 @@ fn collect_specs_into(effect: &Effect, out: &mut Vec<TargetSpec>) {
         // "Put a +1/+1 counter on target creature" / "target creature gains trample" — the targeted
         // reward effects (collected when walking a reflexive branch, not from a Conditional.then).
         Effect::PutCounters { what: EffectTarget::Target(spec), .. }
-        | Effect::GrantKeyword { what: EffectTarget::Target(spec), .. } => out.push(spec.clone()),
+        | Effect::GrantKeyword { what: EffectTarget::Target(spec), .. }
+        | Effect::GrantQualification { what: EffectTarget::Target(spec), .. }
+        | Effect::Tap { what: EffectTarget::Target(spec), .. } => out.push(spec.clone()),
         Effect::Sequence(effects) => {
             for e in effects {
                 collect_specs_into(e, out);
