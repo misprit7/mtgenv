@@ -3346,6 +3346,72 @@ mod expect_tests {
         Engine::new(state, vec![Box::new(PassAgent), Box::new(PassAgent)])
     }
 
+    /// Worst case for repeatable-action loops (#55 root-cause hunt): at priority ALWAYS takes the
+    /// first legal action and never voluntarily passes; aggressive in combat. A correct engine still
+    /// terminates because resources deplete — if it spins, the loop-guard trips and names the loop.
+    struct GreedyAgent;
+    impl Agent for GreedyAgent {
+        fn decide(&mut self, _view: &PlayerView, req: &DecisionRequest) -> DecisionResponse {
+            match req {
+                DecisionRequest::Priority { actions, .. } => {
+                    if actions.is_empty() {
+                        DecisionResponse::Pass
+                    } else {
+                        DecisionResponse::Action(0)
+                    }
+                }
+                DecisionRequest::ChooseTargets { slots, .. } => {
+                    let pairs = slots
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, slot)| !slot.legal.is_empty())
+                        .map(|(si, _)| (si as u32, 0u32))
+                        .collect();
+                    DecisionResponse::Pairs(pairs)
+                }
+                DecisionRequest::DeclareAttackers { eligible } => {
+                    let pairs = eligible
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, o)| !o.may_attack.is_empty())
+                        .map(|(i, _)| (i as u32, 0u32))
+                        .collect();
+                    DecisionResponse::Pairs(pairs)
+                }
+                DecisionRequest::AssignCombatDamage { total, .. } => {
+                    DecisionResponse::Amounts(vec![(0, *total)])
+                }
+                DecisionRequest::SelectCards { min, .. } => {
+                    DecisionResponse::Indices((0..*min).collect())
+                }
+                DecisionRequest::ChooseModes { .. } => DecisionResponse::Indices(vec![0]),
+                _ => DecisionResponse::Pass,
+            }
+        }
+    }
+
+    #[test]
+    fn greedy_demo_self_play_terminates() {
+        // #55 guard: a DETERMINISTIC, never-voluntarily-pass policy is the worst case for
+        // repeatable-action infinite loops (a `RandomAgent` masks them by passing at random). Every
+        // game must still end — both with and without the Arena auto-pass profile, and well within
+        // the engine loop-guard (no draw-by-loop-abort). Broader hunts found no trip: 12k random +
+        // 1500 greedy (no auto-pass) and 4000 greedy/random (auto-pass on); this fast slice keeps the
+        // property covered. If a future card adds a free repeatable action that wedges priority, this
+        // is what catches it.
+        for seed in 0..40u64 {
+            for auto_pass in [false, true] {
+                let state = crate::cards::two_player_demo_game(seed);
+                let agents: Vec<Box<dyn Agent>> =
+                    vec![Box::new(GreedyAgent), Box::new(GreedyAgent)];
+                let mut engine = Engine::new(state, agents);
+                engine.set_arena_auto_pass(auto_pass);
+                engine.run_game();
+                assert!(engine.state.game_over, "game must end (seed {seed}, auto_pass={auto_pass})");
+            }
+        }
+    }
+
     /// Records the phase of every `Priority` window it is actually prompted at (so a test can
     /// assert which windows the Arena auto-pass policy elided). Always passes.
     struct PrioritySpy {
