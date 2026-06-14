@@ -565,4 +565,176 @@ mod tests {
             prompt.options
         );
     }
+
+    #[test]
+    fn badgermole_plus_earthbent_forest_makes_mightform_hard_castable() {
+        // Case (b) of the Badgermole check: once the Forest is EARTHBENT into a land-creature, both
+        // Llanowar AND the Forest tap as creatures → {G}{G} each via Badgermole = 4 mana → the full
+        // {2}{G}{G} hard cast of Mightform is now affordable (in addition to Warp). We model the
+        // earthbent Forest by giving the Forest the Creature type (what earthbend does).
+        use mtg_core::agent::{DecisionRequest, RandomAgent};
+        use mtg_core::basics::{CardType, Phase, Zone};
+        use mtg_core::cards::eoe::mightform_harmonizer::MIGHTFORM_HARMONIZER;
+        use mtg_core::cards::grp::FOREST;
+        use mtg_core::cards::lea::llanowar_elves::LLANOWAR_ELVES;
+        use mtg_core::cards::tla::badgermole_cub::BADGERMOLE_CUB;
+        use mtg_core::state::view::view_for;
+        use std::sync::Arc;
+
+        let mut state = GameState::new(2, 1);
+        state.set_card_db(Arc::new(mtg_core::cards::starter_db()));
+        state.active_player = PlayerId(0);
+        state.phase = Phase::PrecombatMain;
+        let (bm, ll, mut fo, mf) = {
+            let db = state.card_db();
+            (
+                db.get(BADGERMOLE_CUB).unwrap().chars.clone(),
+                db.get(LLANOWAR_ELVES).unwrap().chars.clone(),
+                db.get(FOREST).unwrap().chars.clone(),
+                db.get(MIGHTFORM_HARMONIZER).unwrap().chars.clone(),
+            )
+        };
+        fo.card_types.push(CardType::Creature); // earthbent: the Forest is now a land-creature
+        fo.power = Some(2);
+        fo.toughness = Some(2);
+        state.add_card(PlayerId(0), bm, Zone::Battlefield);
+        state.add_card(PlayerId(0), ll, Zone::Battlefield);
+        state.add_card(PlayerId(0), fo, Zone::Battlefield);
+        state.add_card(PlayerId(0), mf, Zone::Hand);
+
+        let view = view_for(&state, PlayerId(0));
+        let engine = Engine::new(
+            state,
+            vec![Box::new(RandomAgent::new(1)), Box::new(RandomAgent::new(2))],
+        );
+        let prompt = crate::options::prompt_for(
+            &view,
+            &DecisionRequest::Priority { actions: engine.legal_actions(PlayerId(0)), can_pass: true },
+        );
+        // 4 creature-tap mana now available → the {2}{G}{G} hard cast IS offered (plus Warp).
+        assert!(
+            prompt.options.iter().any(|o| o.starts_with("Cast Mightform Harmonizer")),
+            "with 4 mana (Llanowar + earthbent Forest, each {{G}}{{G}}) the hard cast must be \
+             offered. Options: {:?}",
+            prompt.options
+        );
+        assert!(
+            prompt.options.iter().any(|o| o.contains("Warp Mightform Harmonizer")),
+            "Warp is still offered too. Options: {:?}",
+            prompt.options
+        );
+    }
+
+    #[test]
+    fn ba_sing_se_earthbend_taps_itself_plus_three_other_lands() {
+        // #57/#59 fix: Ba Sing Se's "{2}{G}, {T}: Earthbend 2" must tap ITSELF for the {T} PLUS
+        // 3 OTHER lands for the {2}{G} — its own {T} cost can't also pay a {G} of the {2}{G} (the
+        // bug double-counted it, tapping only itself + 2). We drive the activation through the real
+        // engine (scripted agent) and read the tapped lands off the resulting PlayerView — exactly
+        // what the web board renders (rotated/.tapped cards).
+        use mtg_core::agent::{
+            Agent, DecisionRequest, DecisionResponse, ObjView, PlayableAction, PlayerView,
+        };
+        use mtg_core::basics::{Phase, Zone};
+        use mtg_core::cards::grp::FOREST;
+        use mtg_core::cards::tla::ba_sing_se::BA_SING_SE;
+        use mtg_core::ids::ObjId;
+        use std::cell::RefCell;
+        use std::rc::Rc;
+        use std::sync::Arc;
+
+        struct Scripted {
+            ba: ObjId,
+            cap: Rc<RefCell<Option<PlayerView>>>,
+            activated: bool,
+        }
+        impl Agent for Scripted {
+            fn decide(&mut self, view: &PlayerView, req: &DecisionRequest) -> DecisionResponse {
+                match req {
+                    DecisionRequest::Priority { actions, can_pass } => {
+                        if !self.activated {
+                            if let Some(i) = actions.iter().position(|a| {
+                                matches!(a, PlayableAction::Activate { source, .. } if *source == self.ba)
+                            }) {
+                                self.activated = true;
+                                return DecisionResponse::Action(i as u32);
+                            }
+                        } else if self.cap.borrow().is_none() {
+                            *self.cap.borrow_mut() = Some(view.clone()); // post-activation: taps done
+                        }
+                        if *can_pass {
+                            DecisionResponse::Pass
+                        } else {
+                            DecisionResponse::Index(0)
+                        }
+                    }
+                    DecisionRequest::ChooseTargets { .. } => DecisionResponse::Pairs(vec![(0, 0)]),
+                    DecisionRequest::DeclareAttackers { .. } => DecisionResponse::Indices(vec![]),
+                    DecisionRequest::DeclareBlockers { .. } => DecisionResponse::Pairs(vec![]),
+                    DecisionRequest::SelectCards { min, .. } => {
+                        DecisionResponse::Indices((0..*min as u32).collect())
+                    }
+                    DecisionRequest::ChooseNumber { min, .. } => DecisionResponse::Number(*min),
+                    DecisionRequest::Mulligan { .. } => DecisionResponse::Bool(false),
+                    DecisionRequest::ChooseStartingPlayer { .. } => DecisionResponse::Index(0),
+                    _ => DecisionResponse::Index(0),
+                }
+            }
+        }
+
+        let mut state = GameState::new(2, 7);
+        state.set_card_db(Arc::new(mtg_core::cards::starter_db()));
+        state.active_player = PlayerId(0);
+        state.phase = Phase::PrecombatMain;
+        let (ba, fo) = {
+            let db = state.card_db();
+            (
+                db.get(BA_SING_SE).unwrap().chars.clone(),
+                db.get(FOREST).unwrap().chars.clone(),
+            )
+        };
+        let ba_id = state.add_card(PlayerId(0), ba, Zone::Battlefield);
+        // 4 other lands → 3 tap for {2}{G}, 1 stays untapped (proves "itself + 3", not "itself + 2").
+        for _ in 0..4 {
+            state.add_card(PlayerId(0), fo.clone(), Zone::Battlefield);
+        }
+        // small libraries so the game terminates quickly after the capture.
+        for _ in 0..4 {
+            state.add_card(PlayerId(0), fo.clone(), Zone::Library);
+        }
+        for _ in 0..2 {
+            state.add_card(PlayerId(1), fo.clone(), Zone::Library);
+        }
+
+        let cap = Rc::new(RefCell::new(None));
+        let mut engine = Engine::new(
+            state,
+            vec![
+                Box::new(Scripted { ba: ba_id, cap: cap.clone(), activated: false }),
+                Box::new(mtg_core::agent::RandomAgent::new(2)),
+            ],
+        );
+        engine.skip_opening_deal(); // play the hand-built board as-is (no shuffle/deal)
+        engine.run_game();
+
+        let captured = cap.borrow();
+        let view = captured.as_ref().expect("Ba Sing Se's earthbend should have been activated");
+        let (mut tapped_lands, mut total_lands) = (0, 0);
+        for o in &view.battlefield {
+            if let ObjView::Visible { chars, controller, status, .. } = o {
+                if *controller == PlayerId(0) && chars.card_types.iter().any(|t| t == "Land") {
+                    total_lands += 1;
+                    if status.tapped {
+                        tapped_lands += 1;
+                    }
+                }
+            }
+        }
+        assert_eq!(total_lands, 5, "board is Ba Sing Se + 4 Forests");
+        assert_eq!(
+            tapped_lands, 4,
+            "Ba Sing Se's {{T}} + 3 OTHER lands for {{2}}{{G}} = 4 tapped (the #57/#59 fix); the \
+             old double-count bug would tap only 3 (itself + 2)"
+        );
+    }
 }

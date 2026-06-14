@@ -5,6 +5,20 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-14
 
+- **webui:** Post-#59 (mana-pool rework, `3c35cff`) full re-verification at the UI layer. `ManaPool`
+  wire shape unchanged (`{amounts:{Color:n}}`) → `poolPips` needs no change; `mana_pool` still in
+  PlayerView; new `ManaPoolChanged` event drives a live view refresh. New driver tests: (a)
+  `badgermole_plus_earthbent_forest_makes_mightform_hard_castable` — earthbent (creature) Forest +
+  Llanowar = 4 creature-tap mana → the `{2}{G}{G}` hard cast is now offered (alongside Warp); (b)
+  `ba_sing_se_earthbend_taps_itself_plus_three_other_lands` — drives the real activation via a
+  scripted agent (`skip_opening_deal` + `run_game`) and reads the PlayerView: Ba Sing Se's `{T}` +
+  **3 OTHER** lands tapped = 4 (the #57/#59 fix; old bug tapped only 3). Live-UI screenshots: Ba
+  Sing Se tap pattern (4 tapped / 1 untapped, `/tmp/basingse_ui.png`) + floating-mana pool
+  (`/tmp/pool_shot.png`). Erode (#61) + Fabled (#58) are engine-correctness (no distinct UI
+  affordance) — covered by mtg-core tests `erode_destroys_the_target` /
+  `fabled_passage_untaps_the_land_at_four_lands`; the UI renders the resulting board state. 19/19
+  mtg-gre-server tests green.
+
 - **engine (#59 — mana-pool payment rework):** **Pay through the real pool (3c35cff + e46fe8d); fixes #56 + #57.**
   Replaced the source-based auto-tap (each source = 1 mana, tap-to-pay, bonus dumped to the pool afterward)
   with proper pool-based payment: (1) `pay_cost` pays NON-mana components (TapSelf/Sacrifice/Crew) FIRST and
