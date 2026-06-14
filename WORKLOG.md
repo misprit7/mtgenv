@@ -5,6 +5,16 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-14
 
+- **engine (#67 done):** Finished the stop-policy collapse end-to-end. After webui migrated
+  gre-server off the dead flags (cbae678) + dropped the client-side `priorityAutoPass` narrowing
+  (engine is authoritative now), engine deleted `StopConfig.auto_pass/smart_stops/resolve_own_stack`
+  + their setters + the `AutoPassOption` enum + `set_auto_pass_option` + the `StopStateView`
+  smart_stops/resolve_own_stack fields (f9a7b1f). `StopConfig` = `full_control` + overrides +
+  manual_mana; the view echoes stop state when not under full control; `set_arena_auto_pass` stays
+  (gym uses it) → `full_control=!on`. Fully green: 233 mtg-core + 20 gre-server + 16 mtg-py. Also
+  added `source: Option<ObjId>` to `DecisionRequest::ChooseTargets` (6fe1580) so trigger/reflexive
+  target decisions carry their source for the gym's Tier-1 obs (#66).
+
 - **webui:** Removed the dead stop-policy plumbing (#67, engine collapsed it to one `full_control`
   knob in `5e106df`). Dropped `auto_pass`/`smart_stops`/`resolve_own_stack` from the `Stops` carrier
   + the `smart_stops=true` force (driver.rs), the `ServerMsg::Stops` fields (protocol.rs), the WS
