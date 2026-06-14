@@ -143,4 +143,34 @@ mod tests {
                 },
             ]"#]].assert_eq(&format!("{:#?}", def.abilities));
     }
+
+    /// Behaviour: the landfall trigger mills one card (top of your library → your graveyard).
+    #[test]
+    fn icetill_landfall_mills_a_card() {
+        use crate::agent::RandomAgent;
+        use crate::basics::Zone;
+        use crate::cards::{build_game, grp};
+        use crate::effects::action::{ResolutionCtx, WbReason};
+        use crate::ids::{PlayerId, StackId};
+        use crate::priority::Engine;
+        let mut state = build_game(1, &[&[grp::FOREST, grp::FOREST], &[]]); // P0 library = 2 Forests
+        let icetill_chars = state.card_db().get(ICETILL_EXPLORER).unwrap().chars.clone();
+        let icetill = state.add_card(PlayerId(0), icetill_chars, Zone::Battlefield);
+        let mill = match &state.card_db().get(ICETILL_EXPLORER).unwrap().abilities[2] {
+            Ability::Triggered { effect, .. } => effect.clone(),
+            o => panic!("expected landfall mill Triggered, got {o:?}"),
+        };
+        let lib_before = state.players[0].library.len();
+        let mut e = Engine::new(
+            state,
+            vec![Box::new(RandomAgent::new(0)), Box::new(RandomAgent::new(1))],
+        );
+        e.resolve_effect(
+            &mill,
+            &ResolutionCtx { controller: Some(PlayerId(0)), source: Some(icetill), ..Default::default() },
+            WbReason::Resolve(StackId(0)),
+        );
+        assert_eq!(e.state.players[0].library.len(), lib_before - 1); // one card milled
+        assert_eq!(e.state.players[0].graveyard.len(), 1);
+    }
 }

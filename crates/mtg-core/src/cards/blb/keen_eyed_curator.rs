@@ -184,4 +184,39 @@ mod tests {
             ]"#]]
         .assert_eq(&format!("{:#?}", def.abilities));
     }
+
+    /// Behaviour: "{1}: Exile target card from a graveyard" moves the targeted card out of the
+    /// graveyard into its owner's exile (and links it to the source via `Object.exiled_with`).
+    #[test]
+    fn keen_eyed_exiles_a_graveyard_card() {
+        use crate::agent::RandomAgent;
+        use crate::basics::{Target, Zone};
+        use crate::cards::{build_game, grp};
+        use crate::effects::ability::Ability;
+        use crate::effects::action::{ResolutionCtx, WbReason};
+        use crate::ids::{PlayerId, StackId};
+        use crate::priority::Engine;
+        let mut state = build_game(1, &[&[], &[]]);
+        let bears_chars = state.card_db().get(grp::GRIZZLY_BEARS).unwrap().chars.clone();
+        let victim = state.add_card(PlayerId(1), bears_chars, Zone::Graveyard); // a card in P1's graveyard
+        let exile = match &state.card_db().get(KEEN_EYED_CURATOR).unwrap().abilities[0] {
+            Ability::Activated { effect, .. } => effect.clone(),
+            o => panic!("expected exile Activated, got {o:?}"),
+        };
+        let mut e = Engine::new(
+            state,
+            vec![Box::new(RandomAgent::new(0)), Box::new(RandomAgent::new(1))],
+        );
+        e.resolve_effect(
+            &exile,
+            &ResolutionCtx {
+                controller: Some(PlayerId(0)),
+                chosen_targets: vec![Target::Object(victim)],
+                ..Default::default()
+            },
+            WbReason::Resolve(StackId(0)),
+        );
+        assert!(!e.state.players[1].graveyard.contains(&victim), "left the graveyard");
+        assert!(e.state.players[1].exile.contains(&victim), "now in its owner's exile");
+    }
 }

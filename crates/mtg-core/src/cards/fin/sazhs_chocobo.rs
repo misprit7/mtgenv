@@ -81,4 +81,35 @@ mod tests {
                 },
             ]"#]].assert_eq(&format!("{:#?}", def.abilities));
     }
+
+    /// Behaviour: resolving the landfall trigger puts a +1/+1 counter on the 0/1 Chocobo → 1/2.
+    #[test]
+    fn sazhs_chocobo_landfall_adds_a_counter() {
+        use crate::agent::RandomAgent;
+        use crate::basics::Zone;
+        use crate::cards::build_game;
+        use crate::effects::action::{ResolutionCtx, WbReason};
+        use crate::ids::{PlayerId, StackId};
+        use crate::priority::Engine;
+        let mut state = build_game(1, &[&[], &[]]);
+        let chars = state.card_db().get(SAZHS_CHOCOBO).unwrap().chars.clone();
+        let chocobo = state.add_card(PlayerId(0), chars, Zone::Battlefield);
+        let cc = state.computed(chocobo);
+        assert_eq!((cc.power, cc.toughness), (Some(0), Some(1)));
+        let landfall = match &state.card_db().get(SAZHS_CHOCOBO).unwrap().abilities[0] {
+            Ability::Triggered { effect, .. } => effect.clone(),
+            o => panic!("expected landfall Triggered, got {o:?}"),
+        };
+        let mut e = Engine::new(
+            state,
+            vec![Box::new(RandomAgent::new(0)), Box::new(RandomAgent::new(1))],
+        );
+        e.resolve_effect(
+            &landfall,
+            &ResolutionCtx { controller: Some(PlayerId(0)), source: Some(chocobo), ..Default::default() },
+            WbReason::Resolve(StackId(0)),
+        );
+        let cc = e.state.computed(chocobo);
+        assert_eq!((cc.power, cc.toughness), (Some(1), Some(2))); // a +1/+1 counter
+    }
 }

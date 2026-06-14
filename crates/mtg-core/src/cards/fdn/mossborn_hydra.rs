@@ -111,4 +111,44 @@ mod tests {
                 },
             ]"#]].assert_eq(&format!("{:#?}", def.abilities));
     }
+
+    /// Behaviour: the landfall trigger "doubles the +1/+1 counters" (a `CountersOnSelf` value) — seed
+    /// a 0/0 Hydra with two counters (a 2/2), resolve landfall → four counters (a 4/4).
+    #[test]
+    fn mossborn_hydra_landfall_doubles_its_counters() {
+        use crate::agent::RandomAgent;
+        use crate::basics::{CounterKind, Zone};
+        use crate::cards::build_game;
+        use crate::effects::action::{ResolutionCtx, WbReason};
+        use crate::effects::value::ValueExpr;
+        use crate::effects::{Effect, EffectTarget};
+        use crate::ids::{PlayerId, StackId};
+        use crate::priority::Engine;
+        let mut state = build_game(1, &[&[], &[]]);
+        let chars = state.card_db().get(MOSSBORN_HYDRA).unwrap().chars.clone();
+        let hydra = state.add_card(PlayerId(0), chars, Zone::Battlefield);
+        let double = match &state.card_db().get(MOSSBORN_HYDRA).unwrap().abilities[1] {
+            Ability::Triggered { effect, .. } => effect.clone(),
+            o => panic!("expected landfall Triggered, got {o:?}"),
+        };
+        let mut e = Engine::new(
+            state,
+            vec![Box::new(RandomAgent::new(0)), Box::new(RandomAgent::new(1))],
+        );
+        let ctx = ResolutionCtx { controller: Some(PlayerId(0)), source: Some(hydra), ..Default::default() };
+        // Seed two +1/+1 counters → a 2/2.
+        e.resolve_effect(
+            &Effect::PutCounters {
+                what: EffectTarget::SourceSelf,
+                kind: CounterKind::PlusOnePlusOne,
+                n: ValueExpr::Fixed(2),
+            },
+            &ctx,
+            WbReason::Resolve(StackId(0)),
+        );
+        assert_eq!(e.state.computed(hydra).power, Some(2));
+        // Landfall: double the +1/+1 counters → 4.
+        e.resolve_effect(&double, &ctx, WbReason::Resolve(StackId(0)));
+        assert_eq!(e.state.computed(hydra).power, Some(4));
+    }
 }
