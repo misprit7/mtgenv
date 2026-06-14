@@ -5,6 +5,16 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-14
 
+- **design (overnight quality):** **Behaviour tests + full-deck self-play re-validation.** Added card-level
+  *behaviour* tests (resolve/computed, not just IR snapshots) for the trickiest mechanics: Lumbering `*`/4
+  CDA (layer-7a `computed` = lands you control, opponent's lands excluded) + Crew (resolve `BecomeCreature`
+  → artifact creature); Mightform double-power (resolve the landfall pump → a 2/2 becomes 4/2, the
+  `PowerOfTarget` snapshot); Ba Sing Se earthbend (resolve → a Forest becomes a 2/2 haste land-creature).
+  Pattern: in-crate test modules using `Engine::new` (pub) + `resolve_effect` (pub(crate)) + `computed`,
+  mirroring engine's cap tests. Commit 45de0b2; 182 tests green. **Re-validated the full Selesnya deck in
+  self-play** — `mtg-cli selesnya selesnya` across 7 seeds (1/2/3/7/11/42/99): all clean finishes (14–21
+  turns, real winners, **zero panics**) with crew/warp/earthbend/reflexive-chains/land-permissions all live.
+  (Warp/Dyadrine-attack/reflexive-chain *resolution* are covered by engine's cap tests + my IR snapshots.)
 - **engine (#44 COMPLETE):** **Last two caps — C18 Icetill + Dyadrine c3.** **C18** (`3ca7fef`):
   `StaticContribution::ExtraLandPlays(u32)` + `PlayLandsFrom(Zone)` — player-level land-play
   permissions read by the land-play legality (limit = 1 + ΣExtraLandPlays; offers lands from
