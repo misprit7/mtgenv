@@ -420,8 +420,8 @@ pub fn bears_deck() -> Vec<u32> {
 /// least *partially* implemented is included at its mtggoldfish quantity, with basic lands padding
 /// the rest to 60. As cards cross from unimplemented → implemented they join here and the basics
 /// shrink; when all 18 are in, this *is* the mtggoldfish 60 and the padding disappears. Still
-/// omitted (cap-blocked): Keen-Eyed Curator, Dyadrine, Mightform Harmonizer. Green-primary with
-/// white for Erode. Preset: `"selesnya"` / `"landfall"`.
+/// omitted (cap-blocked): Keen-Eyed Curator, Dyadrine (their 3 copies are the only remaining basic
+/// padding). Green-primary with white for Erode. Preset: `"selesnya"` / `"landfall"`.
 pub fn selesnya_landfall_deck() -> Vec<u32> {
     use std::iter::repeat;
     let mut deck = Vec::new();
@@ -441,10 +441,12 @@ pub fn selesnya_landfall_deck() -> Vec<u32> {
     deck.extend(repeat(bro::bushwhack::BUSHWHACK).take(2));
     deck.extend(repeat(tdm::surrak_elusive_hunter::SURRAK_ELUSIVE_HUNTER).take(2));
     deck.extend(repeat(tla::badgermole_cub::BADGERMOLE_CUB).take(4));
-    deck.extend(repeat(tla::earthbender_ascension::EARTHBENDER_ASCENSION).take(4)); // = 44
-    // Fill to 60 with basics (green-primary, enough white to cast {W} Erode).
-    deck.extend(repeat(grp::FOREST).take(10));
-    deck.extend(repeat(grp::PLAINS).take(6));
+    deck.extend(repeat(tla::earthbender_ascension::EARTHBENDER_ASCENSION).take(4));
+    deck.extend(repeat(eoe::mightform_harmonizer::MIGHTFORM_HARMONIZER).take(4)); // = 48
+    // Fill to 60 with basics (green-primary, enough white to cast {W} Erode). Real list is 7F/2P;
+    // the +3 over that pads for the 3 still-omitted copies (Keen-Eyed Curator + Dyadrine).
+    deck.extend(repeat(grp::FOREST).take(9));
+    deck.extend(repeat(grp::PLAINS).take(3));
     deck
 }
 
@@ -495,7 +497,7 @@ mod tests {
     #[test]
     fn starter_db_has_expected_cards() {
         let db = starter_db();
-        assert_eq!(db.len(), 47);
+        assert_eq!(db.len(), 48);
         // Forest is "type line only": a Basic Land with subtype Forest. Mana is intrinsic
         // (CR 305.6) — the engine derives {T}: Add {G} from the subtype, so the CardDef carries
         // no explicit mana ability (and `is_mana_source` only sees authored abilities).
