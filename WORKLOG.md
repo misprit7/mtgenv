@@ -5,6 +5,10 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **design (#44):** **Badgermole Cub → `fully_implemented: true`** (c2ef012) — cap H landed (engine
+  23242f2: `EventPattern::TapCreatureForMana`), so authored its 2nd ability: `Triggered{ TapCreatureForMana,
+  AddMana{Controller, {G}} }` (no-stack mana trigger, CR 605.1b). **12/18 fully faithful; 6 partials left.**
+  173 tests green. Ledger + trackers updated.
 - **design (#44):** **Earthbender Ascension → `fully_implemented: true`** (e6b9050) — cap A reflexive
   sub-trigger landed (engine 2e13694), so authored the full landfall quest-chain: `Triggered{ landfall,
   Sequence[ PutCounters{self, Named("quest"), 1}, Conditional{ ValueAtLeast(CountersOnSelf(quest), 4),
