@@ -337,4 +337,74 @@ mod tests {
         assert!(cc.card_types.contains(&CardType::Artifact), "still an artifact");
         assert_eq!(cc.toughness, Some(4), "keeps its */4 toughness");
     }
+
+    /// #60 end-to-end (REAL crew → attack → trigger): crew the Worldwagon (so it's a creature), then
+    /// declare it as an attacker — "Whenever this Vehicle … attacks, you may search your library for a
+    /// basic land card, put it onto the battlefield tapped." Driven via `activate_ability` (Crew 4) →
+    /// `declare_attackers_explicit` (fires the SelfAttacks trigger) → `run_agenda` → `resolve_top`: a
+    /// basic is fetched onto the battlefield tapped.
+    #[test]
+    fn lumbering_attack_fetch_via_real_combat() {
+        use crate::agent::{AbilityRef, Agent, DecisionRequest, DecisionResponse, PlayerView};
+        use crate::basics::Zone;
+        use crate::cards::{grp, starter_db};
+        use crate::ids::PlayerId;
+        use crate::priority::Engine;
+        use crate::state::GameState;
+        use std::sync::Arc;
+
+        #[derive(Clone)]
+        struct TakeItAgent;
+        impl Agent for TakeItAgent {
+            fn decide(&mut self, _v: &PlayerView, req: &DecisionRequest) -> DecisionResponse {
+                match req {
+                    DecisionRequest::Confirm { .. } => DecisionResponse::Bool(true),
+                    DecisionRequest::SelectCards { from, min, max, .. } => {
+                        let n = (*min).max(1).min(*max).min(from.len() as u32);
+                        DecisionResponse::Indices((0..n).collect())
+                    }
+                    _ => DecisionResponse::Pass,
+                }
+            }
+        }
+
+        let mut state = GameState::new(2, 1);
+        state.set_card_db(Arc::new(starter_db()));
+        let wagon = {
+            let c = state.card_db().get(LUMBERING_WORLDWAGON).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, Zone::Battlefield)
+        };
+        for _ in 0..2 {
+            let c = state.card_db().get(grp::GRIZZLY_BEARS).unwrap().chars.clone(); // crew (2+2 ≥ 4)
+            state.add_card(PlayerId(0), c, Zone::Battlefield);
+        }
+        {
+            let c = state.card_db().get(grp::PLAINS).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, Zone::Library); // a basic to fetch
+        }
+        state.active_player = PlayerId(0);
+        let mut e = Engine::new(state, vec![Box::new(TakeItAgent), Box::new(TakeItAgent)]);
+
+        e.activate_ability(PlayerId(0), wagon, AbilityRef(3)); // Crew 4
+        e.resolve_top(); // it becomes a creature
+        assert!(e.state.computed(wagon).is_creature(), "crewed → a creature, so it can attack");
+
+        e.declare_attackers_explicit(&[wagon]); // fires the "whenever this Vehicle attacks" trigger
+        e.run_agenda();
+        while !e.state.stack.items.is_empty() {
+            e.resolve_top();
+            e.run_agenda();
+        }
+
+        // A basic (Plains) was fetched onto the battlefield tapped; the library is empty.
+        assert!(e.state.players[0].library.is_empty(), "the basic was fetched out of the library");
+        let plains: Vec<_> = e.state.players[0]
+            .battlefield
+            .iter()
+            .filter(|&&o| e.state.object(o).chars.grp_id == grp::PLAINS)
+            .copied()
+            .collect();
+        assert_eq!(plains.len(), 1, "the attack trigger fetched exactly one basic");
+        assert!(e.state.object(plains[0]).status.tapped, "the fetched basic enters tapped");
+    }
 }
