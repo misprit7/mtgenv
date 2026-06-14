@@ -78,10 +78,7 @@ pub enum ServerMsg {
     /// on_opp_turn)` — stops are keyed per `(Phase, own_turn)` in the engine, so the phase bar can
     /// render two independent dots per step (e.g. stop on *my* draw but not the opponent's).
     Stops {
-        auto_pass: bool,
         full_control: bool,
-        smart_stops: bool,
-        resolve_own_stack: bool,
         per_step: Vec<(Phase, bool, bool)>,
     },
     /// A seat's static starting decklist, for the debug library peek (RL-safe: not in the view).
@@ -113,7 +110,7 @@ pub enum ClientMsg {
         own: bool,
         on: bool,
     },
-    /// Live toggle of a global stop option (`autopass`/`fullcontrol`/`smartstops`/`resolvestack`).
+    /// Live toggle of the global stop knob (`fullcontrol`).
     SetOption {
         key: String,
         on: bool,

@@ -39,8 +39,9 @@ if (spectating) $("prompt").innerHTML = '<div class="waiting">👁 Spectating �
 if (replayId) $("prompt").innerHTML = '<div class="waiting">▶ Replay — god-view playback (no hidden information). Use the bar below.</div>';
 // Stops control (top bar): LIVE toggles — send setOption; the server echoes the new config and
 // the running game's agent honours it at the next window (no reset). Rendered from stopsView.
-// The only user-facing stop toggle is Full Control (stop at every priority window). Auto-pass /
-// smart / resolve-own are no longer toggles — the web stop policy is fixed (see priorityAutoPass).
+// The only user-facing stop toggle is Full Control (stop at every priority window). The former
+// auto-pass / smart / resolve-own knobs were collapsed into it engine-side; OFF = the engine's fixed
+// `should_auto_pass` elision rule.
 const OPT: Array<[string, string, string]> = [
   ["full ctrl", "full_control", "fullcontrol"],
 ];
@@ -87,12 +88,8 @@ function handle(m: Any): void {
     view = m.view; cur = m; multi.clear(); orderSeq = [];
     // Enter-engaged "pass through this turn's stops" lapses when the turn advances (MTGA parity).
     if (autoPassTurn !== null && view.turn !== autoPassTurn) { autoPassTurn = null; autoPassBadge(); }
-    // Priority windows: apply the stop policy (Enter-hold passes the rest of the turn; otherwise the
-    // fixed rule). Forced choices (targets/blocks/order/number) aren't priority prompts → shown.
-    if (isPriorityPrompt(cur.prompt)) {
-      if (autoPassEngaged()) { send({ pass: true }); return; }
-      if (priorityAutoPass(cur.prompt)) { send({ pass: true }); return; }
-    }
+    // The engine surfaces only real stops now; just honour the optional "pass this turn's stops" hold.
+    if (isPriorityPrompt(cur.prompt) && autoPassEngaged()) { send({ pass: true }); return; }
     render();
   }
   else if (m.type === "gameOver") { cur = null; renderEnd(m.winner); }
@@ -1074,27 +1071,9 @@ function log(line: string): void { const d = $("log"); d.textContent += line + "
 // AutoPassOption.Turn — a per-turn hold that lapses next turn). Esc cancels the hold.
 function isPriorityPrompt(p: Any): boolean { return !!p && p.mode === "action" && p.canPass; }
 
-// The web stop policy (client-side filter over the engine's superset of surfaced windows): STOP
-// (prompt) iff [ we're in a phase marked as a stop OR an opponent-controlled spell/ability is on
-// top of the stack ] AND [ we have a usable spell or non-mana ability available ]. Full Control
-// overrides → always stop. Returns true = auto-pass this priority window.
-function priorityAutoPass(p: Any): boolean {
-  if (stopsView && stopsView.full_control) return false;     // full control → stop at every window
-  // Count only NON-mana actions: mana taps (#36 ActivateMana) are available everywhere but are never
-  // themselves a reason to stop, so they don't count as a "usable action".
-  const mana = p.isMana || p.is_mana || [];
-  const usable = (p.options || []).filter((_: Any, i: number) => !mana[i]).length;
-  if (usable === 0) return true;                              // nothing but mana taps → pass
-  const st = view.stack || [];
-  const oppTop = st.length > 0 && st[st.length - 1].controller !== view.seat; // top of stack = last
-  const phaseStop = st.length === 0 && currentPhaseIsStop();
-  return !(oppTop || phaseStop);
-}
-function currentPhaseIsStop(): boolean {
-  const e = stopMap()[view.phase];
-  if (!e) return false;
-  return view.active_player === view.seat ? e.mine : e.opp;
-}
+// (The web stop policy now lives entirely in the engine's `should_auto_pass` — it surfaces only the
+// real stop windows, so every `decide` we receive IS a stop. The old client-side `priorityAutoPass`
+// narrowing over a forced superset is gone; we just render what the engine sends.)
 function autoPassEngaged(): boolean { return autoPassTurn !== null && view && view.turn === autoPassTurn; }
 function autoPassBadge(): void {
   let b = $("autopassBadge");

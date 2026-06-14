@@ -396,10 +396,7 @@ pub(crate) fn stops_msg(s: &StopConfig) -> ServerMsg {
         .map(|(&(step, m), &(_, o))| (step, m, o))
         .collect();
     ServerMsg::Stops {
-        auto_pass: s.auto_pass,
         full_control: s.full_control,
-        smart_stops: s.smart_stops,
-        resolve_own_stack: s.resolve_own_stack,
         per_step,
     }
 }
@@ -417,7 +414,7 @@ pub async fn serve(addr: &str) -> std::io::Result<()> {
 /// - **Lobby:** `?game=<id>&seat=<n>` claims human seat `n` of an existing lobby game (the room
 ///   auto-starts once all its human seats connect). See [`crate::lobby::handle_lobby_socket`].
 /// - **Legacy/quick:** no `game` → an ephemeral one-off game, browser = seat 0 (human), seat 1 a
-///   `RandomAgent`; `?p0=`/`?p1=` pick decks. Either way `?autopass=0` plays paper-CR, etc.
+///   `RandomAgent`; `?p0=`/`?p1=` pick decks. Either way `?fullcontrol=1` stops at every window, etc.
 async fn ws_handler(
     ws: WebSocketUpgrade,
     State(lobby): State<Arc<crate::lobby::Lobby>>,
@@ -425,9 +422,9 @@ async fn ws_handler(
 ) -> axum::response::Response {
     let truthy = |v: &str| v == "1" || v.eq_ignore_ascii_case("on") || v.eq_ignore_ascii_case("true");
     let flag = |key: &str, dflt: bool| params.get(key).map(|v| truthy(v)).unwrap_or(dflt);
-    // Defaults come from `Stops::default()` (single source of truth — SmartStops OFF + the default
-    // stop set: your Main 1/2 and the opponent's Begin-Combat/End). Query params override per-flag,
-    // e.g. ?autopass=0 prompts every window, ?smartstops=1 re-enables it.
+    // Defaults come from `Stops::default()` (single source of truth — Full Control OFF + the default
+    // stop set: your Main 1/2 and the opponent's Begin-Combat/End). `?fullcontrol=1` prompts at every
+    // window; `?stops=…` overrides individual steps.
     let def = driver::Stops::default();
     // `?stops=PrecombatMain:1,BeginCombat@opp:0` — per-step stop overrides layered on the defaults.
     // A bare `Name:val` sets BOTH turn sides; `Name@you:val` / `Name@opp:val` sets one side only.
@@ -449,10 +446,7 @@ async fn ws_handler(
         }
     }
     let stops = driver::Stops {
-        auto_pass: flag("autopass", def.auto_pass),
         full_control: flag("fullcontrol", def.full_control),
-        smart_stops: flag("smartstops", def.smart_stops),
-        resolve_own_stack: flag("resolvestack", def.resolve_own_stack),
         overrides,
     };
     // Lobby paths: spectate (read-only) or join a specific game's seat.
@@ -591,12 +585,8 @@ pub(crate) async fn run_player_socket(
                             Ok(ClientMsg::SetOption { key, on }) => {
                                 {
                                     let mut s = stops_handle.lock().unwrap();
-                                    match key.as_str() {
-                                        "autopass" => s.auto_pass = on,
-                                        "fullcontrol" => s.full_control = on,
-                                        "smartstops" => s.smart_stops = on,
-                                        "resolvestack" => s.resolve_own_stack = on,
-                                        _ => {}
+                                    if key == "fullcontrol" {
+                                        s.full_control = on; // the one live global stop knob
                                     }
                                 }
                                 let _ = echo_tx.send(stops_msg(&stops_handle.lock().unwrap()));

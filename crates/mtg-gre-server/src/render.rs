@@ -138,17 +138,10 @@ fn stops_line(st: &StopStateView) -> String {
         .filter(|(_, on)| *on)
         .map(|(p, _)| abbr_step(*p))
         .collect();
-    let mut line = format!(
+    format!(
         "stops: {}",
         if active.is_empty() { "—".to_string() } else { active.join(", ") }
-    );
-    if st.smart_stops {
-        line += " · smart";
-    }
-    if !st.resolve_own_stack {
-        line += " · respond-self";
-    }
-    line
+    )
 }
 
 fn abbr_step(p: Phase) -> String {

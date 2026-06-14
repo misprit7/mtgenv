@@ -5,6 +5,20 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-14
 
+- **webui:** Removed the dead stop-policy plumbing (#67, engine collapsed it to one `full_control`
+  knob in `5e106df`). Dropped `auto_pass`/`smart_stops`/`resolve_own_stack` from the `Stops` carrier
+  + the `smart_stops=true` force (driver.rs), the `ServerMsg::Stops` fields (protocol.rs), the WS
+  query flags + `SetOption` cases + `stops_msg` (server.rs), the CLI `autopass`/`smartstops`/
+  `resolvestack` commands + status (cli.rs), and the `render.rs` reads — keeping `full_control` +
+  per-step overrides + `manual_mana`. Stopped calling the soon-gone `set_arena_auto_pass`/
+  `set_smart_stops`/`set_resolve_own_stack` (set `full_control` directly per human seat). **Removed
+  the client-side `priorityAutoPass`/`currentPhaseIsStop` narrowing** — the engine's `should_auto_pass`
+  IS that rule now, so the client just renders the windows it surfaces (Full Control toggle + the
+  Enter-hold skip-turn remain). Verified live: Stops msg is `{full_control, per_step}`; FC OFF →
+  stops only where you can act, FC ON → every window; games complete. 20/20 tests green. Engine can
+  now drop the dead `StopConfig`/`StopStateView` fields. (Incidental: added `source: None` to the
+  options.rs ChooseTargets test for the engine's new #66 field.)
+
 - **engine (stop policy collapse):** Per user, unified the stop config to a **single full-control
   knob** (the separate auto_pass/smart_stops/resolve_own_stack were a three-flag engine model under
   a one-toggle UI veneer + a client-side filter flagged as tech-debt). `should_auto_pass` is now one

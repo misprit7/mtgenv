@@ -573,6 +573,7 @@ mod tests {
         // (1 legal). The bug was that only slot 0 was projected, so slot 1 never got a target.
         let req = DecisionRequest::ChooseTargets {
             for_action: ActionRef(StackId(0)),
+            source: None,
             slots: vec![
                 TargetSlot {
                     description: "creature you control".into(),

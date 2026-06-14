@@ -27,20 +27,16 @@ pub struct Outcome {
     pub turns: u32,
 }
 
-/// MTGA-style stop configuration the client applies to the engine before a game runs. With
-/// `auto_pass` on, the human's `decide()` is only called at stops + meaningful decisions (the
-/// engine elides trivial priority windows) — much less tedious than paper-CR's every-window prompt.
+/// MTGA-style stop configuration the client applies to the engine before a game runs. **One knob**
+/// (`full_control`) plus the per-step overrides: with Full Control OFF, the engine's
+/// `should_auto_pass` elides trivial priority windows (auto-pass unless you have a meaningful,
+/// non-mana action at a marked stop or an opponent's object is on the stack) — much less tedious than
+/// paper-CR's every-window prompt; ON prompts at every window. (The former separate
+/// `auto_pass`/`smart_stops`/`resolve_own_stack` knobs were collapsed into `full_control` engine-side.)
 #[derive(Debug, Clone)]
 pub struct Stops {
-    /// Arena auto-pass profile on (default for human play) vs paper-CR every-window prompting.
-    pub auto_pass: bool,
-    /// Stop at every priority window (overrides the default stops).
+    /// Stop at every priority window (Full Control ON) vs the fixed elision rule (OFF).
     pub full_control: bool,
-    /// SmartStops (MTGA default ON): stop at any step where you have a legal play.
-    pub smart_stops: bool,
-    /// ResolveMyStackEffects (MTGA default ON): auto-pass while your own object is on top of the
-    /// stack (don't re-prompt to respond to yourself).
-    pub resolve_own_stack: bool,
     /// Per-`(step, own_turn)` overrides of the Arena defaults (`own_turn` = the seat's own turn;
     /// `true` = always stop here, `false` = never). Applied at session start over the engine's
     /// `arena_default_stop`.
@@ -49,20 +45,13 @@ pub struct Stops {
 
 impl Default for Stops {
     fn default() -> Self {
-        // Human play: auto-pass on, resolve-own-stack on. SmartStops is OFF by default here
-        // (diverges from MTGA's on-by-default): users found "stop at every step where I *could* cast
-        // something" (e.g. holding a Shock with red mana open) far too chatty — they want priority
-        // only at steps they've actually marked. Flip it back on with the "smart" toggle.
-        //
-        // Default stop set = your Main 1 + Main 2 (from the engine's Arena default, own-turn only)
-        // PLUS the opponent's Beginning of Combat + End step (seeded here) — the classic instant-
-        // speed windows you want to act in on their turn. Everything else is off both sides.
-        // (declare-attackers/blockers are forced turn-based decisions, presented anyway.)
+        // Full Control OFF — the fixed Arena-style elision rule (it lives in the engine's
+        // `should_auto_pass` now). Default stop set = your Main 1 + Main 2 (engine Arena default,
+        // own-turn only) PLUS the opponent's Beginning of Combat + End step (seeded here) — the
+        // classic instant-speed windows you want to act in on their turn. Everything else is off both
+        // sides. (declare-attackers/blockers are forced turn-based decisions, presented anyway.)
         Stops {
-            auto_pass: true,
             full_control: false,
-            smart_stops: false,
-            resolve_own_stack: true,
             overrides: vec![
                 (Phase::BeginCombat, false, true), // opponent's beginning of combat
                 (Phase::End, false, true),         // opponent's end step
@@ -72,9 +61,9 @@ impl Default for Stops {
 }
 
 impl Stops {
-    /// Paper Comprehensive-Rules: prompt at every priority window (auto-pass off).
+    /// Full Control: prompt at every priority window.
     pub fn full_control() -> Self {
-        Stops { auto_pass: false, ..Default::default() }
+        Stops { full_control: true, ..Default::default() }
     }
 }
 
@@ -85,11 +74,8 @@ impl Stops {
 
 /// Apply a [`Stops`] config to the engine (for the given human seats) before running.
 pub fn apply_stops(engine: &mut Engine, stops: &Stops, human_seats: &[PlayerId]) {
-    engine.set_arena_auto_pass(stops.auto_pass);
     for &p in human_seats {
-        engine.set_full_control(p, stops.full_control);
-        engine.set_smart_stops(p, stops.smart_stops);
-        engine.set_resolve_own_stack(p, stops.resolve_own_stack);
+        engine.set_full_control(p, stops.full_control); // THE stop knob; OFF = engine's elision rule
         // #36: a human seat may manually tap mana sources (the engine offers an ActivateMana per
         // untapped source). Non-intrusive — casting still auto-taps the rest; floated mana pays first.
         engine.set_manual_mana(p, true);
@@ -168,17 +154,7 @@ pub fn engine_with_stops(
     let handle = engine.stops_handle(human);
     {
         let mut c = handle.lock().unwrap();
-        c.auto_pass = stops.auto_pass;
-        c.full_control = stops.full_control;
-        // TECH-DEBT (backlog, spec'd to engine): the web stop policy currently lives CLIENT-side as
-        // a filter (`priorityAutoPass`) over the engine's surfaced SUPERSET — we force smart_stops
-        // on (marked-phases + any window with a play + opp-respond) and the client narrows it to the
-        // real rule (stop iff [marked phase OR opp spell on top] AND you have a usable non-mana
-        // action). This DIVERGES from the "stops policy lives in the engine" law; engine will
-        // canonicalize `should_auto_pass` to the exact rule + drop these flags, then this force and
-        // the client filter both go away. Until then, force smart on regardless of the carrier.
-        c.smart_stops = true;
-        c.resolve_own_stack = stops.resolve_own_stack;
+        c.full_control = stops.full_control; // THE stop knob; OFF = the engine's `should_auto_pass`
         c.manual_mana = true; // #36: offer this human seat ActivateMana per untapped source
         // Seed the per-`(step, own_turn)` stop overrides (default set + any URL overrides). The user
         // then toggles individual sides live (`SetStop`), which mutate this same shared config.
@@ -204,12 +180,7 @@ pub fn room_engine(
         let handle = engine.stops_handle(*seat);
         {
             let mut c = handle.lock().unwrap();
-            c.auto_pass = stops.auto_pass;
-            c.full_control = stops.full_control;
-            // Force smart on (engine surfaces a superset of windows; the web client filters down to
-            // the actual stop rule). See `engine_with_stops`.
-            c.smart_stops = true;
-            c.resolve_own_stack = stops.resolve_own_stack;
+            c.full_control = stops.full_control; // THE stop knob; OFF = the engine's `should_auto_pass`
             c.manual_mana = true; // #36: offer this human seat ActivateMana per untapped source
             for &(step, own, on) in &stops.overrides {
                 c.set_override(step, own, Some(on));

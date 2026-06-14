@@ -161,10 +161,7 @@ impl Cli {
             "preset" => self.cmd_preset(&args),
             "handsize" => self.cmd_handsize(&args),
             "deal" => self.cmd_deal(&args),
-            "autopass" => self.cmd_autopass(&args),
             "fullcontrol" => self.cmd_fullcontrol(&args),
-            "smartstops" => self.cmd_smartstops(&args),
-            "resolvestack" => self.cmd_resolvestack(&args),
             "stop" => self.cmd_stop(&args),
             "stops" => self.cmd_stops(),
             "show" | "dump" => self.cmd_show(&args),
@@ -190,10 +187,7 @@ Commands:
   preset <seat> <burn|bears|demo>  load a named preset deck into a seat's library
   handsize <player> <n>       set maximum hand size
   deal on|off                 deal opening hands on 'run' (off = play the hand-built scenario as-is)
-  autopass on|off             MTGA auto-pass (on, default: prompt only at stops; off: every window)
-  smartstops on|off           stop wherever you have a legal play (MTGA default on)
-  fullcontrol on|off          stop at every priority window
-  resolvestack on|off         auto-pass your own stack objects (MTGA default on)
+  fullcontrol on|off          stop at every priority window (off: the engine's auto-pass elision rule)
   stop <step> on|off|default  override a stop (steps: mp1 mp2 upkeep draw attackers blockers …)
   stops                       show the current stop config
   show [player]               dump full state (no arg) or a seat's PlayerView
@@ -358,35 +352,11 @@ Lines starting with '#' are comments. At a decision prompt: an index, 'p'/Enter 
 
     // ── stops (MTGA-style auto-pass) ─────────────────────────────────────────────────────────
 
-    fn cmd_autopass(&mut self, args: &[&str]) {
-        match args.first().copied() {
-            Some("on") => { self.stops.auto_pass = true; self.say("auto-pass: on (Arena — prompt only at stops + decisions)"); }
-            Some("off") => { self.stops.auto_pass = false; self.say("auto-pass: off (paper CR — prompt at every priority window)"); }
-            _ => self.say("usage: autopass on|off"),
-        }
-    }
-
     fn cmd_fullcontrol(&mut self, args: &[&str]) {
         match args.first().copied() {
             Some("on") => { self.stops.full_control = true; self.say("full control: on (stop at every priority window)"); }
-            Some("off") => { self.stops.full_control = false; self.say("full control: off"); }
+            Some("off") => { self.stops.full_control = false; self.say("full control: off (engine auto-pass elision rule)"); }
             _ => self.say("usage: fullcontrol on|off"),
-        }
-    }
-
-    fn cmd_smartstops(&mut self, args: &[&str]) {
-        match args.first().copied() {
-            Some("on") => { self.stops.smart_stops = true; self.say("smart stops: on (stop wherever you have a legal play)"); }
-            Some("off") => { self.stops.smart_stops = false; self.say("smart stops: off"); }
-            _ => self.say("usage: smartstops on|off"),
-        }
-    }
-
-    fn cmd_resolvestack(&mut self, args: &[&str]) {
-        match args.first().copied() {
-            Some("on") => { self.stops.resolve_own_stack = true; self.say("resolve own stack: on (auto-pass while your own object is resolving)"); }
-            Some("off") => { self.stops.resolve_own_stack = false; self.say("resolve own stack: off (you may respond to your own spells)"); }
-            _ => self.say("usage: resolvestack on|off"),
         }
     }
 
@@ -410,10 +380,7 @@ Lines starting with '#' are comments. At a decision prompt: an index, 'p'/Enter 
     fn cmd_stops(&self) {
         let s = &self.stops;
         let mut out = String::from("Stops (MTGA profile):\n");
-        out += &format!("  auto-pass:     {}\n", if s.auto_pass { "on" } else { "off (paper CR)" });
-        out += &format!("  smart stops:   {}\n", if s.smart_stops { "on (stop where you have a play)" } else { "off" });
-        out += &format!("  full control:  {}\n", if s.full_control { "on (stop everywhere)" } else { "off" });
-        out += &format!("  resolve stack: {}\n", if s.resolve_own_stack { "on (auto-pass your own stack)" } else { "off (respond to self)" });
+        out += &format!("  full control:  {}\n", if s.full_control { "on (stop everywhere)" } else { "off (engine auto-pass elision rule)" });
         out += "  default stops: your main 1 + main 2, opponent's begin-combat + end step\n";
         out += "  (declare-attackers/blockers are always presented as forced decisions)\n";
         if s.overrides.is_empty() {
