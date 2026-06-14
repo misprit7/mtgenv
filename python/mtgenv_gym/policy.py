@@ -105,9 +105,13 @@ class AttnEntityExtractor(BaseFeaturesExtractor):
             self.tables.append(name)
         self.type_emb = nn.Embedding(len(self.tables), d_model)  # which table a row came from
         self.sink = nn.Parameter(torch.randn(1, 1, d_model) * 0.02)  # always-present token (no-NaN + global)
-        self.encoder = nn.TransformerEncoderLayer(d_model, nhead, ff, batch_first=True, dropout=0.0)
+        # norm_first (pre-norm) + a LayerNorm after pooling: standard transformer-in-RL stabilizers —
+        # without them the attention activations can blow up after a while and NaN the logits.
+        self.encoder = nn.TransformerEncoderLayer(d_model, nhead, ff, batch_first=True, dropout=0.0,
+                                                  norm_first=True)
         self.query = nn.Parameter(torch.randn(1, 1, d_model) * 0.02)  # learned pooling query
         self.pool = nn.MultiheadAttention(d_model, nhead, batch_first=True, dropout=0.0)
+        self.pool_norm = nn.LayerNorm(d_model)
         g = observation_space["globals"].shape[0]
         self.head = nn.Sequential(nn.Linear(g + d_model, features_dim), nn.ReLU())
 
@@ -130,4 +134,5 @@ class AttnEntityExtractor(BaseFeaturesExtractor):
         enc = self.encoder(H, src_key_padding_mask=pad)       # entities relate
         q = self.query.expand(B, -1, -1)
         pooled, _ = self.pool(q, enc, enc, key_padding_mask=pad)  # attention pool → (B, 1, d)
-        return self.head(torch.cat([obs["globals"], pooled.squeeze(1)], dim=-1))
+        pooled = self.pool_norm(pooled.squeeze(1))                # stabilize before the head
+        return self.head(torch.cat([obs["globals"], pooled], dim=-1))

@@ -126,12 +126,14 @@ def main():
 
         policy_kwargs = dict(features_extractor_class=AttnEntityExtractor,
                              net_arch=dict(pi=[256, 256], vf=[256, 256]))
+        lr = 1e-4  # gentler LR for the attention net (the default 3e-4 NaN'd it)
     else:
         policy_kwargs = dict(features_extractor_class=EntityExtractor)
+        lr = 3e-4
     model = MaskablePPO(
         "MultiInputPolicy", venv,
         policy_kwargs=policy_kwargs,
-        n_steps=256, batch_size=256, gamma=0.999, ent_coef=0.01,
+        n_steps=256, batch_size=256, gamma=0.999, ent_coef=0.01, learning_rate=lr,
         tensorboard_log=args.tensorboard, verbose=1,
     )
     # Frozen random-init reference for the vs-initial eval curve. Kept OUTSIDE pool_dir so the
