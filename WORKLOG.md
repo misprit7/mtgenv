@@ -5,6 +5,10 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **engine:** **View: populate `ObjView.attachments`** (fa808f9, webui request) — `visible()` now fills
+  each battlefield object's `attachments` with the ids of objects whose `attached_to` points at it
+  (battlefield order, stable), instead of a hardcoded empty Vec; flows through `view_for` + `god_view`
+  so the client renders auras/equipment behind their host on live games + replays. Test covers it. 116 green.
 - **engine:** **C11–C18 cap: `PlayerRef::ControllerOfTarget(n)`** (632982e, atomic per design's bless) —
   resolves to the controller of the Nth object target, **snapshotted into `ResolutionCtx.target_controllers`
   at resolution start** (in `resolve_top`) so it survives that object leaving play mid-resolution.
