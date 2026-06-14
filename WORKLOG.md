@@ -6,9 +6,11 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 ## 2026-06-13
 
 - **design (#44):** **FULL remaining-partial-cap queue staged** (so engine grinds the tail back-to-back; I
-  flip each ⚠→✓ as its cap commits). 7 cards still `fully_implemented: false`; 11/18 already fully faithful.
-  Verified each clause against the engine's current IR/resolution. Caps, each with the card(s) it unblocks +
-  the exact card IR:
+  flip each ⚠→✓ as its cap commits). **8 cards still `fully_implemented: false`; 10/18 already fully faithful.**
+  (Correction: the capability-ledger reconciliation caught **Icetill Explorer** as an 8th partial — it uses the
+  `.incomplete()` builder, not the explicit flag, so an earlier grep missed it; its C18 land-play permissions
+  are deferred.) Verified each clause against the engine's current IR/resolution. Caps, each with the card(s)
+  it unblocks + the exact card IR (+ **C18** static land-play permissions → Icetill Explorer):
   - **(A) Reflexive sub-trigger** (engine building) — a *targeted* `Conditional.then` / `Optional.body` whose
     target is chosen at 603.3d on a reflexive sub-trigger, only if/when `cond` is met (CR 603.7c). → completes
     **Earthbender Ascension**: `Triggered{ PermanentEnters(land you control), Sequence[ PutCounters{SourceSelf,

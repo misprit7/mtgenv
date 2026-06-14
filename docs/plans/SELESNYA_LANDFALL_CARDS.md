@@ -70,34 +70,77 @@ cards/
 | Badgermole Cub | `tla` | {1}{G} | Creature — Badger Mole | 2/2 |
 | Ba Sing Se | `tla` | — | Land | — |
 
-## Interpreter capabilities required (engine)
+## Capability ledger (reconciled — what was actually built)
 
-Most are currently a no-op in `whiteboard.rs::materialize` (the `_ => {}` arm) or absent from
-the IR. Build additive-only; coordinate IR shape with `design`. Ordered to unblock the most
-cards first.
+> **Status (2026-06-14):** the push is **delivered** — all 18 distinct cards authored and the
+> `selesnya`/`landfall` preset (`cards::selesnya_landfall_deck`) **is the real mtggoldfish 60**
+> (51 nonbasics + 7 Forest / 2 Plains, no padding). It plays end-to-end (validated: `mtg-cli
+> selesnya selesnya` across seeds, clean finishes, zero panics). **10/18 cards are fully faithful;
+> 8 ship as honest tracked-partials** — each with exactly one deferred clause, gated on a
+> still-unbuilt cap (see the upgrade-tail table). **No card is husked or approximated.**
+>
+> This is the authoritative capability index (the original C-plan, reconciled to reality):
+> ✅ built · ⏳ deferred. Commit refs given for the recent/subsystem caps.
 
-| # | Capability | File(s) | Unblocks |
+| # | Capability | Status | Cards (✓ = fully faithful) |
 |---|---|---|---|
-| C1 | **Creature mana dorks** — gate mana-source selection by summoning sickness (a sick creature can't tap for mana; `mana.rs` currently only checks `tapped`) | mana.rs | Llanowar Elves |
-| C2 | **`Effect::PutCounters`** → `Action::AddCounters` (the action already exists for the ETB-counter rewrite) | whiteboard.rs | Sazh's Chocobo, Mossborn Hydra, Earthbender Ascension, Dyadrine |
-| C3 | **`Effect::Mill`** → real | whiteboard.rs | Icetill Explorer |
-| C4 | **Landfall trigger** — `EventPattern::LandEntersControlled` (a land you control enters); emit on land ETB, match APNAP | ability.rs, priority.rs/whiteboard.rs | Sazh's Chocobo, Mossborn Hydra, Icetill Explorer, Mightform Harmonizer, Earthbender Ascension |
-| C5 | **Search basic land → battlefield (tapped) / → hand** — `Effect::Search` real, with the basic-land filter + `ZoneDest` | whiteboard.rs | Erode, Fabled Passage, Escape Tunnel, Earthbender Ascension, Lumbering Worldwagon, Bushwhack |
-| C6 | **`Effect::CreateToken`** → real | whiteboard.rs | Dyadrine |
-| C7 | **`Effect::Modal` (choose one)** — interpret + the choice request | whiteboard.rs | Bushwhack |
-| C8 | **Fight** (`Effect` or `Native`) | whiteboard.rs/native | Bushwhack |
-| C9 | **Dynamic `ValueExpr`** — count lands you control, count +1/+1 counters on self (for "double the counters" / `*` P/T) | value.rs | Mossborn Hydra, Lumbering Worldwagon, Dyadrine |
-| C10 | **X costs** in casting | mana.rs/priority.rs | Dyadrine |
-| C11 | **Conditional ETB-tapped / pay-life dual lands** (replacement w/ player choice) | whiteboard.rs | Temple Garden, Ba Sing Se |
-| C12 | **Earthbend** (land → 0/0 haste creature still a land, +N/+N counters, dies/exile → return tapped delayed trigger) — a small subsystem | several | Badgermole Cub, Ba Sing Se, Earthbender Ascension |
-| C13 | **Crew / Vehicle** (tap creatures w/ total power ≥ N → becomes creature until EOT) | combat/effects | Lumbering Worldwagon |
-| C14 | **Warp** (alt cast cost from hand; exile at next end step; recast from exile) | priority.rs | Mightform Harmonizer |
-| C15 | **`Effect::PumpPT` real + "double power until EOT"** (dynamic, EOT duration) | whiteboard.rs/chars | Mightform Harmonizer |
-| C16 | **Trigger: becomes the target of an opponent's spell/ability** | ability.rs/priority.rs | Surrak |
-| C17 | **Exile from a graveyard + count-card-types-among-exiled dynamic buff** | whiteboard.rs/chars | Keen-Eyed Curator |
-| C18 | **Static permissions** — play an extra land each turn; play lands from graveyard | priority.rs | Icetill Explorer |
-| C19 | **Mana production via real IR mana abilities** (CR 605) — implement `Effect::AddMana` + source/pay mana from `Ability::Activated{is_mana:true}` (cost + restriction/condition + `ManaSpec`), **retiring the `mana_colors` shortcut**; `ManaSpec.one_of` for "G or W" duals. Use ONLY for **non-type-derived** mana (Llanowar Elves, Hushwood's conditional {W}, any-color/filter lands) | mana.rs, whiteboard.rs, cards/mod.rs | Hushwood Verge, Llanowar Elves, Ba Sing Se, dorks |
-| C20 | **Intrinsic basic-land-type mana** (CR 305.6) — derive `{T}: Add {color}` from each permanent's **computed** subtype (Plains→W/Island→U/Swamp→B/Mountain→R/Forest→G), NOT authored. Basics + typed duals (Temple Garden = `Forest Plains`) get **no** mana ability — it follows the land type, so type-changing effects (animate-land, Urborg, Spreading Seas) work for free | mana.rs, chars/ | all basics, Temple Garden, all typed lands |
+| C1 | Creature mana dorks (summoning-sickness mana gate) | ✅ | Llanowar Elves ✓ |
+| C2 | `Effect::PutCounters` → `Action::AddCounters` | ✅ | Sazh's Chocobo ✓, Mossborn Hydra ✓ (Earthbender quest pending A) |
+| C3 | `Effect::Mill` | ✅ | Icetill Explorer (mill works; card ⏳ on C18) |
+| C4 | Landfall trigger (`EventPattern::PermanentEnters(land you control)`) | ✅ | Sazh's ✓, Mossborn ✓, Icetill, Mightform ✓, Earthbender |
+| C5 | Search basic land → battlefield(tapped)/hand | ✅ | Erode ✓, Bushwhack ✓ (Fabled/Escape/Lumbering fetch works; cards ⏳) |
+| C6 | `Effect::CreateToken` | ✅ | (Dyadrine's Robot token — in deferred c3) |
+| C7 | `Effect::Modal` (choose one) | ✅ | Bushwhack ✓ |
+| C8 | `Effect::Fight` | ✅ | Bushwhack ✓ |
+| C9 | Dynamic `ValueExpr` (count lands / `CountersOnSelf`) | ✅ | Mossborn ✓; Lumbering `*/4` CDA works (⏳ Crew) |
+| C10 | X costs in casting | ✅ | Dyadrine (`{X}` works) |
+| C11 | Conditional ETB-tapped / pay-life duals | ✅ | Temple Garden ✓, Ba Sing Se ✓ |
+| C12 | **Earthbend** (animate land + counters + dies/exile→return-tapped) | ✅ `3d4b636`+`db81497`+`21171dc` | Ba Sing Se ✓; Badgermole/Earthbender ETB works (⏳ on H / A) |
+| C13 | **Crew** (CR 702.122) | ⏳ **cap C** | Lumbering Worldwagon |
+| C14 | **Warp** (alt cast + exile-at-end-step + recast-from-exile) | ✅ `c445d78`+`7cc6f9c` | Mightform Harmonizer ✓ |
+| C15 | `Effect::PumpPT` + double-power snapshot (`ValueExpr::PowerOfTarget`) | ✅ `557b6b5` | Mightform ✓ |
+| C16 | becomes-targeted trigger (`EventPattern::BecomesTargeted{filter,by_opponent}`) | ✅ `8d006fd` (battlefield half) | Surrak (⏳ stack half = cap F) |
+| C17 | Exile-from-graveyard + count-card-types buff | ✅ `e002d7a`+`b18c6f6` | Keen-Eyed Curator ✓ |
+| C18 | **Static land-play permissions** (extra land / play lands from graveyard) | ⏳ **cap** | Icetill Explorer |
+| C19 | Mana production via real IR mana abilities (CR 605) | ✅ | Hushwood Verge ✓, Llanowar ✓, Ba Sing Se ✓ |
+| C20 | Intrinsic basic-land-type mana (CR 305.6) | ✅ | all basics, Temple Garden ✓ |
+
+### Ad-hoc capabilities (coined in-flight, unnumbered)
+
+Needed and built as specific cards demanded them — not in the original C-plan:
+
+| Capability | Status | Enables |
+|---|---|---|
+| `CostComponent::Sacrifice` (sacrifice as a cost) | ✅ `0451182` | fetch lands (Fabled, Escape); Lumbering crew cost |
+| `PlayerRef::ControllerOfTarget(u32)` | ✅ `632982e` | Erode (the destroyed permanent's controller fetches) |
+| **Floating continuous-effect subsystem** (`chars::ContinuousEffect` registry, CR 611) | ✅ `3d4b636` | earthbend animation, until-EOT pumps, grant-keyword-EOT |
+| **Delayed triggered abilities** (CR 603.7, `DelayedTriggerEvent`) | ✅ `21171dc` | earthbend return-tapped; warp exile-at-end-step |
+| `Action::GrantContinuous` | ✅ `db81497` | earthbend, PumpPT, GrantKeyword |
+| `ValueExpr::PowerOfTarget` (resolution snapshot) | ✅ `557b6b5` | Mightform double-power |
+| `Rewrite::EntersWithCountersValue` + `ValueExpr::ManaSpent` | ✅ `a2e2b13` | Dyadrine (enters with counters = mana spent) |
+| Attack-trigger firing (`EventPattern::SelfAttacks` / `YouAttack`) | ✅ `4613d51` | Dyadrine attack (deferred c3); Lumbering "or attacks" |
+| `Effect::Conditional` interp + `Effect::GrantKeyword` + `CounterKind::Named` | ✅ `d8484d2` | Earthbender quest-chain (pending A); any intervening-if / grant-keyword-EOT |
+| `Effect::Exile` interp + `TargetKind::CardInZone{Graveyard}` | ✅ `e002d7a` | Keen-Eyed exile ability |
+| `Ability::ConditionalStatic` + `ValueExpr::DistinctCardTypesAmongExiledWith` + exile-association (`Object.exiled_with`) | ✅ `b18c6f6` | Keen-Eyed conditional +4/+4 & trample |
+| Permanent-targeting fix (enumerate all permanents; enforce `HasCardType`/`All`/`Not`/`ControlledBy`) | ✅ `70c483e`+`861f3aa` | earthbend land-targeting end-to-end |
+| `Ability::Warp{cost}` + `CastVariant::Warp` + `Action::WarpExile` + `Object.castable_from_exile` | ✅ `c445d78`+`7cc6f9c` | Mightform warp |
+
+### Upgrade tail — remaining caps (8 partials → fully faithful)
+
+Each is a single deferred clause on an already-decked card; flips `fully_implemented:false → true`
+the moment its cap lands (tracked in task #44; exact card IR staged in `WORKLOG.md`).
+
+| Cap | Card | Deferred clause |
+|---|---|---|
+| **A** reflexive sub-trigger (CR 603.7c — target chosen *only when* the intervening-if is met) | Earthbender Ascension (also front of Dyadrine) | landfall → quest counter → when-you-do(≥4) → +1/+1 + trample |
+| **B** distinct two-target counter removal | Dyadrine, Synthesis Amalgam | attack → remove a +1/+1 from *each of two* creatures → draw + Robot |
+| **C13** Crew (CR 702.122) | Lumbering Worldwagon | Crew 4 |
+| **D** searched-permanent reference + `Effect::Untap` (Conditional + `CountAtLeast` already built) | Fabled Passage | "if you control 4+ lands, untap that land" |
+| **E** `Qualification::CantBeBlocked` + power≤2 target filter + grant-qualification-for-a-duration | Escape Tunnel | "{T},Sac: target power≤2 creature can't be blocked this turn" |
+| **F** `Target::Stack` in `BecomesTargeted` | Surrak, Elusive Hunter | "or a creature spell you control" trigger half |
+| **G** stack-zone static gathering + a counter subsystem (LOW value — no counterspell in pool) | Surrak, Elusive Hunter | "This spell can't be countered" (inert today) |
+| **C18** static land-play permissions (extra land / from graveyard) | Icetill Explorer | "play an additional land" + "play lands from your graveyard" |
+| **H** "tapped a creature for mana" event + reflexive mana trigger (CR 605, no-stack) | Badgermole Cub | "whenever you tap a creature for mana, add {G}" |
 
 ## Fidelity standard (do not approximate)
 
@@ -109,6 +152,9 @@ avoidable conditionals; and when a card does need an unbuilt subsystem, mark the
 and flag engine to build the capability rather than shipping a behaviorally-wrong version.
 
 ## Ease tiers (author cards in this order)
+
+> _Historical — the authoring order that was used. All 18 cards are now authored; see the
+> capability ledger above for current per-card state._
 
 **Tier 1 — easy (C1–C4):** Llanowar Elves, Sazh's Chocobo, Mossborn Hydra, Icetill Explorer
 (landfall-mill now; defer its land permissions C18), Hushwood Verge (two mana abilities, the
@@ -130,6 +176,9 @@ Humility/Rancor) rather than blocking. Every card gets an `expect-test` snapshot
 and, where it changes play, a behaviour test.
 
 ## Deck builder
+
+> _✅ Done — `cards::selesnya_landfall_deck()` is the real mtggoldfish 60, registered in
+> `preset_deck()` as `"selesnya"` / `"landfall"`, playable in CLI/web alongside burn/bears._
 
 Add a `selesnya_landfall()` deck builder (the 60 above) + register it in `preset_deck()` so
 it's playable in the CLI/web alongside burn/bears.

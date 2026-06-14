@@ -50,6 +50,18 @@ MTGA client.
 
 ## Current state
 
+- **🎉 Selesnya Landfall push DELIVERED + upgrade tail in progress (#44).** All **18 distinct cards
+  authored**; the `selesnya`/`landfall` preset (`cards::selesnya_landfall_deck`) **is the real mtggoldfish
+  60** (51 nonbasics + 7 Forest / 2 Plains, no padding) and plays end-to-end (validated via `mtg-cli`
+  self-play, clean finishes, zero panics). **10/18 cards fully faithful; 8 ship as honest tracked-partials**
+  (one deferred clause each, gated on an engine cap — none husked). Engine caps C1–C20 landed except
+  **C13 Crew** and **C18 land-permissions** (deferred); plus many ad-hoc subsystems (floating
+  continuous-effects, delayed triggers, warp, becomes-targeted, exile-association, snapshot pump, …). The
+  authoritative **capability ledger** (every cap ✅/⏳ + the card it enables + commit refs) lives in
+  `docs/plans/SELESNYA_LANDFALL_CARDS.md`. Remaining upgrade-tail caps (each flips one ⚠ card to fully
+  faithful, no new deck cards): reflexive sub-trigger (Earthbender/Dyadrine), distinct two-target removal
+  (Dyadrine), Crew (Lumbering), searched-ref+Untap (Fabled), CantBeBlocked (Escape), Target::Stack (Surrak),
+  C18 (Icetill), reflexive-mana (Badgermole). 169 mtg-core tests green.
 - **engine: C15 (double-power) + C16 (becomes-targeted) landed + #43 (search-reveal).** `PumpPT` is
   now materialized as a floating `ModifyPT` continuous effect + `ValueExpr::PowerOfTarget` snapshot +
   until-EOT cleanup expiry (Mightform's double-power; also generic +X/+Y-until-EOT). C16 adds
