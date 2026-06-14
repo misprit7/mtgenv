@@ -1963,7 +1963,13 @@ impl Engine {
         true
     }
 
-    fn run_agenda(&mut self) {
+    /// Drive the game to a stable state (CR 704/603.3): perform state-based actions and put any
+    /// waiting triggered abilities on the stack, repeating to a fixpoint. `pub(crate)` so in-crate
+    /// tests (and design's #60 end-to-end card audit) can drain the triggers/SBAs a `cast_spell` /
+    /// `play_land` / `resolve_top` spawns — e.g. a land-drop's landfall, an ETB, an attack trigger —
+    /// which `resolve_top` alone does NOT process. NB: it only *queues* the triggers onto the stack;
+    /// call `resolve_top` to resolve each.
+    pub(crate) fn run_agenda(&mut self) {
         let mut iters = 0usize;
         loop {
             if self.loop_guard_tripped(iters, AGENDA_LOOP_LIMIT, "run_agenda (SBA/trigger fixpoint)") {
