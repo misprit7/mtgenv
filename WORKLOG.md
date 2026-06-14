@@ -5,6 +5,20 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-14
 
+- **webui:** Wired manual mana activation (#36) now that the engine offers it (`cf23567`). Turn it
+  ON for every human seat (`set_manual_mana(p, true)` in `apply_stops`/`engine_with_stops`/
+  `room_engine`). The engine appends an `ActivateMana` per untapped source; `options.rs` already
+  labels it "Tap … for mana" + `action_obj` → the source, so clicking a highlighted land taps it
+  (multi-color sources fall through to the existing `ChooseColor` select-many; Ba Sing Se's
+  mana-vs-earthbend disambiguates via the variant menu). Added an `is_mana` flag (parallel to
+  `Prompt.options`, Priority only) so the client auto-pass rule counts only **non-mana** actions —
+  mana being available is never itself a reason to stop. Verified live: tapping a Forest floats
+  `{Green:1}` (live via `ManaPoolChanged` → `poolPips`); zero mana-only-on-empty-stack frames across
+  a full game (no extra stops — server still surfaces only the 4 default stop phases). Tests:
+  `manual_mana_seat_is_offered_activatemana_marked_is_mana` + regenerated decide-frame snapshots.
+  Source-control (cast pays floated mana first, untapped lands stay) is proven engine-side. Default
+  OFF keeps it out of the gym agent's action space.
+
 - **engine (#36, manual mana):** The engine now offers **manual mana activation at priority** so a
   human can tap SPECIFIC sources (e.g. to control which lands fund a spell) — while keeping mana
   abilities out of auto-stops and the RL agent's action space. New per-seat `StopConfig.manual_mana`

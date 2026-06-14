@@ -1075,7 +1075,11 @@ function isPriorityPrompt(p: Any): boolean { return !!p && p.mode === "action" &
 // overrides → always stop. Returns true = auto-pass this priority window.
 function priorityAutoPass(p: Any): boolean {
   if (stopsView && stopsView.full_control) return false;     // full control → stop at every window
-  if ((p.options || []).length === 0) return true;            // no usable (non-mana) action → pass
+  // Count only NON-mana actions: mana taps (#36 ActivateMana) are available everywhere but are never
+  // themselves a reason to stop, so they don't count as a "usable action".
+  const mana = p.isMana || p.is_mana || [];
+  const usable = (p.options || []).filter((_: Any, i: number) => !mana[i]).length;
+  if (usable === 0) return true;                              // nothing but mana taps → pass
   const st = view.stack || [];
   const oppTop = st.length > 0 && st[st.length - 1].controller !== view.seat; // top of stack = last
   const phaseStop = st.length === 0 && currentPhaseIsStop();

@@ -56,6 +56,10 @@ pub struct Prompt {
     /// own description + min/max + the contiguous range of `options` it owns. The UI groups options
     /// by slot and enforces each slot's count independently. Empty for every other prompt.
     pub target_slots: Vec<PromptSlot>,
+    /// Parallel to `options` (Priority only): `true` for a mana-ability option (`ActivateMana`, the
+    /// #36 manual-mana taps). Lets the client treat mana taps as *available but not a reason to stop*
+    /// — the auto-pass rule counts only non-mana actions. Empty for every other prompt.
+    pub is_mana: Vec<bool>,
 }
 
 /// One target slot in a multi-slot [`Prompt`] (e.g. Bushwhack-fight: slot 0 = a creature you
@@ -84,6 +88,7 @@ impl Prompt {
             num_min: 0,
             num_max: 0,
             target_slots: Vec::new(),
+            is_mana: Vec::new(),
         }
     }
 
@@ -211,6 +216,12 @@ pub fn prompt_for(view: &PlayerView, req: &DecisionRequest) -> Prompt {
             let mut p = Prompt::new("Priority — choose an action", Mode::Action, opts);
             p.can_pass = *can_pass;
             p.option_objs = actions.iter().map(action_obj).collect();
+            // Mark mana-ability options (the #36 manual taps) so the client's auto-pass rule can
+            // ignore them — having mana available is never itself a reason to stop.
+            p.is_mana = actions
+                .iter()
+                .map(|a| matches!(a, PlayableAction::ActivateMana { .. }))
+                .collect();
             p
         }
         R::ChooseStartingPlayer { candidates } => Prompt::new(
@@ -649,6 +660,10 @@ mod tests {
                 num_min: 0,
                 num_max: 0,
                 target_slots: [],
+                is_mana: [
+                    false,
+                    false,
+                ],
             }"#]]
         .assert_eq(&format!("{p:#?}"));
     }

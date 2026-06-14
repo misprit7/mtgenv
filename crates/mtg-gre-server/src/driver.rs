@@ -90,6 +90,9 @@ pub fn apply_stops(engine: &mut Engine, stops: &Stops, human_seats: &[PlayerId])
         engine.set_full_control(p, stops.full_control);
         engine.set_smart_stops(p, stops.smart_stops);
         engine.set_resolve_own_stack(p, stops.resolve_own_stack);
+        // #36: a human seat may manually tap mana sources (the engine offers an ActivateMana per
+        // untapped source). Non-intrusive — casting still auto-taps the rest; floated mana pays first.
+        engine.set_manual_mana(p, true);
         for &(step, own, on) in &stops.overrides {
             engine.set_stop_side(p, step, own, Some(on));
         }
@@ -176,6 +179,7 @@ pub fn engine_with_stops(
         // the client filter both go away. Until then, force smart on regardless of the carrier.
         c.smart_stops = true;
         c.resolve_own_stack = stops.resolve_own_stack;
+        c.manual_mana = true; // #36: offer this human seat ActivateMana per untapped source
         // Seed the per-`(step, own_turn)` stop overrides (default set + any URL overrides). The user
         // then toggles individual sides live (`SetStop`), which mutate this same shared config.
         for &(step, own, on) in &stops.overrides {
@@ -206,6 +210,7 @@ pub fn room_engine(
             // the actual stop rule). See `engine_with_stops`.
             c.smart_stops = true;
             c.resolve_own_stack = stops.resolve_own_stack;
+            c.manual_mana = true; // #36: offer this human seat ActivateMana per untapped source
             for &(step, own, on) in &stops.overrides {
                 c.set_override(step, own, Some(on));
             }
@@ -736,5 +741,47 @@ mod tests {
             "Ba Sing Se's {{T}} + 3 OTHER lands for {{2}}{{G}} = 4 tapped (the #57/#59 fix); the \
              old double-count bug would tap only 3 (itself + 2)"
         );
+    }
+
+    #[test]
+    fn manual_mana_seat_is_offered_activatemana_marked_is_mana() {
+        // #36: a seat with manual mana ON is offered an ActivateMana per untapped source, which the
+        // projection labels "Tap … for mana" + flags `is_mana` so the client (a) lights up the land
+        // to click and (b) never treats a mana tap as a reason to stop. Mix a land-in-hand (PlayLand,
+        // NOT mana) with an untapped Forest on the battlefield (ActivateMana, mana) to check the flag.
+        use mtg_core::agent::{DecisionRequest, RandomAgent};
+        use mtg_core::basics::{Phase, Zone};
+        use mtg_core::cards::grp::FOREST;
+        use mtg_core::state::view::view_for;
+        use std::sync::Arc;
+
+        let mut state = GameState::new(2, 1);
+        state.set_card_db(Arc::new(mtg_core::cards::starter_db()));
+        state.active_player = PlayerId(0);
+        state.phase = Phase::PrecombatMain;
+        let fo = state.card_db().get(FOREST).unwrap().chars.clone();
+        state.add_card(PlayerId(0), fo.clone(), Zone::Battlefield); // untapped → ActivateMana
+        state.add_card(PlayerId(0), fo, Zone::Hand); // a land to play → PlayLand (not mana)
+
+        let view = view_for(&state, PlayerId(0));
+        let mut engine = Engine::new(
+            state,
+            vec![Box::new(RandomAgent::new(1)), Box::new(RandomAgent::new(2))],
+        );
+        engine.set_manual_mana(PlayerId(0), true); // the #36 switch the web session flips for humans
+        let actions = engine.legal_actions(PlayerId(0));
+        let prompt = crate::options::prompt_for(
+            &view,
+            &DecisionRequest::Priority { actions, can_pass: true },
+        );
+
+        // The mana tap is offered, labelled, and flagged; the land-play is offered but NOT flagged.
+        let tap = prompt.options.iter().position(|o| o == "Tap Forest for mana");
+        let play = prompt.options.iter().position(|o| o.starts_with("Play land"));
+        assert!(tap.is_some(), "manual mana must offer an ActivateMana. Options: {:?}", prompt.options);
+        assert!(play.is_some(), "the land in hand is still playable. Options: {:?}", prompt.options);
+        assert_eq!(prompt.is_mana.len(), prompt.options.len(), "is_mana parallels options");
+        assert!(prompt.is_mana[tap.unwrap()], "the mana tap is flagged is_mana");
+        assert!(!prompt.is_mana[play.unwrap()], "the land-play is NOT flagged is_mana");
     }
 }

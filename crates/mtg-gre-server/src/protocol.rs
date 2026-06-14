@@ -182,7 +182,10 @@ mod tests {
                 "max": 1,
                 "numMin": 0,
                 "numMax": 0,
-                "targetSlots": []
+                "targetSlots": [],
+                "isMana": [
+                  false
+                ]
               },
               "view": {
                 "seat": 0,
@@ -235,7 +238,8 @@ mod tests {
               "max": 1,
               "numMin": 0,
               "numMax": 0,
-              "targetSlots": []
+              "targetSlots": [],
+              "isMana": []
             }"##]].assert_eq(&json);
     }
 
