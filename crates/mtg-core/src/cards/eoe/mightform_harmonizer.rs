@@ -190,4 +190,71 @@ mod tests {
         assert_eq!(e.state.computed(bears).power, Some(4)); // 2 + PowerOfTarget(2) snapshot = 4
         assert_eq!(e.state.computed(bears).toughness, Some(2)); // +0
     }
+
+    /// #60 end-to-end (REAL land drop + targeted trigger): with Mightform in play, playing a land you
+    /// control fires landfall — "double the power of target creature you control until end of turn."
+    /// Driven via `play_land` → `run_agenda` (puts the trigger on the stack, prompting `ChooseTargets`)
+    /// → `resolve_top`: the chosen 2/2 becomes a 4/2 (snapshot +2/+0), and it wears off at cleanup.
+    #[test]
+    fn mightform_landfall_doubles_power_via_real_land_drop() {
+        use crate::agent::{Agent, DecisionRequest, DecisionResponse, PlayerView};
+        use crate::basics::{Target, Zone};
+        use crate::cards::{grp, starter_db};
+        use crate::ids::{ObjId, PlayerId};
+        use crate::priority::Engine;
+        use crate::state::GameState;
+        use std::sync::Arc;
+
+        // Targets the specific creature we want doubled (the trigger can also target Mightform itself).
+        #[derive(Clone)]
+        struct TargetAgent {
+            want: ObjId,
+        }
+        impl Agent for TargetAgent {
+            fn decide(&mut self, _v: &PlayerView, req: &DecisionRequest) -> DecisionResponse {
+                match req {
+                    DecisionRequest::ChooseTargets { slots, .. } => {
+                        let i = slots[0]
+                            .legal
+                            .iter()
+                            .position(|t| matches!(t, Target::Object(o) if *o == self.want))
+                            .unwrap_or(0);
+                        DecisionResponse::Pairs(vec![(0, i as u32)])
+                    }
+                    _ => DecisionResponse::Pass,
+                }
+            }
+        }
+
+        let mut state = GameState::new(2, 1);
+        state.set_card_db(Arc::new(starter_db()));
+        let bears = {
+            let c = state.card_db().get(grp::GRIZZLY_BEARS).unwrap().chars.clone(); // 2/2
+            state.add_card(PlayerId(0), c, Zone::Battlefield)
+        };
+        {
+            let c = state.card_db().get(MIGHTFORM_HARMONIZER).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, Zone::Battlefield);
+        }
+        let land = {
+            let c = state.card_db().get(grp::FOREST).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, Zone::Hand)
+        };
+        let mut e = Engine::new(
+            state,
+            vec![Box::new(TargetAgent { want: bears }), Box::new(TargetAgent { want: bears })],
+        );
+
+        e.play_land(PlayerId(0), land);
+        e.run_agenda();
+        while !e.state.stack.items.is_empty() {
+            e.resolve_top();
+            e.run_agenda();
+        }
+        assert_eq!(e.state.computed(bears).power, Some(4), "landfall doubled the 2/2's power to 4");
+        assert_eq!(e.state.computed(bears).toughness, Some(2), "+0 toughness");
+
+        e.state.end_of_turn_continuous_cleanup();
+        assert_eq!(e.state.computed(bears).power, Some(2), "the double-power wears off at end of turn");
+    }
 }
