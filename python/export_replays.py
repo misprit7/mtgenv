@@ -17,6 +17,7 @@ from stable_baselines3.common.callbacks import BaseCallback
 
 from train import eval_callback, make_model
 from mtgenv_gym import MtgEnv
+from mtgenv_gym.league import ModelOpponent
 
 REPLAY_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "replays"))
 
@@ -25,9 +26,11 @@ def _now_ms() -> int:
     return int(time.time() * 1000)
 
 
-def record_game(model, deck, step, out_dir, run_name=None, seed=12_345):
-    """Play one recorded game with the current policy (seat 0) vs random (seat 1); write its replay."""
-    env = MtgEnv(deck=deck, record_replay=True, replay_step=step)
+def record_game(model, deck, step, out_dir, run_name=None, seed=12_345, self_play=True):
+    """Record one game with the current policy on seat 0. With ``self_play`` the opponent (seat 1)
+    is the *same* policy (true self-play — the agent vs itself); otherwise a random opponent."""
+    opponent = ModelOpponent(model, deterministic=False) if self_play else "random"
+    env = MtgEnv(deck=deck, record_replay=True, replay_step=step, opponent=opponent)
     obs, info = env.reset(seed=seed + step)
     done = False
     while not done:
@@ -35,10 +38,9 @@ def record_game(model, deck, step, out_dir, run_name=None, seed=12_345):
         obs, _r, term, trunc, info = env.step(int(action))
         done = term or trunc
     sides = deck.split("_vs_") if "_vs_" in deck else [deck, deck]
-    label = f"PPO@{run_name}:{step}" if run_name else f"PPO@{step}"
-    return env.export_replay(
-        out_dir, _now_ms(), names=[label, "random"], decks=sides[:2], run_name=run_name
-    )
+    tag = f"PPO@{run_name}:{step}" if run_name else f"PPO@{step}"
+    opp = tag if self_play else "random"
+    return env.export_replay(out_dir, _now_ms(), names=[tag, opp], decks=sides[:2], run_name=run_name)
 
 
 def _run_name(model) -> str:

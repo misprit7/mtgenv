@@ -5,6 +5,20 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **gym:** **GYM_PLAN milestone 2 in progress — self-play league (demo deck).** User greenlit M2 +
+  switched the agent to the **demo deck** (mirror: forests/mountains/bears/giants/shocks). **M2a**
+  (99af24d): policy-opponent seam in `MtgEnv` (callable/object opponent, obs threaded; relative obs
+  ⇒ one policy plays both seats). **M2b** (5985d70): self-play league — `OpponentPool` (frozen
+  checkpoints sampled per episode, filesystem-coordinated so it works across `SubprocVecEnv`),
+  `PoolCheckpoint` callback (atomic save + prune), `selfplay_train.py` (MaskablePPO vs the pool;
+  logs win-rate vs random + vs the initial self). **Trains + improves: 0.72 vs random, 0.69 vs its
+  random-init self** on demo; slow learning test green. **M2c** (7ef2b29): vectorization explored +
+  `throughput.py`. **Finding:** sim is NOT the bottleneck (raw engine 54 games/s/core) — NN
+  inference is (per-env opponent `predict`); `SubprocVecEnv` is *counterproductive* (big Dict obs ⇒
+  per-step IPC > parallelism on a fast sim); `DummyVecEnv` ~14 games/s/core is fastest. The
+  ≥10²/core bar needs **async batched inference** (#41, M3-adjacent) — flagged to lead. **M2d**
+  (this commit): `export_replays.py` now records **true self-play** (current policy on both seats),
+  run-name-tagged → lobby AI Training Replays. Snapshot/clone still deferred to M3.
 - **engine:** **Bushwhack cap: cast-time modal-with-targets** (6a3eb78) — `StackObject.modes`;
   `cast_spell` chooses a modal spell's modes at 601.2b then collects target specs for ONLY the chosen
   modes at 601.2c (added the `Fight` arm to `collect_specs_into` so its two targets get declared);
