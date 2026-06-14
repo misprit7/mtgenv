@@ -224,4 +224,81 @@ mod tests {
             ]"#]]
         .assert_eq(&format!("{:#?}", def.abilities));
     }
+
+    /// Behaviour: resolving the attack ability (you choose to) removes a +1/+1 counter from each of two
+    /// creatures you control, then draws a card and makes a 2/2 Robot token. Snapshot of the resolved
+    /// state (counters removed → both back to 2/2, hand +1, a Robot token on the battlefield).
+    #[test]
+    fn dyadrine_attack_removes_counters_draws_and_makes_a_robot() {
+        use crate::agent::{Agent, DecisionRequest, DecisionResponse, PlayerView};
+        use crate::basics::Zone;
+        use crate::cards::{build_game, grp};
+        use crate::effects::action::{ResolutionCtx, WbReason};
+        use crate::ids::{PlayerId, StackId};
+        use crate::priority::Engine;
+        use expect_test::expect;
+
+        // An agent that takes the optional ("yes") and picks the first `min` candidates to select.
+        #[derive(Clone)]
+        struct YesAgent;
+        impl Agent for YesAgent {
+            fn decide(&mut self, _v: &PlayerView, req: &DecisionRequest) -> DecisionResponse {
+                match req {
+                    DecisionRequest::Confirm { .. } => DecisionResponse::Bool(true),
+                    DecisionRequest::SelectCards { min, .. } => {
+                        DecisionResponse::Indices((0..*min).collect())
+                    }
+                    _ => DecisionResponse::Pass,
+                }
+            }
+        }
+
+        // P0 has a 1-card library (so the draw resolves) + two 2/2 Grizzly Bears, each with a +1/+1
+        // counter (a 3/3), + Dyadrine itself (the source).
+        let mut state = build_game(1, &[&[grp::FOREST], &[]]);
+        let bears_chars = state.card_db().get(grp::GRIZZLY_BEARS).unwrap().chars.clone();
+        let dyadrine_chars = state.card_db().get(DYADRINE_SYNTHESIS_AMALGAM).unwrap().chars.clone();
+        let dyadrine = state.add_card(PlayerId(0), dyadrine_chars, Zone::Battlefield);
+        let bears1 = state.add_card(PlayerId(0), bears_chars.clone(), Zone::Battlefield);
+        let bears2 = state.add_card(PlayerId(0), bears_chars, Zone::Battlefield);
+        let attack = match &state.card_db().get(DYADRINE_SYNTHESIS_AMALGAM).unwrap().abilities[1] {
+            Ability::Triggered { effect, .. } => effect.clone(),
+            o => panic!("expected YouAttack Triggered, got {o:?}"),
+        };
+        let mut e = Engine::new(state, vec![Box::new(YesAgent), Box::new(YesAgent)]);
+        let pp = CounterKind::PlusOnePlusOne;
+        // Give each Bears a +1/+1 counter (a 3/3) so both are valid Select candidates.
+        for b in [bears1, bears2] {
+            e.resolve_effect(
+                &Effect::PutCounters { what: EffectTarget::SourceSelf, kind: pp.clone(), n: ValueExpr::Fixed(1) },
+                &ResolutionCtx { controller: Some(PlayerId(0)), source: Some(b), ..Default::default() },
+                WbReason::Resolve(StackId(0)),
+            );
+        }
+        // Resolve Dyadrine's attack ability.
+        e.resolve_effect(
+            &attack,
+            &ResolutionCtx { controller: Some(PlayerId(0)), source: Some(dyadrine), ..Default::default() },
+            WbReason::Resolve(StackId(0)),
+        );
+        // Render the resolved state: bears' P/T (counters removed), hand size, and the new Robot token.
+        let cc1 = e.state.computed(bears1);
+        let cc2 = e.state.computed(bears2);
+        let bf = &e.state.players[0].battlefield;
+        let token = bf.iter().find(|id| ![dyadrine, bears1, bears2].contains(id)).copied();
+        let token_pt = token.map(|t| {
+            let c = e.state.computed(t);
+            (c.power, c.toughness)
+        });
+        let render = format!(
+            "bears1={:?} bears2={:?} | hand={} | battlefield={} | robot_token_pt={:?}",
+            (cc1.power, cc1.toughness),
+            (cc2.power, cc2.toughness),
+            e.state.players[0].hand.len(),
+            bf.len(),
+            token_pt,
+        );
+        expect!["bears1=(Some(2), Some(2)) bears2=(Some(2), Some(2)) | hand=1 | battlefield=4 | robot_token_pt=Some((Some(2), Some(2)))"]
+        .assert_eq(&render);
+    }
 }
