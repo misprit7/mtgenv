@@ -32,18 +32,38 @@ pub mod helpers;
 pub mod misc;
 
 // Per-first-printing-set folders (real card pool).
+pub mod aer;
+pub mod ala;
 pub mod bro;
 pub mod dft;
 pub mod dsk;
 pub mod eld;
+pub mod emn;
 pub mod eoe;
 pub mod fdn;
 pub mod fin;
+pub mod isd;
+pub mod ktk;
 pub mod lea;
+pub mod m10;
+pub mod m12;
+pub mod m13;
+pub mod mgb;
+pub mod mir;
 pub mod mkm;
+pub mod mrd;
+pub mod p02;
+pub mod pls;
+pub mod por;
 pub mod rav;
+pub mod rtr;
+pub mod som;
 pub mod sos;
+pub mod sth;
 pub mod tla;
+pub mod tmp;
+pub mod ulg;
+pub mod usg;
 
 /// Oracle/printing ids (the `grp_id` linking an object to its [`CardDef`]). Per-set card ids move
 /// near their cards in the `<setcode>/` folders; the prototype/starter ids stay here.
@@ -335,6 +355,27 @@ pub fn starter_db() -> CardDb {
     rav::register(&mut db);
     tla::register(&mut db);
     bro::register(&mut db);
+    // Per-set folders for the prototype/starter pool (moved out of `misc`).
+    aer::register(&mut db);
+    ala::register(&mut db);
+    emn::register(&mut db);
+    isd::register(&mut db);
+    ktk::register(&mut db);
+    m10::register(&mut db);
+    m12::register(&mut db);
+    m13::register(&mut db);
+    mgb::register(&mut db);
+    mir::register(&mut db);
+    mrd::register(&mut db);
+    p02::register(&mut db);
+    pls::register(&mut db);
+    por::register(&mut db);
+    rtr::register(&mut db);
+    som::register(&mut db);
+    sth::register(&mut db);
+    tmp::register(&mut db);
+    ulg::register(&mut db);
+    usg::register(&mut db);
     db
 }
 
