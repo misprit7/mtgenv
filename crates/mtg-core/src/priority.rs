@@ -2464,6 +2464,18 @@ mod expect_tests {
         }
     }
 
+    /// Says "yes" to every `Confirm` (and passes otherwise) — drives the pay-life branch of a
+    /// shock land's ETB replacement.
+    struct ConfirmYesAgent;
+    impl Agent for ConfirmYesAgent {
+        fn decide(&mut self, _v: &PlayerView, req: &DecisionRequest) -> DecisionResponse {
+            match req {
+                DecisionRequest::Confirm { .. } => DecisionResponse::Bool(true),
+                _ => DecisionResponse::Pass,
+            }
+        }
+    }
+
     /// Activates the first available activated ability (e.g. Equip), choosing target slot 0;
     /// otherwise passes. For the equipment test.
     struct EquipAgent;
@@ -3736,6 +3748,80 @@ mod expect_tests {
 
         assert_eq!(e.state.object(forest).zone, Zone::Battlefield, "land was played");
         assert!(e.state.object(forest).status.tapped, "Root Maze made it enter tapped");
+    }
+
+    /// A land (grp 9300) whose ETB carries `rewrite`, in P0's hand, + a custom db. Agent[0] = `a0`.
+    fn dual_land_in_hand(rewrite: crate::effects::ability::Rewrite, a0: Box<dyn Agent>) -> (Engine, ObjId) {
+        use crate::effects::ability::{Ability, ActionPattern};
+        use crate::effects::target::CardFilter;
+        use crate::state::Characteristics;
+        use std::sync::Arc;
+        let mut db = cards::starter_db();
+        db.insert(cards::CardDef {
+            chars: Characteristics {
+                name: "Test Dual".into(),
+                card_types: vec![CardType::Land],
+                grp_id: 9300,
+                ..Default::default()
+            },
+            abilities: vec![Ability::Replacement {
+                pattern: ActionPattern::WouldEnterBattlefield(CardFilter::ItSelf),
+                rewrite,
+            }],
+            ..Default::default()
+        });
+        let mut state = GameState::new(2, 1);
+        state.set_card_db(Arc::new(db));
+        let chars = state.card_db().get(9300).unwrap().chars.clone();
+        let land = state.add_card(PlayerId(0), chars, Zone::Hand);
+        (Engine::new(state, vec![a0, Box::new(PassAgent)]), land)
+    }
+
+    #[test]
+    fn check_land_enters_tapped_unless_you_control_a_basic() {
+        // C11 check-land flavor: `EntersTappedUnless(control a basic land)` — no choice.
+        use crate::effects::ability::Rewrite;
+        use crate::effects::condition::Condition;
+        use crate::effects::target::CardFilter;
+        use crate::effects::value::{PlayerRef, ValueExpr};
+        use crate::state::Characteristics;
+        let rw = Rewrite::EntersTappedUnless(Condition::CountAtLeast {
+            zone: Zone::Battlefield,
+            filter: CardFilter::All(vec![
+                CardFilter::HasCardType(CardType::Land),
+                CardFilter::Supertype(crate::subtypes::Supertype::Basic),
+            ]),
+            controller: Some(PlayerRef::Controller),
+            n: ValueExpr::Fixed(1),
+        });
+        // No basic controlled → enters tapped.
+        let (mut e, land) = dual_land_in_hand(rw.clone(), Box::new(PassAgent));
+        e.play_land(PlayerId(0), land);
+        assert!(e.state.object(land).status.tapped, "no basic → enters tapped");
+        // Control a basic → enters untapped.
+        let (mut e, land) = dual_land_in_hand(rw, Box::new(PassAgent));
+        e.state.add_card(PlayerId(0), Characteristics::basic_land("Forest"), Zone::Battlefield);
+        e.play_land(PlayerId(0), land);
+        assert!(!e.state.object(land).status.tapped, "control a basic → enters untapped");
+    }
+
+    #[test]
+    fn shock_land_pays_life_or_enters_tapped() {
+        // C11 shock-land flavor: `EntersTappedUnlessPay{life:2}` — controller chooses as it enters.
+        use crate::effects::ability::Rewrite;
+        let rw = Rewrite::EntersTappedUnlessPay { life: 2 };
+        // Pay 2 life (ConfirmYesAgent) → untapped, 2 life lost.
+        let (mut e, land) = dual_land_in_hand(rw.clone(), Box::new(ConfirmYesAgent));
+        let life_before = e.state.player(PlayerId(0)).life;
+        e.play_land(PlayerId(0), land);
+        assert!(!e.state.object(land).status.tapped, "paid → enters untapped");
+        assert_eq!(e.state.player(PlayerId(0)).life, life_before - 2, "paid 2 life");
+        // Decline (PassAgent → Pass) → tapped, no life lost.
+        let (mut e, land) = dual_land_in_hand(rw, Box::new(PassAgent));
+        let life_before = e.state.player(PlayerId(0)).life;
+        e.play_land(PlayerId(0), land);
+        assert!(e.state.object(land).status.tapped, "declined → enters tapped");
+        assert_eq!(e.state.player(PlayerId(0)).life, life_before, "no life paid");
     }
 
     #[test]

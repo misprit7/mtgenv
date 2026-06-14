@@ -123,6 +123,12 @@ pub enum Rewrite {
     EntersWithCounters { kind: CounterKind, n: u32 },
     /// Enter tapped.
     EntersTapped,
+    /// Enter tapped **unless** the condition holds — the "check land" pattern ("enters tapped
+    /// unless you control a basic land"). No choice; evaluated for the controller as it enters.
+    EntersTappedUnless(Condition),
+    /// Enter tapped **unless** the controller pays `life` life — the "shock land" pattern ("you
+    /// may pay 2 life; if you don't, it enters tapped"). The controller is asked as it enters.
+    EntersTappedUnlessPay { life: u32 },
 }
 
 /// A continuous/static effect's contribution to the layer system (CR 613) and/or a

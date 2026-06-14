@@ -11,8 +11,8 @@
 //! `LoseLife`, `Sequence`. Other IR nodes are a graceful no-op until their cards arrive.
 
 use crate::agent::{
-    ActionRef, DecisionRequest, DecisionResponse, GameEvent, ModeOption, ReplacementOption,
-    SelectReason,
+    ActionRef, ConfirmKind, DecisionRequest, DecisionResponse, GameEvent, ModeOption,
+    ReplacementOption, SelectReason,
 };
 use crate::basics::{CardType, Color, CounterKind, DamageKind, Target, Zone, ZoneDest};
 use crate::effects::ability::{Ability, ActionPattern, Rewrite};
@@ -53,6 +53,8 @@ fn describe_rewrite(rw: &Rewrite) -> String {
         Rewrite::Redirect => "redirect".to_string(),
         Rewrite::EntersWithCounters { kind, n } => format!("enters with {n} {kind:?}"),
         Rewrite::EntersTapped => "enters tapped".to_string(),
+        Rewrite::EntersTappedUnless(_) => "enters tapped unless …".to_string(),
+        Rewrite::EntersTappedUnlessPay { life } => format!("enters tapped unless you pay {life} life"),
     }
 }
 
@@ -528,8 +530,9 @@ impl Engine {
         }
     }
 
-    /// Apply one rewrite to the staged actions (CR 614.1).
-    fn apply_rewrite(&self, rw: &Rewrite, wb: &mut Whiteboard, ai: usize, obj: ObjId) {
+    /// Apply one rewrite to the staged actions (CR 614.1). `&mut self` because some rewrites are
+    /// interactive (a shock land asks the controller whether to pay life as it enters).
+    fn apply_rewrite(&mut self, rw: &Rewrite, wb: &mut Whiteboard, ai: usize, obj: ObjId) {
         match rw {
             Rewrite::Prevent | Rewrite::Skip => {
                 wb.actions.remove(ai);
@@ -569,6 +572,31 @@ impl Engine {
                         *n = *n * *numerator as i32 / den as i32;
                     }
                     _ => {}
+                }
+            }
+            Rewrite::EntersTappedUnless(cond) => {
+                // "Enters tapped unless <condition>" (check lands): tap iff the condition fails,
+                // evaluated for the entering permanent's controller. No choice.
+                let controller =
+                    self.state.objects.get(&obj).map(|o| o.controller).unwrap_or(PlayerId(0));
+                if !crate::conditions::holds(&self.state, cond, controller) {
+                    wb.actions.insert(ai + 1, Action::TapUntap { obj, tap: true });
+                }
+            }
+            Rewrite::EntersTappedUnlessPay { life } => {
+                // "You may pay N life; if you don't, it enters tapped" (shock lands): ask the
+                // controller as it enters — pay → lose the life (untapped); decline → tapped.
+                let controller =
+                    self.state.objects.get(&obj).map(|o| o.controller).unwrap_or(PlayerId(0));
+                let paid = matches!(
+                    self.ask(controller, &DecisionRequest::Confirm { kind: ConfirmKind::PayToPrevent }),
+                    DecisionResponse::Bool(true)
+                );
+                if paid {
+                    wb.actions
+                        .insert(ai + 1, Action::LoseLife { player: controller, amount: *life });
+                } else {
+                    wb.actions.insert(ai + 1, Action::TapUntap { obj, tap: true });
                 }
             }
             // ReplaceWith / Redirect: future work.
