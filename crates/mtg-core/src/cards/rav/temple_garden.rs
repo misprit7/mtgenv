@@ -70,4 +70,57 @@ mod tests {
                 },
             ]"#]].assert_eq(&format!("{:#?}", def.abilities));
     }
+
+    /// #60 end-to-end (the REAL play-land path): playing Temple Garden fires its
+    /// `EntersTappedUnlessPay{2}` shock replacement, which asks the controller to pay 2 life **as it
+    /// enters**. Pay → lose 2 life, enters **untapped**; decline → keep the life, enters **tapped**.
+    /// This whole clause had no behaviour coverage; here both branches are driven through `play_land`.
+    #[test]
+    fn temple_garden_pays_two_life_or_enters_tapped() {
+        use crate::agent::{Agent, DecisionRequest, DecisionResponse, PlayerView};
+        use crate::basics::Zone;
+        use crate::cards::starter_db;
+        use crate::ids::PlayerId;
+        use crate::priority::Engine;
+        use crate::state::GameState;
+        use std::sync::Arc;
+
+        // Answers the shock land's "pay 2 life?" Confirm with a fixed choice.
+        #[derive(Clone)]
+        struct ShockAgent {
+            pay: bool,
+        }
+        impl Agent for ShockAgent {
+            fn decide(&mut self, _v: &PlayerView, req: &DecisionRequest) -> DecisionResponse {
+                match req {
+                    DecisionRequest::Confirm { .. } => DecisionResponse::Bool(self.pay),
+                    _ => DecisionResponse::Pass,
+                }
+            }
+        }
+
+        // Returns (life_after, entered_tapped) for a given pay/decline choice.
+        let run = |pay: bool| -> (i32, bool) {
+            let mut state = GameState::new(2, 1);
+            state.set_card_db(Arc::new(starter_db()));
+            let temple = {
+                let c = state.card_db().get(TEMPLE_GARDEN).unwrap().chars.clone();
+                state.add_card(PlayerId(0), c, Zone::Hand)
+            };
+            let mut e = Engine::new(
+                state,
+                vec![Box::new(ShockAgent { pay }), Box::new(ShockAgent { pay })],
+            );
+            let life_before = e.state.player(PlayerId(0)).life;
+            e.play_land(PlayerId(0), temple); // shock replacement asks "pay 2 life?" during commit
+            let tapped = e.state.object(temple).status.tapped;
+            assert_eq!(e.state.object(temple).zone, Zone::Battlefield, "the land entered play");
+            (life_before - e.state.player(PlayerId(0)).life, tapped)
+        };
+
+        // Pay 2 life → lost 2, entered untapped.
+        assert_eq!(run(true), (2, false), "paid 2 life → untapped");
+        // Decline → lost 0, entered tapped.
+        assert_eq!(run(false), (0, true), "declined → enters tapped");
+    }
 }
