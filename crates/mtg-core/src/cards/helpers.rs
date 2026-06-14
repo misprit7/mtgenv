@@ -97,11 +97,17 @@ pub(crate) fn sacrifice_self() -> SelectSpec {
 }
 
 /// "Search your library for a basic land card, put it onto the battlefield tapped, then shuffle"
-/// (C5) — the fetch shared by fetch lands (Fabled Passage, Escape Tunnel) and Lumbering Worldwagon.
-/// `min: 0` allows a failed/declined find; the engine shuffles after.
+/// (C5), searched by the controller — the fetch shared by fetch lands (Fabled Passage, Escape
+/// Tunnel) and Lumbering Worldwagon. `min: 0` allows a failed/declined find; the engine shuffles after.
 pub(crate) fn fetch_basic_tapped() -> Effect {
+    fetch_basic_tapped_by(PlayerRef::Controller)
+}
+
+/// As [`fetch_basic_tapped`] but searched by `who` — e.g. Erode, where the *destroyed* permanent's
+/// controller (`ControllerOfTarget(0)`) "may search" (the `min: 0` is the "may": they pick 0 or 1).
+pub(crate) fn fetch_basic_tapped_by(who: PlayerRef) -> Effect {
     Effect::Search {
-        who: PlayerRef::Controller,
+        who,
         zone: Zone::Library,
         filter: basic_land_filter(),
         min: 0,
