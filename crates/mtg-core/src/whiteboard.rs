@@ -329,6 +329,13 @@ impl Engine {
                     });
                 }
             }
+            // C17: exile a target (e.g. "{1}: Exile target card from a graveyard"). `source` is
+            // carried so the exile can later be associated with its source (linked-exile sets).
+            Effect::Exile { what } => {
+                if let Some(Target::Object(obj)) = self.resolve_target(what, ctx, cursor) {
+                    wb.push(Action::Exile { obj, source: ctx.source });
+                }
+            }
             Effect::Attach { what, to } => {
                 // `what` (usually SourceSelf) is resolved first; `to` consumes the chosen target.
                 let attachment = self.resolve_target(what, ctx, cursor);
@@ -787,6 +794,15 @@ impl Engine {
                         o.attached_to = Some(host);
                     }
                     self.state.mark_chars_dirty();
+                }
+            }
+            Action::Exile { obj, .. } => {
+                let owner = match self.state.objects.get(&obj) {
+                    Some(o) => o.owner,
+                    None => return,
+                };
+                if self.state.move_object(obj, Zone::Exile, owner) {
+                    self.broadcast(GameEvent::ObjectMoved { obj, to: Zone::Exile });
                 }
             }
             Action::GrantContinuous { source, controller, affected, contributions, duration } => {

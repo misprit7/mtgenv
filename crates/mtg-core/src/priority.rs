@@ -1397,7 +1397,18 @@ impl Engine {
             TargetKind::Permanent(filter) => permanents()
                 .filter(|t| self.target_matches_filter(t, filter, caster))
                 .collect(),
-            // StackObject / CardInZone: not needed by the starter set.
+            // A card in a public zone — e.g. "target card from a graveyard" (Keen-Eyed Curator).
+            // Enumerates every object in `zone` (any player's) matching the filter; graveyard/exile
+            // are public, so no hexproof masking applies.
+            TargetKind::CardInZone { zone, filter } => self
+                .state
+                .objects
+                .values()
+                .filter(|o| o.zone == *zone)
+                .map(|o| Target::Object(o.id))
+                .filter(|t| self.target_matches_filter(t, filter, caster))
+                .collect(),
+            // StackObject targeting: not needed by the current pool.
             _ => Vec::new(),
         }
     }
@@ -2235,6 +2246,8 @@ fn collect_specs_into(effect: &Effect, out: &mut Vec<TargetSpec>) {
         }
         // Earthbend targets "target land you control" (CR 601.2c).
         Effect::Earthbend { target: EffectTarget::Target(spec), .. } => out.push(spec.clone()),
+        // Exile targets "target card from a graveyard" etc. (CR 601.2c).
+        Effect::Exile { what: EffectTarget::Target(spec) } => out.push(spec.clone()),
         Effect::Sequence(effects) => {
             for e in effects {
                 collect_specs_into(e, out);
@@ -3908,6 +3921,45 @@ mod expect_tests {
         };
         assert_eq!(named(forest).as_deref(), Some("Forest"), "the candidate is revealed by name");
         assert!(named(hidden).is_none(), "the rest of the library stays masked");
+    }
+
+    #[test]
+    fn exile_target_card_from_a_graveyard_c17() {
+        use crate::basics::Target;
+        use crate::effects::action::{ResolutionCtx, WbReason};
+        use crate::effects::target::{CardFilter, TargetKind, TargetSpec};
+        use crate::effects::{Effect, EffectTarget};
+        // Keen-Eyed Curator's "{1}: Exile target card from a graveyard." A card in a graveyard is a
+        // legal CardInZone{Graveyard} candidate, and Effect::Exile moves it to its owner's exile.
+        let mut state = cards::build_game(1, &[&[], &[]]);
+        let gy_chars = state.card_db().get(grp::GRIZZLY_BEARS).unwrap().chars.clone();
+        let card = state.add_card(PlayerId(1), gy_chars, Zone::Graveyard);
+        let mut e = pass_engine(state);
+
+        let spec = TargetSpec {
+            kind: TargetKind::CardInZone { zone: Zone::Graveyard, filter: CardFilter::Any },
+            min: 1,
+            max: 1,
+            distinct: true,
+        };
+        assert_eq!(
+            e.target_candidates(&spec, PlayerId(0)),
+            vec![Target::Object(card)],
+            "a graveyard card is a legal 'target card from a graveyard'"
+        );
+
+        e.resolve_effect(
+            &Effect::Exile { what: EffectTarget::ChosenIndex(0) },
+            &ResolutionCtx {
+                controller: Some(PlayerId(0)),
+                chosen_targets: vec![Target::Object(card)],
+                ..Default::default()
+            },
+            WbReason::Resolve(crate::ids::StackId(0)),
+        );
+        assert_eq!(e.state.object(card).zone, Zone::Exile, "the card was exiled");
+        assert!(e.state.player(PlayerId(1)).exile.contains(&card), "into its owner's exile");
+        assert!(!e.state.player(PlayerId(1)).graveyard.contains(&card), "out of the graveyard");
     }
 
     #[test]
