@@ -5,6 +5,21 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-14
 
+- **engine (#44):** **Whole upgrade-tail queue ground through — 5 caps back-to-back, each green.**
+  (1) **Reflexive "when you do" sub-trigger** (`2e13694`, CR 603.7c): a targeted `Conditional.then`
+  is deferred to a `StackObjectKind::ReflexiveAbility`; its intervening-if re-checks after the parent
+  commits + its target is chosen only if the if holds (design's flagged fidelity bug avoided — no
+  prompt on sub-threshold, counter always lands). `ResolutionCtx.ability_index` + reflexive_branch/
+  reward/node navigate the ability tree serde-safely. (2) **Badgermole reflexive-mana** (`23242f2`):
+  `EventPattern::TapCreatureForMana`; auto_pay fires no-stack `AddMana` triggers per creature tapped
+  for mana. (3) **Fabled Passage** (`bcff1cd`): `EffectTarget::Searched(n)` (search-result handle via
+  transient `Engine.searched_this_resolution`) + `Effect::Tap` → "untap that land if 4+ lands."
+  (4) **Escape Tunnel** (`7dd18a9`): `Qualification::CantBeBlocked` (combat reads it) +
+  `CardFilter::PowerAtMost` + `Effect::GrantQualification`. (5) **Crew** (`80d9ab3`):
+  `CostComponent::Crew(N)` (tap creatures totaling power ≥N) + `Effect::BecomeCreature` →
+  GrantContinuous(AddType(Creature), EOT). Also reusable: `Effect::Conditional` (source-aware) +
+  `Effect::GrantKeyword` (`d8484d2`). 175 tests green. Surrak skipped (both gaps inert in-deck —
+  flagged to lead). Only Dyadrine c3 (Optional + distinct-2-target removal) remains.
 - **design (#44):** **Escape Tunnel → `fully_implemented: true`** (5a55600) — cap E landed (engine
   7dd18a9: `Qualification::CantBeBlocked` + `CardFilter::PowerAtMost(n)` + `Effect::GrantQualification`),
   so authored its 2nd ability: `Activated{ {T}+Sac, GrantQualification{ Target(Creature(PowerAtMost(2))),
