@@ -50,16 +50,19 @@ MTGA client.
 
 ## Current state
 
-- **🎉 Selesnya Landfall push DELIVERED + upgrade tail in progress (#44).** All **18 distinct cards
-  authored**; the `selesnya`/`landfall` preset (`cards::selesnya_landfall_deck`) **is the real mtggoldfish
-  60** (51 nonbasics + 7 Forest / 2 Plains, no padding) and plays end-to-end (validated via `mtg-cli`
-  self-play, clean finishes, zero panics). **🎉 Upgrade tail COMPLETE: 17/18 cards fully faithful; the deck
-  is 18/18 fully-faithful minus only Surrak's inert "can't be countered"** — every substantial clause on
-  every card is implemented; Surrak's lone gap (a `CantBeCountered` qualification with no counterspell in
-  the pool to act on) is a documented standing deferral per the lead. Behaviour tests added for the key
-  mechanics; full deck re-validated in self-play (7 seeds, zero panics). Engine caps C1–C20 landed except
-  **C13 Crew** and **C18 land-permissions** (deferred); plus many ad-hoc subsystems (floating
-  continuous-effects, delayed triggers, warp, becomes-targeted, exile-association, snapshot pump, …). The
+- **🎉 Selesnya Landfall push DELIVERED — #44 COMPLETE.** All **18 distinct cards authored**; the
+  `selesnya`/`landfall` preset (`cards::selesnya_landfall_deck`) **is the real mtggoldfish 60** (51 nonbasics
+  + 7 Forest / 2 Plains, no padding) and plays end-to-end (validated via `mtg-cli` self-play across many
+  seeds, clean finishes, zero panics; the deck is also gym's live training pool). **17/18 cards fully
+  faithful; the deck is 18/18 fully-faithful minus only Surrak's inert "can't be countered"** — every
+  substantial clause on every card is implemented; Surrak's lone gap (a `CantBeCountered` qualification with
+  no counterspell in the pool to act on) is a documented standing deferral per the lead. **Behaviour-test
+  coverage: 16/18 cards have a card-module resolve-level test** (zones/counters/P-T/mana, not just IR);
+  Temple Garden (ETB replacement) + Surrak (becomes-targeted event) have no standalone resolvable effect and
+  are covered by engine cap tests (C11/C16) + IR snapshots. **197 mtg-core tests green; clippy clean.** Engine
+  caps **C1–C20 all landed** (incl. C13 Crew + C18 land-permissions); plus many ad-hoc subsystems (floating
+  continuous-effects, delayed triggers, warp, becomes-targeted + stack-half, exile-association, snapshot pump,
+  Optional/ForEach, reflexive sub-trigger, …). The
   authoritative **capability ledger** (every cap ✅/⏳ + the card it enables + commit refs) lives in
   `docs/plans/SELESNYA_LANDFALL_CARDS.md`. Remaining upgrade-tail caps (each flips one ⚠ card to fully
   faithful, no new deck cards): reflexive sub-trigger (Earthbender/Dyadrine), distinct two-target removal
