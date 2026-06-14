@@ -3,18 +3,21 @@
 //! Oracle: "{T}, Sacrifice this land: Search your library for a basic land card, put it onto the
 //! battlefield tapped, then shuffle. Then if you control four or more lands, untap that land."
 //!
-//! IMPLEMENTED: the fetch — `{T}, Sacrifice this:` (TapSelf + Sacrifice `ItSelf`) → search a basic
-//! onto the battlefield tapped (C5), as an instant-speed activated ability.
-//!
-//! INCOMPLETE — TRACKED: "Then if you control four or more lands, untap that land." Needs a handle
-//! to reference *the just-searched permanent* (an unbuilt capability) + a `CountAtLeast` condition.
-//! Until then the fetched land simply stays tapped — a faithful subset (a missing upside), NOT a
-//! wrong approximation. Flagged to engine.
+//! **Fully implemented:** the activated `{T}, Sacrifice this:` (TapSelf + Sacrifice `ItSelf`) →
+//! `Sequence[ search a basic onto the battlefield tapped (C5), Conditional{ if you control 4+ lands,
+//! untap that land } ]`. The "untap that land" references the just-fetched permanent via
+//! `EffectTarget::Searched(0)` (the 0th permanent this Search fetched), gated on
+//! `Condition::CountAtLeast(lands you control ≥ 4)` and applied with `Effect::Tap{ tap: false }`
+//! (cap `bcff1cd`). The count is taken after the fetch, so the new land itself counts toward the 4.
 
-use crate::basics::CardType;
+use crate::basics::{CardType, Zone};
 use crate::cards::helpers::{fetch_basic_tapped, sacrifice_self};
 use crate::cards::{CardDb, CardDef};
 use crate::effects::ability::{Ability, Cost, CostComponent, Timing};
+use crate::effects::condition::Condition;
+use crate::effects::target::CardFilter;
+use crate::effects::value::{PlayerRef, ValueExpr};
+use crate::effects::{Effect, EffectTarget};
 use crate::state::Characteristics;
 
 /// grp id (per-set ids live near their cards).
@@ -27,6 +30,21 @@ pub fn register(db: &mut CardDb) {
         grp_id: FABLED_PASSAGE,
         ..Default::default()
     };
+    // Fetch a basic (tapped), then "if you control 4+ lands, untap that land" — the untap references
+    // the just-fetched permanent (`Searched(0)`), gated on the land count taken after the fetch.
+    let effect = Effect::Sequence(vec![
+        fetch_basic_tapped(),
+        Effect::Conditional {
+            cond: Condition::CountAtLeast {
+                zone: Zone::Battlefield,
+                filter: CardFilter::HasCardType(CardType::Land),
+                controller: Some(PlayerRef::Controller),
+                n: ValueExpr::Fixed(4),
+            },
+            then: Box::new(Effect::Tap { what: EffectTarget::Searched(0), tap: false }),
+            otherwise: None,
+        },
+    ]);
     db.insert(CardDef {
         chars,
         abilities: vec![Ability::Activated {
@@ -37,13 +55,13 @@ pub fn register(db: &mut CardDb) {
                     CostComponent::Sacrifice(sacrifice_self()),
                 ],
             },
-            effect: fetch_basic_tapped(),
+            effect,
             timing: Timing::Instant,
             restriction: None,
             is_mana: false,
         }],
         text: "{T}, Sacrifice this land: Search your library for a basic land card, put it onto the battlefield tapped, then shuffle. Then if you control four or more lands, untap that land.".to_string(),
-        fully_implemented: false,
+        fully_implemented: true,
     });
 }
 
@@ -59,7 +77,7 @@ mod tests {
         let def = db.get(FABLED_PASSAGE).unwrap();
         assert_eq!(def.chars.card_types, vec![CardType::Land]);
         assert!(!def.is_mana_source()); // a fetch, not a mana source
-        assert!(!def.fully_implemented); // "untap that land" deferred (see module docs)
+        assert!(def.fully_implemented); // fetch + conditional untap-that-land both implemented
         expect![[r#"
             [
                 Activated {
@@ -82,27 +100,52 @@ mod tests {
                             ),
                         ],
                     },
-                    effect: Search {
-                        who: Controller,
-                        zone: Library,
-                        filter: All(
-                            [
-                                HasCardType(
-                                    Land,
+                    effect: Sequence(
+                        [
+                            Search {
+                                who: Controller,
+                                zone: Library,
+                                filter: All(
+                                    [
+                                        HasCardType(
+                                            Land,
+                                        ),
+                                        Supertype(
+                                            Basic,
+                                        ),
+                                    ],
                                 ),
-                                Supertype(
-                                    Basic,
-                                ),
-                            ],
-                        ),
-                        min: 0,
-                        max: 1,
-                        to: ZoneDest {
-                            zone: Battlefield,
-                            pos: Any,
-                        },
-                        tapped: true,
-                    },
+                                min: 0,
+                                max: 1,
+                                to: ZoneDest {
+                                    zone: Battlefield,
+                                    pos: Any,
+                                },
+                                tapped: true,
+                            },
+                            Conditional {
+                                cond: CountAtLeast {
+                                    zone: Battlefield,
+                                    filter: HasCardType(
+                                        Land,
+                                    ),
+                                    controller: Some(
+                                        Controller,
+                                    ),
+                                    n: Fixed(
+                                        4,
+                                    ),
+                                },
+                                then: Tap {
+                                    what: Searched(
+                                        0,
+                                    ),
+                                    tap: false,
+                                },
+                                otherwise: None,
+                            },
+                        ],
+                    ),
                     timing: Instant,
                     restriction: None,
                     is_mana: false,
