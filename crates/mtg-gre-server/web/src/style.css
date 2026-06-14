@@ -227,6 +227,8 @@
   .attachwrap { position: relative; flex: 0 0 auto; }
   .attachwrap .card.attach { position: absolute; top: 0; left: 0; box-shadow: 0 3px 8px rgba(0,0,0,.6);
     filter: brightness(.9); }
+  /* A triggered/activated ability on the stack (vs. a spell card) — dashed frame. */
+  .card.ability { border-style: dashed; border-width: 2px; }
   /* God-view opponent hand strip (replay / spectate). */
   .godhand { border-bottom: 1px solid var(--line); }
   .godhand .hlabel { color: var(--accent2); }

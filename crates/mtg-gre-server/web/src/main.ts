@@ -413,18 +413,20 @@ function permEl(c: Any, byId: Any): HTMLElement {
   const card = cardEl(c, { interactive: true });
   if (!atts.length) return card;
   const wrap = el("div", "attachwrap");
+  // Attached cards sit behind, each nudged UP and to the LEFT so its top (name) peeks out above the
+  // host — and the host's own name stays fully visible on top.
   atts.forEach((a: Any, i: number) => {
     const ac = cardEl(a, { interactive: true, attach: true });
-    ac.style.left = `${(i + 1) * 13}px`;
-    ac.style.top = `${(i + 1) * 16}px`;
+    ac.style.left = `${-(i + 1) * 15}px`;
+    ac.style.top = `${-(i + 1) * 19}px`;
     ac.style.zIndex = `${i + 1}`;
     wrap.appendChild(ac);
   });
   card.style.position = "relative";
   card.style.zIndex = `${atts.length + 1}`;
   wrap.appendChild(card);
-  wrap.style.marginRight = `${atts.length * 13}px`;
-  wrap.style.marginBottom = `${atts.length * 16}px`;
+  wrap.style.marginLeft = `${atts.length * 15}px`;
+  wrap.style.marginTop = `${atts.length * 19}px`;
   return wrap;
 }
 
@@ -432,10 +434,35 @@ function renderStack(): void {
   const s = $("stack");
   s.innerHTML = "";
   (view.stack || []).forEach((it: Any) => {
-    const card = cardEl({ id: it.id, chars: it.chars }, {});
+    const card = cardEl({ id: it.id, chars: stackChars(it) }, {});
+    if (isAbilityStack(it)) card.classList.add("ability");
     card.dataset.sid = it.id; // target-arrow source (stack id space, distinct from object ids)
     s.appendChild(card);
   });
+}
+// A triggered/activated ability on the stack: the engine projects it with an empty "Ability" chars
+// (no grp_id), but it carries `source` (the permanent it came from). Surface THAT card's name +
+// oracle text + art — the right detail for the current one-ability-per-card pool. (The precise
+// per-ability text would be an engine-side effect formatter; this is the faithful client view.)
+function isAbilityStack(it: Any): boolean {
+  const c = it.chars || {};
+  return !c.grp_id || c.name === "Ability";
+}
+function stackChars(it: Any): Any {
+  if (!isAbilityStack(it)) return it.chars;
+  const src = it.source != null ? findVisibleChars(it.source) : null;
+  if (!src) return it.chars; // source not in a visible zone (rare) → leave as "Ability"
+  return { name: src.name, card_types: ["Ability"], subtypes: [], supertypes: [],
+    colors: src.colors || [], mana_value: 0, rules_text: src.rules_text || "",
+    keywords: [], grp_id: src.grp_id };
+}
+function findVisibleChars(id: number): Any {
+  const zones: Any[] = [view.battlefield, view.me && view.me.hand];
+  (view.players || []).forEach((p: Any) => zones.push(p.graveyard, p.exile_public || p.exilePublic, p._hand, p._library));
+  for (const z of zones) {
+    for (const o of (z || [])) if (o && o.Visible && o.Visible.id === id) return o.Visible.chars;
+  }
+  return null;
 }
 
 function renderHand(): void {
