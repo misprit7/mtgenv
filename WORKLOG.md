@@ -5,6 +5,16 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **engine:** **C17 COMPLETE (`b18c6f6`) — Keen-Eyed Curator fully buildable → deck 18/18.** Pieces
+  2+3 on top of piece 1's exile mechanics: (2) `Object.exiled_with` records which permanent exiled a
+  card (set by `Action::Exile`, reset on zone change) = the "exiled with this creature" set; (3)
+  `Ability::ConditionalStatic{contribution, affects, duration, condition}` (additive — gather_statics
+  second arm, existing Static cards untouched) contributes to the layer system only while its
+  condition holds, evaluated **source-aware** (new `conditions::holds_for_source` threads the source
+  ObjId) + `ValueExpr::DistinctCardTypesAmongExiledWith` (counts distinct card types in the source's
+  exiled set) + reused `Condition::ValueAtLeast`. Keen-Eyed's +4/+4-and-trample toggles on at the 4th
+  distinct exiled type (test). All remaining deck-completing caps now done; only upgrade-only caps
+  left (C14 warp, Surrak stack-half, Dyadrine c3, can't-be-countered). 167 tests green.
 - **engine:** **Targeting hardening (`861f3aa`)** — `target_matches_filter` now fails CLOSED: an
   unhandled `CardFilter` predicate rejects rather than passing through `_ => true` (the gap class
   that let a creature match "land you control"). All pool predicates handled; 165 green.
