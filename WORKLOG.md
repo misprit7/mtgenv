@@ -5,6 +5,47 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **design (#44):** **FULL remaining-partial-cap queue staged** (so engine grinds the tail back-to-back; I
+  flip each ⚠→✓ as its cap commits). 7 cards still `fully_implemented: false`; 11/18 already fully faithful.
+  Verified each clause against the engine's current IR/resolution. Caps, each with the card(s) it unblocks +
+  the exact card IR:
+  - **(A) Reflexive sub-trigger** (engine building) — a *targeted* `Conditional.then` / `Optional.body` whose
+    target is chosen at 603.3d on a reflexive sub-trigger, only if/when `cond` is met (CR 603.7c). → completes
+    **Earthbender Ascension**: `Triggered{ PermanentEnters(land you control), Sequence[ PutCounters{SourceSelf,
+    Named("quest"), 1}, Conditional{ ValueAtLeast(CountersOnSelf(Named("quest")), 4), then: Sequence[
+    PutCounters{Target(creature you control), PlusOnePlusOne, 1}, GrantKeyword{ChosenIndex(0), Trample,
+    UntilEndOfTurn} ] } ] }` (Conditional + GrantKeyword + quest counter already landed d8484d2). Also the
+    front of Dyadrine c3's "if you do".
+  - **(B) Distinct two-target counter removal** (a `ForEach`/multi-target remove over 2 *distinct*
+    creatures-you-control-with-a-counter; `PutCounters` is single-target today) — with (A) → completes
+    **Dyadrine c3**: `Triggered{ YouAttack, Optional{ remove +1/+1 from each of two creatures you control,
+    reflexive→ Sequence[ Draw{Controller,1}, CreateToken{2/2 colorless Robot artifact creature ×1} ] } }`.
+  - **(C) Crew** (CR 702.122) — new `Ability::Crew { n: u32 }`: tap untapped creatures with total power ≥ N →
+    `GrantContinuous{ AddType(Creature), UntilEndOfTurn }` on the Vehicle (reuses C12 registry + the AddType
+    from earthbend). → completes **Lumbering Worldwagon** (`Ability::Crew { n: 4 }`; its */4 CDA + fetch
+    triggers already work).
+  - **(D) Searched-permanent reference + `Effect::Untap` + Conditional(lands≥4)** — "Then if you control four
+    or more lands, untap that land." Needs a handle to the just-searched permanent (Search binds its result)
+    + an untap effect (`Effect::Untap{what}` or `Tap{tap:false}`); Conditional + `CountAtLeast(lands≥4)` exist.
+    → completes **Fabled Passage**: append `Conditional{ CountAtLeast(Battlefield, Land, Controller, 4),
+    then: Untap{ <searched-ref> } }` after the fetch.
+  - **(E) `Qualification::CantBeBlocked` (evasion) + power≤2 target filter + grant-qualification-for-a-duration**
+    — "{T}, Sac: Target creature with power 2 or less can't be blocked this turn." Needs a new `CantBeBlocked`
+    qualification read by block-legality, a `CardFilter`/TargetKind power≤2 filter, and a way to paint a
+    Qualification for `Duration::ThisTurn` (extend GrantKeyword to qualifications, or `Effect::GrantQualification`).
+    → completes **Escape Tunnel**'s 2nd ability (the fetch ability already works).
+  - **(F) `Target::Stack` targeting in `BecomesTargeted`** — so the trigger also fires when an opponent targets a
+    creature *spell you control* on the stack. → completes **Surrak**'s trigger half (battlefield half done, C16).
+  - **(G) Stack-zone static gathering + a counter subsystem** — for Surrak's inert "can't be countered"
+    `Qualification(CantBeCountered)` static. LOW priority (no counterspell in the pool; nothing to counter).
+    Surrak needs both (F)+(G) to reach fully-faithful.
+  - **(H) "Tapped a creature for mana" event + reflexive mana trigger** (CR 605, no-stack) — new EventPattern +
+    mana-adding trigger. → completes **Badgermole Cub**: `Triggered{ <TappedCreatureForMana>, AddMana{Controller,
+    {G}} }` (ETB earthbend already works).
+  **Fidelity note (carry forward):** for any targeted reward gated by an intervening-if/"when you do", the
+  target MUST be deferred to the reflexive sub-trigger (cap A) — never collect it at the parent trigger, or
+  you get prompt-on-fail + (worse) the parent action blocked when no legal target exists. Don't partial-author
+  a card whose targeted reward would silently no-op; keep the whole clause deferred until A lands.
 - **engine (#44 upgrade tail):** **Reusable caps toward Earthbender (`d8484d2`):** interpret
   `Effect::Conditional` (source-aware intervening-if via `holds_for_source`; `conditions::eval_value`
   gained `CountersOnSelf`) + new `Effect::GrantKeyword{what,keyword,duration}` →
