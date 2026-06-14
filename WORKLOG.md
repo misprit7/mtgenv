@@ -5,6 +5,18 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-14
 
+- **design (#60 — END-TO-END PER-CARD AUDIT, COMPLETE):** Rebuilt the card-test harness on the engine's
+  real play seam (`cast_spell`/`play_land`/`activate_ability`/`resolve_top` + `run_agenda` +
+  `declare_attackers_explicit` + `legal_actions`) and drove **all 18 Selesnya cards** through the actual
+  cast→pay→resolve loop — real auto-paid mana, targeting, modal choices, costs, and ETB/landfall/attack/
+  becomes-targeted triggers — asserting every oracle clause against resolved state (not IR shape). **18/18
+  confirmed; re-baseline demoted NO `fully_implemented` flag** (the 17 `true` were unvalidated builder/inline
+  defaults; now validated. Surrak stays `false` — inert CbC, sanctioned). **1 bug found → #64 (engine fixed):**
+  Keen-Eyed graveyard-exile fizzled (`target_legal` battlefield-only); the old resolve-level test masked it by
+  bypassing `resolve_top`'s guard — the exact over-stated-flag class #60 targets. Verified #56/#57 mana fixes
+  end-to-end. Highlights: Dyadrine counters=mana-spent (real X-cast → 5/6), Ba Sing Se earthbend {2}{G}+{T}
+  (#57), Earthbender landfall reflexive ≥4 buff, Dyadrine/Lumbering attack triggers. ~25 new end-to-end tests;
+  231 mtg-core green, clippy clean. Matrix + report in `docs/plans/SELESNYA_LANDFALL_CARDS.md`.
 - **engine (#64 — graveyard/stack target fizzle):** **Spec-aware `targets_still_legal` (f445b6e).** `target_legal`
   hardcoded `zone == Battlefield`, so `resolve_top`'s re-check wrongly countered a graveyard target (Keen-Eyed
   Curator's `{1}: exile a graveyard card`) — and would have a stack target. Now each chosen target is re-checked

@@ -50,6 +50,18 @@ MTGA client.
 
 ## Current state
 
+- **✅ #60 END-TO-END AUDIT COMPLETE — all 18 cards driven through the REAL cast→pay→resolve loop.** The
+  prior behaviour tests called `resolve_effect` directly, bypassing casting + mana payment, so "18/18
+  fully implemented" was *asserted, not proven*. This audit rebuilt a harness on the engine's `pub(crate)`
+  seam (`cast_spell`/`play_land`/`activate_ability`/`resolve_top` + `run_agenda` + `declare_attackers_explicit`
+  + `legal_actions`) and drove every card through real auto-paid mana, targeting, modes, costs, and
+  ETB/landfall/attack/becomes-targeted triggers — asserting every oracle clause against resolved state.
+  **Result: 18/18 confirmed; re-baseline changed NO flag** (the 17 `true` are now *validated*; Surrak stays
+  `false`). **Bugs found: 1 — #64 (FIXED):** Keen-Eyed's graveyard-targeting exile silently fizzled because
+  `target_legal` only accepted battlefield targets (the resolve-level test masked it by bypassing
+  `resolve_top`'s guard); engine made the re-check spec-aware. Verified the user-found mana fixes (#56/#57
+  via #59) end-to-end too. Full per-clause matrix + report in `docs/plans/SELESNYA_LANDFALL_CARDS.md`.
+  **231 mtg-core lib tests green; clippy clean.**
 - **🎉 Selesnya Landfall push DELIVERED — #44 COMPLETE.** All **18 distinct cards authored**; the
   `selesnya`/`landfall` preset (`cards::selesnya_landfall_deck`) **is the real mtggoldfish 60** (51 nonbasics
   + 7 Forest / 2 Plains, no padding) and plays end-to-end (validated via `mtg-cli` self-play across many
