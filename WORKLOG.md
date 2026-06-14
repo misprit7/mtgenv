@@ -5,6 +5,17 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **engine (#44 upgrade tail):** **Reusable caps toward Earthbender (`d8484d2`):** interpret
+  `Effect::Conditional` (source-aware intervening-if via `holds_for_source`; `conditions::eval_value`
+  gained `CountersOnSelf`) + new `Effect::GrantKeyword{what,keyword,duration}` →
+  `GrantContinuous{GrantKeyword,duration}` (grant-trample-until-EOT, wears off at cleanup). Uses
+  `CounterKind::Named("quest")` (no new variant). Test: trample granted only at ≥4 counters, off at
+  cleanup. **Design caught a real fidelity bug** in the naive Sequence form — a targeted
+  `Conditional.then` is a reflexive trigger (CR 603.7c) whose target must defer until the if is met
+  (else it prompts on every sub-4 landfall / blocks the counter when you control no creatures). So
+  `collect_specs_into` deliberately doesn't pull targets from `Conditional.then`; the **reflexive
+  sub-trigger** (deferred-target) is the remaining cap to complete Earthbender — building it next
+  with care. 170 tests green.
 - **gym (#41 batched inference):** built `BatchedPolicy` (batched `act` + `evaluate`→priors+values —
   the reusable primitive tree search will reuse) and `BatchedSelfPlayVecEnv` (single-threaded lockstep
   pump; opponent decisions batched across games; drop-in for MaskablePPO; `MtgEnv(opponent="external")`
