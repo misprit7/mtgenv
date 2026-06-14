@@ -504,4 +504,65 @@ mod tests {
             "fully-implemented card must reach the wire as fully_implemented:true"
         );
     }
+
+    #[test]
+    fn badgermole_bonus_makes_warp_mightform_castable() {
+        // The user's exact hand-play scenario, behind the engine's Badgermole point-fix (#56,
+        // fdfea6c). Board: control Badgermole Cub + Llanowar Elves + a Forest, all untapped, with
+        // Mightform Harmonizer in hand. Tapping Llanowar (a creature) yields {G}{G} via Badgermole's
+        // "+{G} per creature tapped", so Llanowar + Forest = 3 mana → Warp Mightform {2}{G} is
+        // affordable; the hard cast {2}{G}{G} (4 mana) stays unaffordable until a 4th source. This
+        // asserts the EXACT option strings the web client renders — `legal_actions` projected
+        // through `options::prompt_for`, i.e. the `decide` frame the cast menu reads.
+        use mtg_core::agent::{DecisionRequest, RandomAgent};
+        use mtg_core::basics::{Phase, Zone};
+        use mtg_core::cards::eoe::mightform_harmonizer::MIGHTFORM_HARMONIZER;
+        use mtg_core::cards::grp::FOREST;
+        use mtg_core::cards::lea::llanowar_elves::LLANOWAR_ELVES;
+        use mtg_core::cards::tla::badgermole_cub::BADGERMOLE_CUB;
+        use mtg_core::state::view::view_for;
+        use std::sync::Arc;
+
+        let mut state = GameState::new(2, 1);
+        state.set_card_db(Arc::new(mtg_core::cards::starter_db()));
+        state.active_player = PlayerId(0);
+        state.phase = Phase::PrecombatMain; // sorcery speed, empty stack → creature spells legal
+        let (bm, ll, fo, mf) = {
+            let db = state.card_db();
+            (
+                db.get(BADGERMOLE_CUB).unwrap().chars.clone(),
+                db.get(LLANOWAR_ELVES).unwrap().chars.clone(),
+                db.get(FOREST).unwrap().chars.clone(),
+                db.get(MIGHTFORM_HARMONIZER).unwrap().chars.clone(),
+            )
+        };
+        state.add_card(PlayerId(0), bm, Zone::Battlefield); // Badgermole: +{G} per creature tapped
+        state.add_card(PlayerId(0), ll, Zone::Battlefield); // Llanowar: {T}: add {G} (a creature)
+        state.add_card(PlayerId(0), fo, Zone::Battlefield); // Forest: {T}: add {G} (a land)
+        state.add_card(PlayerId(0), mf, Zone::Hand); // Mightform: {2}{G}{G}, Warp {2}{G}
+
+        let view = view_for(&state, PlayerId(0));
+        let engine = Engine::new(
+            state,
+            vec![Box::new(RandomAgent::new(1)), Box::new(RandomAgent::new(2))],
+        );
+        let actions = engine.legal_actions(PlayerId(0));
+        let prompt = crate::options::prompt_for(
+            &view,
+            &DecisionRequest::Priority { actions, can_pass: true },
+        );
+
+        // Warp cast now offered (was blocked before the fix): Badgermole makes 3 mana reachable.
+        assert!(
+            prompt.options.iter().any(|o| o.contains("Warp Mightform Harmonizer")),
+            "Warp Mightform {{2}}{{G}} must be castable via the Badgermole bonus. Options: {:?}",
+            prompt.options
+        );
+        // The {2}{G}{G} hard cast needs a 4th mana (e.g. an earthbent Forest) — not offered at 3.
+        assert!(
+            !prompt.options.iter().any(|o| o.starts_with("Cast Mightform Harmonizer")),
+            "hard cast needs 4 mana; only 3 available, so it must NOT be offered. Options: {:?}",
+            prompt.options
+        );
+    }
 }

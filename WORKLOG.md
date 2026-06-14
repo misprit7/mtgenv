@@ -5,6 +5,15 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-14
 
+- **webui:** Verified the engine's Badgermole mana point-fix (#56, `fdfea6c`) at the UI projection
+  layer. New driver test `badgermole_bonus_makes_warp_mightform_castable` builds the user's exact
+  board (Badgermole Cub + Llanowar Elves + Forest untapped, Mightform in hand), pulls
+  `Engine::legal_actions`, and projects through `options::prompt_for` — the literal `decide` frame
+  the cast menu renders. Result: the cast menu now offers exactly `["Warp Mightform Harmonizer
+  {2}{G}"]` (Llanowar's {G}{G} via Badgermole + Forest's {G} = 3 mana); the {2}{G}{G} hard cast is
+  correctly withheld at 3 mana (needs a 4th, e.g. an earthbent Forest). The live :8080 binary
+  already links the fix.
+
 - **webui:** Combat clarity — blockers now physically move in front of the attacker they block. New
   **combat lane** at the midline: once blocks are declared, each attacker is pulled out of its band
   into a matchup cell with its blocker(s) stacked facing it across a ⚔ (attacker toward its own
