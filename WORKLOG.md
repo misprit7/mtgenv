@@ -5,6 +5,15 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **engine:** **C14 warp pieces 1+2 (`c445d78`)** — alt-cost casting + exile-at-next-end-step.
+  `Ability::Warp{cost}` + `CastVariant::Warp`: legal_priority_actions offers the warp cast (sorcery
+  speed, even when the normal cost is unaffordable — the discount is the point); cast_spell pays the
+  warp cost + flags `Object.warp_cast`. On resolution the warp permanent arms a new
+  `DelayedTriggerEvent::AtBeginningOfNextEndStep` (reuses the C12 delayed-trigger registry) that
+  exiles it, fired at `PhaseBegan{End}`. Pieces 1+2 atomic so the cheap cast always carries its exile
+  downside (no free-discount exploit). Test: warp {1} on a normal-{3} creature → warp offered, enters,
+  exiled at end step. Mightform is now warp-castable as a faithful partial; piece 3 (recast from
+  exile) is the remaining upside. 169 tests green.
 - **webui:** Battlefield layout — permanents are now bucketed creatures-first: anything that **is a
   creature** (incl. artifact/enchantment creatures and creature-lands) goes in the creature band;
   remaining noncreature artifacts/enchantments/walkers render in a divided group **off to the right**
