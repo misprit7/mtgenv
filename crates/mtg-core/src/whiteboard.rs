@@ -72,6 +72,7 @@ impl Engine {
             WbReason::Resolve(s) => *s,
             _ => StackId(0),
         };
+        self.searched_this_resolution.clear();
         let mut wb = Whiteboard::new(reason, ctx.clone());
         let mut cursor = 0usize;
         self.interpret(effect, ctx, sid, &mut wb, &mut cursor);
@@ -173,6 +174,8 @@ impl Engine {
                         o.status.tapped = true;
                     }
                 }
+                // Record it so a follow-up effect can reference "that land" (Fabled Passage).
+                self.searched_this_resolution.push(*card);
                 self.broadcast(GameEvent::ObjectMoved { obj: *card, to: to.zone });
             }
         }
@@ -449,6 +452,12 @@ impl Engine {
                             duration: *duration,
                         });
                     }
+                }
+            }
+            // Tap or untap a permanent (e.g. Fabled Passage's "untap that land").
+            Effect::Tap { what, tap } => {
+                if let Some(Target::Object(obj)) = self.resolve_target(what, ctx, cursor) {
+                    wb.push(Action::TapUntap { obj, tap: *tap });
                 }
             }
             // Grant a keyword for a duration (CR 611) — "it gains trample until end of turn".
@@ -1135,6 +1144,9 @@ impl Engine {
                 target
             }
             EffectTarget::ChosenIndex(n) => ctx.chosen_targets.get(*n as usize).copied(),
+            EffectTarget::Searched(n) => {
+                self.searched_this_resolution.get(*n as usize).copied().map(Target::Object)
+            }
             EffectTarget::Player(who) => Some(Target::Player(self.eval_player(*who, ctx))),
             EffectTarget::SourceSelf => ctx.source.map(Target::Object),
             EffectTarget::Select(_) => None,

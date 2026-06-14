@@ -185,6 +185,10 @@ pub struct Engine {
     /// to agents' `observe`). Handy for a CLI trace and for snapshot tests. Off by default.
     pub event_log: Vec<GameEvent>,
     record_events: bool,
+    /// The permanents found by a `Search` during the **current** effect resolution — so a follow-up
+    /// effect can reference "that land/creature" (Fabled Passage's "untap that land"). Cleared at
+    /// the start of each `resolve_effect`; read by `EffectTarget::Searched`.
+    pub(crate) searched_this_resolution: Vec<ObjId>,
     /// When on, capture an omniscient [`ReplayFrame`] (a [`crate::replay::GodView`] + label) at
     /// each public event — the recorded replay stream (REPLAY_PLAN). Off by default.
     record_replay: bool,
@@ -219,6 +223,7 @@ impl Engine {
             agents,
             event_log: Vec::new(),
             record_events: false,
+            searched_this_resolution: Vec::new(),
             record_replay: false,
             replay_frames: Vec::new(),
             replay_source: ReplaySource::Human,
@@ -4321,6 +4326,83 @@ mod expect_tests {
         let (power_at2, prompts_at2) = run(1);
         assert_eq!(power_at2, 2, "< 4 → no +1/+1");
         assert_eq!(prompts_at2, 0, "and crucially NO target prompt on a sub-4 landfall");
+    }
+
+    #[test]
+    fn fabled_passage_untaps_the_fetched_land_at_four_lands() {
+        use crate::agent::{Agent, DecisionRequest, DecisionResponse, PlayerView};
+        use crate::basics::{CardType, ZoneDest, ZonePos};
+        use crate::effects::action::{ResolutionCtx, WbReason};
+        use crate::effects::condition::Condition;
+        use crate::effects::target::CardFilter;
+        use crate::effects::value::{PlayerRef, ValueExpr};
+        use crate::effects::{Effect, EffectTarget};
+        use crate::subtypes::Supertype;
+        // Fabled Passage's tail: "Search for a basic land, put it onto the battlefield tapped, then
+        // if you control 4+ lands, untap that land." `EffectTarget::Searched(0)` references the
+        // just-fetched permanent; the untap is gated by an inline `Conditional` (CR — count after).
+        let effect = Effect::Sequence(vec![
+            Effect::Search {
+                who: PlayerRef::Controller,
+                zone: Zone::Library,
+                filter: CardFilter::All(vec![
+                    CardFilter::HasCardType(CardType::Land),
+                    CardFilter::Supertype(Supertype::Basic),
+                ]),
+                min: 0,
+                max: 1,
+                to: ZoneDest { zone: Zone::Battlefield, pos: ZonePos::Any },
+                tapped: true,
+            },
+            Effect::Conditional {
+                cond: Condition::CountAtLeast {
+                    zone: Zone::Battlefield,
+                    filter: CardFilter::HasCardType(CardType::Land),
+                    controller: Some(PlayerRef::Controller),
+                    n: ValueExpr::Fixed(4),
+                },
+                then: Box::new(Effect::Tap { what: EffectTarget::Searched(0), tap: false }),
+                otherwise: None,
+            },
+        ]);
+
+        struct FetchAgent;
+        impl Agent for FetchAgent {
+            fn decide(&mut self, _v: &PlayerView, req: &DecisionRequest) -> DecisionResponse {
+                match req {
+                    DecisionRequest::SelectCards { from, .. } => {
+                        DecisionResponse::Indices(if from.is_empty() { vec![] } else { vec![0] })
+                    }
+                    _ => DecisionResponse::Pass,
+                }
+            }
+        }
+
+        // Returns whether the fetched land is tapped (None if it wasn't fetched).
+        let run = |pre_lands: usize| -> Option<bool> {
+            let mut state = cards::build_game(1, &[&[], &[]]);
+            for _ in 0..pre_lands {
+                let f = state.card_db().get(grp::FOREST).unwrap().chars.clone();
+                state.add_card(PlayerId(0), f, Zone::Battlefield);
+            }
+            let lib_forest = {
+                let f = state.card_db().get(grp::FOREST).unwrap().chars.clone();
+                state.add_card(PlayerId(0), f, Zone::Library)
+            };
+            let mut e = Engine::new(state, vec![Box::new(FetchAgent), Box::new(PassAgent)]);
+            e.resolve_effect(
+                &effect,
+                &ResolutionCtx { controller: Some(PlayerId(0)), ..Default::default() },
+                WbReason::Resolve(crate::ids::StackId(0)),
+            );
+            let o = e.state.object(lib_forest);
+            (o.zone == Zone::Battlefield).then_some(o.status.tapped)
+        };
+
+        // 3 pre-lands + the fetched = 4 ≥ 4 → the fetched land is untapped.
+        assert_eq!(run(3), Some(false), "≥4 lands → untap the fetched land");
+        // 2 pre-lands + the fetched = 3 < 4 → it stays tapped.
+        assert_eq!(run(2), Some(true), "< 4 lands → the fetched land stays tapped");
     }
 
     #[test]

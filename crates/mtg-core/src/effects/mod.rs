@@ -41,6 +41,9 @@ pub enum EffectTarget {
     SourceSelf,
     /// The Nth target already chosen for this spell/ability.
     ChosenIndex(u32),
+    /// The Nth permanent found by a `Search` earlier in this same resolution — "that land/creature"
+    /// (Fabled Passage's "untap that land"). No targeting; it's whatever was fetched.
+    Searched(u32),
 }
 
 /// One mode of a modal spell/ability (CR 700.2): a presented label + the effect it runs.
