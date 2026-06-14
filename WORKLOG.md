@@ -5,6 +5,22 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **engine:** **Targeting correctness fix (`70c483e`)** — user hit it live (earthbend couldn't target a
+  land but could target/clobber a creature; Bushwhack could fight your own creature). Two bugs in
+  priority.rs: (1) `target_candidates` drew `TargetKind::Permanent` from creatures-only → lands never
+  offered; now enumerates all battlefield permanents. (2) `target_matches_filter` let
+  HasCardType/HasSubtype/HasColor/Colorless/Supertype fall through `_ => true`; now enforced over
+  computed chars (an animated land still counts as land+creature). Net: earthbend offers only
+  lands-you-control; Bushwhack fights only creatures you don't control. Test covers both.
+- **webui:** **Card-art coverage check + auto-derived art fetch.** New `dump-cards` bin prints the
+  card pool (every `(grp_id, name)` across all selectable decks) as JSON — the single source of
+  truth, so `resolve-card-art.py` now fetches art for exactly the engine's deck cards (no more
+  hand-maintained grp_id→name list). `driver::deck_card_pool()` backs both that and a startup
+  warning (`server::missing_card_art`/`warn_missing_card_art`): `mtg-serve` lists any deck card
+  without baked-in art + the fix command. Regenerated `card-art.json` — picked up the 10 Selesnya
+  set cards (Erode/Bushwhack/Ba Sing Se/Surrak/Badgermole Cub/Earthbender Ascension/Mightform
+  Harmonizer/Fabled Passage/Escape Tunnel/Temple Garden) that had no art. New offline test
+  `every_deck_card_has_baked_in_art` guards against future gaps (forces art-first).
 - **engine:** **Dyadrine body cap — enters-with-counters = mana spent (`a2e2b13`).** New
   `Rewrite::EntersWithCountersValue{kind, n: ValueExpr}` (dynamic ETB-counter count, evaluated
   against the entering object) + `ValueExpr::ManaSpent` (total mana paid incl. {X}, recorded on
