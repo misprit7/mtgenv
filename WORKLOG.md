@@ -5,6 +5,14 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **gym (#45 reward shaping):** potential-based shaping (GYM_PLAN §5) in `BatchedSelfPlayVecEnv` —
+  `F=γΦ(s')−Φ(s)`, Φ a tanh-bounded mix of Δlife/board-power/card-count from the obs (no engine
+  change), annealed to 0 over 60% of training via `ShapingAnneal`; terminal ±1 stays dominant.
+  Wired behind `--shaping-coef` (default 0.5). **A/B (3 seeds × 40k, `ab_shaping.py`): shaped 0.712
+  vs unshaped 0.591 vs-random (+0.12)** — mainly *stability* (unshaped collapsed on 1 seed → 0.293;
+  all 3 shaped stayed 0.69–0.72). 18 gym tests green. Also: 400k keep-busy run
+  `demo-selfplay-400k-0613-2337` (570s, 17 lobby replays; vs_initial 0.28→~0.85).
+
 - **webui:** Fixed alt-cost casting (Mightform's Warp) being unreachable in the web UI. The engine
   enumerates Normal + Warp as two `Cast` actions on the **same** spell object; the client's
   click-to-cast did `option_objs.indexOf(id)` → only the first (Normal) was reachable and the button
