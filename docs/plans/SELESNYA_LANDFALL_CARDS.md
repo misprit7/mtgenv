@@ -75,8 +75,8 @@ cards/
 > **Status (2026-06-14):** the push is **delivered** — all 18 distinct cards authored and the
 > `selesnya`/`landfall` preset (`cards::selesnya_landfall_deck`) **is the real mtggoldfish 60**
 > (51 nonbasics + 7 Forest / 2 Plains, no padding). It plays end-to-end (validated: `mtg-cli
-> selesnya selesnya` across seeds, clean finishes, zero panics). **15/18 cards are fully faithful;
-> 3 ship as honest tracked-partials** — each with exactly one deferred clause, gated on a
+> selesnya selesnya` across seeds, clean finishes, zero panics). **16/18 cards are fully faithful;
+> 2 ship as honest tracked-partials** — each with exactly one deferred clause, gated on a
 > still-unbuilt cap (see the upgrade-tail table). **No card is husked or approximated.**
 >
 > This is the authoritative capability index (the original C-plan, reconciled to reality):
@@ -101,7 +101,7 @@ cards/
 | C15 | `Effect::PumpPT` + double-power snapshot (`ValueExpr::PowerOfTarget`) | ✅ `557b6b5` | Mightform ✓ |
 | C16 | becomes-targeted trigger (`EventPattern::BecomesTargeted{filter,by_opponent}`) | ✅ `8d006fd` (battlefield half) | Surrak (⏳ stack half = cap F) |
 | C17 | Exile-from-graveyard + count-card-types buff | ✅ `e002d7a`+`b18c6f6` | Keen-Eyed Curator ✓ |
-| C18 | **Static land-play permissions** (extra land / play lands from graveyard) | ⏳ **cap** | Icetill Explorer |
+| C18 | **Static land-play permissions** — `StaticContribution::ExtraLandPlays(n)` + `PlayLandsFrom(Zone)` | ✅ `3ca7fef` | Icetill Explorer ✓ |
 | C19 | Mana production via real IR mana abilities (CR 605) | ✅ | Hushwood Verge ✓, Llanowar ✓, Ba Sing Se ✓ |
 | C20 | Intrinsic basic-land-type mana (CR 305.6) | ✅ | all basics, Temple Garden ✓ |
 
@@ -143,7 +143,7 @@ the moment its cap lands (tracked in task #44; exact card IR staged in `WORKLOG.
 | ~~**E** `Qualification::CantBeBlocked` + power≤2 filter + grant-qual-for-duration~~ ✅ **DONE** `7dd18a9` | ~~Escape Tunnel~~ ✓ flipped `5a55600` | "{T},Sac: target power≤2 creature can't be blocked this turn" |
 | **F** `Target::Stack` in `BecomesTargeted` | Surrak, Elusive Hunter | "or a creature spell you control" trigger half |
 | **G** stack-zone static gathering + a counter subsystem (LOW value — no counterspell in pool) | Surrak, Elusive Hunter | "This spell can't be countered" (inert today) |
-| **C18** static land-play permissions (extra land / from graveyard) | Icetill Explorer | "play an additional land" + "play lands from your graveyard" |
+| ~~**C18** static land-play permissions~~ ✅ **DONE** `3ca7fef` | ~~Icetill Explorer~~ ✓ flipped `7350a74` | "play an additional land" + "play lands from your graveyard" |
 | ~~**H** "tapped a creature for mana" event + reflexive mana trigger~~ ✅ **DONE** `23242f2` | ~~Badgermole Cub~~ ✓ flipped `c2ef012` | "whenever you tap a creature for mana, add {G}" |
 
 ## Fidelity standard (do not approximate)

@@ -53,8 +53,9 @@ MTGA client.
 - **🎉 Selesnya Landfall push DELIVERED + upgrade tail in progress (#44).** All **18 distinct cards
   authored**; the `selesnya`/`landfall` preset (`cards::selesnya_landfall_deck`) **is the real mtggoldfish
   60** (51 nonbasics + 7 Forest / 2 Plains, no padding) and plays end-to-end (validated via `mtg-cli`
-  self-play, clean finishes, zero panics). **15/18 cards fully faithful; 3 ship as honest tracked-partials**
-  (one deferred clause each, gated on an engine cap — none husked). Engine caps C1–C20 landed except
+  self-play, clean finishes, zero panics). **16/18 cards fully faithful; 2 ship as honest tracked-partials**
+  (Dyadrine c3 attack-ability — cap building; Surrak's stack-half + can't-be-countered — both inert in
+  this deck, lead to decide whether to ship Surrak as a documented standing partial). Engine caps C1–C20 landed except
   **C13 Crew** and **C18 land-permissions** (deferred); plus many ad-hoc subsystems (floating
   continuous-effects, delayed triggers, warp, becomes-targeted, exile-association, snapshot pump, …). The
   authoritative **capability ledger** (every cap ✅/⏳ + the card it enables + commit refs) lives in

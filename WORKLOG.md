@@ -5,6 +5,13 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-14
 
+- **design (#44):** **Icetill Explorer → `fully_implemented: true`** (7350a74) — cap C18 landed (engine
+  3ca7fef: `StaticContribution::ExtraLandPlays(n)` + `PlayLandsFrom(Zone)`), so authored its two land-play
+  statics (`ExtraLandPlays(1)` + `PlayLandsFrom(Graveyard)`, `affects: itself()`; the engine reads them
+  from the controller's permanents). **16/18 fully faithful; 2 partials left** — Dyadrine c3 (cap building)
+  + Surrak F+G (both inert in this deck, lead's call). 176 tests green. Also blessed Dyadrine c3's IR
+  (`Optional{ Conditional{≥2 creatures w/ +1/+1 counter, Sequence[ForEach(Select 2, remove 1), Draw,
+  CreateToken(Robot)] } }`); `CardFilter::HasCounter` already exists. Ledger + trackers updated.
 - **design (#44):** **Lumbering Worldwagon → `fully_implemented: true`** (86742c3) — cap C13 Crew landed
   (engine 80d9ab3: `CostComponent::Crew(n)` + `Effect::BecomeCreature`), so authored `Activated{ Crew(4),
   BecomeCreature{ SourceSelf, UntilEndOfTurn } }`. Once crewed it becomes a creature, so its `*`/4 CDA + the
