@@ -75,8 +75,8 @@ cards/
 > **Status (2026-06-14):** the push is **delivered** — all 18 distinct cards authored and the
 > `selesnya`/`landfall` preset (`cards::selesnya_landfall_deck`) **is the real mtggoldfish 60**
 > (51 nonbasics + 7 Forest / 2 Plains, no padding). It plays end-to-end (validated: `mtg-cli
-> selesnya selesnya` across seeds, clean finishes, zero panics). **12/18 cards are fully faithful;
-> 6 ship as honest tracked-partials** — each with exactly one deferred clause, gated on a
+> selesnya selesnya` across seeds, clean finishes, zero panics). **13/18 cards are fully faithful;
+> 5 ship as honest tracked-partials** — each with exactly one deferred clause, gated on a
 > still-unbuilt cap (see the upgrade-tail table). **No card is husked or approximated.**
 >
 > This is the authoritative capability index (the original C-plan, reconciled to reality):
@@ -122,6 +122,7 @@ Needed and built as specific cards demanded them — not in the original C-plan:
 | `Effect::Conditional` interp + `Effect::GrantKeyword` + `CounterKind::Named` | ✅ `d8484d2` | Earthbender quest-chain; any intervening-if / grant-keyword-EOT |
 | **Reflexive "when you do" sub-trigger** (`StackObjectKind::ReflexiveAbility`; targeted `Conditional.then` deferred — target chosen at 603.3d only if the if holds, CR 603.7c) | ✅ `2e13694` | Earthbender Ascension ✓; the "if you do" front for Dyadrine c3 |
 | `EventPattern::TapCreatureForMana` (no-stack triggered mana ability, CR 605.1b) | ✅ `23242f2` | Badgermole Cub ✓ |
+| `EffectTarget::Searched(n)` (reference the Nth permanent a Search fetched) + `Effect::Tap{tap}` materialized | ✅ `bcff1cd` | Fabled Passage ✓ |
 | `Effect::Exile` interp + `TargetKind::CardInZone{Graveyard}` | ✅ `e002d7a` | Keen-Eyed exile ability |
 | `Ability::ConditionalStatic` + `ValueExpr::DistinctCardTypesAmongExiledWith` + exile-association (`Object.exiled_with`) | ✅ `b18c6f6` | Keen-Eyed conditional +4/+4 & trample |
 | Permanent-targeting fix (enumerate all permanents; enforce `HasCardType`/`All`/`Not`/`ControlledBy`) | ✅ `70c483e`+`861f3aa` | earthbend land-targeting end-to-end |
@@ -137,7 +138,7 @@ the moment its cap lands (tracked in task #44; exact card IR staged in `WORKLOG.
 | ~~**A** reflexive sub-trigger~~ ✅ **DONE** `2e13694` | ~~Earthbender Ascension~~ ✓ flipped `e6b9050` | landfall → quest → when-you-do(≥4) → +1/+1 + trample |
 | **B** distinct two-target counter removal (cap A already landed) | Dyadrine, Synthesis Amalgam | attack → remove a +1/+1 from *each of two* creatures → draw + Robot |
 | **C13** Crew (CR 702.122) | Lumbering Worldwagon | Crew 4 |
-| **D** searched-permanent reference + `Effect::Untap` (Conditional + `CountAtLeast` already built) | Fabled Passage | "if you control 4+ lands, untap that land" |
+| ~~**D** searched-permanent reference + `Effect::Tap{tap:false}`~~ ✅ **DONE** `bcff1cd` | ~~Fabled Passage~~ ✓ flipped `968036e` | "if you control 4+ lands, untap that land" |
 | **E** `Qualification::CantBeBlocked` + power≤2 target filter + grant-qualification-for-a-duration | Escape Tunnel | "{T},Sac: target power≤2 creature can't be blocked this turn" |
 | **F** `Target::Stack` in `BecomesTargeted` | Surrak, Elusive Hunter | "or a creature spell you control" trigger half |
 | **G** stack-zone static gathering + a counter subsystem (LOW value — no counterspell in pool) | Surrak, Elusive Hunter | "This spell can't be countered" (inert today) |

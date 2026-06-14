@@ -5,6 +5,11 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **design (#44):** **Fabled Passage → `fully_implemented: true`** (968036e) — cap D landed (engine
+  bcff1cd: `EffectTarget::Searched(n)` + `Effect::Tap`), so authored its tail: `Sequence[ fetch_basic_tapped,
+  Conditional{ CountAtLeast(lands you control ≥ 4), then: Tap{ Searched(0), tap: false } } ]` ("if you
+  control 4+ lands, untap that land" — the new land counts toward the 4). **13/18 fully faithful; 5 partials
+  left.** 173 tests green. Ledger + trackers updated.
 - **gym (#45 reward shaping):** potential-based shaping (GYM_PLAN §5) in `BatchedSelfPlayVecEnv` —
   `F=γΦ(s')−Φ(s)`, Φ a tanh-bounded mix of Δlife/board-power/card-count from the obs (no engine
   change), annealed to 0 over 60% of training via `ShapingAnneal`; terminal ±1 stays dominant.

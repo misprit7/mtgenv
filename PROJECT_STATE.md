@@ -53,7 +53,7 @@ MTGA client.
 - **🎉 Selesnya Landfall push DELIVERED + upgrade tail in progress (#44).** All **18 distinct cards
   authored**; the `selesnya`/`landfall` preset (`cards::selesnya_landfall_deck`) **is the real mtggoldfish
   60** (51 nonbasics + 7 Forest / 2 Plains, no padding) and plays end-to-end (validated via `mtg-cli`
-  self-play, clean finishes, zero panics). **12/18 cards fully faithful; 6 ship as honest tracked-partials**
+  self-play, clean finishes, zero panics). **13/18 cards fully faithful; 5 ship as honest tracked-partials**
   (one deferred clause each, gated on an engine cap — none husked). Engine caps C1–C20 landed except
   **C13 Crew** and **C18 land-permissions** (deferred); plus many ad-hoc subsystems (floating
   continuous-effects, delayed triggers, warp, becomes-targeted, exile-association, snapshot pump, …). The
