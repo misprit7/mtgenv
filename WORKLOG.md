@@ -5,6 +5,32 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **design:** **Remaining-cap queue pinned for engine (Dyadrine c2/c3, C17, C14).** With 17/18 authored,
+  engine is blocked on IR; staged the full pull-ready queue. Verified against the engine's actual
+  resolution code (whiteboard.rs): `Effect::PutCounters` resolves a **single** `Target::Object` (no
+  multi-target), and `Optional`/`Conditional`/`ForEach` hit the `_ => {}` **no-op** — so several clauses
+  need real caps, not approximation.
+  - **Dyadrine c2 (PRIORITY, the includability gate)** — `Replacement{ WouldEnterBattlefield(ItSelf),
+    EntersWithCounters{ PlusOnePlusOne, n: ValueExpr::ManaSpent } }`. Caps: new `ValueExpr::ManaSpent`
+    (mana paid at cast, incl. X) + generalize `EntersWithCounters{n}` `u32`→`ValueExpr` (only Mossborn's
+    `n:1` literal affected → I rewrite to `Fixed(1)` in-window). **Sent to engine.**
+  - **Dyadrine c3 (NOT authorable today — needs 2 caps, do NOT husk)** — "Whenever you attack, you may
+    remove a +1/+1 counter from **each of two** creatures you control. **If you do**, draw + make a 2/2
+    Robot." `YouAttack` ✓ (4613d51), `Draw`/`CreateToken`(C6)/Robot subtype ✓, `PutCounters` negative-n ✓
+    BUT single-target only. Missing: (i) **distinct two-target counter removal** (a `ForEach`/multi-target
+    remove, currently no-op) and (ii) the **reflexive "if you do"** gating (`Conditional` is no-op). Both
+    are real caps — authoring now = a wrong approximation (un-enforced distinctness + draw/token firing even
+    when you couldn't remove from two). Staged, deferred.
+  - **C17 Keen-Eyed Curator** (blb, `{G}{G}` 3/3) — "As long as there are four or more card types among
+    cards exiled **with** this creature, it gets +4/+4 and has trample." + "`{1}: Exile target card from a
+    graveyard.`" Caps: (a) **exile-association** (cards exiled by this ability link to the source),
+    (b) `ValueExpr` distinct-card-types-among-those, (c) a **conditional static** (ModifyPT +4/+4 &
+    GrantKeyword(Trample) gated on ≥4), (d) **`Effect::Exile` interpreted** (currently `_ => {}` no-op) +
+    (e) **CardInZone(Graveyard) targeting**. All-or-nothing (husk otherwise → stays out of the preset).
+  - **C14 Warp** (Mightform) — "Warp {2}{G}: cast from hand for the warp cost; exile at the beginning of the
+    next end step; then you may cast it from exile on a later turn." Caps: **alt cast cost** + **delayed
+    exile-at-next-end-step** (the delayed-trigger registry can host it) + **cast-from-exile permission**.
+    Self-contained; completes the already-decked Mightform partial→full.
 - **engine:** **Attack triggers wired (`4613d51`)** — they were dead (declare_attackers set combat
   state but never fired an event, so `EventPattern::SelfAttacks` never triggered). Now
   declare_attackers broadcasts `GameEvent::AttackersDeclared{attackers, by}` → SelfAttacks fires per
