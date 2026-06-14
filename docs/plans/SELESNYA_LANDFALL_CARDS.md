@@ -217,14 +217,14 @@ they're private to `priority.rs`).
 **Per-card audit matrix** (status: ☐ pending / ✅ pass / ❌ fail). "Gap" = clause with *no*
 current behaviour test (resolve-level or otherwise) that the audit must add.
 
-Two blockers remain for the rest: **`run_agenda`** (the trigger-processor; requested `pub(crate)`)
-gates every ETB/landfall/attack *trigger*; **#57/#59** (mana) gate the Ba Sing Se earthbend leg and
-Hushwood's `{W}`-restriction (enforced in the PayCost path, which `legal_actions` doesn't surface).
+One blocker remains for the rest: **`run_agenda`** (the trigger-processor; requested `pub(crate)`)
+gates every ETB/landfall/attack *trigger*. (#57/#59 mana are **DONE** — earthbend + Hushwood's
+`{W}`-restriction now confirmed. #64 is the one bug the audit found.)
 
 | grp | card | clauses to assert end-to-end | E2E status (this audit) |
 |----|------|------------------------------|-------------------------|
-| 100 | Llanowar Elves | 1/1 Elf Druid; taps for exactly 1 G; summoning-sick gate | ☐ cast-path doable now (queued) |
-| 101 | Hushwood Verge | enters untapped; `{T}:G` always; `{T}:W` only if control Forest/Plains | `{T}:G` resolve ✅; **{W}-restriction blocked on #59** (PayCost path) |
+| 100 | Llanowar Elves | 1/1 Elf Druid; taps for exactly 1 G; summoning-sick gate | ✅ **E2E cast** (1/1 Elf Druid) + `{T}:G` resolve ✅ |
+| 101 | Hushwood Verge | enters untapped; `{T}:G` always; `{T}:W` only if control Forest/Plains | `{T}:G` resolve ✅; **{W}-restriction ✅ E2E** (affordability gate) |
 | 102 | Sazh's Chocobo | base P/T; landfall = +1 `+1/+1`; only *your* lands | ☐ **blocked: `run_agenda`** (landfall) |
 | 103 | Mossborn Hydra | Trample; enters w/ 1 `+1/+1`; landfall **doubles** counter count | ☐ **blocked: `run_agenda`** (landfall) |
 | 104 | Icetill Explorer | landfall mill 1; +1 land/turn; **play lands from graveyard** | land-permissions: engine synthetic test ✅; landfall mill ☐ **blocked: `run_agenda`** |
@@ -233,20 +233,22 @@ Hushwood's `{W}`-restriction (enforced in the PayCost path, which `legal_actions
 | 107 | Escape Tunnel | fetch basic tapped; **power≤2 target can't be blocked this turn** | ✅ **E2E activate-path** (real `{T}`+Sacrifice + target + grant) |
 | 108 | Erode | destroy target creature/pw; **its controller may fetch basic tapped** (#61 ✅) | ✅ **E2E cast-path** (real `{W}` + target + auto-snapshotted opponent rider) |
 | 109 | Temple Garden | ETB: pay 2 life → untapped **else tapped**; taps G/W | ✅ **E2E play-land** (both shock branches) |
-| 110 | Ba Sing Se | ETB tapped unless control basic; `{T}:G`; `{2}{G},{T}` earthbend 2 | ETB ✅ **E2E play-land** (both branches); `{T}:G` resolve ✅; earthbend ☐ **#57** |
+| 110 | Ba Sing Se | ETB tapped unless control basic; `{T}:G`; `{2}{G},{T}` earthbend 2 | ETB ✅ **E2E play-land**; `{T}:G` resolve ✅; earthbend ✅ **E2E** ({2}{G}+{T}, #57 fix) |
 | 111 | Bushwhack | mode A fetch basic to **hand**; mode B fight (your vs their) | ✅ **E2E cast-path** (both modes, modal selection + targeting) |
 | 112 | Surrak | can't-be-countered [**deferred, sanctioned**]; Trample; becomes-targeted → draw | ☐ becomes-targeted **blocked: `run_agenda`**; Trample/CbC done |
 | 113 | Badgermole Cub | ETB earthbend 1; tap-creature-for-mana → **extra {G}** (#56 ✅ fixed) | ☐ **blocked: `run_agenda`** (ETB + mana trigger) |
 | 114 | Earthbender Ascension | ETB earthbend 2 + fetch; landfall quest counter; ≥4 → `+1/+1`+trample | ☐ **blocked: `run_agenda`** (ETB + landfall) |
-| 115 | Mightform Harmonizer | landfall doubles target power (snapshot +X/+0) EOT; Warp `{2}{G}` | ☐ landfall **blocked: `run_agenda`**; Warp post-mana |
+| 115 | Mightform Harmonizer | landfall doubles target power (snapshot +X/+0) EOT; Warp `{2}{G}` | ☐ landfall **blocked: `run_agenda`**; Warp queued |
 | 116 | Dyadrine | Trample; **enters w/ counters = mana spent**; attack → remove 1 from 2, draw + Robot | **counters=mana ✅ E2E cast** (X=3→5/6); attack trigger ☐ **`run_agenda`** |
-| 117 | Keen-Eyed Curator | static +4/+4 & trample at ≥4 exiled types; `{1}:` exile gy card | ☐ `{1}` exile activate-path doable now (queued); static computed ✅ |
+| 117 | Keen-Eyed Curator | static +4/+4 & trample at ≥4 exiled types; `{1}:` exile gy card | static computed ✅; `{1}` exile ❌ **fizzles → bug #64** (ignored repro committed) |
 
-**Tally so far:** 7 cards have ≥1 clause confirmed through the REAL play loop (106 Fabled, 107 Escape
-Tunnel, 108 Erode, 109 Temple Garden, 110 Ba Sing Se ETB, 111 Bushwhack, 116 Dyadrine counters) — incl.
-the hardest mana clause (Dyadrine counters = mana spent, via real `cast_spell` + X). No `fully_implemented`
-flag has been demoted: every clause driven so far matches its oracle text. The remaining ~10 cards are
-trigger-based (blocked on `run_agenda`) or mana-leg (blocked on #57/#59).
+**Tally so far:** **9 cards** have ≥1 clause confirmed through the REAL play loop (100 Llanowar cast,
+101 Hushwood {W}-gate, 106 Fabled, 107 Escape Tunnel, 108 Erode, 109 Temple Garden, 110 Ba Sing Se
+ETB+earthbend, 111 Bushwhack, 116 Dyadrine counters) — incl. the hardest mana clause (Dyadrine
+counters = mana spent) and the #57-fix earthbend payment. **1 bug found: #64** (Keen-Eyed exile
+fizzles — `target_legal` rejects graveyard targets; ignored repro committed). **No flag demoted yet**;
+117 Keen-Eyed's `{1}` exile clause is the first ❌ (engine fix in flight as #64). The remaining ~8 cards
+are trigger-based, all blocked on `run_agenda`.
 
 **Honest baseline going in:** all 17 `true` flags are unvalidated through the real path;
 Surrak is correctly `false` (can't-be-countered deferred, no counterspell in pool). Flags will
