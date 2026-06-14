@@ -81,20 +81,11 @@ pub struct Outcome {
 /// Modeled on the recovered MTGA `SettingsMessage` (../mtga-re/docs/priority_stops.md).
 #[derive(Debug, Clone)]
 pub struct StopConfig {
-    /// **The** stop knob: stop at every priority window (full control ON) vs the fixed elision
-    /// rule (OFF — auto-pass unless you have a meaningful, non-mana action at a marked stop or with
-    /// an opponent's object on the stack). See [`Engine::should_auto_pass`]. The former separate
-    /// `auto_pass`/`smart_stops`/`resolve_own_stack` knobs are collapsed into this one.
+    /// **The** stop knob — the whole stop policy: stop at every priority window (full control ON)
+    /// vs the fixed elision rule (OFF — auto-pass unless you have a meaningful, non-mana action at a
+    /// marked stop or with an opponent's object on the stack). See [`Engine::should_auto_pass`].
+    /// (The old auto_pass/smart_stops/resolve_own_stack knobs were collapsed into this one.)
     pub full_control: bool,
-    /// Behavior-dead (display/transport only). Was: Arena auto-pass vs paper-CR every-window —
-    /// now folded into `full_control`. Kept so existing readers compile; remove with the
-    /// gre-server stop plumbing.
-    pub auto_pass: bool,
-    /// Behavior-dead (display/transport only). Was: SmartStops — now folded into the fixed rule.
-    pub smart_stops: bool,
-    /// Behavior-dead (display/transport only). Was: resolve-own-stack — now folded into the fixed
-    /// rule (your own object on the stack always auto-passes so it resolves).
-    pub resolve_own_stack: bool,
     /// Per-step override of the Arena default, keyed by `(step, own_turn)` so the two sides of a
     /// step are independent (e.g. stop on *my* draw but not the opponent's). `own_turn` =
     /// `seat == active_player`. `Some(true)` = always stop here, `Some(false)` = never, absent =
@@ -114,34 +105,10 @@ impl Default for StopConfig {
             // (deterministic; matches the old paper-CR default). UI/gym seats turn it OFF for the
             // fixed elision rule (web sets `full_control` directly; the gym via `set_arena_auto_pass`).
             full_control: true,
-            auto_pass: false,        // behavior-dead (display only)
-            smart_stops: true,       // behavior-dead (display only)
-            resolve_own_stack: true, // behavior-dead (display only)
             overrides: std::collections::BTreeMap::new(),
-            manual_mana: false,      // agent/replay seats auto-pay; a UI session turns it on
+            manual_mana: false, // agent/replay seats auto-pay; a UI session turns it on
         }
     }
-}
-
-/// MTGA's `AutoPassOption` (../mtga-re/docs/priority_stops.md §5) — the named priority-passing
-/// modes, exposed as a convenience that configures a seat's [`StopConfig`] flags. The engine
-/// models the behaviourally-distinct knobs (full control, SmartStops, resolve-own-stack); the
-/// finer turn-policy distinctions (Turn vs EndStep vs ResolveAll) are approximated onto them
-/// and refined later against byte-exact captured defaults.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AutoPassOption {
-    /// Pass unless I have a legal action (SmartStops on).
-    UnlessAction,
-    /// Pass unless the opponent has acted (2-player ≈ `UnlessAction` + resolve-own-stack).
-    UnlessOpponentAction,
-    /// Default: auto-pass so my own stack objects resolve; re-stop on a stop/SmartStop or an
-    /// opponent action.
-    ResolveMyStackEffects,
-    /// Auto-pass through the whole stack emptying (approximated: resolve-own-stack + no
-    /// SmartStops while responding).
-    ResolveAll,
-    /// Stop at every priority window.
-    FullControl,
 }
 
 impl StopConfig {
@@ -270,52 +237,20 @@ impl Engine {
     /// (see [`Engine::should_auto_pass`]). Slated for removal once callers move to `set_full_control`.
     pub fn set_arena_auto_pass(&mut self, on: bool) {
         for cfg in &self.stops {
-            let mut c = cfg.lock().unwrap();
-            c.full_control = !on; // THE behavior knob: auto-pass profile on ⇔ not full control
-            c.auto_pass = on; // kept in sync for display / view gating (otherwise behavior-dead)
+            cfg.lock().unwrap().full_control = !on; // auto-pass profile on ⇔ not full control
         }
     }
-    /// "Full control" for a seat: stop at every priority window. This is now THE stop knob — off =
+    /// "Full control" for a seat: stop at every priority window. This is THE stop knob — off =
     /// the fixed elision rule (auto-pass unless you have a meaningful action at a marked stop or an
     /// opponent's object is on the stack). See [`Engine::should_auto_pass`].
     pub fn set_full_control(&mut self, p: PlayerId, on: bool) {
         self.stops[p.0 as usize].lock().unwrap().full_control = on;
-    }
-    /// Behavior-dead (display/transport only): the SmartStops knob folded into the single
-    /// full-control rule and no longer affects [`Engine::should_auto_pass`]. Kept so existing
-    /// callers compile; remove with the rest of the gre-server stop plumbing.
-    pub fn set_smart_stops(&mut self, p: PlayerId, on: bool) {
-        self.stops[p.0 as usize].lock().unwrap().smart_stops = on;
-    }
-    /// Behavior-dead (display/transport only): resolve-own-stack folded into the single
-    /// full-control rule and no longer affects [`Engine::should_auto_pass`]. Kept so existing
-    /// callers compile; remove with the rest of the gre-server stop plumbing.
-    pub fn set_resolve_own_stack(&mut self, p: PlayerId, on: bool) {
-        self.stops[p.0 as usize].lock().unwrap().resolve_own_stack = on;
     }
     /// Manual mana for a seat (a human/UI session): ON = offer `ActivateMana` actions at priority so
     /// the seat can tap specific sources for mana (CR 605.3a). Default OFF keeps agent/replay seats
     /// on auto-pay (mana abilities stay out of their action space). See [`StopConfig::manual_mana`].
     pub fn set_manual_mana(&mut self, p: PlayerId, on: bool) {
         self.stops[p.0 as usize].lock().unwrap().manual_mana = on;
-    }
-    /// Apply a named MTGA [`AutoPassOption`] to a seat (a convenience over the flags).
-    pub fn set_auto_pass_option(&mut self, p: PlayerId, opt: AutoPassOption) {
-        let mut cfg = self.stops[p.0 as usize].lock().unwrap();
-        match opt {
-            AutoPassOption::FullControl => cfg.full_control = true,
-            AutoPassOption::ResolveMyStackEffects | AutoPassOption::UnlessAction
-            | AutoPassOption::UnlessOpponentAction => {
-                cfg.full_control = false;
-                cfg.smart_stops = true;
-                cfg.resolve_own_stack = true;
-            }
-            AutoPassOption::ResolveAll => {
-                cfg.full_control = false;
-                cfg.smart_stops = false;
-                cfg.resolve_own_stack = true;
-            }
-        }
     }
     /// Override a seat's stop at `step` on **both** sides of the turn (own + opponent's): a
     /// turn-agnostic stop. `Some(true)` = always stop, `Some(false)` = never, `None` = revert to
@@ -2368,15 +2303,15 @@ impl Engine {
         }
     }
 
-    /// The info-filtered [`PlayerView`] for `p`, augmented with the seat's Arena stop state
-    /// (the settings-echo — `PlayerView.stops`; `None` when the auto-pass profile is off).
-    /// Used everywhere the engine builds a view (decide/observe).
+    /// The info-filtered [`PlayerView`] for `p`, augmented with the seat's stop state (the
+    /// settings-echo — `PlayerView.stops`; `None` under full control, where every window stops so
+    /// there's nothing to elide/echo). Used everywhere the engine builds a view (decide/observe).
     fn view_for_seat(&self, p: PlayerId) -> PlayerView {
         let mut view = view_for(&self.state, p);
         // Snapshot the config once (don't hold the lock while computing per-step, which would
         // re-enter the same non-reentrant Mutex via `stops_at`).
         let cfg = self.stops[p.0 as usize].lock().unwrap().clone();
-        if cfg.auto_pass {
+        if !cfg.full_control {
             let active = self.state.active_player;
             let per_step = TURN_STEPS
                 .iter()
@@ -2384,12 +2319,7 @@ impl Engine {
                 .filter(|&s| step_grants_priority(s))
                 .map(|s| (s, cfg.stops_at(p, s, active)))
                 .collect();
-            view.stops = Some(StopStateView {
-                full_control: cfg.full_control,
-                smart_stops: cfg.smart_stops,
-                resolve_own_stack: cfg.resolve_own_stack,
-                per_step,
-            });
+            view.stops = Some(StopStateView { full_control: cfg.full_control, per_step });
         }
         view
     }
@@ -3727,21 +3657,20 @@ mod expect_tests {
 
     #[test]
     fn player_view_carries_stop_state_for_the_ui() {
-        // PlayerView.stops echoes the seat's Arena settings (render-only): None when the
-        // profile is off, populated with full_control/smart_stops/resolve_own_stack + the
-        // effective per-step stops when on.
+        // PlayerView.stops echoes the seat's stop state (render-only): None under full control
+        // (every window stops — nothing to elide), else `full_control` + the effective per-step stops.
         let state = cards::build_game(1, &[&[], &[]]);
         let mut e = Engine::new(state, vec![Box::new(PassAgent), Box::new(PassAgent)]);
         e.state.active_player = PlayerId(0);
 
-        // Off by default → no stop state echoed.
+        // Full control by default (headless) → nothing to elide → no stop state echoed.
         assert!(e.view_for_seat(PlayerId(0)).stops.is_none());
 
-        e.set_arena_auto_pass(true);
+        e.set_arena_auto_pass(true); // full control OFF → the fixed elision rule is active
         e.set_stop(PlayerId(0), Phase::Upkeep, Some(true)); // manual extra stop
         let view = e.view_for_seat(PlayerId(0));
-        let s = view.stops.expect("stops echoed when the profile is on");
-        assert!(s.smart_stops && s.resolve_own_stack && !s.full_control, "MTGA defaults");
+        let s = view.stops.expect("stops echoed when not under full control");
+        assert!(!s.full_control, "the fixed elision profile is active");
         let stop_at = |ph: Phase| s.per_step.iter().find(|(p, _)| *p == ph).map(|(_, b)| *b);
         assert_eq!(stop_at(Phase::PrecombatMain), Some(true), "own MP1 default stop");
         assert_eq!(stop_at(Phase::PostcombatMain), Some(true), "own MP2 default stop");

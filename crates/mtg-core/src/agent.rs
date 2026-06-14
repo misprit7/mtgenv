@@ -186,8 +186,6 @@ pub struct CombatView {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct StopStateView {
     pub full_control: bool,
-    pub smart_stops: bool,
-    pub resolve_own_stack: bool,
     pub per_step: Vec<(Phase, bool)>,
 }
 
