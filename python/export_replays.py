@@ -46,7 +46,15 @@ def record_game(model, deck, step, out_dir, run_name=None, seed=12_345, self_pla
     sides = deck.split("_vs_") if "_vs_" in deck else [deck, deck]
     tag = f"PPO@{run_name}:{step}" if run_name else f"PPO@{step}"
     opp = tag if self_play else "random"
-    return env.export_replay(out_dir, _now_ms(), names=[tag, opp], decks=sides[:2], run_name=run_name)
+    try:
+        return env.export_replay(out_dir, _now_ms(), names=[tag, opp], decks=sides[:2], run_name=run_name)
+    except Exception as e:
+        # A replay we can't serialize (e.g. the engine's Selesnya counter-map → "key must be a
+        # string", flagged to the engine team) must not kill the training run — skip it, warn once.
+        if not getattr(record_game, "_warned", False):
+            print(f"  [replay] export skipped ({type(e).__name__}: {e}) — training continues")
+            record_game._warned = True
+        return None
 
 
 def _run_name(model) -> str:
@@ -77,7 +85,7 @@ class ReplayCheckpoint(BaseCallback):
             path = record_game(
                 self.model, self.deck, self.num_timesteps, self.out_dir, run_name=self.run_name
             )
-            if self.verbose:
+            if self.verbose and path:
                 print(f"  step {self.num_timesteps:>6}: {os.path.basename(path)}")
         return True
 
