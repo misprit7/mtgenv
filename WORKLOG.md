@@ -5,6 +5,13 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **engine:** **Attack triggers wired (`4613d51`)** — they were dead (declare_attackers set combat
+  state but never fired an event, so `EventPattern::SelfAttacks` never triggered). Now
+  declare_attackers broadcasts `GameEvent::AttackersDeclared{attackers, by}` → SelfAttacks fires per
+  attacking creature + new `EventPattern::YouAttack` fires once for the attacking player. Enables any
+  "whenever this attacks" creature + Dyadrine's "whenever you attack" half. Test covers both. 162
+  tests green. (Dyadrine's other half — "enters with +1/+1 = mana spent" OR remove-counter/reflexive
+  — needs design to pin the oracle/IR; flagged.)
 - **design:** **Mightform Harmonizer (C15) + Surrak's draw trigger (C16) authored — 17/18 cards.**
   (1) *Mightform Harmonizer* (eoe, faebf93): landfall→double-power snapshot
   `PumpPT{ what: Target(creature you control), power: PowerOfTarget(0), toughness: Fixed(0),
