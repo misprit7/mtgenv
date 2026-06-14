@@ -965,11 +965,9 @@ impl Engine {
             if !timing_ok {
                 continue;
             }
-            // Must have a legal target for each "target" the spell requires (CR 601.2c).
+            // Must be able to choose legal targets (CR 601.2c) — modal-aware (≥min legal modes).
             let has_targets = match s.def_of(card).and_then(|d| d.spell_effect()) {
-                Some(eff) => collect_target_specs(eff)
-                    .iter()
-                    .all(|spec| self.target_candidates(spec, p).len() as u32 >= spec.min.max(1)),
+                Some(eff) => self.spell_castable_targets(eff, p),
                 None => true,
             };
             if !has_targets {
@@ -1003,9 +1001,7 @@ impl Engine {
                     continue;
                 }
                 let has_targets = match s.def_of(card).and_then(|d| d.spell_effect()) {
-                    Some(eff) => collect_target_specs(eff)
-                        .iter()
-                        .all(|spec| self.target_candidates(spec, p).len() as u32 >= spec.min.max(1)),
+                    Some(eff) => self.spell_castable_targets(eff, p),
                     None => true,
                 };
                 if has_targets {
@@ -1538,6 +1534,34 @@ impl Engine {
         if let Some(o) = self.state.objects.get_mut(&card) {
             o.zone = Zone::Stack;
             o.controller = controller;
+        }
+    }
+
+    /// CR 700.2d / 601.2c: a modal **mode** may be chosen only if every target it declares can be
+    /// legally chosen. A mode that declares no targets (e.g. a search) is always legal. Used both to
+    /// filter the modes offered at `choose_modes` and to decide a modal spell's castability.
+    pub(crate) fn mode_is_legal(&self, mode: &crate::effects::Mode, controller: PlayerId) -> bool {
+        let mut specs = Vec::new();
+        collect_specs_into(&mode.effect, &mut specs);
+        specs
+            .iter()
+            .all(|spec| self.target_candidates(spec, controller).len() as u32 >= spec.min.max(1))
+    }
+
+    /// CR 601.2c: can this spell choose legal targets, so it may be put on the stack? A normal spell
+    /// needs a candidate for every target it declares. A **modal** spell instead needs at least `min`
+    /// of its modes to be individually legal — modes are chosen first (601.2b), so one legal mode
+    /// (e.g. an untargeted one) suffices even if another mode's targets are unavailable. This is what
+    /// keeps Bushwhack castable for its search mode while you control no creatures — yet stops the
+    /// engine from offering its fight mode (and a `ChooseTargets` with no legal creatures).
+    pub(crate) fn spell_castable_targets(&self, effect: &Effect, p: PlayerId) -> bool {
+        match effect {
+            Effect::Modal { modes, min, .. } => {
+                modes.iter().filter(|m| self.mode_is_legal(m, p)).count() as u32 >= *min
+            }
+            _ => collect_target_specs(effect)
+                .iter()
+                .all(|spec| self.target_candidates(spec, p).len() as u32 >= spec.min.max(1)),
         }
     }
 
@@ -3902,6 +3926,111 @@ mod expect_tests {
         assert_eq!(e.state.object(mine).damage_marked, 2, "my creature took fight damage");
         assert_eq!(e.state.object(theirs).damage_marked, 2, "their creature took fight damage");
         assert_eq!(e.state.player(PlayerId(0)).life, 20, "the other mode (gain life) did NOT run");
+    }
+
+    #[test]
+    fn modal_offers_only_legal_modes_no_empty_target_slot_cr_601_2c() {
+        // #49 regression (found via Bushwhack in Selesnya self-play): a modal spell where mode 0 is a
+        // fight (needs a creature you control AND one you don't) and mode 1 is untargeted. With NO
+        // creatures in play, the fight mode is ILLEGAL (CR 700.2d), so the engine must offer ONLY the
+        // untargeted mode and must NEVER emit a `ChooseTargets` carrying a required (min≥1) slot with
+        // zero legal candidates (CR 601.2c). Before the fix the engine offered the fight mode anyway
+        // and then asked for two creature targets that didn't exist.
+        use crate::basics::CardType;
+        use crate::effects::target::{CardFilter, TargetKind, TargetSpec};
+        use crate::effects::value::{PlayerRef, ValueExpr};
+        use crate::effects::{Effect, EffectTarget, Mode};
+        use crate::state::Characteristics;
+        use std::sync::{Arc, Mutex};
+
+        let tspec =
+            |f: CardFilter| TargetSpec { kind: TargetKind::Creature(f), min: 1, max: 1, distinct: true };
+        let modal = Effect::Modal {
+            modes: vec![
+                Mode {
+                    label: "Fight".into(),
+                    effect: Effect::Fight {
+                        a: EffectTarget::Target(tspec(CardFilter::ControlledBy(PlayerRef::Controller))),
+                        b: EffectTarget::Target(tspec(CardFilter::Not(Box::new(
+                            CardFilter::ControlledBy(PlayerRef::Controller),
+                        )))),
+                    },
+                },
+                Mode {
+                    label: "Gain 3 life".into(),
+                    effect: Effect::GainLife { who: PlayerRef::Controller, amount: ValueExpr::Fixed(3) },
+                },
+            ],
+            min: 1,
+            max: 1,
+            allow_repeat: false,
+        };
+        let mut db = cards::starter_db();
+        db.insert(cards::CardDef {
+            chars: Characteristics {
+                name: "Test Bushwhack".into(),
+                card_types: vec![CardType::Sorcery],
+                mana_cost: Some(cards::mana_cost(0, &[])),
+                grp_id: 9301,
+                ..Default::default()
+            },
+            abilities: vec![Ability::Spell { effect: modal }],
+            ..Default::default()
+        });
+        let mut state = GameState::new(2, 1);
+        state.set_card_db(Arc::new(db));
+        // NO creatures anywhere — the fight mode has no legal targets for either slot.
+        let chars = state.card_db().get(9301).unwrap().chars.clone();
+        let spell = state.add_card(PlayerId(0), chars, Zone::Hand);
+
+        // A recording agent: logs every request it's asked, answers ChooseModes by picking the first
+        // offered (legal) option, and passes / min-selects otherwise.
+        struct RecAgent(Arc<Mutex<Vec<DecisionRequest>>>);
+        impl Agent for RecAgent {
+            fn decide(&mut self, _v: &PlayerView, req: &DecisionRequest) -> DecisionResponse {
+                self.0.lock().unwrap().push(req.clone());
+                match req {
+                    DecisionRequest::ChooseModes { .. } => DecisionResponse::Indices(vec![0]),
+                    DecisionRequest::SelectCards { min, .. } => DecisionResponse::Indices((0..*min).collect()),
+                    _ => DecisionResponse::Pass,
+                }
+            }
+        }
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let mut e = Engine::new(state, vec![Box::new(RecAgent(log.clone())), Box::new(PassAgent)]);
+
+        // Unit-level: the fight mode is illegal (no creatures), the untargeted mode is legal, and the
+        // spell is castable overall (via the legal mode) — CR 601.2c is satisfied without the fight.
+        let effect = e.state.def_of(spell).unwrap().spell_effect().unwrap().clone();
+        let modes = match &effect {
+            Effect::Modal { modes, .. } => modes.clone(),
+            _ => panic!("expected a modal effect"),
+        };
+        assert!(!e.mode_is_legal(&modes[0], PlayerId(0)), "fight mode illegal with no creatures");
+        assert!(e.mode_is_legal(&modes[1], PlayerId(0)), "untargeted mode is always legal");
+        assert!(e.spell_castable_targets(&effect, PlayerId(0)), "castable via the legal untargeted mode");
+
+        e.cast_spell(PlayerId(0), spell, CastVariant::Normal);
+        e.resolve_top();
+
+        let reqs = log.lock().unwrap();
+        // Exactly one ChooseModes was asked, offering ONLY the 1 legal mode (not both).
+        let offered: Vec<usize> = reqs
+            .iter()
+            .filter_map(|r| match r {
+                DecisionRequest::ChooseModes { modes, .. } => Some(modes.len()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(offered, vec![1], "one ChooseModes offering only the single legal mode");
+        // No ChooseTargets with a required (min≥1) slot that has zero legal candidates was emitted.
+        let leaked = reqs.iter().any(|r| {
+            matches!(r, DecisionRequest::ChooseTargets { slots, .. }
+                if slots.iter().any(|s| s.min >= 1 && s.legal.is_empty()))
+        });
+        assert!(!leaked, "no ChooseTargets with a required empty-legal slot (CR 601.2c)");
+        // The legal mode (gain 3 life) is the one that resolved.
+        assert_eq!(e.state.player(PlayerId(0)).life, 23, "the untargeted gain-life mode resolved");
     }
 
     #[test]

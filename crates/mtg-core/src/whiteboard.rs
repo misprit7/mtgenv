@@ -307,8 +307,15 @@ impl Engine {
             return ctx.chosen_modes.iter().copied().filter(|&i| (i as usize) < modes.len()).collect();
         }
         let controller = ctx.controller.unwrap_or(PlayerId(0));
+        // CR 601.2b / 700.2d: a player may only choose a mode whose targets can be legally chosen.
+        // Offer just the legal modes (an untargeted mode is always legal); without this the engine
+        // would let a player pick e.g. Bushwhack's "fight" mode with no creatures in play and then
+        // emit a `ChooseTargets` with zero legal candidates (CR 601.2c violation, #49). The agent
+        // picks among the offered options; we map its choice back to original mode indices.
+        let legal: Vec<u32> =
+            (0..modes.len() as u32).filter(|&i| self.mode_is_legal(&modes[i as usize], controller)).collect();
         let options: Vec<ModeOption> =
-            modes.iter().map(|m| ModeOption { label: m.label.clone() }).collect();
+            legal.iter().map(|&i| ModeOption { label: modes[i as usize].label.clone() }).collect();
         let resp = self.ask(
             controller,
             &DecisionRequest::ChooseModes {
@@ -319,21 +326,22 @@ impl Engine {
                 allow_repeat,
             },
         );
-        let mut chosen: Vec<u32> = match resp {
+        let raw: Vec<u32> = match resp {
             DecisionResponse::Indices(v) => v,
             DecisionResponse::Index(i) => vec![i],
             _ => Vec::new(),
         };
-        chosen.retain(|&i| (i as usize) < modes.len());
+        // Responses index into the offered (legal) list — map back to original mode indices.
+        let mut chosen: Vec<u32> = raw.into_iter().filter_map(|i| legal.get(i as usize).copied()).collect();
         if !allow_repeat {
             chosen.sort_unstable();
             chosen.dedup();
         }
         chosen.truncate(max as usize);
-        // Fill up to `min` with the first unused modes so a malformed/empty response can't
-        // under-resolve a "choose one" (CR 700.2d — you must choose the minimum).
+        // Fill up to `min` with the first unused LEGAL modes so a malformed/empty response can't
+        // under-resolve a "choose one" (CR 700.2d — you must choose the minimum, from legal modes).
         while (chosen.len() as u32) < min {
-            match (0..modes.len() as u32).find(|i| !chosen.contains(i)) {
+            match legal.iter().copied().find(|i| !chosen.contains(i)) {
                 Some(i) => chosen.push(i),
                 None => break,
             }
