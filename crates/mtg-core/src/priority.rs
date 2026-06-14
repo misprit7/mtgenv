@@ -19,8 +19,8 @@ use crate::basics::{CardType, CounterKind, ManaCost, Phase, Target, Zone, ZonePo
 use crate::subtypes::{EnchantmentType, Subtype};
 use crate::effects::ability::{Ability, Cost, CostComponent, EventPattern, Keyword, Restriction, Timing};
 use crate::effects::action::{Action, MoveCause, ResolutionCtx, Whiteboard, WbReason};
-use crate::effects::target::{CardFilter, TargetKind, TargetSpec};
-use crate::effects::value::PlayerRef;
+use crate::effects::target::{CardFilter, SelectSpec, TargetKind, TargetSpec};
+use crate::effects::value::{PlayerRef, ValueExpr};
 use crate::effects::{Effect, EffectTarget};
 use crate::ids::{ObjId, PlayerId};
 use crate::mana;
@@ -1015,6 +1015,11 @@ impl Engine {
                             o.counters.get(&CounterKind::Loyalty) as i32 >= -*n
                         })
                 }
+                // Sacrifice (CR 118.3 / 701.17): payable iff the chooser controls enough matching
+                // permanents (e.g. `{T}, Sacrifice this:` needs the source itself on the field).
+                CostComponent::Sacrifice(spec) => {
+                    self.sacrifice_candidates(p, source, spec).len() as u32 >= cost_count(&spec.min)
+                }
                 _ => true,
             };
             if !ok {
@@ -1105,8 +1110,75 @@ impl Engine {
                         *cur = (*cur as i32 + n).max(0) as u32;
                     }
                 }
+                CostComponent::Sacrifice(spec) => self.pay_sacrifice(p, source, spec),
                 _ => {}
             }
+        }
+    }
+
+    /// The permanents `payer` could sacrifice to pay a [`CostComponent::Sacrifice`] (CR 701.17):
+    /// battlefield permanents the chooser controls that match the spec's filter. `ItSelf` resolves
+    /// to the cost's `source`, so `{T}, Sacrifice this:` yields just the source.
+    fn sacrifice_candidates(&self, payer: PlayerId, source: ObjId, spec: &SelectSpec) -> Vec<ObjId> {
+        let chooser = match spec.chooser {
+            PlayerRef::Opponent | PlayerRef::EachOpponent => self
+                .state
+                .players
+                .iter()
+                .map(|x| x.id)
+                .find(|&q| q != payer)
+                .unwrap_or(payer),
+            _ => payer,
+        };
+        self.state
+            .player(chooser)
+            .battlefield
+            .iter()
+            .copied()
+            .filter(|&o| self.sac_filter_matches(o, &spec.filter, source, payer))
+            .collect()
+    }
+
+    /// Source-aware filter match for a sacrifice candidate — like [`Engine::enter_filter_matches`]
+    /// but resolves `ItSelf` against the cost's `source` (so "Sacrifice this" works).
+    fn sac_filter_matches(&self, obj: ObjId, filter: &CardFilter, source: ObjId, payer: PlayerId) -> bool {
+        match filter {
+            CardFilter::ItSelf => obj == source,
+            CardFilter::All(fs) => fs.iter().all(|f| self.sac_filter_matches(obj, f, source, payer)),
+            CardFilter::AnyOf(fs) => fs.iter().any(|f| self.sac_filter_matches(obj, f, source, payer)),
+            CardFilter::Not(f) => !self.sac_filter_matches(obj, f, source, payer),
+            other => self.enter_filter_matches(obj, other, payer),
+        }
+    }
+
+    /// Pay a [`CostComponent::Sacrifice`]: sacrifice `spec.min` matching permanents (CR 701.17 —
+    /// move to the graveyard). When more than enough candidates exist, the payer chooses which
+    /// (`SelectCards`); when exactly determined (e.g. "Sacrifice this"), no decision is asked.
+    fn pay_sacrifice(&mut self, payer: PlayerId, source: ObjId, spec: &SelectSpec) {
+        let candidates = self.sacrifice_candidates(payer, source, spec);
+        let want = cost_count(&spec.min).min(candidates.len() as u32);
+        let chosen: Vec<ObjId> = if candidates.len() as u32 <= want {
+            candidates
+        } else {
+            let req = DecisionRequest::SelectCards {
+                reason: SelectReason::Sacrifice,
+                from: candidates.clone(),
+                min: want,
+                max: want,
+                description: "sacrifice as a cost".to_string(),
+            };
+            let idxs = match self.ask(payer, &req) {
+                DecisionResponse::Indices(i) => {
+                    self.distinct_valid_indices(&i, candidates.len(), want)
+                }
+                _ => (0..want as usize).collect(),
+            };
+            idxs.into_iter().map(|i| candidates[i]).collect()
+        };
+        for obj in chosen {
+            let owner = self.state.object(obj).owner;
+            self.state.move_object(obj, Zone::Graveyard, owner);
+            self.broadcast(GameEvent::ObjectMoved { obj, to: Zone::Graveyard });
         }
     }
 
@@ -1844,6 +1916,15 @@ impl Engine {
     }
 }
 
+/// Evaluate a fixed cost count (e.g. a sacrifice count, CR 118). The current pool's cost counts
+/// are constants; a non-`Fixed` expr defaults to 1 (revisit when a variable cost actually arrives).
+fn cost_count(v: &ValueExpr) -> u32 {
+    match v {
+        ValueExpr::Fixed(n) => (*n).max(0) as u32,
+        _ => 1,
+    }
+}
+
 /// Collect the `TargetSpec`s an `Effect` requires, in declaration order (CR 601.2c). The
 /// milestone-3 starter set only needs the `DealDamage` target; `Sequence` recurses. Other
 /// targeted IR nodes are added as their cards arrive.
@@ -1962,6 +2043,45 @@ mod tests {
         assert!(streamed.len() > 5);
         assert_eq!(streamed[0], "game start");
         assert!(streamed.last().unwrap().starts_with("Game over"), "last frame is the game end");
+    }
+
+    #[test]
+    fn sacrifice_cost_sacrifices_the_source() {
+        // CR 118/701.17: a "{T}, Sacrifice this:" activation cost. Paying it moves the source to
+        // the graveyard (the unblocker for fetch lands like Fabled Passage / Escape Tunnel).
+        use crate::effects::ability::{Cost, CostComponent};
+        use crate::effects::target::{CardFilter, SelectSpec};
+        use crate::effects::value::{PlayerRef, ValueExpr};
+
+        let mut e = lands_only_game(5, 1);
+        let src = e.state.add_card(
+            PlayerId(0),
+            Characteristics::basic_land("Forest"),
+            Zone::Battlefield,
+        );
+        let cost = Cost {
+            mana: None,
+            components: vec![
+                CostComponent::TapSelf,
+                CostComponent::Sacrifice(SelectSpec {
+                    zone: Zone::Battlefield,
+                    filter: CardFilter::ItSelf,
+                    chooser: PlayerRef::Controller,
+                    min: ValueExpr::Fixed(1),
+                    max: ValueExpr::Fixed(1),
+                }),
+            ],
+        };
+
+        // Payable while the source is on the battlefield.
+        assert!(e.can_pay_cost(PlayerId(0), src, &cost));
+        e.pay_cost(PlayerId(0), src, &cost);
+        // The source is sacrificed: now in its owner's graveyard, off the battlefield.
+        assert_eq!(e.state.object(src).zone, Zone::Graveyard, "source sacrificed to graveyard");
+        assert!(e.state.player(PlayerId(0)).graveyard.contains(&src));
+        assert!(!e.state.player(PlayerId(0)).battlefield.contains(&src));
+        // No longer payable — there's nothing left to sacrifice.
+        assert!(!e.can_pay_cost(PlayerId(0), src, &cost));
     }
 
     /// Build a two-player lands-only game: `lib` basic lands each, two `RandomAgent`s.
