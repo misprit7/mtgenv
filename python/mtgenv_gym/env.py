@@ -70,6 +70,9 @@ class MtgEnv(_GymEnv):
         if seed is None:
             seed = int(self.np_random.integers(0, _U64, dtype=np.uint64))
         self._opp_rng = np.random.default_rng((int(seed) ^ 0x5DEECE66D) & _U64)
+        # Resample the opponent for this episode (e.g. a fresh draw from the self-play pool).
+        if hasattr(self.opponent, "reset"):
+            self.opponent.reset(self._opp_rng)
         self._decisions = 0
         step = self._game.reset(int(seed) & _U64)
         return self._advance_to_agent(step)
@@ -91,7 +94,7 @@ class MtgEnv(_GymEnv):
         """Answer every non-agent decision internally until it is the agent's turn (or terminal)."""
         obs_dict, mask, seat, request, num_legal, terminal = step
         while (not terminal) and seat != self.agent_seat:
-            a = self._opponent_action(mask)
+            a = self._opponent_action(obs_dict, mask)
             self._game.apply(int(a))
             self._decisions += 1
             obs_dict, mask, seat, request, num_legal, terminal = self._game.step_to_decision()
@@ -107,13 +110,18 @@ class MtgEnv(_GymEnv):
             info["summary"] = self.summary()
         return self._to_obs(obs_dict), info
 
-    def _opponent_action(self, mask):
+    def _opponent_action(self, obs_dict, mask):
+        """Answer one opponent-seat decision. ``opponent`` is either ``"random"`` or a policy —
+        a callable ``act(obs, mask) -> int`` or an object with such an ``.act`` (e.g. a frozen
+        checkpoint / self-play pool member). The obs handed to a policy opponent is from the
+        opponent seat's own perspective (the engine builds the view for the deciding seat), so a
+        single relative-encoded policy plays both seats correctly."""
         legal = np.flatnonzero(np.asarray(mask, dtype=bool))
         assert legal.size >= 1, "empty mask for opponent decision"
         if self.opponent == "random":
             return int(self._opp_rng.choice(legal))
-        # A callable opponent(obs_dict, mask) -> action index (for frozen-checkpoint self-play, M2).
-        raise ValueError(f"unknown opponent {self.opponent!r}")
+        act = self.opponent.act if hasattr(self.opponent, "act") else self.opponent
+        return int(act(self._to_obs(obs_dict), np.asarray(mask, dtype=bool)))
 
     def _to_obs(self, obs_dict):
         out = {}
