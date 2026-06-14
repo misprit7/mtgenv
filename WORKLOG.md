@@ -5,6 +5,17 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **design:** **🎉 SELESNYA DECK COMPLETE — 18/18 distinct cards = the real mtggoldfish 60.** Authored
+  the last card, **Keen-Eyed Curator** (`cards/blb/keen_eyed_curator.rs`, id 117, commit df2abae), as
+  **`fully_implemented: true`** against C17 (e002d7a + b18c6f6): `{1}: Exile target card from a graveyard`
+  = `Activated{ {1}, Exile{ Target(CardInZone{ Graveyard, Any }) } }`; "+4/+4 & trample while ≥4 card
+  types among cards exiled with it" = two `ConditionalStatic` on `ItSelf`, `WhileSourcePresent`,
+  `ValueAtLeast(DistinctCardTypesAmongExiledWith, Fixed(4))`. Created the `blb/` set folder + wired it.
+  Folded ×1 into the preset → **51 nonbasics + the real 7F/2P, all padding gone.** 168 tests green,
+  workspace + clippy clean. The whole Selesnya Landfall card-pool push (C1–C19) is now playable end to
+  end. Remaining = **upgrade-only** on already-decked cards (none add deck cards): C14 warp (Mightform),
+  Dyadrine's attack ability (2 caps), Surrak's stack-spell half + can't-be-countered, Lumbering's crew,
+  Earthbender's quest-chain, Badgermole's reflexive-mana — all faithful tracked-partials, all staged.
 - **engine:** **C17 COMPLETE (`b18c6f6`) — Keen-Eyed Curator fully buildable → deck 18/18.** Pieces
   2+3 on top of piece 1's exile mechanics: (2) `Object.exiled_with` records which permanent exiled a
   card (set by `Action::Exile`, reset on zone change) = the "exiled with this creature" set; (3)

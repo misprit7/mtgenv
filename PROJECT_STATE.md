@@ -68,9 +68,13 @@ MTGA client.
   is exiled, return it tapped". **design flipped Ba Sing Se → `fully_implemented: true`** (b524244, no
   card change); the earthbend gap on Badgermole Cub + Earthbender Ascension is closed (those stay
   incomplete only on their other unbuilt mechanics — reflexive-mana trigger / quest-counter chain).
-  16 distinct landfall-push cards authored (12 landfall + Surrak + Badgermole + Earthbender Ascension +
-  Ba Sing Se), all in the selesnya preset where playable; 157 mtg-core tests green. Remaining 2 (Dyadrine,
-  Mightform) + Keen-Eyed Curator wait on caps C14/C15/C16/C17 + reflexive-mana/quest subsystems.
+  **The Selesnya Landfall card-pool push is COMPLETE: all 18 distinct cards authored and the `selesnya`
+  preset is the real mtggoldfish 60 (51 nonbasics + 7 Forest / 2 Plains, no padding).** Most are fully
+  implemented; a few ship as faithful tracked-partials with advanced clauses deferred (Mightform's warp,
+  Dyadrine's attack ability, Surrak's stack-spell half + can't-be-countered, Lumbering's crew,
+  Earthbender's quest-chain, Badgermole's reflexive-mana) — none husked. Engine caps C1–C19 + C12/C15/C16/C17
+  all landed; 168 mtg-core tests green. Remaining is **upgrade-only** (no new deck cards): C14 warp + the
+  small deferred-clause caps above.
 - **Phase: parallel build kicked off** via a tmux agent team (`mtgenv`, lead + 4 teammates).
   Active workstreams (shared task board): **engine** scaffolding the Cargo workspace +
   headless `mtg-core` (#1); **decompile** recovering the GRE schema **and transport** in
