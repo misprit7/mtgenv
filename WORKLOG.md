@@ -5,6 +5,20 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-14
 
+- **design (quality pass — behaviour-test coverage, broadly complete):** **16/18 cards now have a card-module
+  resolve-level behaviour test** (exercise the *resolved* effect, expect-snapshot or assert on
+  zones/counters/P-T/mana — not just the IR). Added this round: Dyadrine (full attack — YesAgent drives the
+  Optional/ForEach; expect-snapshot: counters removed → 2/2, drew, +2/2 Robot token), Fabled + Escape (fetch
+  a basic → battlefield tapped, via a `TakeItAgent`), Badgermole + Llanowar + Hushwood (resolve the mana
+  ability → +{G} in pool), Earthbender (ETB: earthbend a land → 2/2 land-creature + fetch a basic), Bushwhack
+  (fight mode via `ResolutionCtx.chosen_modes` → mutual 2 damage) — joining the earlier Lumbering CDA+Crew,
+  Mightform double-power, Ba Sing Se earthbend, Sazh's landfall-counter, Mossborn double-counter, Icetill
+  mill, Keen-Eyed exile, Erode destroy. Reusable harness pattern: in-crate test mod + `Engine::new` +
+  `resolve_effect` + a small scripted agent (Confirm→yes, SelectCards→first n). **The remaining 2 cards —
+  Temple Garden (ETB-tapped-unless-pay *replacement*) and Surrak (becomes-targeted *event trigger*) — have no
+  standalone resolvable effect**; their behaviour is inherently game-loop-level (ETB replacement application /
+  a targeting event) and is covered by engine's cap tests (C11, C16) + their IR snapshots. So every card's
+  resolved behaviour is tested. **197 tests green; clippy clean.** Commits 384c327…09d2398.
 - **engine (#49 — modal target-legality fix):** **Don't offer a modal mode whose targets can't be chosen
   (5df860e, CR 601.2c/700.2d).** Self-served the repro the lead asked for: instrumented the central `ask`
   to flag any `ChooseTargets` with an effective-required (min≥1) slot + zero candidates, ran 200 Selesnya
