@@ -5,6 +5,9 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **webui:** Lobby Games + AI Training Replays lists now show **most-recent first** (games desc by
+  id; runs desc by latest checkpoint time, steps still ascending within a run) and both panels have
+  a **capped height (340px) with a scrollbar** so long lists don't push the page down.
 - **engine:** **Targeting correctness fix (`70c483e`)** — user hit it live (earthbend couldn't target a
   land but could target/clobber a creature; Bushwhack could fight your own creature). Two bugs in
   priority.rs: (1) `target_candidates` drew `TargetKind::Permanent` from creatures-only → lands never

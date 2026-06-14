@@ -33,7 +33,11 @@
   button:hover { filter: brightness(1.07); }
   button.ghost { background: transparent; color: var(--ink); border:1px solid var(--line); }
   button:disabled { opacity:.45; cursor:not-allowed; }
-  .games { display:flex; flex-direction:column; gap:12px; }
+  /* Cap the visible height so long lists (many games / training checkpoints) don't push the page
+     down forever — the most-recent rows sit at the top and the rest are reachable by scrolling. */
+  .games { display:flex; flex-direction:column; gap:12px; max-height:340px; overflow-y:auto; }
+  .games::-webkit-scrollbar { width:10px; }
+  .games::-webkit-scrollbar-thumb { background:var(--line); border-radius:8px; }
   .game { background: var(--rail); border:1px solid var(--line); border-radius:10px; padding:12px 14px;
     display:flex; align-items:center; gap:14px; flex-wrap: wrap; }
   .game .gid { font-weight:800; }
@@ -231,8 +235,9 @@ async function refresh() {
   const host = $("games");
   host.innerHTML = "";
   if (!games.length) { host.appendChild(el("div", "empty", "No games yet — create one above.")); return; }
-  // Chronological order of creation (ascending by id = creation order), stable across refreshes.
-  games.slice().sort((a, b) => (a.id || 0) - (b.id || 0)).forEach((g) => host.appendChild(gameRow(g)));
+  // Most-recent first (descending by id = reverse creation order), stable across refreshes — the
+  // newest game is at the top; the panel scrolls (capped height) once the list grows past it.
+  games.slice().sort((a, b) => (b.id || 0) - (a.id || 0)).forEach((g) => host.appendChild(gameRow(g)));
 }
 
 function gameRow(g) {
@@ -311,12 +316,13 @@ async function refreshReplays() {
   const ai = reps.filter((r) => r.source && r.source.AiTraining);
   host.innerHTML = "";
   if (!ai.length) { host.appendChild(el("div", "empty", "No AI training replays yet.")); return; }
-  // Group by training run; runs in chronological order of creation (earliest first), and steps
-  // ascending within a run (so you watch it learn from early → late checkpoints).
+  // Group by training run; most-recent run first (by its latest checkpoint time), but steps stay
+  // ascending within a run (so you still watch it learn from early → late checkpoints). The panel
+  // has a capped height and scrolls once there are more runs/checkpoints than fit.
   const groups = {};
   ai.forEach((r) => (groups[aiRun(r)] = groups[aiRun(r)] || []).push(r));
-  const minTime = (g) => Math.min(...g.map((x) => x.created_at || 0));
-  const runs = Object.keys(groups).sort((a, b) => minTime(groups[a]) - minTime(groups[b]));
+  const maxTime = (g) => Math.max(...g.map((x) => x.created_at || 0));
+  const runs = Object.keys(groups).sort((a, b) => maxTime(groups[b]) - maxTime(groups[a]));
   runs.forEach((run) => {
     const g = groups[run];
     g.sort((a, b) => (a.source.AiTraining.step || 0) - (b.source.AiTraining.step || 0));
