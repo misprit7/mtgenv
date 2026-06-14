@@ -41,7 +41,11 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
     quest-counter→reflexive(≥4)→+1/+1+trample-EOT chain deferred), and flipped *Ba Sing Se*'s `{2}{G},{T}:
     Earthbend 2` activated (Timing::Sorcery) on. All three held `fully_implemented:false` only for the
     earthbend **return-tapped** delayed trigger (engine commit C, imminent) — flip to true with no card change
-    when C lands. 156 core tests green.
+    when C lands. 156 core tests green. **UPDATE — C12 fully landed** (engine 3d4b636 floating-continuous +
+    db81497 Earthbend/GrantContinuous + 21171dc delayed-trigger return-tapped; 157 tests): **Ba Sing Se flipped
+    to `fully_implemented: true`** (b524244, no card change — all 3 clauses done). Badgermole/Earthbender stay
+    false but the return-tapped gap is trimmed from their notes — each now down to its single real unbuilt
+    mechanic (reflexive-mana trigger / quest-counter landfall chain).
   - **selesnya preset folded** (cards/mod.rs): added the 3 now-implemented cards at mtggoldfish quantities —
     Surrak ×2, Badgermole Cub ×4, Earthbender Ascension ×4 (34→44 nonbasics); basics rebalanced 18F/8P → 10F/6P
     to stay at 60 (green-primary, {W} Erode still castable). Still omitted (cap-blocked): Keen-Eyed Curator,
