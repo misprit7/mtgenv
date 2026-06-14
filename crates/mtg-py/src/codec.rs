@@ -704,6 +704,7 @@ mod tests {
         view.battlefield = vec![vis(10), vis(11)];
         let req = DecisionRequest::ChooseTargets {
             for_action: ActionRef(StackId(1)),
+            source: None,
             slots: vec![TargetSlot {
                 description: "t".into(),
                 legal: vec![Target::Object(ObjId(10)), Target::Object(ObjId(11))],
@@ -766,6 +767,7 @@ mod tests {
     fn unsatisfiable_target_slot_commits_instead_of_looping() {
         let req = DecisionRequest::ChooseTargets {
             for_action: ActionRef(StackId(1)),
+            source: None,
             slots: vec![TargetSlot {
                 description: "needs a target but none legal".into(),
                 legal: vec![], // min≥1 with zero legal candidates → the stuck case

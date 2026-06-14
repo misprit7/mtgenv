@@ -177,17 +177,17 @@ fn decision_info(view: &PlayerView, req: &DecisionRequest) -> DecisionInfo {
     let mut di = DecisionInfo::default();
 
     // ── source: the in-progress cast/activation a sub-decision belongs to ──────────────────────
-    // We locate the source by matching `for_action`'s StackId against the stack. This resolves a
-    // SPELL mid-cast (on the stack at 601.2c) and an ACTIVATED ability (pushed before its targets),
-    // but NOT a TRIGGERED/reflexive ability: the engine chooses its targets *before* pushing it onto
-    // the stack (priority.rs `place_trigger`), so it isn't in `view.stack` yet and its source can't
-    // be recovered here. Closing that needs the engine to carry `source` in the request itself —
-    // tracked as the Tier-1 engine follow-up; this code will prefer that field once it exists.
-    let for_action = match req {
-        Q::ChooseTargets { for_action, .. }
-        | Q::ChooseModes { for_action, .. }
-        | Q::CastingTimeOptions { for_action, .. } => Some(for_action.0),
-        _ => None,
+    // Two complementary signals: (1) match `for_action`'s StackId against the stack — resolves a
+    // SPELL mid-cast (its stack row carries the card's grp_id) and an ACTIVATED ability (pushed
+    // before its targets); (2) the request's explicit `source` object (CR 603.3d: a TRIGGERED/
+    // reflexive ability chooses targets BEFORE it's pushed onto the stack, so it isn't in the view
+    // yet — the engine hands us the source object directly so we can still recover its identity).
+    let (for_action, req_source) = match req {
+        Q::ChooseTargets { for_action, source, .. } => (Some(for_action.0), *source),
+        Q::ChooseModes { for_action, .. } | Q::CastingTimeOptions { for_action, .. } => {
+            (Some(for_action.0), None)
+        }
+        _ => (None, None),
     };
     if let Some(sid) = for_action {
         di.src_stack = Some(sid);
@@ -202,6 +202,15 @@ fn decision_info(view: &PlayerView, req: &DecisionRequest) -> DecisionInfo {
                         di.src_grp = g;
                     }
                 }
+            }
+        }
+    }
+    // The request's explicit source — works for a trigger whose object isn't on the stack yet.
+    if let Some(src) = req_source {
+        di.src_objs.insert(src); // flag its battlefield/hand row as the decision's source
+        if di.src_grp == 0 {
+            if let Some(g) = grp_of_obj(view, src) {
+                di.src_grp = g;
             }
         }
     }
@@ -628,6 +637,7 @@ mod tests {
         }];
         let req = DecisionRequest::ChooseTargets {
             for_action: ActionRef(StackId(1)),
+            source: Some(spell_card),
             slots: vec![TargetSlot {
                 description: String::new(),
                 legal: vec![Target::Object(creature), Target::Player(PlayerId(1))],
@@ -647,5 +657,63 @@ mod tests {
         // and the opponent is a player-candidate (last global), self is not (second-last).
         assert_eq!(o.globals[G - 1], 1.0, "opponent is a legal player target");
         assert_eq!(o.globals[G - 2], 0.0, "self is not a legal target here");
+    }
+
+    /// Tier-1 trigger case (#66 follow-up, engine 6fe1580): a TRIGGERED ability chooses its target
+    /// *before* being pushed to the stack, so the source object isn't in `view.stack`. The request's
+    /// explicit `source` lets the encoder still recover the source permanent's card identity and flag
+    /// its battlefield row — this is the Earthbender reflexive-reward case the user asked about.
+    #[test]
+    fn decision_resolves_trigger_source_off_stack() {
+        use mtg_core::agent::{ActionRef, CharacteristicsView, TargetSlot};
+        use mtg_core::basics::{Status, Target};
+        use mtg_core::ids::{ObjId, StackId};
+
+        let enchantment = ObjId(30); // the triggering permanent (e.g. Earthbender), grp 114
+        let my_creature = ObjId(31); // the legal target (a creature you control)
+        let mut v = view();
+        v.battlefield = vec![
+            ObjView::Visible {
+                id: enchantment,
+                chars: CharacteristicsView { grp_id: 114, ..Default::default() },
+                controller: PlayerId(0),
+                owner: PlayerId(0),
+                zone: mtg_core::basics::Zone::Battlefield,
+                status: Status::default(),
+                counters: CounterBag::default(),
+                damage_marked: 0,
+                attachments: vec![],
+                summoning_sick: false,
+            },
+            ObjView::Visible {
+                id: my_creature,
+                chars: CharacteristicsView { grp_id: 200, power: Some(2), toughness: Some(2), ..Default::default() },
+                controller: PlayerId(0),
+                owner: PlayerId(0),
+                zone: mtg_core::basics::Zone::Battlefield,
+                status: Status::default(),
+                counters: CounterBag::default(),
+                damage_marked: 0,
+                attachments: vec![],
+                summoning_sick: false,
+            },
+        ];
+        v.stack = vec![]; // the trigger is NOT on the stack yet (CR 603.3d)
+        let req = DecisionRequest::ChooseTargets {
+            for_action: ActionRef(StackId(9)), // a StackId not present in the (empty) stack
+            source: Some(enchantment),
+            slots: vec![TargetSlot {
+                description: String::new(),
+                legal: vec![Target::Object(my_creature)],
+                min: 1,
+                max: 1,
+            }],
+        };
+
+        let o = encode(&v, &req, 1);
+        assert_eq!(o.decision_ids, vec![114], "source grp recovered from the off-stack trigger source");
+        // row 0 = the enchantment, flagged is_src (F_PERM-2); row 1 = the creature, flagged is_cand.
+        assert_eq!(o.bf_feat[F_PERM - 2], 1.0, "triggering permanent flagged is_src");
+        assert_eq!(o.bf_feat[2 * F_PERM - 1], 1.0, "target creature flagged is_cand");
     }
 }
