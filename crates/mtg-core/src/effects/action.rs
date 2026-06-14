@@ -103,6 +103,9 @@ pub enum Action {
 pub enum DelayedTriggerEvent {
     /// The watched permanent leaves the battlefield by dying (→ graveyard) or being exiled.
     DiesOrExiled,
+    /// The beginning of the next end step after this trigger was armed (CR 513 / warp's "exile this
+    /// at the beginning of the next end step"). Fires once, then is consumed.
+    AtBeginningOfNextEndStep,
 }
 
 /// Why an object is changing zones — distinguishes destruction/sacrifice/bounce/etc. so the

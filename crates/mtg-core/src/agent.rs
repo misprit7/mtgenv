@@ -414,6 +414,9 @@ pub enum CastVariant {
     Omen,
     Prototype,
     WithoutPayingManaCost,
+    /// Cast from hand for the card's warp cost (CR 702.x) — the spell is then exiled at the next
+    /// end step and may be cast from exile later.
+    Warp,
 }
 
 /// A special action (CR 116) — no stack, no response.

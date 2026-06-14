@@ -933,14 +933,10 @@ impl Engine {
             if chars.is_land() {
                 continue;
             }
-            let cost = match &chars.mana_cost {
-                Some(c) => c,
-                None => continue,
-            };
             // Instants and Flash (CR 702.8) cast at instant speed; everything else sorcery-speed.
             let instant_speed = chars.has_type(CardType::Instant) || chars.keywords.contains(&Keyword::Flash);
             let timing_ok = instant_speed || sorcery_speed;
-            if !timing_ok || !mana::can_pay(s, p, cost) {
+            if !timing_ok {
                 continue;
             }
             // Must have a legal target for each "target" the spell requires (CR 601.2c).
@@ -950,11 +946,21 @@ impl Engine {
                     .all(|spec| self.target_candidates(spec, p).len() as u32 >= spec.min.max(1)),
                 None => true,
             };
-            if has_targets {
-                actions.push(PlayableAction::Cast {
-                    spell: card,
-                    variant: CastVariant::Normal,
-                });
+            if !has_targets {
+                continue;
+            }
+            // Normal cast for the mana cost.
+            if chars.mana_cost.as_ref().is_some_and(|c| mana::can_pay(s, p, c)) {
+                actions.push(PlayableAction::Cast { spell: card, variant: CastVariant::Normal });
+            }
+            // Warp (CR 702.x): an alternative cast cost from hand at sorcery speed — offered even
+            // when the normal cost is unaffordable (the discount is the whole point).
+            if sorcery_speed {
+                if let Some(wcost) = self.warp_cost(card) {
+                    if mana::can_pay(s, p, &wcost) {
+                        actions.push(PlayableAction::Cast { spell: card, variant: CastVariant::Warp });
+                    }
+                }
             }
         }
 
@@ -1039,7 +1045,7 @@ impl Engine {
     fn perform_priority_action(&mut self, p: PlayerId, action: &PlayableAction) {
         match action {
             PlayableAction::PlayLand { card } => self.play_land(p, *card),
-            PlayableAction::Cast { spell, .. } => self.cast_spell(p, *spell),
+            PlayableAction::Cast { spell, variant } => self.cast_spell(p, *spell, *variant),
             PlayableAction::Activate { source, ability } => {
                 self.activate_ability(p, *source, *ability)
             }
@@ -1214,12 +1220,28 @@ impl Engine {
         self.state.player_mut(p).lands_played_this_turn += 1;
     }
 
+    /// The warp cost a card declares via `Ability::Warp`, if any (CR 702.x).
+    fn warp_cost(&self, card: ObjId) -> Option<ManaCost> {
+        self.state.def_of(card).and_then(|d| {
+            d.abilities.iter().find_map(|a| match a {
+                Ability::Warp { cost } => Some(cost.clone()),
+                _ => None,
+            })
+        })
+    }
+
     /// Cast a spell from `p`'s hand (CR 601, minimal): put it on the stack (601.2a), choose
-    /// targets (601.2c), auto-pay its mana cost (601.2f–h), and announce it cast (601.2i).
+    /// targets (601.2c), auto-pay its cost (601.2f–h), and announce it cast (601.2i). `variant`
+    /// selects the cost paid — the mana cost for `Normal`, the warp cost for `Warp` (CR 702.x),
+    /// which also flags the spell so it's exiled at the next end step when it resolves.
     /// Affordability + target availability are pre-checked in `legal_priority_actions`, so no
     /// rewind (CR 732) is needed. The caller keeps priority with the caster (CR 601.2i).
-    fn cast_spell(&mut self, p: PlayerId, card: ObjId) {
-        let cost = match self.state.object(card).chars.mana_cost.clone() {
+    fn cast_spell(&mut self, p: PlayerId, card: ObjId, variant: CastVariant) {
+        let cost = match variant {
+            CastVariant::Warp => self.warp_cost(card),
+            _ => self.state.object(card).chars.mana_cost.clone(),
+        };
+        let cost = match cost {
             Some(c) => c,
             None => return,
         };
@@ -1228,6 +1250,12 @@ impl Engine {
         // 601.2a: the card becomes a spell on top of the stack.
         let sid = self.state.mint_stack();
         self.move_to_stack(card, p);
+        // Flag a warp-cast spell so it's exiled at the next end step when it resolves (CR 702.x).
+        if variant == CastVariant::Warp {
+            if let Some(o) = self.state.objects.get_mut(&card) {
+                o.warp_cast = true;
+            }
+        }
 
         // 601.2b: a modal spell chooses its modes BEFORE targets — the mode determines which
         // targets exist (CR 700.2 / 601.2c). Non-modal spells choose no modes.
@@ -1526,6 +1554,8 @@ impl Engine {
                         self.broadcast(GameEvent::ObjectMoved { obj: id, to: Zone::Graveyard });
                         return;
                     }
+                    // Was it cast for its warp cost? (read before commit resets the flag.)
+                    let warp_cast = self.state.object(id).warp_cast;
                     // Permanent spell → enters the battlefield (CR 608.3), routed through the
                     // whiteboard so ETB replacement effects (enters-with-counters / -tapped)
                     // apply and the ETB event (→ triggers) fires from commit.
@@ -1542,6 +1572,17 @@ impl Engine {
                         cause: MoveCause::Resolved,
                     });
                     self.commit(wb);
+                    // Warp (CR 702.x): arm "exile this at the beginning of the next end step" as a
+                    // delayed trigger (CR 603.7) watching the permanent that just entered.
+                    if warp_cast {
+                        self.state.register_delayed_trigger(
+                            id,
+                            crate::effects::action::DelayedTriggerEvent::AtBeginningOfNextEndStep,
+                            obj.controller,
+                            Some(id),
+                            vec![Action::Exile { obj: id, source: None }],
+                        );
+                    }
                     // An Aura enters the battlefield attached to its chosen target (CR 303.4f /
                     // 608.3e). Set the link after the ETB commit, then mark chars dirty so the
                     // "enchanted creature …" static (AttachedHost) takes effect.
@@ -1975,7 +2016,38 @@ impl Engine {
                 }
                 self.queue_you_attack_triggers(*by);
             }
+            // Beginning of the end step (CR 513): fire armed "at the next end step" delayed triggers
+            // (warp's exile-at-end-step). Sorcery-speed-armed ⇒ "next" = this turn's end step.
+            GameEvent::PhaseBegan { phase: Phase::End, .. } => {
+                self.fire_end_step_delayed_triggers();
+            }
             _ => {}
+        }
+    }
+
+    /// Fire (and consume, CR 603.7b) every armed `AtBeginningOfNextEndStep` delayed trigger — the
+    /// warp exile-at-end-step clause. Queued onto the stack like any trigger.
+    fn fire_end_step_delayed_triggers(&mut self) {
+        use crate::effects::action::DelayedTriggerEvent;
+        let mut fired = Vec::new();
+        self.state.delayed_triggers.retain(|dt| {
+            let is_step = matches!(dt.event, DelayedTriggerEvent::AtBeginningOfNextEndStep);
+            if is_step {
+                fired.push(dt.clone());
+            }
+            !is_step
+        });
+        for dt in fired {
+            let id = self.state.mint_stack();
+            self.state.pending_triggers.push(StackObject {
+                id,
+                controller: dt.controller,
+                source: dt.source,
+                kind: StackObjectKind::DelayedAbility { actions: dt.actions },
+                targets: Vec::new(),
+                x: None,
+                modes: Vec::new(),
+            });
         }
     }
 
@@ -3563,7 +3635,7 @@ mod expect_tests {
         // Cast choosing mode 0 (Fight). ModeAgent answers ChooseModes; targets fall back to the
         // first legal candidate per slot (my creature vs their creature).
         let mut e = Engine::new(state, vec![Box::new(ModeAgent(0)), Box::new(PassAgent)]);
-        e.cast_spell(PlayerId(0), spell);
+        e.cast_spell(PlayerId(0), spell, CastVariant::Normal);
         e.resolve_top();
 
         // The fight (and only the fight) ran: both 2/2s dealt 2 to each other.
@@ -3924,6 +3996,74 @@ mod expect_tests {
     }
 
     #[test]
+    fn warp_casts_cheap_then_exiles_at_end_step_c14() {
+        use crate::basics::ManaCost;
+        use crate::effects::ability::Ability;
+        use std::collections::BTreeMap;
+        use std::sync::Arc;
+        // Warp (CR 702.x): a creature with warp {1} but a normal cost of {3}. With only 1 mana you
+        // can't cast it normally, but you can warp it — it enters, then is exiled at the next end
+        // step (pieces 1+2: alt-cost cast + the exile downside; recast-from-exile is a follow-up).
+        let mut db = cards::starter_db();
+        db.insert(cards::CardDef {
+            chars: Characteristics {
+                name: "Warp Creature (test)".into(),
+                card_types: vec![CardType::Creature],
+                mana_cost: Some(ManaCost { generic: 3, colored: BTreeMap::new(), x: 0 }),
+                power: Some(2),
+                toughness: Some(2),
+                grp_id: 9950,
+                ..Default::default()
+            },
+            abilities: vec![Ability::Warp {
+                cost: ManaCost { generic: 1, colored: BTreeMap::new(), x: 0 },
+            }],
+            text: String::new(),
+            ..Default::default()
+        });
+        let mut state = GameState::new(2, 1);
+        state.set_card_db(Arc::new(db));
+        let card = {
+            let c = state.card_db().get(9950).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, Zone::Hand)
+        };
+        let f = state.card_db().get(grp::FOREST).unwrap().chars.clone();
+        state.add_card(PlayerId(0), f, Zone::Battlefield); // a single mana
+        let mut e = pass_engine(state);
+        e.state.phase = Phase::PrecombatMain;
+
+        // Only the warp cast is offered — 1 mana can't afford the normal {3}, but affords warp {1}.
+        let actions = e.legal_priority_actions(PlayerId(0));
+        assert_eq!(
+            actions
+                .iter()
+                .filter(|a| matches!(a, PlayableAction::Cast { variant: CastVariant::Warp, .. }))
+                .count(),
+            1,
+            "warp cast is offered"
+        );
+        assert!(
+            !actions
+                .iter()
+                .any(|a| matches!(a, PlayableAction::Cast { variant: CastVariant::Normal, .. })),
+            "the normal cast is not affordable"
+        );
+
+        // Cast it via warp; resolve → it enters and the exile-at-end-step trigger is armed.
+        e.cast_spell(PlayerId(0), card, CastVariant::Warp);
+        e.resolve_top();
+        assert_eq!(e.state.object(card).zone, Zone::Battlefield, "the warp creature entered");
+        assert_eq!(e.state.delayed_triggers.len(), 1, "exile-at-next-end-step is armed");
+
+        // The end step begins → the delayed trigger fires and exiles it.
+        e.broadcast(GameEvent::PhaseBegan { turn: 1, phase: Phase::End, active: PlayerId(0) });
+        e.run_agenda();
+        e.resolve_top();
+        assert_eq!(e.state.object(card).zone, Zone::Exile, "exiled at the next end step");
+        assert!(e.state.delayed_triggers.is_empty(), "the delayed trigger was consumed");
+    }
+
+    #[test]
     fn exile_target_card_from_a_graveyard_c17() {
         use crate::basics::Target;
         use crate::effects::action::{ResolutionCtx, WbReason};
@@ -4129,7 +4269,7 @@ mod expect_tests {
             state.add_card(PlayerId(0), f, Zone::Battlefield); // pays {2}{G}
         }
         let mut e = pass_engine(state);
-        e.cast_spell(PlayerId(0), card);
+        e.cast_spell(PlayerId(0), card, CastVariant::Normal);
         e.resolve_top(); // resolves onto the battlefield → ETB enters-with-counters
         e.run_agenda();
         assert_eq!(

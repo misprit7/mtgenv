@@ -234,6 +234,11 @@ pub enum Ability {
         pattern: ActionPattern,
         rewrite: Rewrite,
     },
+    /// Warp (CR 702.x): "You may cast this card from your hand for its warp `cost`. Exile it at the
+    /// beginning of the next end step, then you may cast it from exile on a later turn." A static
+    /// casting-permission ability — `legal_priority_actions` scans for it to offer the alternative
+    /// cast; the engine handles the exile-at-end-step + cast-from-exile mechanics.
+    Warp { cost: ManaCost },
     /// A continuous/static effect (CR 604/611/613): contributes to a layer and/or paints a
     /// qualification, for the given duration over the given affected set.
     Static {

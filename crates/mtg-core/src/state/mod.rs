@@ -134,6 +134,10 @@ pub struct Object {
     /// **with** this creature") — set by `Action::Exile` from the exiling source, `None` otherwise.
     /// Reset on every zone change (a card leaving exile drops the link, CR 400.7).
     pub exiled_with: Option<ObjId>,
+    /// Set while this object is a spell cast for its **warp** cost (CR 702.x) — so when it resolves
+    /// onto the battlefield the engine arms the "exile at the next end step" delayed trigger. Reset
+    /// on every zone change.
+    pub warp_cast: bool,
 }
 
 impl Object {
@@ -500,6 +504,7 @@ impl GameState {
             used_once_per_turn: false,
             mana_spent: 0,
             exiled_with: None,
+            warp_cast: false,
         };
         self.objects.insert(id, obj);
         if let Some(v) = self.player_mut(owner).zone_vec_mut(zone) {
@@ -561,6 +566,7 @@ impl GameState {
             o.used_once_per_turn = false; // a fresh object identity (CR 400.7)
             o.mana_spent = 0; // re-recorded only by a fresh cast (CR 400.7)
             o.exiled_with = None; // the exile-association is dropped on any zone change (400.7)
+            o.warp_cast = false; // a fresh object identity (CR 400.7)
             if to == Zone::Battlefield {
                 o.controller = to_owner;
                 o.summoning_sick = o.chars.is_creature();
