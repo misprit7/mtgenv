@@ -640,6 +640,9 @@ pub enum GameEvent {
     /// `object` became the target of a spell or ability controlled by `by` (CR 603.2/601.2c) —
     /// fired as targets are locked. Drives "becomes the target of …" triggers.
     Targeted { object: ObjId, by: PlayerId },
+    /// Player `by` declared `attackers` as attacking creatures (CR 508.1). Drives "whenever you
+    /// attack" (player-level, once) and "whenever this creature attacks" (per attacker) triggers.
+    AttackersDeclared { attackers: Vec<ObjId>, by: PlayerId },
     GameEnded { winner: Option<PlayerId> },
 }
 

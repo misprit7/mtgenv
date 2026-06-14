@@ -83,6 +83,10 @@ pub enum EventPattern {
     BeginningOfStep(crate::basics::Phase),
     /// This creature attacks (CR 508.1m).
     SelfAttacks,
+    /// You attack — one or more creatures you control are declared as attackers (CR 508.1, a
+    /// once-per-combat "whenever you attack …" trigger for the attacking player). Distinct from
+    /// `SelfAttacks` (per-attacking-creature): fires once for the watcher whose controller attacked.
+    YouAttack,
     /// This creature blocks or becomes blocked (CR 509.1i).
     SelfBlocks,
     /// A permanent matching `filter` (relative to the watcher's controller) becomes the target of a

@@ -449,6 +449,9 @@ impl Engine {
             GameEvent::Targeted { object, by } => {
                 format!("{} targeted by P{}", name(*object), by.0)
             }
+            GameEvent::AttackersDeclared { attackers, by } => {
+                format!("P{} attacks with {} creature(s)", by.0, attackers.len())
+            }
             GameEvent::GameEnded { winner } => match winner {
                 Some(w) => format!("Game over — P{} wins", w.0),
                 None => "Game over — draw".to_string(),
@@ -1924,7 +1927,46 @@ impl Engine {
             GameEvent::Targeted { object, by } => {
                 self.queue_watching_targeted_triggers(*object, *by);
             }
+            // Attackers declared (CR 508.1): per-attacker "this attacks" + once "you attack".
+            GameEvent::AttackersDeclared { attackers, by } => {
+                for &atk in attackers {
+                    self.queue_self_triggers(atk, EventPattern::SelfAttacks);
+                }
+                self.queue_you_attack_triggers(*by);
+            }
             _ => {}
+        }
+    }
+
+    /// Queue every battlefield permanent controlled by `attacker` that has a `YouAttack` trigger —
+    /// "whenever you attack …", fired once per combat for the attacking player (CR 508.1).
+    fn queue_you_attack_triggers(&mut self, attacker: PlayerId) {
+        let watchers: Vec<ObjId> = self.state.player(attacker).battlefield.clone();
+        for watcher in watchers {
+            let indices: Vec<u32> = match self.state.def_of(watcher) {
+                Some(def) => def
+                    .abilities
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, a)| {
+                        matches!(a, Ability::Triggered { event: EventPattern::YouAttack, .. })
+                    })
+                    .map(|(i, _)| i as u32)
+                    .collect(),
+                None => continue,
+            };
+            for index in indices {
+                let id = self.state.mint_stack();
+                self.state.pending_triggers.push(StackObject {
+                    id,
+                    controller: attacker,
+                    source: Some(watcher),
+                    kind: StackObjectKind::Ability { index },
+                    targets: Vec::new(),
+                    x: None,
+                    modes: Vec::new(),
+                });
+            }
         }
     }
 
@@ -3735,6 +3777,61 @@ mod expect_tests {
             e.state.player(PlayerId(0)).hand.len(),
             before + 1,
             "you draw a card off the opponent targeting your creature"
+        );
+    }
+
+    #[test]
+    fn attack_triggers_fire_for_you_and_for_the_attacker() {
+        use crate::effects::ability::{Ability, EventPattern};
+        use crate::effects::value::{PlayerRef, ValueExpr};
+        use crate::effects::Effect;
+        use std::sync::Arc;
+        // Declaring an attack fires both "whenever you attack" (YouAttack, once for the attacking
+        // player) and "whenever this creature attacks" (SelfAttacks, per attacker) triggers — the
+        // attack-trigger wiring that was previously dead (SelfAttacks never fired). Unblocks Dyadrine.
+        let draw1 = |grp: u32, name: &str, event: EventPattern| cards::CardDef {
+            chars: Characteristics {
+                name: name.into(),
+                card_types: vec![CardType::Creature],
+                power: Some(2),
+                toughness: Some(2),
+                grp_id: grp,
+                ..Default::default()
+            },
+            abilities: vec![Ability::Triggered {
+                event,
+                condition: None,
+                intervening_if: false,
+                effect: Effect::Draw { who: PlayerRef::Controller, count: ValueExpr::Fixed(1) },
+            }],
+            text: String::new(),
+            ..Default::default()
+        };
+        let mut db = cards::starter_db();
+        db.insert(draw1(9700, "Dyadrine (test)", EventPattern::YouAttack));
+        db.insert(draw1(9701, "Raider (test)", EventPattern::SelfAttacks));
+        let mut state = GameState::new(2, 1);
+        state.set_card_db(Arc::new(db));
+        let dyadrine = state.card_db().get(9700).unwrap().chars.clone();
+        state.add_card(PlayerId(0), dyadrine, Zone::Battlefield); // the "you attack" watcher
+        let raider_chars = state.card_db().get(9701).unwrap().chars.clone();
+        let raider = state.add_card(PlayerId(0), raider_chars, Zone::Battlefield); // the attacker
+        for _ in 0..2 {
+            let f = state.card_db().get(grp::FOREST).unwrap().chars.clone();
+            state.add_card(PlayerId(0), f, Zone::Library);
+        }
+        let mut e = pass_engine(state);
+        let before = e.state.player(PlayerId(0)).hand.len();
+        // Simulate CR 508.1: `raider` is declared as an attacker by P0.
+        e.broadcast(GameEvent::AttackersDeclared { attackers: vec![raider], by: PlayerId(0) });
+        assert_eq!(e.state.pending_triggers.len(), 2, "you-attack + this-attacks both queued");
+        e.run_agenda();
+        e.resolve_top();
+        e.resolve_top();
+        assert_eq!(
+            e.state.player(PlayerId(0)).hand.len(),
+            before + 2,
+            "drew off both the you-attack and the this-attacks trigger"
         );
     }
 

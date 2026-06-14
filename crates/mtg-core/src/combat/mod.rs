@@ -14,7 +14,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::agent::{
-    AttackerOption, BlockerOption, DamageSlot, DecisionRequest, DecisionResponse,
+    AttackerOption, BlockerOption, DamageSlot, DecisionRequest, DecisionResponse, GameEvent,
 };
 use crate::basics::{CardType, DamageKind, Target, Zone};
 use crate::effects::ability::{Keyword, Qualification};
@@ -180,10 +180,14 @@ impl Engine {
                 o.status.tapped = true;
             }
         }
+        let attacker_ids: Vec<ObjId> = attacks.iter().map(|a| a.attacker).collect();
         self.state.combat = Some(CombatState {
             attackers: attacks,
             blocks: Vec::new(),
         });
+        // CR 508.1: attackers are declared → fire "whenever you attack" / "whenever this attacks"
+        // triggers (queued, then put on the stack when a player next gets priority, CR 508.2).
+        self.broadcast(GameEvent::AttackersDeclared { attackers: attacker_ids, by: ap });
     }
 
     /// Declare Blockers step (CR 509): the defending player assigns untapped creatures to
