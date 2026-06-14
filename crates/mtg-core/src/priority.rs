@@ -1405,8 +1405,10 @@ impl Engine {
     /// Apply the `CardFilter` that targeting needs (the engine also pre-masks hexproof in
     /// `targetable_by`). Enforces control, card type, subtype, color and supertype so a "target
     /// land you control" can't be satisfied by a creature etc.; characteristic predicates read the
-    /// COMPUTED chars (CR 613) so an animated land counts as a creature/land. Genuinely-niche
-    /// predicates (tapped/counters/mana-value) still pass through until a card needs them.
+    /// COMPUTED chars (CR 613) so an animated land counts as a creature/land. Any predicate this
+    /// doesn't explicitly handle **rejects** the target (fail-closed) — an unenforced filter must
+    /// never silently widen the legal set into illegal targets; a card needing a new predicate adds
+    /// its arm here.
     fn target_matches_filter(&self, t: &Target, filter: &CardFilter, caster: PlayerId) -> bool {
         let Target::Object(id) = t else { return true };
         let Some(o) = self.state.objects.get(id) else {
@@ -1428,7 +1430,9 @@ impl Engine {
             CardFilter::All(fs) => fs.iter().all(|f| self.target_matches_filter(t, f, caster)),
             CardFilter::AnyOf(fs) => fs.iter().any(|f| self.target_matches_filter(t, f, caster)),
             CardFilter::Not(f) => !self.target_matches_filter(t, f, caster),
-            _ => true,
+            // Fail-closed: an unhandled predicate rejects rather than silently passing (which is
+            // what let a creature match "land you control"). Add an arm above when a card needs one.
+            _ => false,
         }
     }
 
