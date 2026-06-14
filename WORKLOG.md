@@ -5,6 +5,14 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-14
 
+- **engine (#64 — graveyard/stack target fizzle):** **Spec-aware `targets_still_legal` (f445b6e).** `target_legal`
+  hardcoded `zone == Battlefield`, so `resolve_top`'s re-check wrongly countered a graveyard target (Keen-Eyed
+  Curator's `{1}: exile a graveyard card`) — and would have a stack target. Now each chosen target is re-checked
+  against the zone its `TargetSpec` requires (CR 608.2b): `CardInZone` → that zone, `StackObject` → the stack,
+  else battlefield (so a battlefield target that *died* still correctly becomes illegal). `targets_still_legal`
+  takes the specs (collected in target order via `target_specs_for`, modal-aware); all 4 `resolve_top` call sites
+  pass them. Un-ignored design's `keen_eyed_exile_via_full_activation` (now green). 219 tests pass.
+
 - **webui:** Post-#59 (mana-pool rework, `3c35cff`) full re-verification at the UI layer. `ManaPool`
   wire shape unchanged (`{amounts:{Color:n}}`) → `poolPips` needs no change; `mana_pool` still in
   PlayerView; new `ManaPoolChanged` event drives a live view refresh. New driver tests: (a)
