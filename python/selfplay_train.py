@@ -40,7 +40,20 @@ def make_env(deck, pool_dir, seed):
     return thunk
 
 
-def make_vecenv(deck, pool_dir, n_envs, seed, subproc=False):
+def make_vecenv(deck, pool_dir, n_envs, seed, subproc=False, batched=True, p_random=0.2, device=None):
+    """Self-play vec env. Default = ``BatchedSelfPlayVecEnv`` (#41): all games stepped in lockstep
+    with opponent inference batched across games (~1.2–1.4× at n_envs 32–64, scales with n_envs and
+    net size). ``batched=False`` falls back to the legacy ``DummyVecEnv`` of per-env ``OpponentPool``
+    envs (one synchronous opponent ``predict`` each). ``subproc`` only applies to the legacy path."""
+    if batched:
+        from mtgenv_gym import BatchedSelfPlayVecEnv
+
+        if device is None:
+            import torch
+
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+        return BatchedSelfPlayVecEnv(deck, pool_dir, n_envs, p_random=p_random, seed=seed,
+                                     device=device)
     factories = [make_env(deck, pool_dir, seed * 100 + i) for i in range(n_envs)]
     if subproc:
         # spawn (not fork) so each worker re-imports torch cleanly — fork + torch is fragile.

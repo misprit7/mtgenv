@@ -55,6 +55,10 @@ class _PooledBatchedOpponent:
 
     def assign(self, i):
         ck = self._checkpoints()
+        if len(self._cache) > len(ck):  # drop policies whose checkpoint was pruned (bounds memory)
+            live = set(ck)
+            for stale in [p for p in self._cache if p not in live]:
+                self._cache.pop(stale, None)
         if not ck or self._rng.random() < self.p_random:
             self._assign[i] = None
             return

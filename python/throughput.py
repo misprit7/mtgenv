@@ -50,7 +50,7 @@ def selfplay_steps_per_sec(subproc, steps=12000, n_envs=8, warmup=4096):
     os.makedirs(pool, exist_ok=True)
     for f in glob.glob(pool + "/*.zip"):
         os.remove(f)
-    venv = make_vecenv(DECK, pool, n_envs, 0, subproc=subproc)
+    venv = make_vecenv(DECK, pool, n_envs, 0, subproc=subproc, batched=False)  # legacy paths here
     m = MaskablePPO(
         "MultiInputPolicy", venv,
         policy_kwargs=dict(features_extractor_class=EntityExtractor),
