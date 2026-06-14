@@ -19,10 +19,13 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
   resolution code (whiteboard.rs): `Effect::PutCounters` resolves a **single** `Target::Object` (no
   multi-target), and `Optional`/`Conditional`/`ForEach` hit the `_ => {}` **no-op** — so several clauses
   need real caps, not approximation.
-  - **Dyadrine c2 (PRIORITY, the includability gate)** — `Replacement{ WouldEnterBattlefield(ItSelf),
-    EntersWithCounters{ PlusOnePlusOne, n: ValueExpr::ManaSpent } }`. Caps: new `ValueExpr::ManaSpent`
-    (mana paid at cast, incl. X) + generalize `EntersWithCounters{n}` `u32`→`ValueExpr` (only Mossborn's
-    `n:1` literal affected → I rewrite to `Fixed(1)` in-window). **Sent to engine.**
+  - **Dyadrine c2 — DONE.** Engine landed it additively (a2e2b13): new `Rewrite::EntersWithCountersValue{
+    kind, n: ValueExpr }` (kept the fixed `EntersWithCounters{u32}` for Mossborn → zero churn) +
+    `ValueExpr::ManaSpent` (mana paid at cast incl. X, on `Object.mana_spent`, reset on zone change).
+    **Dyadrine authored** as a faithful partial (2e02ceb): `{X}{G}{W}` Legendary Artifact Creature —
+    Construct 0/1, trample + `Replacement{ WouldEnterBattlefield(ItSelf), EntersWithCountersValue{
+    PlusOnePlusOne, ManaSpent } }`; c3 (attack ability) deferred. Folded ×2 into the preset → 50 nonbasics,
+    basics 8F/2P. **Deck now 17/18 distinct cards; only Keen-Eyed Curator (C17) left out.** 165 tests green.
   - **Dyadrine c3 (NOT authorable today — needs 2 caps, do NOT husk)** — "Whenever you attack, you may
     remove a +1/+1 counter from **each of two** creatures you control. **If you do**, draw + make a 2/2
     Robot." `YouAttack` ✓ (4613d51), `Draw`/`CreateToken`(C6)/Robot subtype ✓, `PutCounters` negative-n ✓
