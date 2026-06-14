@@ -5,6 +5,18 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-14
 
+- **engine (stop policy collapse):** Per user, unified the stop config to a **single full-control
+  knob** (the separate auto_pass/smart_stops/resolve_own_stack were a three-flag engine model under
+  a one-toggle UI veneer + a client-side filter flagged as tech-debt). `should_auto_pass` is now one
+  rule, canonicalized engine-side = exactly what the web client used to apply: full control → stop
+  every window; else auto-pass unless you have a meaningful (non-mana) action AND it's a marked stop
+  or an opponent's object is on the stack. The three old flags are behavior-dead (kept as
+  display/transport fields + setters so gre-server/mtg-py still compile; `set_arena_auto_pass(on)`
+  now drives `full_control=!on`). Default = full control (headless/replay/tests prompt every window,
+  unchanged). 4 stop tests rewritten for the single rule; 233 mtg-core + 20 gre-server green. Commit
+  5e106df. Follow-ups delegated: webui removes the dead gre-server plumbing + client filter (#67);
+  gym verifies/chooses its training stream (#68 pt 1).
+
 - **webui:** No-mana-cost cards (tokens, abilities on the stack, "—" cards like Living End) now
   render **no** cost pips instead of a bogus "0". The engine already distinguishes None vs Some({0})
   (`CharacteristicsView.mana_cost: Option<ManaCost>` → wire `null` vs object; tokens get `None` via
