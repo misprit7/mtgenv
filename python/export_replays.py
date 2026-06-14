@@ -1,7 +1,8 @@
-"""Export a few training replays across a run so you can *watch the agent learn* (REPLAY_PLAN §3
-preview — the full self-play export rides with M2). Trains in one continuous run (clean TensorBoard
-curves) and records one policy-vs-random game at checkpoints to ``data/replays/``, tagged
-``AiTraining{step}``, viewable in the web lobby's "AI Training Replays" section.
+"""Export training replays across a **self-play** run so you can *watch the agent learn*
+(REPLAY_PLAN §3 + GYM_PLAN §8.2). Trains against a growing pool of frozen selves (the M2 league),
+in one continuous run (clean TensorBoard curves), and records one **self-play** game (the current
+policy on both seats) at checkpoints to ``data/replays/``, tagged ``AiTraining{step}``, viewable in
+the web lobby's "AI Training Replays" section.
 
     PYTHONPATH=python python python/export_replays.py --deck burn_vs_bears --tensorboard /tmp/mtgenv_tb
     tensorboard --logdir /tmp/mtgenv_tb     # the run appears as MaskablePPO_<n>
@@ -13,11 +14,16 @@ import argparse
 import os
 import time
 
+import glob
+
+from sb3_contrib import MaskablePPO
 from stable_baselines3.common.callbacks import BaseCallback
 
-from train import eval_callback, make_model
+from train import eval_callback
 from mtgenv_gym import MtgEnv
-from mtgenv_gym.league import ModelOpponent
+from mtgenv_gym.league import ModelOpponent, PoolCheckpoint
+from mtgenv_gym.policy import EntityExtractor
+from selfplay_train import make_vecenv
 
 REPLAY_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "replays"))
 
@@ -81,19 +87,31 @@ def main():
     ap.add_argument("--record-every", type=int, default=10_000, help="record a replay every N steps")
     ap.add_argument("--tensorboard", default="/tmp/mtgenv_tb", help="TensorBoard log dir")
     ap.add_argument("--n-envs", type=int, default=8)
+    ap.add_argument("--pool-dir", default="/tmp/mtgenv_pool_export")
     args = ap.parse_args()
 
-    model = make_model(
-        deck=args.deck, n_envs=args.n_envs, seed=0, tensorboard_log=args.tensorboard, verbose=1
+    # SELF-PLAY: train against a growing pool of frozen selves (not random) — so both the training
+    # AND the recorded replays are genuine self-play.
+    os.makedirs(args.pool_dir, exist_ok=True)
+    for f in glob.glob(os.path.join(args.pool_dir, "*.zip")):
+        os.remove(f)
+    venv = make_vecenv(args.deck, args.pool_dir, args.n_envs, 0, subproc=False)
+    model = MaskablePPO(
+        "MultiInputPolicy", venv,
+        policy_kwargs=dict(features_extractor_class=EntityExtractor),
+        n_steps=256, batch_size=256, gamma=0.999, ent_coef=0.01,
+        tensorboard_log=args.tensorboard, verbose=1,
     )
+    model.save(os.path.join(args.pool_dir, "ckpt_000000000"))  # seed the league
     cbs = [
+        PoolCheckpoint(args.pool_dir, max(args.record_every // 2, 4000), args.n_envs, max_pool=12),
         ReplayCheckpoint(args.deck, REPLAY_DIR, args.record_every, args.n_envs),
         eval_callback(deck=args.deck, eval_freq=max(2000 // args.n_envs, 1)),
     ]
     for c in cbs:
         c.verbose = 1
 
-    print(f"deck={args.deck}  timesteps={args.timesteps}  → replays:{REPLAY_DIR}  tb:{args.tensorboard}")
+    print(f"deck={args.deck}  timesteps={args.timesteps}  SELF-PLAY  → replays:{REPLAY_DIR}  tb:{args.tensorboard}")
     t0 = time.time()
     model.learn(total_timesteps=args.timesteps, callback=cbs, progress_bar=False)
     print(f"\ndone in {time.time() - t0:.0f}s — TensorBoard run under {args.tensorboard} (MaskablePPO_*)")
