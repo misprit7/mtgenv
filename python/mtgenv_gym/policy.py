@@ -32,14 +32,20 @@ class EntityExtractor(BaseFeaturesExtractor):
         self.embed = nn.Embedding(vocab, embed_dim)
 
         self.row_mlps = nn.ModuleDict()
+        self.cardid_dims = {}
         self.tables = []
         for name in _TABLES:
             feat_key = f"{name}_feat"
             if feat_key not in observation_space.spaces:
                 continue
             feat_dim = observation_space[feat_key].shape[-1]
+            # Deck-determined card-identity one-hot (env-side seam), fed per row alongside the hashed
+            # grp_id embedding. 0 when the env doesn't provide it (backward compatible).
+            cid_key = f"{name}_cardid"
+            cardid_dim = observation_space[cid_key].shape[-1] if cid_key in observation_space.spaces else 0
+            self.cardid_dims[name] = cardid_dim
             self.row_mlps[name] = nn.Sequential(
-                nn.Linear(feat_dim + embed_dim, hidden), nn.ReLU()
+                nn.Linear(feat_dim + embed_dim + cardid_dim, hidden), nn.ReLU()
             )
             self.tables.append(name)
 
@@ -54,7 +60,10 @@ class EntityExtractor(BaseFeaturesExtractor):
             feat = obs[f"{name}_feat"]                       # (B, R, F)
             ids = (obs[f"{name}_ids"].long() % self.vocab)   # (B, R)
             emb = self.embed(ids)                            # (B, R, E)
-            x = torch.cat([feat, emb], dim=-1)               # (B, R, F+E)
+            parts = [feat, emb]
+            if self.cardid_dims[name]:
+                parts.append(obs[f"{name}_cardid"])          # (B, R, V) explicit card-identity one-hot
+            x = torch.cat(parts, dim=-1)                     # (B, R, F+E[+V])
             h = self.row_mlps[name](x)                       # (B, R, H)
             present = feat[..., :1]                          # (B, R, 1) — row 0 feature is "present"
             summed = (h * present).sum(dim=1)                # (B, H)

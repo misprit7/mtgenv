@@ -42,8 +42,10 @@ def test_mtg_env_dict_obs_and_masks():
     env = MtgEnv(deck="demo", auto_pass=True)
     assert isinstance(env.observation_space, gym.spaces.Dict)
     assert env.action_space.n == env.action_dim
-    # The space is built from the extension's obs_spec — keys must match what step returns.
+    # The space is built from the extension's obs_spec plus the env-side card-identity one-hots —
+    # keys must match what step returns.
     expected_keys = {name for (name, *_rest) in env._spec}
+    expected_keys |= {f"{t}_cardid" for t in env._cardid_tables}
     assert set(env.observation_space.spaces) == expected_keys
 
     rng = np.random.default_rng(1)

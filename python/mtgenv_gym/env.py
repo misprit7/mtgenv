@@ -54,9 +54,28 @@ class MtgEnv(_GymEnv):
         self.action_dim = mtg_py.PyGame.action_dim()
         self._spec = mtg_py.PyGame.obs_spec()  # [(name, rows, cols, is_int)]
 
-        self.observation_space = spaces.Dict(
-            {name: self._box(rows, cols, is_int) for (name, rows, cols, is_int) in self._spec}
-        )
+        # Deck-determined card-identity ONE-HOT (GYM_PLAN §3). The Rust encoder stays card-agnostic
+        # (it emits a per-row `grp_id` in `*_ids`); here — the swappable Python seam — we map that to
+        # an explicit one-hot whose categories are fixed up front from the matchup's unique cards
+        # (`PyGame.card_vocab()` = union of both decks' grp_ids) + a token reserve + an "unknown"
+        # catch-all. Collision-free and interpretable, unlike the hashed `grp_id` embedding (which we
+        # also keep). One-hot per card-bearing row of every entity table (battlefield/hand/stack).
+        TOKEN_RESERVE = 8
+        vocab = [int(g) for g in self._game.card_vocab()]
+        self._cardid_index = {g: i for i, g in enumerate(vocab)}
+        self._cardid_dim = len(vocab) + TOKEN_RESERVE + 1  # + reserved token slots + unknown (last)
+        self._cardid_unknown = self._cardid_dim - 1
+        # Row count of each card-bearing table, read from the encoder spec (`*_ids` is (1, R)).
+        self._cardid_tables = {
+            name[:-4]: cols for (name, rows, cols, is_int) in self._spec if name.endswith("_ids")
+        }
+
+        obs_spaces = {name: self._box(rows, cols, is_int) for (name, rows, cols, is_int) in self._spec}
+        for tbl, rows in self._cardid_tables.items():
+            obs_spaces[f"{tbl}_cardid"] = spaces.Box(
+                low=0.0, high=1.0, shape=(rows, self._cardid_dim), dtype=np.float32
+            )
+        self.observation_space = spaces.Dict(obs_spaces)
         self.action_space = spaces.Discrete(self.action_dim)
 
         self._decisions = 0
@@ -196,6 +215,14 @@ class MtgEnv(_GymEnv):
             dtype = np.int64 if is_int else np.float32
             arr = np.asarray(obs_dict[name], dtype=dtype)
             out[name] = arr.reshape((cols,) if rows == 1 else (rows, cols))
+        # Card-identity one-hot per table, from each row's grp_id (`*_ids`; 0 = empty/hidden row →
+        # all-zero). Unmapped present ids (e.g. a future token) fall in the reserved "unknown" slot.
+        for tbl in self._cardid_tables:
+            ids = out[f"{tbl}_ids"]
+            oh = np.zeros((ids.shape[0], self._cardid_dim), dtype=np.float32)
+            for r in np.flatnonzero(ids != 0):  # only present rows (few) — cheap
+                oh[r, self._cardid_index.get(int(ids[r]), self._cardid_unknown)] = 1.0
+            out[f"{tbl}_cardid"] = oh
         return out
 
     def _terminal_reward(self):

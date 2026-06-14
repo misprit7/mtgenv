@@ -60,6 +60,31 @@ impl Deck {
             }
         }
     }
+
+    /// The card-identity **vocabulary** for this matchup: the sorted unique `grp_id`s across BOTH
+    /// seats' decks (the union). The Python obs layer turns this into a fixed one-hot per card row
+    /// (plus a token reserve), so the policy sees *explicit* card identity rather than only the
+    /// hashed `grp_id` embedding. Deterministic + identical for every env of a deck, so the one-hot
+    /// index space is stable across a training run.
+    pub fn vocab(self) -> Vec<u32> {
+        use mtg_core::cards::preset_deck;
+        let lists: Vec<Vec<u32>> = match self {
+            Deck::Demo => vec![preset_deck("demo").unwrap_or_default()],
+            Deck::BurnVsBears => vec![
+                preset_deck("burn").unwrap_or_default(),
+                preset_deck("bears").unwrap_or_default(),
+            ],
+            Deck::Selesnya => vec![preset_deck("selesnya").unwrap_or_default()],
+            Deck::LandsOnly => vec![], // basics-only deck-out test; no spell pool to identify
+        };
+        let mut set = std::collections::BTreeSet::new();
+        for l in lists {
+            for g in l {
+                set.insert(g);
+            }
+        }
+        set.into_iter().collect()
+    }
 }
 
 const BASICS: [&str; 5] = ["Plains", "Island", "Swamp", "Mountain", "Forest"];

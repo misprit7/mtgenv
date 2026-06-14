@@ -87,6 +87,12 @@ impl PyGame {
         })
     }
 
+    /// The sorted unique `grp_id`s across both decks — the card-identity vocabulary. The Python obs
+    /// layer one-hots each card row against this (deck-determined card identity, GYM_PLAN §3).
+    fn card_vocab(&self) -> Vec<u32> {
+        self.deck.vocab()
+    }
+
     /// Tear down any running game, start a fresh one for `seed`, and advance to the first decision
     /// sub-step.
     fn reset(&mut self, py: Python<'_>, seed: u64) -> PyResult<StepTuple> {
