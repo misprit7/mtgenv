@@ -173,4 +173,55 @@ mod tests {
         assert_eq!(e.state.players[0].library.len(), lib_before - 1); // one card milled
         assert_eq!(e.state.players[0].graveyard.len(), 1);
     }
+
+    /// #60 end-to-end (REAL land drop + trigger loop): with Icetill in play, playing a land you
+    /// control fires landfall — "mill a card." Driven via `play_land` → `run_agenda` → `resolve_top`:
+    /// the library shrinks by one and that card lands in the graveyard. (The two static land-play
+    /// *permissions* are verified by the engine's `extra_land_plays…_c18` legality test.)
+    #[test]
+    fn icetill_landfall_mills_via_real_land_drop() {
+        use crate::agent::{Agent, DecisionRequest, DecisionResponse, PlayerView};
+        use crate::basics::Zone;
+        use crate::cards::{grp, starter_db};
+        use crate::ids::PlayerId;
+        use crate::priority::Engine;
+        use crate::state::GameState;
+        use std::sync::Arc;
+
+        #[derive(Clone)]
+        struct PassiveAgent;
+        impl Agent for PassiveAgent {
+            fn decide(&mut self, _v: &PlayerView, _req: &DecisionRequest) -> DecisionResponse {
+                DecisionResponse::Pass
+            }
+        }
+
+        let mut state = GameState::new(2, 1);
+        state.set_card_db(Arc::new(starter_db()));
+        let icetill = {
+            let c = state.card_db().get(ICETILL_EXPLORER).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, Zone::Battlefield)
+        };
+        let _ = icetill;
+        for _ in 0..2 {
+            let c = state.card_db().get(grp::FOREST).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, Zone::Library); // 2 cards available to mill
+        }
+        let land = {
+            let c = state.card_db().get(grp::FOREST).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, Zone::Hand)
+        };
+        let mut e = Engine::new(state, vec![Box::new(PassiveAgent), Box::new(PassiveAgent)]);
+        let lib_before = e.state.players[0].library.len();
+
+        e.play_land(PlayerId(0), land);
+        e.run_agenda();
+        while !e.state.stack.items.is_empty() {
+            e.resolve_top();
+            e.run_agenda();
+        }
+
+        assert_eq!(e.state.players[0].library.len(), lib_before - 1, "landfall milled one card");
+        assert_eq!(e.state.players[0].graveyard.len(), 1, "the milled card is in the graveyard");
+    }
 }
