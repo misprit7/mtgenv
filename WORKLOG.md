@@ -5,6 +5,20 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **webui:** **Lobby deck viewer + replay-naming/ordering polish + stop-policy tech-debt note.**
+  (1) **Deck viewer:** new "Decks" tab in the lobby with a card grid per picker preset (art thumb,
+  mana symbols, type line, P/T, ×count, ⚠ partial badge, oracle-text tooltip + full-card hover
+  preview); backend `GET /api/decks` + `/api/decks/:name` build from `driver::resolve_deck` +
+  `starter_db`. Foundation for a future deck editor. Commits 1ea15d0 (backend), 2b55b50 (UI). (2)
+  **AI replay naming (user/gym):** run header now `run · deck · N checkpoints · step-range · date`,
+  rows show exact step + result + time; runs ordered chronologically, steps ascending. (3) **Games
+  list:** chronological by creation (id asc), stable. Commit 6eb3286. (4) **Stop policy:** flagged
+  the client-side `priorityAutoPass` filter (forced `smart_stops`) as TECH-DEBT in driver.rs +
+  spec'd the canonical engine-side `should_auto_pass` rewrite (drop smart/resolve/autopass flags) to
+  engine as a backlog item (lead-approved); I delete the client filter once engine lands it. NB:
+  team-lead fixed the lingering `selesnya`→counters alias in driver.rs (dced893) — selesnya now
+  resolves to design's preset; left as theirs.
+
 - **webui:** **Stop-config redesign (user) + selesnya in picker + ability-text/attachment/zone polish.**
   (1) **Stops:** per user, the only toggle is now **Full Control**; auto-pass/smart/resolve toggles
   removed. Off-behaviour is a FIXED rule: STOP iff `[phase is a marked stop OR an opponent spell/
