@@ -465,13 +465,23 @@ impl Engine {
                 }
             }
             // Intervening-"if" (CR 603.4) / conditional effect: run `then` when the condition holds
-            // (evaluated source-aware), else `otherwise`. NOTE: a *targeted* `then` is a reflexive
-            // trigger (603.7c) whose target is chosen only if the condition is met — that deferral
-            // is the reflexive-sub-trigger cap; `collect_specs_into` deliberately does NOT pull
-            // targets out of a `Conditional.then` here.
+            // (evaluated source-aware), else `otherwise`. A *targeted* `then` is a reflexive trigger
+            // (CR 603.7c): its target is chosen only if/when the condition is met, so it's deferred
+            // to a reflexive sub-trigger that goes on the stack (`RegisterReflexive`) rather than
+            // resolving inline. A non-targeted `then` resolves inline.
             Effect::Conditional { cond, then, otherwise } => {
                 let controller = ctx.controller.unwrap_or(PlayerId(0));
-                if crate::conditions::holds_for_source(&self.state, cond, controller, ctx.source) {
+                // A targeted `then` inside an ability is a reflexive trigger (603.7c): defer the
+                // WHOLE conditional — its `cond` is re-checked and its target chosen on the
+                // sub-trigger, AFTER this resolution's other actions (e.g. the quest counter) commit.
+                let reflexive = ctx
+                    .source
+                    .zip(ctx.ability_index)
+                    .filter(|_| !crate::priority::collect_target_specs(then).is_empty());
+                if let Some((source, ability_index)) = reflexive {
+                    wb.push(Action::RegisterReflexive { source, ability_index, controller });
+                } else if crate::conditions::holds_for_source(&self.state, cond, controller, ctx.source)
+                {
                     self.materialize(then, ctx, wb, cursor);
                 } else if let Some(otherwise) = otherwise {
                     self.materialize(otherwise, ctx, wb, cursor);
@@ -854,6 +864,20 @@ impl Engine {
                 // it in; `add_continuous_effect` marks the chars cache dirty.
                 self.state
                     .add_continuous_effect(source, controller, affected, contributions, duration);
+            }
+            Action::RegisterReflexive { source, ability_index, controller } => {
+                // Queue a reflexive "when you do" sub-trigger (CR 603.7c). It goes on the stack the
+                // next time a player would get priority; its target is chosen there.
+                let id = self.state.mint_stack();
+                self.state.pending_triggers.push(crate::stack::StackObject {
+                    id,
+                    controller,
+                    source: Some(source),
+                    kind: crate::stack::StackObjectKind::ReflexiveAbility { source, ability_index },
+                    targets: Vec::new(),
+                    x: None,
+                    modes: Vec::new(),
+                });
             }
             Action::RegisterDelayedTrigger { watching, event, controller, source, actions } => {
                 // Arm a delayed triggered ability (CR 603.7); the engine fires it when `watching`

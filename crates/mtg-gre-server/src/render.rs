@@ -117,6 +117,7 @@ pub fn render_state(state: &GameState) -> String {
                 mtg_core::stack::StackObjectKind::Spell(id) => name_of(state, id),
                 mtg_core::stack::StackObjectKind::Ability { .. } => "<ability>".into(),
                 mtg_core::stack::StackObjectKind::DelayedAbility { .. } => "<delayed ability>".into(),
+                mtg_core::stack::StackObjectKind::ReflexiveAbility { .. } => "<reflexive ability>".into(),
             })
             .collect();
         let _ = write!(s, "Stack (top last): {}", items.join(", "));

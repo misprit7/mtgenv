@@ -89,6 +89,14 @@ pub enum Action {
         contributions: Vec<super::ability::StaticContribution>,
         duration: super::condition::Duration,
     },
+    /// Register a reflexive "when you do" sub-trigger (CR 603.7c): a targeted `Conditional.then` /
+    /// `Optional.body` whose condition was met at resolution. It goes on the stack referencing the
+    /// same ability (`source` + `ability_index`); its target is chosen there, not at the parent.
+    RegisterReflexive {
+        source: ObjId,
+        ability_index: u32,
+        controller: PlayerId,
+    },
     /// Arm a delayed triggered ability (CR 603.7): "when [watching] [event], do [actions]". When
     /// the event later occurs the engine puts the delayed ability on the stack carrying `actions`
     /// (concrete, serializable, card-agnostic — no `Effect` tree). One-shot. Earthbend uses this
@@ -154,6 +162,10 @@ pub struct ResolutionCtx {
     pub chosen_targets: Vec<Target>,
     /// Indices of the modes chosen for a modal spell/ability (CR 700.2).
     pub chosen_modes: Vec<u32>,
+    /// Which ability of the source this resolution is running (index into the source's
+    /// `CardDef.abilities`), when resolving a triggered/activated ability — so a reflexive
+    /// "when you do" sub-trigger (CR 603.7c) can reference back into the same ability tree.
+    pub ability_index: Option<u32>,
     /// The controller of each chosen target, **snapshotted at resolution start** (parallel to
     /// `chosen_targets`; `None` for non-object targets). Lets `PlayerRef::ControllerOfTarget`
     /// resolve to a target's controller even after that object left play during this resolution

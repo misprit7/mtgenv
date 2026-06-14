@@ -1631,6 +1631,7 @@ impl Engine {
                                 target_controllers: self.snapshot_target_controllers(&obj.targets),
                                 chosen_targets: obj.targets.clone(),
                                 chosen_modes: obj.modes.clone(),
+                                ability_index: None,
                             };
                             self.resolve_effect(&effect, &ctx, WbReason::Resolve(obj.id));
                         }
@@ -1663,8 +1664,31 @@ impl Engine {
                             target_controllers: self.snapshot_target_controllers(&obj.targets),
                             chosen_targets: obj.targets.clone(),
                             chosen_modes: Vec::new(),
+                            // So a reflexive "when you do" branch can reference back into this ability.
+                            ability_index: Some(index),
                         };
                         self.resolve_effect(&effect, &ctx, WbReason::Resolve(obj.id));
+                    }
+                }
+            }
+            StackObjectKind::ReflexiveAbility { source, ability_index } => {
+                // A reflexive "when you do" sub-trigger (CR 603.7c): re-check the intervening-if
+                // (603.4, now that the parent's actions committed) and, if it still holds, resolve
+                // the reward (`then`) with the targets chosen as it went on the stack. Resolving
+                // `then` directly (not the Conditional node) avoids re-deferring it.
+                let node = self.reflexive_node(source, ability_index);
+                let then = node.as_ref().and_then(|n| reflexive_reward(&self.state, n, source)).cloned();
+                if let Some(then) = then {
+                    if self.targets_still_legal(&obj.targets) {
+                        let ctx = ResolutionCtx {
+                            controller: Some(obj.controller),
+                            source: Some(source),
+                            target_controllers: self.snapshot_target_controllers(&obj.targets),
+                            chosen_targets: obj.targets.clone(),
+                            ability_index: Some(ability_index),
+                            ..Default::default()
+                        };
+                        self.resolve_effect(&then, &ctx, WbReason::Resolve(obj.id));
                     }
                 }
             }
@@ -1803,6 +1827,22 @@ impl Engine {
     /// Put a triggered ability on the stack, choosing its targets now if it targets
     /// (CR 603.3d). A trigger that requires a target but has none is removed (not put on the
     /// stack, CR 603.3c).
+    /// The cloned reflexive `Conditional` node of `source`'s `ability_index` ability, if any.
+    fn reflexive_node(&self, source: ObjId, ability_index: u32) -> Option<Effect> {
+        self.state.def_of(source).and_then(|d| {
+            d.abilities
+                .get(ability_index as usize)
+                .and_then(|a| match a {
+                    Ability::Triggered { effect, .. } | Ability::Activated { effect, .. } => {
+                        Some(effect)
+                    }
+                    _ => None,
+                })
+                .and_then(reflexive_branch)
+                .cloned()
+        })
+    }
+
     fn put_trigger_on_stack(&mut self, mut t: StackObject) {
         let effect = match (t.source, &t.kind) {
             (Some(src), StackObjectKind::Ability { index }) => {
@@ -1811,6 +1851,13 @@ impl Engine {
                     _ => None,
                 })
             }
+            // A reflexive sub-trigger chooses the targets of its reward (CR 603.7c/603.3d) — but
+            // only when its intervening-if holds (603.4, re-checked now the parent has committed).
+            (_, StackObjectKind::ReflexiveAbility { source, ability_index }) => self
+                .reflexive_node(*source, *ability_index)
+                .as_ref()
+                .and_then(|n| reflexive_reward(&self.state, n, *source))
+                .cloned(),
             _ => None,
         };
         if let Some(effect) = effect {
@@ -2309,7 +2356,7 @@ fn cost_count(v: &ValueExpr) -> u32 {
 /// Collect the `TargetSpec`s an `Effect` requires, in declaration order (CR 601.2c). The
 /// milestone-3 starter set only needs the `DealDamage` target; `Sequence` recurses. Other
 /// targeted IR nodes are added as their cards arrive.
-fn collect_target_specs(effect: &Effect) -> Vec<TargetSpec> {
+pub(crate) fn collect_target_specs(effect: &Effect) -> Vec<TargetSpec> {
     let mut out = Vec::new();
     collect_specs_into(effect, &mut out);
     out
@@ -2344,12 +2391,54 @@ fn collect_specs_into(effect: &Effect, out: &mut Vec<TargetSpec>) {
         Effect::Earthbend { target: EffectTarget::Target(spec), .. } => out.push(spec.clone()),
         // Exile targets "target card from a graveyard" etc. (CR 601.2c).
         Effect::Exile { what: EffectTarget::Target(spec) } => out.push(spec.clone()),
+        // "Put a +1/+1 counter on target creature" / "target creature gains trample" — the targeted
+        // reward effects (collected when walking a reflexive branch, not from a Conditional.then).
+        Effect::PutCounters { what: EffectTarget::Target(spec), .. }
+        | Effect::GrantKeyword { what: EffectTarget::Target(spec), .. } => out.push(spec.clone()),
         Effect::Sequence(effects) => {
             for e in effects {
                 collect_specs_into(e, out);
             }
         }
+        // NOTE: `Conditional`/`Optional` are NOT walked — a target inside them is a reflexive
+        // trigger (CR 603.7c) whose target is chosen on the sub-trigger, not the parent.
         _ => {}
+    }
+}
+
+/// The reflexive "when you do" branch of an ability's effect (CR 603.7c): the first
+/// `Conditional` node whose `then` is targeted, in a pre-order walk. Returns the **Conditional
+/// node** (so its `cond` is evaluated when the reflexive sub-trigger goes on the stack / resolves —
+/// after the parent's actions commit — and its `then` supplies the deferred target). `None` if the
+/// ability has no reflexive (targeted-deferred) branch.
+pub(crate) fn reflexive_branch(effect: &Effect) -> Option<&Effect> {
+    match effect {
+        Effect::Sequence(effects) => effects.iter().find_map(reflexive_branch),
+        Effect::Conditional { then, otherwise, .. } => {
+            if !collect_target_specs(then).is_empty() {
+                Some(effect)
+            } else {
+                reflexive_branch(then).or_else(|| otherwise.as_deref().and_then(reflexive_branch))
+            }
+        }
+        _ => None,
+    }
+}
+
+/// Whether a reflexive `Conditional` node's intervening-if currently holds, evaluated relative to
+/// `source` (CR 603.4) — and its `then` reward. Returns `None` if the condition is false.
+fn reflexive_reward<'a>(
+    state: &'a GameState,
+    node: &'a Effect,
+    source: ObjId,
+) -> Option<&'a Effect> {
+    match node {
+        Effect::Conditional { cond, then, .. } => {
+            let controller = state.objects.get(&source).map(|o| o.controller)?;
+            crate::conditions::holds_for_source(state, cond, controller, Some(source))
+                .then_some(then.as_ref())
+        }
+        _ => None,
     }
 }
 
@@ -4106,6 +4195,132 @@ mod expect_tests {
         assert_eq!(e.state.object(card).zone, Zone::Battlefield, "recast from exile resolves");
         assert!(!e.state.player(PlayerId(0)).exile.contains(&card), "it left exile");
         assert!(e.state.delayed_triggers.is_empty(), "a normal recast does not re-arm a warp exile");
+    }
+
+    #[test]
+    fn reflexive_when_you_do_targets_only_when_condition_met() {
+        use crate::agent::{Agent, DecisionRequest, DecisionResponse, PlayerView};
+        use crate::basics::CounterKind;
+        use crate::effects::ability::{Ability, EventPattern};
+        use crate::effects::action::{ResolutionCtx, WbReason};
+        use crate::effects::condition::Condition;
+        use crate::effects::target::{CardFilter, TargetKind, TargetSpec};
+        use crate::effects::value::{PlayerRef, ValueExpr};
+        use crate::effects::{Effect, EffectTarget};
+        use std::sync::{Arc, Mutex};
+        // Earthbender-style: "put a quest counter on this. When you do, if ≥4 quest counters, put a
+        // +1/+1 on target creature you control." The reward is a reflexive trigger (CR 603.7c): its
+        // target must be chosen ONLY at ≥4 (not on every sub-4 landfall), and the quest counter is
+        // always added regardless of creatures — exactly the fidelity design flagged.
+        let quest = CounterKind::Named("quest".into());
+        let landfall = Effect::Sequence(vec![
+            Effect::PutCounters {
+                what: EffectTarget::SourceSelf,
+                kind: quest.clone(),
+                n: ValueExpr::Fixed(1),
+            },
+            Effect::Conditional {
+                cond: Condition::ValueAtLeast(
+                    ValueExpr::CountersOnSelf(quest.clone()),
+                    ValueExpr::Fixed(4),
+                ),
+                then: Box::new(Effect::PutCounters {
+                    what: EffectTarget::Target(TargetSpec {
+                        kind: TargetKind::Creature(CardFilter::ControlledBy(PlayerRef::Controller)),
+                        min: 1,
+                        max: 1,
+                        distinct: true,
+                    }),
+                    kind: CounterKind::PlusOnePlusOne,
+                    n: ValueExpr::Fixed(1),
+                }),
+                otherwise: None,
+            },
+        ]);
+
+        // Records ChooseTargets prompts; picks the first legal target.
+        #[derive(Clone)]
+        struct TgtSpy(Arc<Mutex<u32>>);
+        impl Agent for TgtSpy {
+            fn decide(&mut self, _v: &PlayerView, req: &DecisionRequest) -> DecisionResponse {
+                match req {
+                    DecisionRequest::ChooseTargets { slots, .. } => {
+                        *self.0.lock().unwrap() += 1;
+                        DecisionResponse::Pairs(
+                            slots
+                                .iter()
+                                .enumerate()
+                                .filter(|(_, s)| s.min > 0)
+                                .map(|(i, _)| (i as u32, 0))
+                                .collect(),
+                        )
+                    }
+                    _ => DecisionResponse::Pass,
+                }
+            }
+        }
+
+        // `start_quest` = the counters before the landfall (+1 makes it `start_quest+1`).
+        let run = |start_quest: u32| -> (i32, u32) {
+            let mut db = cards::starter_db();
+            db.insert(cards::CardDef {
+                chars: Characteristics {
+                    name: "Ascension (test)".into(),
+                    card_types: vec![CardType::Enchantment],
+                    grp_id: 9990,
+                    ..Default::default()
+                },
+                abilities: vec![Ability::Triggered {
+                    event: EventPattern::SelfEnters,
+                    condition: None,
+                    intervening_if: false,
+                    effect: landfall.clone(),
+                }],
+                text: String::new(),
+                ..Default::default()
+            });
+            let mut state = GameState::new(2, 1);
+            state.set_card_db(Arc::new(db));
+            let asc = {
+                let c = state.card_db().get(9990).unwrap().chars.clone();
+                state.add_card(PlayerId(0), c, Zone::Battlefield)
+            };
+            let creature = {
+                let c = state.card_db().get(grp::GRIZZLY_BEARS).unwrap().chars.clone();
+                state.add_card(PlayerId(0), c, Zone::Battlefield)
+            };
+            state.objects.get_mut(&asc).unwrap().counters.counts.insert(quest.clone(), start_quest);
+            let prompts = Arc::new(Mutex::new(0u32));
+            let agents: Vec<Box<dyn Agent>> =
+                vec![Box::new(TgtSpy(prompts.clone())), Box::new(PassAgent)];
+            let mut e = Engine::new(state, agents);
+            e.resolve_effect(
+                &landfall,
+                &ResolutionCtx {
+                    controller: Some(PlayerId(0)),
+                    source: Some(asc),
+                    ability_index: Some(0),
+                    ..Default::default()
+                },
+                WbReason::Resolve(crate::ids::StackId(0)),
+            );
+            e.run_agenda(); // reflexive onto the stack (choosing its target only if ≥4)
+            e.resolve_top(); // resolve the reflexive reward
+            e.run_agenda();
+            let power = e.state.computed(creature).power.unwrap_or(0);
+            let n = *prompts.lock().unwrap();
+            (power, n)
+        };
+
+        // Starting at 3 → +1 = 4 ≥ 4 → reward fires: the creature is buffed (2/2 → 3/3), one prompt.
+        let (power_at4, prompts_at4) = run(3);
+        assert_eq!(power_at4, 3, "≥4 quest counters → +1/+1 on the target creature");
+        assert_eq!(prompts_at4, 1, "the reward target was chosen (one prompt)");
+
+        // Starting at 1 → +1 = 2 < 4 → no reward AND no target prompt (the key fidelity fix).
+        let (power_at2, prompts_at2) = run(1);
+        assert_eq!(power_at2, 2, "< 4 → no +1/+1");
+        assert_eq!(prompts_at2, 0, "and crucially NO target prompt on a sub-4 landfall");
     }
 
     #[test]

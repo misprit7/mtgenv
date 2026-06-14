@@ -26,6 +26,10 @@ pub enum StackObjectKind {
     /// A delayed triggered ability (CR 603.7) that fired — it has no printed `CardDef` ability to
     /// index, so it carries its own concrete [`Action`]s (e.g. Earthbend's "return it tapped").
     DelayedAbility { actions: Vec<Action> },
+    /// A reflexive "when you do" sub-trigger (CR 603.7c): resolves the **reflexive branch** (the
+    /// targeted `Conditional.then`/`Optional.body`) of the source's `ability_index` ability — its
+    /// target is chosen as it goes on the stack, not at the parent ability.
+    ReflexiveAbility { source: ObjId, ability_index: u32 },
 }
 
 /// One object on the stack (CR 405.1).
