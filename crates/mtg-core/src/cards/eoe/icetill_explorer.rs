@@ -12,8 +12,9 @@
 //!   (the land-play legality offers graveyard lands while this is in play).
 //! - "Landfall — Whenever a land you control enters, mill a card." — `Triggered{PermanentEnters(land
 //!   you control)}` → `Mill` (C4 + C3).
-//! (These two permissions are player-level statics: the engine reads them directly from the
-//! controller's permanents in the land-play legality, not painted on objects — so `affects: itself()`.)
+//!
+//! These two permissions are player-level statics: the engine reads them directly from the
+//! controller's permanents in the land-play legality, not painted on objects — so `affects: itself()`.
 
 use crate::basics::{Color, Zone};
 use crate::cards::helpers::{itself, land_you_control};

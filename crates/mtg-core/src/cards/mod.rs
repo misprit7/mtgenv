@@ -136,6 +136,9 @@ impl CardDef {
 
     /// Builder: mark this card as tracked-incomplete (a genuine subsystem is deferred). The
     /// builders default `fully_implemented` to `true`; call this on a card that defers a clause.
+    /// Currently unused (every authored partial sets the flag inline / is now complete), but kept as
+    /// the canonical way to flag a future partial card.
+    #[allow(dead_code)]
     pub(crate) fn incomplete(mut self) -> Self {
         self.fully_implemented = false;
         self
