@@ -9,8 +9,9 @@ requires-python = ">=3.9"
 dependencies = [
     "numpy",
     "gymnasium",
-    "sb3-contrib",   # MaskablePPO (pulls stable-baselines3 + torch)
-    "tensorboard",   # training curves
+    "sb3-contrib>=2",   # MaskablePPO; sb3>=2 uses gymnasium (sb3<2 pulls the unbuildable gym==0.21)
+    "tensorboard",      # training curves
+    "torch",            # pinned to the CUDA build via [tool.uv.sources] below
 ]
 
 [project.optional-dependencies]
@@ -25,3 +26,18 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
 packages = ["mtgenv_gym"]
+
+# torch from the PyTorch CUDA 13.0 wheel index — the default-PyPI torch has no +cu130 build, which
+# is why a plain `uv sync` previously failed to reproduce the GPU env.
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu130" }
+
+[tool.uv]
+# Solve only for the interpreter we actually run (3.14 here); the cu130 torch wheels don't span the
+# whole of requires-python's lower bound, and this is a local single-machine RL env.
+environments = ["python_full_version >= '3.13'"]

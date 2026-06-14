@@ -20,11 +20,10 @@ import glob
 from sb3_contrib import MaskablePPO
 from stable_baselines3.common.callbacks import BaseCallback
 
-from train import eval_callback
 from mtgenv_gym import MtgEnv
 from mtgenv_gym.league import ModelOpponent, PoolCheckpoint
 from mtgenv_gym.policy import EntityExtractor
-from selfplay_train import make_vecenv
+from selfplay_train import make_vecenv, SelfPlayEval
 
 REPLAY_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "replays"))
 
@@ -111,11 +110,18 @@ def main():
         n_steps=256, batch_size=256, gamma=0.999, ent_coef=0.01,
         tensorboard_log=args.tensorboard, verbose=1,
     )
+    # Frozen random-init reference for the vs-initial eval curve. Kept OUTSIDE pool_dir so the
+    # OpponentPool (globs pool_dir/*.zip) never samples it and PoolCheckpoint never prunes it.
+    ref_path = args.pool_dir.rstrip("/") + "_ref.zip"
     model.save(os.path.join(args.pool_dir, "ckpt_000000000"))  # seed the league
+    model.save(ref_path[:-4])
     cbs = [
         PoolCheckpoint(args.pool_dir, max(args.record_every // 2, 4000), args.n_envs, max_pool=12),
         ReplayCheckpoint(args.deck, REPLAY_DIR, args.record_every, args.n_envs),
-        eval_callback(deck=args.deck, eval_freq=max(2000 // args.n_envs, 1)),
+        # Self-play progress curves: winrate vs random AND vs the initial (random-init) self. The
+        # vs-initial curve is the real "self-play is improving" signal — the mirror rollout reward
+        # sits at ~0 by symmetry, and vs-random plateaus once the policy beats a weak baseline.
+        SelfPlayEval(args.deck, ref_path, max(args.record_every // 2, 4000), args.n_envs, n_games=40),
     ]
     for c in cbs:
         c.verbose = 1

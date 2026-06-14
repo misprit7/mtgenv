@@ -9,36 +9,40 @@ A Gymnasium env over the `mtg-core` engine via the `mtg_py` PyO3 extension (`cra
 
 ## Setup (uv)
 
-```bash
-# from the repo root — the Python deps are declared in python/pyproject.toml
-uv venv .venv --python 3.14            # create the venv (any CPython 3.9+ works via abi3)
-uv pip install -e "python[dev]"        # numpy, gymnasium, sb3-contrib (torch), tensorboard, pytest, maturin
+The Python side is a **uv project** (`python/pyproject.toml` + `python/uv.lock`); the single venv
+lives at `python/.venv`.
 
-# build + install the Rust extension `mtg_py` into the venv
+```bash
+# deps + lockfile (creates python/.venv); torch is the CUDA build (+cu130) from the PyTorch
+# wheel index declared in pyproject.toml — uv sync pulls it.
+cd python && uv sync --extra dev && cd ..
+
+# build + install the Rust extension `mtg_py` into that venv
 # (abi3 forward-compat lets the build target the box's newer-than-known CPython 3.14)
-PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1 .venv/bin/maturin develop --release -m crates/mtg-py/Cargo.toml
+PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1 VIRTUAL_ENV=python/.venv \
+    python/.venv/bin/maturin develop --release --uv -m crates/mtg-py/Cargo.toml
 ```
 
-`uv run --python .venv …` or `.venv/bin/python …` runs anything below; `PYTHONPATH=python` puts the
-top-level scripts (`train.py`, `benchmark.py`) and `mtgenv_gym` on the path.
+`python/.venv/bin/python …` runs anything below; `PYTHONPATH=python` puts the top-level scripts
+(`train.py`, `benchmark.py`) and `mtgenv_gym` on the path.
 
 ## Run
 
 ```bash
 # fast smoke (random self-play legality + conservation + env Dict obs)
-PYTHONPATH=python .venv/bin/python -m pytest python/tests/test_smoke.py -q
+PYTHONPATH=python python/.venv/bin/python -m pytest python/tests/test_smoke.py -q
 
 # learning-sanity (trains ~20s, asserts win-rate beats random)
-PYTHONPATH=python .venv/bin/python -m pytest python/tests/test_learning.py -q
+PYTHONPATH=python python/.venv/bin/python -m pytest python/tests/test_learning.py -q
 
 # throughput / conservation report
-PYTHONPATH=python .venv/bin/python python/benchmark.py --deck demo --games 3000
+PYTHONPATH=python python/.venv/bin/python python/benchmark.py --deck demo --games 3000
 
 # train + report win-rate vs random (the M1 exit criterion)
-PYTHONPATH=python .venv/bin/python python/train.py --deck burn_vs_bears --timesteps 60000 --eval-games 400
+PYTHONPATH=python python/.venv/bin/python python/train.py --deck burn_vs_bears --timesteps 60000 --eval-games 400
 
 # …with TensorBoard curves (PPO losses + periodic eval/mean_reward = win-rate signal)
-PYTHONPATH=python .venv/bin/python python/train.py --deck burn_vs_bears --timesteps 60000 \
+PYTHONPATH=python python/.venv/bin/python python/train.py --deck burn_vs_bears --timesteps 60000 \
     --tensorboard runs/ --tb-eval-freq 4000
 tensorboard --logdir runs/
 ```
