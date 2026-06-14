@@ -181,4 +181,44 @@ mod tests {
                 },
             ]"#]].assert_eq(&format!("{:#?}", def.abilities));
     }
+
+    /// Behaviour: resolving Ba Sing Se's "Earthbend 2" ability on a Forest you control animates it —
+    /// a 0/0 haste creature that's still a land, with two +1/+1 counters → a 2/2 land-creature.
+    #[test]
+    fn ba_sing_se_earthbend_animates_a_land() {
+        use crate::agent::RandomAgent;
+        use crate::basics::{CardType, Target, Zone};
+        use crate::effects::ability::Keyword;
+        use crate::effects::action::{ResolutionCtx, WbReason};
+        use crate::ids::{PlayerId, StackId};
+        use crate::priority::Engine;
+        let mut state = crate::cards::build_game(1, &[&[], &[]]);
+        let forest_chars = state.card_db().get(crate::cards::grp::FOREST).unwrap().chars.clone();
+        let forest = state.add_card(PlayerId(0), forest_chars, Zone::Battlefield);
+        // Ba Sing Se's earthbend ability (the activated one).
+        let earthbend = match &state.card_db().get(BA_SING_SE).unwrap().abilities[2] {
+            Ability::Activated { effect, .. } => effect.clone(),
+            other => panic!("expected earthbend Activated, got {other:?}"),
+        };
+        let mut e = Engine::new(
+            state,
+            vec![Box::new(RandomAgent::new(0)), Box::new(RandomAgent::new(1))],
+        );
+        e.resolve_effect(
+            &earthbend,
+            &ResolutionCtx {
+                controller: Some(PlayerId(0)),
+                source: Some(forest),
+                chosen_targets: vec![Target::Object(forest)],
+                ..Default::default()
+            },
+            WbReason::Resolve(StackId(0)),
+        );
+        let cc = e.state.computed(forest);
+        assert!(cc.is_creature(), "the land became a creature");
+        assert!(cc.card_types.contains(&CardType::Land), "and is still a land");
+        assert!(cc.has_keyword(Keyword::Haste), "with haste");
+        assert_eq!(cc.power, Some(2)); // 0/0 base + two +1/+1 counters
+        assert_eq!(cc.toughness, Some(2));
+    }
 }

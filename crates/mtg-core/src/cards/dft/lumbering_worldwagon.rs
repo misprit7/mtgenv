@@ -226,4 +226,65 @@ mod tests {
                 },
             ]"#]].assert_eq(&format!("{:#?}", def.abilities));
     }
+
+    /// Behaviour: the `*`/4 CDA (layer 7a) computes power = the number of lands **you** control,
+    /// via the public `GameState::computed` — a real layer-system check, not just IR shape.
+    #[test]
+    fn lumbering_power_equals_lands_you_control() {
+        use crate::basics::Zone;
+        use crate::cards::{build_game, grp};
+        use crate::ids::PlayerId;
+        let mut state = build_game(1, &[&[], &[]]);
+        let wagon_chars = state.card_db().get(LUMBERING_WORLDWAGON).unwrap().chars.clone();
+        let forest_chars = state.card_db().get(grp::FOREST).unwrap().chars.clone();
+        let wagon = state.add_card(PlayerId(0), wagon_chars, Zone::Battlefield);
+        // No lands yet → power 0; toughness fixed 4.
+        assert_eq!(state.computed(wagon).power, Some(0));
+        assert_eq!(state.computed(wagon).toughness, Some(4));
+        // Three Forests you control → power 3.
+        for _ in 0..3 {
+            state.add_card(PlayerId(0), forest_chars.clone(), Zone::Battlefield);
+        }
+        assert_eq!(state.computed(wagon).power, Some(3));
+        // A land an opponent controls is NOT counted (controller-scoped count).
+        state.add_card(PlayerId(1), forest_chars.clone(), Zone::Battlefield);
+        assert_eq!(state.computed(wagon).power, Some(3));
+    }
+
+    /// Behaviour: resolving Crew 4 (the `BecomeCreature` effect) animates the Vehicle into an artifact
+    /// creature — it keeps its artifact type and gains the creature type.
+    #[test]
+    fn lumbering_crew_animates_the_vehicle() {
+        use crate::agent::RandomAgent;
+        use crate::basics::{CardType, Zone};
+        use crate::cards::build_game;
+        use crate::effects::action::{ResolutionCtx, WbReason};
+        use crate::ids::{PlayerId, StackId};
+        use crate::priority::Engine;
+        let mut state = build_game(1, &[&[], &[]]);
+        let wagon_chars = state.card_db().get(LUMBERING_WORLDWAGON).unwrap().chars.clone();
+        let wagon = state.add_card(PlayerId(0), wagon_chars, Zone::Battlefield);
+        assert!(!state.computed(wagon).is_creature(), "a Vehicle is not a creature until crewed");
+        // The Crew ability's effect = BecomeCreature(self, until EOT).
+        let crew = match &state.card_db().get(LUMBERING_WORLDWAGON).unwrap().abilities[3] {
+            Ability::Activated { effect, .. } => effect.clone(),
+            other => panic!("expected Crew Activated, got {other:?}"),
+        };
+        let mut e = Engine::new(
+            state,
+            vec![Box::new(RandomAgent::new(0)), Box::new(RandomAgent::new(1))],
+        );
+        e.resolve_effect(
+            &crew,
+            &ResolutionCtx {
+                controller: Some(PlayerId(0)),
+                source: Some(wagon),
+                ..Default::default()
+            },
+            WbReason::Resolve(StackId(0)),
+        );
+        let cc = e.state.computed(wagon);
+        assert!(cc.is_creature(), "crewed → an artifact creature");
+        assert!(cc.card_types.contains(&CardType::Artifact), "still an artifact");
+    }
 }

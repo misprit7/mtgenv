@@ -152,4 +152,42 @@ mod tests {
             ]"#]]
         .assert_eq(&format!("{:#?}", def.abilities));
     }
+
+    /// Behaviour: resolving the landfall pump on a 2/2 doubles its power to 4 (the `PowerOfTarget`
+    /// snapshot), leaving toughness unchanged — the real C15 resolution, not just the IR.
+    #[test]
+    fn mightform_landfall_doubles_target_power() {
+        use crate::agent::RandomAgent;
+        use crate::basics::{Target, Zone};
+        use crate::cards::{build_game, grp};
+        use crate::effects::action::{ResolutionCtx, WbReason};
+        use crate::ids::{PlayerId, StackId};
+        use crate::priority::Engine;
+        let mut state = build_game(1, &[&[], &[]]);
+        let bears_chars = state.card_db().get(grp::GRIZZLY_BEARS).unwrap().chars.clone(); // vanilla 2/2
+        let mightform_chars = state.card_db().get(MIGHTFORM_HARMONIZER).unwrap().chars.clone();
+        let bears = state.add_card(PlayerId(0), bears_chars, Zone::Battlefield);
+        let mightform = state.add_card(PlayerId(0), mightform_chars, Zone::Battlefield);
+        // The landfall ability's effect = the double-power pump.
+        let pump = match &state.card_db().get(MIGHTFORM_HARMONIZER).unwrap().abilities[0] {
+            Ability::Triggered { effect, .. } => effect.clone(),
+            other => panic!("expected landfall Triggered, got {other:?}"),
+        };
+        let mut e = Engine::new(
+            state,
+            vec![Box::new(RandomAgent::new(0)), Box::new(RandomAgent::new(1))],
+        );
+        e.resolve_effect(
+            &pump,
+            &ResolutionCtx {
+                controller: Some(PlayerId(0)),
+                source: Some(mightform),
+                chosen_targets: vec![Target::Object(bears)],
+                ..Default::default()
+            },
+            WbReason::Resolve(StackId(0)),
+        );
+        assert_eq!(e.state.computed(bears).power, Some(4)); // 2 + PowerOfTarget(2) snapshot = 4
+        assert_eq!(e.state.computed(bears).toughness, Some(2)); // +0
+    }
 }
