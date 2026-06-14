@@ -23,6 +23,7 @@ from stable_baselines3.common.callbacks import BaseCallback
 from mtgenv_gym import MtgEnv
 from mtgenv_gym.league import ModelOpponent, PoolCheckpoint
 from mtgenv_gym.policy import EntityExtractor
+from mtgenv_gym.tracked_stats import TrackedStatsCallback
 from selfplay_train import make_vecenv, SelfPlayEval, LadderEval
 
 REPLAY_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "replays"))
@@ -151,6 +152,8 @@ def main():
         # %-trained ladder: current policy vs its own 10/25/50/75%-of-budget snapshots (non-saturating).
         LadderEval(args.deck, args.timesteps, max(args.record_every // 2, 4000), args.n_envs,
                    save_dir=args.pool_dir.rstrip("/") + "_ladder", n_games=40),
+        # Action-rate summary stats (cast/attack/block/playland) to TensorBoard under stats/* (#68).
+        TrackedStatsCallback(),
     ]
     if args.shaping_coef > 0:
         from mtgenv_gym.batched_selfplay import ShapingAnneal

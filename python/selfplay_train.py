@@ -183,9 +183,12 @@ def train_selfplay(deck="demo", timesteps=120_000, n_envs=8, pool_dir=DEFAULT_PO
     model.save(ref_path[:-4])
     model.save(os.path.join(pool_dir, "ckpt_000000000"))
 
+    from mtgenv_gym.tracked_stats import TrackedStatsCallback
+
     callbacks = [
         PoolCheckpoint(pool_dir, pool_every, n_envs, max_pool=12, verbose=verbose),
         SelfPlayEval(deck, ref_path, eval_every, n_envs, verbose=verbose),
+        TrackedStatsCallback(),  # action-rate summary stats → stats/* (#68)
     ]
     if shaping_coef > 0:
         from mtgenv_gym.batched_selfplay import ShapingAnneal

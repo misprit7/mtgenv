@@ -18,6 +18,7 @@
 //! lists (the [`obs::Obs`] arrays). The Python `MtgEnv` turns it into Gym `obs`/`info`.
 
 mod codec;
+mod decision_stats;
 mod game;
 mod layout;
 mod obs;
@@ -59,6 +60,10 @@ pub struct PyGame {
     /// The omniscient replay of the finished game (`Some` iff constructed with `record_replay`),
     /// awaiting `created_at`/names stamping in [`PyGame::replay_json`].
     replay: Option<Replay>,
+    /// Semantic summary of the engine decision most recently FINALIZED by [`apply`](PyGame::apply)
+    /// (tracked-stats telemetry, #68). `take_decision_stats` drains it; empty between finalizations
+    /// (a mid-autoregression sub-step records nothing).
+    last_stats: Vec<(String, f64)>,
 }
 
 #[pymethods]
@@ -84,6 +89,7 @@ impl PyGame {
             terminal: false,
             summary: None,
             replay: None,
+            last_stats: Vec::new(),
         })
     }
 
@@ -103,6 +109,7 @@ impl PyGame {
         self.terminal = false;
         self.summary = None;
         self.replay = None;
+        self.last_stats.clear();
 
         let (conn, from_game) =
             GameConn::spawn(self.deck, seed, self.auto_pass, self.record_replay, self.replay_step);
@@ -120,13 +127,19 @@ impl PyGame {
     /// (commit), the assembled `DecisionResponse` is sent to the game thread; otherwise the
     /// interaction keeps accumulating and the next `step_to_decision` returns the next sub-step.
     fn apply(&mut self, action: usize) -> PyResult<()> {
+        // Each apply reports ONLY its own finalization: clear up front so a non-final sub-step
+        // leaves an empty record (never a stale one from a prior decision / the opponent).
+        self.last_stats.clear();
         let inter = self.interaction.as_mut().ok_or_else(|| {
             PyRuntimeError::new_err(
                 "apply() with no pending decision (reset/step_to_decision first, or game is over)",
             )
         })?;
         if let Some(resp) = inter.apply(action) {
-            // Decision complete — answer the engine and clear so the next advance pulls anew.
+            // Decision complete — capture its semantic summary (#68), answer the engine, then clear
+            // so the next advance pulls anew.
+            let stats = decision_stats::summarize(inter.req(), &resp);
+            self.last_stats = stats.into_iter().map(|(k, v)| (k.to_string(), v)).collect();
             match &self.conn {
                 Some(conn) => {
                     conn.respond(resp);
@@ -136,6 +149,14 @@ impl PyGame {
             self.interaction = None;
         }
         Ok(())
+    }
+
+    /// Drain the semantic summary of the engine decision the last [`apply`](PyGame::apply) finalized
+    /// (`field → value` pairs from [`decision_stats`]). Empty when the last `apply` was a non-final
+    /// sub-step. Pull it RIGHT AFTER the learner's `apply` (before opponent decisions overwrite it),
+    /// and feed it to the Python `tracked_stats` accumulator. Clears on read.
+    fn take_decision_stats(&mut self) -> Vec<(String, f64)> {
+        std::mem::take(&mut self.last_stats)
     }
 
     /// The constant-width legality mask for the current sub-step (all-false when terminal).

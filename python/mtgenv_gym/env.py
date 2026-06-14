@@ -105,9 +105,15 @@ class MtgEnv(_GymEnv):
         if self._terminal:
             raise RuntimeError("step() on a terminated episode; call reset() first")
         self._game.apply(int(action))
+        # Pull the learner decision's semantic record NOW — before _advance_to_agent answers any
+        # opponent decisions, which would overwrite it. Non-empty only when this sub-step FINALIZED
+        # an engine decision (tracked-stats telemetry, #68).
+        rec = self._game.take_decision_stats()
         self._decisions += 1
         step = self._game.step_to_decision()
         obs, info = self._advance_to_agent(step)
+        if rec:
+            info["decision_stats"] = dict(rec)
         terminated = self._terminal
         truncated = (not terminated) and self._decisions >= self.max_decisions
         reward = self._terminal_reward() if terminated else 0.0
@@ -161,6 +167,13 @@ class MtgEnv(_GymEnv):
         self._game.apply(int(action))
         self._decisions += 1
         self._ext_advance(self._game.step_to_decision())
+
+    def ext_take_stats(self):
+        """Drain the semantic record of the decision the last ``ext_apply`` finalized (tracked-stats,
+        #68) — call right after applying a *learner* action, before opponent decisions overwrite it.
+        Returns a ``{field: value}`` dict, or ``None`` for a non-finalizing sub-step."""
+        rec = self._game.take_decision_stats()
+        return dict(rec) if rec else None
 
     def ext_reward(self):
         """Terminal reward from the learner's (``agent_seat``) perspective (+1/0/−1)."""

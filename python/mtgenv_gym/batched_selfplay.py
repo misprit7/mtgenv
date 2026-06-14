@@ -222,6 +222,11 @@ class BatchedSelfPlayVecEnv(VecEnv):
         infos = [{} for _ in range(self.num_envs)]
         for i, env in enumerate(self.envs):
             env.ext_apply(int(self._actions[i]))
+            # Capture the learner decision's semantic record NOW, before _pump answers opponent
+            # decisions (which would overwrite it). Non-empty only on a finalizing sub-step (#68).
+            rec = env.ext_take_stats()
+            if rec:
+                infos[i]["decision_stats"] = rec
         self._pump(rewards, dones, infos, record_terminals=True)
         obs = self._collect_obs()
         rewards = self._apply_shaping(obs, rewards, dones)
