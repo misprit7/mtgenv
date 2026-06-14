@@ -16,11 +16,18 @@
 //!   power once), fixed for the turn — it does NOT recompute if the creature's power later changes.
 //!   The pump wears off at cleanup (CR 514.2).
 //!
-//! INCOMPLETE — TRACKED (`fully_implemented: false`), one gap, not approximated:
-//!   - **Warp {2}{G}** — the alternative-cost casting mechanic (cast from hand for the warp cost, exile
-//!     at the next end step, then cast from exile on a later turn). A genuine casting-permission
-//!     subsystem (alt cost + delayed exile + play-from-exile), **C14**, still unbuilt. The card can be
-//!     cast normally for {2}{G}{G}; only the warp discount/recast path is missing. Flagged to engine.
+//! - **Warp {2}{G} — cast + exile** (C14 pieces 1+2, c445d78) — an `Ability::Warp { cost: {2}{G} }`:
+//!   `legal_priority_actions` offers a sorcery-speed warp cast from hand (even when the normal
+//!   {2}{G}{G} is unaffordable), `cast_spell` pays the warp cost, and on resolution the creature arms a
+//!   `DelayedTriggerEvent::AtBeginningOfNextEndStep` trigger that exiles it (CR 702-warp). This half is
+//!   **atomic and exploit-free** — the cheap cast always carries its exile downside, never a free discount.
+//!
+//! INCOMPLETE — TRACKED (`fully_implemented: false`), one minor gap, not approximated:
+//!   - **Warp's recast-from-exile** — "then you may cast it from exile on a later turn." Needs the
+//!     warp-exiled card to be marked castable-from-exile + `legal_priority_actions` to offer it from
+//!     exile (C14 piece 3, pending). Until then a warp-cast Mightform is exiled and stays there — a
+//!     faithful subset (missing upside), NOT a wrong approximation. Flips to fully-implemented when
+//!     piece 3 lands, no other change.
 
 use crate::basics::Color;
 use crate::cards::helpers::land_you_control;
@@ -66,11 +73,13 @@ pub fn register(db: &mut CardDb) {
                 intervening_if: false,
                 effect: double_power,
             },
+            // "Warp {2}{G}" — alt-cast from hand for {2}{G}, then exile at the next end step (C14 1+2).
+            Ability::Warp { cost: mana_cost(2, &[(Color::Green, 1)]) },
         ],
     );
     def.text = "Landfall — Whenever a land you control enters, double the power of target creature you control until end of turn.\nWarp {2}{G} (You may cast this card from your hand for its warp cost. Exile this creature at the beginning of the next end step, then you may cast it from exile on a later turn.)".to_string();
-    // Tracked-incomplete: the warp alternative-cost casting mechanic (C14) is unbuilt. Casting for
-    // the full {2}{G}{G} works; only the warp discount/recast path is missing. See module docs.
+    // Tracked-incomplete: warp's cast + exile work (C14 1+2); only recast-from-exile (piece 3) is
+    // pending. Flips to fully-implemented when piece 3 lands. See module docs.
     def.fully_implemented = false;
     db.insert(def);
 }
@@ -93,9 +102,10 @@ mod tests {
             vec![Subtype::Creature(CreatureType::Insect), Subtype::Creature(CreatureType::Druid)]
         );
         assert_eq!((def.chars.power, def.chars.toughness), (Some(4), Some(4)));
-        // Tracked-incomplete: warp (C14) unbuilt; the landfall double-power is fully implemented.
+        // Tracked-incomplete only on warp's recast-from-exile (piece 3); landfall double-power +
+        // warp cast+exile (pieces 1+2) are implemented.
         assert!(!def.fully_implemented);
-        // Landfall trigger → snapshot double-power pump on target creature you control.
+        // Landfall double-power pump (C15) + Warp {2}{G} alt-cast (C14 1+2).
         expect![[r#"
             [
                 Triggered {
@@ -133,6 +143,15 @@ mod tests {
                             0,
                         ),
                         duration: UntilEndOfTurn,
+                    },
+                },
+                Warp {
+                    cost: ManaCost {
+                        generic: 2,
+                        colored: {
+                            Green: 1,
+                        },
+                        x: 0,
                     },
                 },
             ]"#]]
