@@ -5104,6 +5104,56 @@ mod expect_tests {
     }
 
     #[test]
+    fn fabled_passage_untaps_via_full_activation() {
+        // #58: the direct-resolve test above passes, but the user saw the fetched land stay tapped in
+        // a REAL game. Drive the WHOLE path — activate the `{T}, Sacrifice this:` ability (pays the
+        // cost incl. the sacrifice, which removes Fabled Passage from the battlefield), then resolve.
+        use crate::agent::{AbilityRef, Agent, DecisionRequest, DecisionResponse, PlayerView};
+        use crate::cards::eld::fabled_passage::FABLED_PASSAGE;
+        use std::sync::Arc;
+
+        struct FetchAgent;
+        impl Agent for FetchAgent {
+            fn decide(&mut self, _v: &PlayerView, req: &DecisionRequest) -> DecisionResponse {
+                match req {
+                    DecisionRequest::SelectCards { from, .. } => {
+                        DecisionResponse::Indices(if from.is_empty() { vec![] } else { vec![0] })
+                    }
+                    _ => DecisionResponse::Pass,
+                }
+            }
+        }
+
+        // `other_lands` = OTHER lands on the battlefield (besides Fabled Passage, which is sacrificed).
+        let run = |other_lands: usize| -> Option<bool> {
+            let mut state = GameState::new(2, 1);
+            state.set_card_db(Arc::new(cards::starter_db())); // includes Fabled Passage (eld::register)
+            let fabled = {
+                let c = state.card_db().get(FABLED_PASSAGE).unwrap().chars.clone();
+                state.add_card(PlayerId(0), c, Zone::Battlefield)
+            };
+            for _ in 0..other_lands {
+                let f = state.card_db().get(grp::FOREST).unwrap().chars.clone();
+                state.add_card(PlayerId(0), f, Zone::Battlefield);
+            }
+            let lib = {
+                let f = state.card_db().get(grp::FOREST).unwrap().chars.clone();
+                state.add_card(PlayerId(0), f, Zone::Library)
+            };
+            let mut e = Engine::new(state, vec![Box::new(FetchAgent), Box::new(PassAgent)]);
+            e.activate_ability(PlayerId(0), fabled, AbilityRef(0));
+            e.resolve_top();
+            let o = e.state.object(lib);
+            (o.zone == Zone::Battlefield).then_some(o.status.tapped)
+        };
+
+        // Fabled Passage is sacrificed (cost), so 3 OTHER lands + the fetched = 4 ≥ 4 → untap.
+        assert_eq!(run(3), Some(false), "3 other lands + fetched = 4 → untap the fetched land");
+        // 2 other lands + the fetched = 3 < 4 → stays tapped.
+        assert_eq!(run(2), Some(true), "2 other lands + fetched = 3 → stays tapped");
+    }
+
+    #[test]
     fn conditional_gates_grant_keyword_until_eot() {
         use crate::basics::{CounterKind, Target};
         use crate::effects::ability::Keyword;
