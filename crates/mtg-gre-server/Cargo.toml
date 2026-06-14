@@ -18,6 +18,11 @@ path = "src/bin/play.rs"
 name = "mtg-serve"
 path = "src/bin/serve.rs"
 
+# Card-pool dump (grp_id + Scryfall name) — the source of truth for `resolve-card-art.py`.
+[[bin]]
+name = "dump-cards"
+path = "src/bin/dump-cards.rs"
+
 [dependencies]
 # Depends ONLY on mtg-core's public Agent API (architecture law: core stays headless).
 mtg-core = { path = "../mtg-core" }

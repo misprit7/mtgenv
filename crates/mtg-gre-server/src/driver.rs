@@ -255,6 +255,30 @@ pub fn run_demo_game(agents: Vec<Box<dyn Agent>>, seed: u64) -> Outcome {
 /// built by [`counters_deck`]. Shared source of truth for the lobby/CLI pickers.
 pub const DECK_NAMES: &[&str] = &["selesnya", "counters", "demo", "burn", "bears"];
 
+/// Every `(grp_id, exact card name)` that can appear in a game this server serves: the union of all
+/// selectable decks ([`DECK_NAMES`]) resolved against the engine's [`starter_db`]. Sorted, unique.
+///
+/// This is the canonical "cards that need art" set — a card a player can ever see is exactly a card
+/// in some deck, since `build_game` only ever draws a player's cards from their deck. It's the one
+/// source of truth shared by the startup art-coverage check ([`crate::server::missing_card_art`])
+/// and the `dump-cards` resolver helper (which feeds `resolve-card-art.py`), so adding a card to a
+/// deck automatically pulls it into both the warning and the art fetch.
+///
+/// [`starter_db`]: mtg_core::cards::starter_db
+pub fn deck_card_pool() -> Vec<(u32, String)> {
+    let db = mtg_core::cards::starter_db();
+    let mut pool: std::collections::BTreeMap<u32, String> = std::collections::BTreeMap::new();
+    for name in DECK_NAMES {
+        let Some(deck) = resolve_deck(name) else { continue };
+        for grp in deck {
+            if let Some(def) = db.get(grp) {
+                pool.entry(grp).or_insert_with(|| def.chars.name.clone());
+            }
+        }
+    }
+    pool.into_iter().collect()
+}
+
 /// A *much* richer preset than the trivial burn/bears/demo piles: a **Selesnya (G/W) landfall +
 /// +1/+1-counters midrange** deck assembled from the implemented card pool. Where the three
 /// starter decks are one or two cards stamped 40–60 times, this one is built to exercise a broad

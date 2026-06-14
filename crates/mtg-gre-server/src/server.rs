@@ -107,6 +107,49 @@ async fn card_art() -> impl IntoResponse {
     ([(axum::http::header::CONTENT_TYPE, "application/json")], CARD_ART)
 }
 
+/// Cards in a playable deck that have **no usable art** in the baked-in manifest ([`CARD_ART`]) —
+/// either absent entirely or present with a null `art`/`img` URL. Returns `(grp_id, name)` sorted.
+///
+/// The "should have art" set is [`driver::deck_card_pool`] (every card that can appear in a game);
+/// a card counts as covered only if its manifest entry carries both an `art_crop` and a `normal`
+/// image URL. Pure (no IO) so it's unit-testable; [`serve`] calls it once at startup to warn.
+pub fn missing_card_art() -> Vec<(u32, String)> {
+    // The manifest is a static include; a parse failure means everything is "missing".
+    let manifest: HashMap<String, serde_json::Value> =
+        serde_json::from_str(CARD_ART).unwrap_or_default();
+    let has_art = |grp: u32| -> bool {
+        manifest
+            .get(&grp.to_string())
+            .map(|e| e.get("art").is_some_and(|v| v.is_string()) && e.get("img").is_some_and(|v| v.is_string()))
+            .unwrap_or(false)
+    };
+    driver::deck_card_pool()
+        .into_iter()
+        .filter(|(grp, _)| !has_art(*grp))
+        .collect()
+}
+
+/// Log a warning at startup for any deck card missing art, with the one command that fixes it.
+/// Art is *baked in* (the client never hits Scryfall at runtime), so a gap means a card will show
+/// as a blank/text-only tile until the manifest is regenerated — surface it loudly but don't fail.
+fn warn_missing_card_art() {
+    let missing = missing_card_art();
+    if missing.is_empty() {
+        return;
+    }
+    eprintln!(
+        "⚠ card art: {} deck card(s) have no baked-in art and will render without an image:",
+        missing.len()
+    );
+    for (grp, name) in &missing {
+        eprintln!("    • {name} (grp_id {grp})");
+    }
+    eprintln!(
+        "  Fix: regenerate the manifest, then rebuild —\n    \
+         python3 crates/mtg-gre-server/resolve-card-art.py && cargo build -p mtg-gre-server"
+    );
+}
+
 /// The gitignored replay store (`<repo>/data/replays`, alongside `data/scryfall/`). Computed from
 /// the crate dir so it's independent of the server's working directory.
 fn replay_dir() -> std::path::PathBuf {
@@ -363,6 +406,7 @@ pub(crate) fn stops_msg(s: &StopConfig) -> ServerMsg {
 
 /// Bind `addr` and serve until the process exits.
 pub async fn serve(addr: &str) -> std::io::Result<()> {
+    warn_missing_card_art();
     let listener = TcpListener::bind(addr).await?;
     let local = listener.local_addr()?;
     println!("mtg-gre-server listening on http://{local}  (open it in a browser to play)");
@@ -575,4 +619,23 @@ pub(crate) async fn run_player_socket(
     // Dropping from_client_tx signals the game thread to fall back and exit if still running.
     drop(from_client_tx);
     send_task.abort();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every card that can appear in a game must have baked-in art. This is the offline half of the
+    /// startup warning: if a card is added to a deck without regenerating `card-art.json`, this
+    /// fails — forcing art-first (run `resolve-card-art.py` + rebuild). Guards against the silent
+    /// "card renders as a blank tile" regression the user hit with the Selesnya set cards.
+    #[test]
+    fn every_deck_card_has_baked_in_art() {
+        let missing = missing_card_art();
+        assert!(
+            missing.is_empty(),
+            "deck cards missing baked-in art (run crates/mtg-gre-server/resolve-card-art.py then \
+             rebuild): {missing:?}"
+        );
+    }
 }
