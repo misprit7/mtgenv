@@ -1410,6 +1410,20 @@ impl Engine {
         }
     }
 
+    /// Snapshot the controller of each chosen target at resolution start (parallel to `targets`;
+    /// `None` for non-object targets). Lets `PlayerRef::ControllerOfTarget` resolve to a target's
+    /// controller even after that object leaves play during the same resolution (CR 608.2) — e.g.
+    /// Erode's "Destroy target creature. Its controller may search…".
+    fn snapshot_target_controllers(&self, targets: &[Target]) -> Vec<Option<PlayerId>> {
+        targets
+            .iter()
+            .map(|t| match t {
+                Target::Object(id) => self.state.objects.get(id).map(|o| o.controller),
+                _ => None,
+            })
+            .collect()
+    }
+
     /// Resolve the top object of the stack (CR 608). Milestone 2 performs only the
     /// *structural* part — a permanent spell enters the battlefield, an instant/sorcery
     /// goes to its owner's graveyard, an ability ceases to exist (608.2n/608.3). Running
@@ -1468,6 +1482,7 @@ impl Engine {
                                 controller: Some(obj.controller),
                                 source: Some(id),
                                 x: obj.x,
+                                target_controllers: self.snapshot_target_controllers(&obj.targets),
                                 chosen_targets: obj.targets.clone(),
                                 chosen_modes: Vec::new(),
                             };
@@ -1499,6 +1514,7 @@ impl Engine {
                             controller: Some(obj.controller),
                             source: Some(src),
                             x: None,
+                            target_controllers: self.snapshot_target_controllers(&obj.targets),
                             chosen_targets: obj.targets.clone(),
                             chosen_modes: Vec::new(),
                         };
@@ -2043,6 +2059,54 @@ mod tests {
         assert!(streamed.len() > 5);
         assert_eq!(streamed[0], "game start");
         assert!(streamed.last().unwrap().starts_with("Game over"), "last frame is the game end");
+    }
+
+    #[test]
+    fn controller_of_target_survives_the_destroy() {
+        // Erode-shaped (CR 608.2): `Sequence[ Destroy(target 0), GainLife(ControllerOfTarget(0)) ]`.
+        // "Its controller" = the destroyed creature's controller, read at resolution start, so it
+        // survives the destroy moving the creature to the graveyard.
+        use crate::basics::{CardType, Target};
+        use crate::effects::action::{ResolutionCtx, WbReason};
+        use crate::effects::value::{PlayerRef, ValueExpr};
+        use crate::effects::{Effect, EffectTarget};
+
+        let mut e = lands_only_game(0, 1);
+        // A vanilla creature controlled (and owned) by P1 — the "its controller" Erode references.
+        let victim = e.state.add_card(
+            PlayerId(1),
+            Characteristics {
+                name: "Victim".into(),
+                card_types: vec![CardType::Creature],
+                power: Some(2),
+                toughness: Some(2),
+                grp_id: 9000,
+                ..Default::default()
+            },
+            Zone::Battlefield,
+        );
+        let p1_before = e.state.player(PlayerId(1)).life;
+        let p0_before = e.state.player(PlayerId(0)).life;
+
+        let effect = Effect::Sequence(vec![
+            Effect::Destroy { what: EffectTarget::ChosenIndex(0) },
+            Effect::GainLife { who: PlayerRef::ControllerOfTarget(0), amount: ValueExpr::Fixed(3) },
+        ]);
+        // P0 is the spell's controller; target 0 is P1's creature. The controller is snapshotted
+        // (as `resolve_top` does) while the creature is still in play.
+        let targets = vec![Target::Object(victim)];
+        let ctx = ResolutionCtx {
+            controller: Some(PlayerId(0)),
+            target_controllers: e.snapshot_target_controllers(&targets),
+            chosen_targets: targets,
+            ..Default::default()
+        };
+        e.resolve_effect(&effect, &ctx, WbReason::Resolve(StackId(0)));
+
+        assert_eq!(e.state.object(victim).zone, Zone::Graveyard, "target creature destroyed");
+        // The *destroyed creature's* controller (P1) gained the life — not the spell's controller (P0).
+        assert_eq!(e.state.player(PlayerId(1)).life, p1_before + 3, "its controller (P1) gained 3");
+        assert_eq!(e.state.player(PlayerId(0)).life, p0_before, "the caster (P0) did not");
     }
 
     #[test]

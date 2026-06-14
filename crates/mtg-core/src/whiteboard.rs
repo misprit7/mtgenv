@@ -883,6 +883,15 @@ impl Engine {
                 Some(Target::Player(p)) => *p,
                 _ => controller,
             },
+            // The controller of the Nth object target, snapshotted at resolution start (so it
+            // survives that object leaving play this resolution — CR 608.2). Falls back to the
+            // effect's controller if the snapshot is missing.
+            PlayerRef::ControllerOfTarget(n) => ctx
+                .target_controllers
+                .get(n as usize)
+                .copied()
+                .flatten()
+                .unwrap_or(controller),
         }
     }
 

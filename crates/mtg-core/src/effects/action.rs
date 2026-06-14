@@ -116,6 +116,11 @@ pub struct ResolutionCtx {
     pub chosen_targets: Vec<Target>,
     /// Indices of the modes chosen for a modal spell/ability (CR 700.2).
     pub chosen_modes: Vec<u32>,
+    /// The controller of each chosen target, **snapshotted at resolution start** (parallel to
+    /// `chosen_targets`; `None` for non-object targets). Lets `PlayerRef::ControllerOfTarget`
+    /// resolve to a target's controller even after that object left play during this resolution
+    /// (e.g. Erode's "Destroy target … its controller may search"). Empty if not captured.
+    pub target_controllers: Vec<Option<PlayerId>>,
 }
 
 /// A staged batch of actions the engine intends to apply together (the "nap"): materialize →

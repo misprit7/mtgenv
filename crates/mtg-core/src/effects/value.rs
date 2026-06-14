@@ -20,6 +20,11 @@ pub enum PlayerRef {
     Owner,
     /// A player chosen as the Nth target of this effect.
     ChosenTarget(u32),
+    /// The *controller* of the Nth (object) target of this effect, snapshotted at resolution
+    /// start — so it survives that object leaving play during the same resolution (e.g. Erode's
+    /// "Destroy target creature. Its controller may search…", where "its controller" is read
+    /// before the destroy moves it to the graveyard). CR 608.2 (info read as the effect resolves).
+    ControllerOfTarget(u32),
 }
 
 /// A number that may be fixed or computed from game state. Kept small; grows with the IR.
