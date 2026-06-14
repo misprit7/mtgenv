@@ -5154,6 +5154,125 @@ mod expect_tests {
     }
 
     #[test]
+    fn erode_destroys_target_before_its_controller_fetches_a_land_61() {
+        // #61: Erode = Sequence[Destroy target creature, its controller fetches a basic]. The Destroy
+        // is a DEFERRED whiteboard action; the fetch (Search) is IMPERATIVE. Without ordering across
+        // that boundary, the fetched land would enter while the doomed creature is still on the
+        // battlefield, wrongly firing its landfall. The fix flushes the Destroy before the imperative
+        // fetch, so a landfall creature is gone before its controller's land enters → no trigger.
+        use crate::agent::{Agent, DecisionRequest, DecisionResponse, PlayerView};
+        use crate::basics::{CardType, CounterKind, Target, ZoneDest, ZonePos};
+        use crate::cards::helpers::land_you_control;
+        use crate::effects::ability::{Ability, EventPattern};
+        use crate::effects::action::{ResolutionCtx, WbReason};
+        use crate::effects::target::{CardFilter, TargetKind, TargetSpec};
+        use crate::effects::value::{PlayerRef, ValueExpr};
+        use crate::effects::{Effect, EffectTarget};
+        use crate::state::Characteristics;
+        use crate::subtypes::Supertype;
+        use std::sync::Arc;
+
+        let erode = Effect::Sequence(vec![
+            Effect::Destroy {
+                what: EffectTarget::Target(TargetSpec {
+                    kind: TargetKind::Permanent(CardFilter::HasCardType(CardType::Creature)),
+                    min: 1,
+                    max: 1,
+                    distinct: true,
+                }),
+            },
+            Effect::Search {
+                who: PlayerRef::ControllerOfTarget(0),
+                zone: Zone::Library,
+                filter: CardFilter::All(vec![
+                    CardFilter::HasCardType(CardType::Land),
+                    CardFilter::Supertype(Supertype::Basic),
+                ]),
+                min: 0,
+                max: 1,
+                to: ZoneDest { zone: Zone::Battlefield, pos: ZonePos::Any },
+                tapped: true,
+            },
+        ]);
+
+        struct FetchAgent;
+        impl Agent for FetchAgent {
+            fn decide(&mut self, _v: &PlayerView, req: &DecisionRequest) -> DecisionResponse {
+                match req {
+                    DecisionRequest::SelectCards { from, .. } => {
+                        DecisionResponse::Indices(if from.is_empty() { vec![] } else { vec![0] })
+                    }
+                    _ => DecisionResponse::Pass,
+                }
+            }
+        }
+
+        // Returns (creature destroyed, land fetched, # triggers queued by the resolution).
+        let run = |landfall: bool| -> (bool, bool, usize) {
+            let mut db = cards::starter_db();
+            let abilities = if landfall {
+                vec![Ability::Triggered {
+                    event: EventPattern::PermanentEnters(land_you_control()),
+                    condition: None,
+                    intervening_if: false,
+                    effect: Effect::PutCounters {
+                        what: EffectTarget::SourceSelf,
+                        kind: CounterKind::PlusOnePlusOne,
+                        n: ValueExpr::Fixed(1),
+                    },
+                }]
+            } else {
+                Vec::new()
+            };
+            db.insert(cards::CardDef {
+                chars: Characteristics {
+                    name: "Erode Target".into(),
+                    card_types: vec![CardType::Creature],
+                    power: Some(2),
+                    toughness: Some(2),
+                    grp_id: 9980,
+                    ..Default::default()
+                },
+                abilities,
+                text: String::new(),
+                ..Default::default()
+            });
+            let mut state = GameState::new(2, 1);
+            state.set_card_db(Arc::new(db));
+            let creature = {
+                let c = state.card_db().get(9980).unwrap().chars.clone();
+                state.add_card(PlayerId(0), c, Zone::Battlefield)
+            };
+            let lib = {
+                let f = state.card_db().get(grp::FOREST).unwrap().chars.clone();
+                state.add_card(PlayerId(0), f, Zone::Library)
+            };
+            let mut e = Engine::new(state, vec![Box::new(FetchAgent), Box::new(PassAgent)]);
+            e.resolve_effect(
+                &erode,
+                &ResolutionCtx {
+                    controller: Some(PlayerId(0)),
+                    chosen_targets: vec![Target::Object(creature)],
+                    target_controllers: vec![Some(PlayerId(0))],
+                    ..Default::default()
+                },
+                WbReason::Resolve(crate::ids::StackId(0)),
+            );
+            (
+                e.state.object(creature).zone == Zone::Graveyard,
+                e.state.object(lib).zone == Zone::Battlefield,
+                e.state.pending_triggers.len(),
+            )
+        };
+
+        // The doomed landfall creature is destroyed BEFORE the fetched land enters → its landfall
+        // does NOT fire (0 triggers queued), yet the land is still fetched.
+        assert_eq!(run(true), (true, true, 0), "landfall creature gone before fetch → no landfall");
+        // A vanilla creature: destroyed + land fetched, no triggers (sanity).
+        assert_eq!(run(false), (true, true, 0), "vanilla creature: destroyed, land fetched");
+    }
+
+    #[test]
     fn conditional_gates_grant_keyword_until_eot() {
         use crate::basics::{CounterKind, Target};
         use crate::effects::ability::Keyword;

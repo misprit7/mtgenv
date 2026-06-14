@@ -80,6 +80,21 @@ impl Engine {
         self.commit(wb);
     }
 
+    /// Commit the deferred actions accumulated in `wb` SO FAR, then leave it empty (same reason/ctx)
+    /// to keep accumulating. Called before each *imperative* effect in a sequence so a resolving
+    /// spell's instructions take effect IN ORDER across the imperative/deferred boundary (#61):
+    /// without it, `Sequence[Destroy, fetch a land]` lets the land enter (imperative) while the
+    /// doomed creature is still on the battlefield, wrongly firing its landfall. Deferred-only runs
+    /// still batch into one commit (replacement/prevention, CR 614/616, unaffected) — only a
+    /// deferred→imperative hand-off splits the batch, which is exactly the ordering the rules want.
+    fn flush_pending(&mut self, wb: &mut Whiteboard) {
+        if wb.actions.is_empty() {
+            return;
+        }
+        let actions = std::mem::take(&mut wb.actions);
+        self.commit(Whiteboard { reason: wb.reason.clone(), actions, ctx: wb.ctx.clone() });
+    }
+
     /// The interactive interpreter: handles control-flow + resolution-time-decision nodes
     /// (Sequence/Modal/Search), delegating every pure leaf to [`Engine::materialize`] with the
     /// shared `cursor` (so a multi-target sequence still distributes its locked targets in order).
@@ -107,13 +122,18 @@ impl Engine {
             }
             // C5: search a zone (asks the searcher which card(s)), move the picks to `to`, then
             // shuffle a searched library. Done imperatively (search/shuffle aren't whiteboard
-            // actions); the `wb` for this resolution stays for any sibling leaves.
+            // actions). Flush any deferred actions staged so far FIRST so they take effect before
+            // this imperative step (#61): e.g. Erode's `Sequence[Destroy, fetch a land]` must destroy
+            // the creature before the fetched land enters, or the doomed creature's landfall fires.
             Effect::Search { who, zone, filter, min, max, to, tapped } => {
+                self.flush_pending(wb);
                 self.interpret_search(ctx, *who, *zone, filter, *min, *max, to, *tapped);
             }
             // C19: add mana to a player's pool (a mana ability resolving, or a ritual). Imperative
-            // (mana isn't a whiteboard action); `any_color` asks the player which colour.
+            // (mana isn't a whiteboard action); `any_color` asks the player which colour. Flush first
+            // so prior deferred actions are applied before this imperative step (#61).
             Effect::AddMana { who, mana } => {
+                self.flush_pending(wb);
                 let player = self.eval_player(*who, ctx);
                 self.add_mana(player, mana, ctx);
             }
