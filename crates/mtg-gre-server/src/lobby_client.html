@@ -52,8 +52,10 @@
   a.joinbtn:hover { filter:brightness(1.08); }
   .winner { color: var(--accent2); font-weight:700; }
   .empty { color: var(--muted); padding: 8px 2px; }
-  .runhdr { font-weight: 600; margin: 12px 0 4px; opacity: .85; font-size: 13px; color: var(--accent); }
+  .runhdr { margin: 12px 0 4px; font-size: 13px; }
   .runhdr:first-child { margin-top: 0; }
+  .runhdr .runname { font-weight: 700; color: var(--accent); }
+  .runhdr .runmeta { color: var(--muted); font-weight: 400; font-size: 12px; }
   .hint { color: var(--muted); font-size: 12px; margin-top: 10px; }
   .links a { color: var(--accent2); }
   #newlinks { margin-top: 10px; font-size: 13px; }
@@ -180,7 +182,8 @@ async function refresh() {
   const host = $("games");
   host.innerHTML = "";
   if (!games.length) { host.appendChild(el("div", "empty", "No games yet — create one above.")); return; }
-  games.slice().reverse().forEach((g) => host.appendChild(gameRow(g)));
+  // Chronological order of creation (ascending by id = creation order), stable across refreshes.
+  games.slice().sort((a, b) => (a.id || 0) - (b.id || 0)).forEach((g) => host.appendChild(gameRow(g)));
 }
 
 function gameRow(g) {
@@ -259,19 +262,37 @@ async function refreshReplays() {
   const ai = reps.filter((r) => r.source && r.source.AiTraining);
   host.innerHTML = "";
   if (!ai.length) { host.appendChild(el("div", "empty", "No AI training replays yet.")); return; }
-  // Group by training run; newest run first, steps ascending within a run (so you watch it learn).
+  // Group by training run; runs in chronological order of creation (earliest first), and steps
+  // ascending within a run (so you watch it learn from early → late checkpoints).
   const groups = {};
   ai.forEach((r) => (groups[aiRun(r)] = groups[aiRun(r)] || []).push(r));
-  const runs = Object.keys(groups).sort((a, b) =>
-    Math.max(...groups[b].map((x) => x.created_at || 0)) -
-    Math.max(...groups[a].map((x) => x.created_at || 0)));
+  const minTime = (g) => Math.min(...g.map((x) => x.created_at || 0));
+  const runs = Object.keys(groups).sort((a, b) => minTime(groups[a]) - minTime(groups[b]));
   runs.forEach((run) => {
-    const deck = (groups[run][0].players || []).map((p) => p.deck).filter(Boolean)[0] || "";
-    host.appendChild(el("div", "runhdr",
-      run + " · " + groups[run].length + " checkpoint" + (groups[run].length === 1 ? "" : "s") + (deck ? " · " + deck : "")));
-    groups[run].sort((a, b) => (a.source.AiTraining.step || 0) - (b.source.AiTraining.step || 0));
-    groups[run].forEach((r) => host.appendChild(replayRow(r)));
+    const g = groups[run];
+    g.sort((a, b) => (a.source.AiTraining.step || 0) - (b.source.AiTraining.step || 0));
+    const deck = (g[0].players || []).map((p) => p.deck).filter(Boolean)[0] || "";
+    const steps = g.map((x) => x.source.AiTraining.step || 0);
+    const when = Math.max(...g.map((x) => x.created_at || 0));
+    const hdr = el("div", "runhdr");
+    hdr.appendChild(el("span", "runname", run));
+    const meta = [];
+    if (deck) meta.push(deck);
+    meta.push(g.length + " checkpoint" + (g.length === 1 ? "" : "s"));
+    if (steps.length) meta.push("steps " + fmtStep(Math.min(...steps)) + "–" + fmtStep(Math.max(...steps)));
+    if (when) meta.push(fmtDate(when));
+    hdr.appendChild(el("span", "runmeta", " · " + meta.join(" · ")));
+    host.appendChild(hdr);
+    g.forEach((r) => host.appendChild(replayRow(r)));
   });
+}
+function fmtStep(n) {
+  n = n || 0;
+  return n >= 1000 ? (n % 1000 === 0 ? n / 1000 + "k" : (n / 1000).toFixed(1) + "k") : "" + n;
+}
+function fmtDate(ms) {
+  try { return new Date(ms).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }); }
+  catch (e) { return ""; }
 }
 
 // The training-run a replay belongs to. The gym stamps it into the player name ("PPO@<run>:<step>")
@@ -286,16 +307,14 @@ function aiRun(r) {
 
 function replayRow(r) {
   const row = el("div", "game");
-  row.appendChild(el("span", "gid", "step " + r.source.AiTraining.step));
-  const chips = el("div", "chips");
-  (r.players || []).forEach((p, i) => chips.appendChild(
-    el("div", "chip", "P" + (p.seat != null ? p.seat : i) + ": " + (p.deck || "?"))));
-  row.appendChild(chips);
-  row.appendChild(el("div", "spacer"));
+  // The deck lives in the run header; each row is one checkpoint: exact step + result (+ time).
+  row.appendChild(el("span", "gid", "step " + (r.source.AiTraining.step || 0).toLocaleString()));
   const res = r.result
     ? (r.result.winner == null ? "draw" : "P" + r.result.winner + " won") + " · " + (r.result.turns || "?") + "t"
     : "—";
   row.appendChild(el("span", "gname", res));
+  row.appendChild(el("div", "spacer"));
+  if (r.created_at) row.appendChild(el("span", "chip", fmtDate(r.created_at)));
   const acts = el("div", "acts");
   const a = el("a", "joinbtn", "▶ Replay");
   a.href = "/play?replay=" + encodeURIComponent(r.id); a.target = "_blank";
