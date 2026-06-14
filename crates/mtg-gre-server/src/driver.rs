@@ -250,7 +250,7 @@ pub fn run_demo_game(agents: Vec<Box<dyn Agent>>, seed: u64) -> Outcome {
 /// The deck names this server offers, in picker order. The first three are the engine's trivial
 /// starter piles (`mtg_core::cards::preset_deck`); `"counters"` is the richer server-local deck
 /// built by [`counters_deck`]. Shared source of truth for the lobby/CLI pickers.
-pub const DECK_NAMES: &[&str] = &["counters", "demo", "burn", "bears"];
+pub const DECK_NAMES: &[&str] = &["selesnya", "counters", "demo", "burn", "bears"];
 
 /// A *much* richer preset than the trivial burn/bears/demo piles: a **Selesnya (G/W) landfall +
 /// +1/+1-counters midrange** deck assembled from the implemented card pool. Where the three
@@ -319,7 +319,9 @@ pub fn counters_deck() -> Vec<u32> {
 /// `None` for an unknown name (callers fall back to the demo deck).
 pub fn resolve_deck(name: &str) -> Option<Vec<u32>> {
     match name.to_ascii_lowercase().as_str() {
-        "counters" | "selesnya" => Some(counters_deck()),
+        "counters" => Some(counters_deck()),
+        // "selesnya"/"landfall" fall through to the engine's official implemented-landfall
+        // preset (mtg_core::cards::selesnya_landfall_deck) — NOT the server-local counters deck.
         other => mtg_core::cards::preset_deck(other),
     }
 }
