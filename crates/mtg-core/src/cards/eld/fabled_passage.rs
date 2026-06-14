@@ -152,4 +152,53 @@ mod tests {
                 },
             ]"#]].assert_eq(&format!("{:#?}", def.abilities));
     }
+
+    /// Behaviour: resolving the activated ability tutors a basic land from your library onto the
+    /// battlefield **tapped** (and it stays tapped — you control < 4 lands). Snapshot the resolved zones.
+    #[test]
+    fn fabled_passage_fetches_a_basic_tapped() {
+        use crate::agent::{Agent, DecisionRequest, DecisionResponse, PlayerView};
+        use crate::cards::{build_game, grp};
+        use crate::effects::action::{ResolutionCtx, WbReason};
+        use crate::ids::{PlayerId, StackId};
+        use crate::priority::Engine;
+        use expect_test::expect;
+
+        // Takes any "may" choice and picks the offered card(s) (1+ up to max).
+        #[derive(Clone)]
+        struct TakeItAgent;
+        impl Agent for TakeItAgent {
+            fn decide(&mut self, _v: &PlayerView, req: &DecisionRequest) -> DecisionResponse {
+                match req {
+                    DecisionRequest::Confirm { .. } => DecisionResponse::Bool(true),
+                    DecisionRequest::SelectCards { from, min, max, .. } => {
+                        let n = (*min).max(1).min(*max).min(from.len() as u32);
+                        DecisionResponse::Indices((0..n).collect())
+                    }
+                    _ => DecisionResponse::Pass,
+                }
+            }
+        }
+
+        let mut state = build_game(1, &[&[grp::FOREST], &[]]); // P0 library = one Forest (a basic)
+        let fetch = match &state.card_db().get(FABLED_PASSAGE).unwrap().abilities[0] {
+            Ability::Activated { effect, .. } => effect.clone(),
+            o => panic!("expected Activated, got {o:?}"),
+        };
+        let mut e = Engine::new(state, vec![Box::new(TakeItAgent), Box::new(TakeItAgent)]);
+        e.resolve_effect(
+            &fetch,
+            &ResolutionCtx { controller: Some(PlayerId(0)), ..Default::default() },
+            WbReason::Resolve(StackId(0)),
+        );
+        let land = e.state.players[0].battlefield.first().copied();
+        let status = land.map(|l| format!("{:?}", e.state.objects.get(&l).unwrap().status));
+        let render = format!(
+            "library={} battlefield={} fetched_status={:?}",
+            e.state.players[0].library.len(),
+            e.state.players[0].battlefield.len(),
+            status,
+        );
+        expect![[r#"library=0 battlefield=1 fetched_status=Some("Status { tapped: true, flipped: false, face_down: false, phased_out: false }")"#]].assert_eq(&render);
+    }
 }
