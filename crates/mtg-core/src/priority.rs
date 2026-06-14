@@ -1185,7 +1185,7 @@ impl Engine {
             };
             let resp = self.ask(p, &req);
             let chosen = parse_targets(&slots, &resp);
-            let targeted = object_ids_of(&chosen);
+            let targeted = self.targeted_object_ids(&chosen);
             if let Some(obj) = self.state.stack.items.iter_mut().find(|s| s.id == sid) {
                 obj.targets = chosen;
             }
@@ -1498,7 +1498,7 @@ impl Engine {
             };
             let resp = self.ask(p, &req);
             let chosen = parse_targets(&slots, &resp);
-            let targeted = object_ids_of(&chosen);
+            let targeted = self.targeted_object_ids(&chosen);
             if let Some(obj) = self.state.stack.items.iter_mut().find(|s| s.id == sid) {
                 obj.targets = chosen;
             }
@@ -2016,7 +2016,7 @@ impl Engine {
                 t.targets = parse_targets(&slots, &resp);
             }
         }
-        let targeted = object_ids_of(&t.targets);
+        let targeted = self.targeted_object_ids(&t.targets);
         let by = t.controller;
         self.state.stack.push(t);
         // CR 603.2: each targeted object becomes the target of this triggered ability.
@@ -2284,6 +2284,29 @@ impl Engine {
                 });
             }
         }
+    }
+
+    /// The object ids that "become the target" among a set of chosen `Target`s (CR 603.2): a direct
+    /// `Object` target, or — for a spell on the stack — its underlying card object, so "a creature
+    /// **spell** you control becomes the target" fires too (Surrak's stack-half). Players excluded.
+    fn targeted_object_ids(&self, targets: &[Target]) -> Vec<ObjId> {
+        targets
+            .iter()
+            .filter_map(|t| match t {
+                Target::Object(id) => Some(*id),
+                Target::Stack(sid) => self
+                    .state
+                    .stack
+                    .items
+                    .iter()
+                    .find(|s| s.id == *sid)
+                    .and_then(|s| match s.kind {
+                        StackObjectKind::Spell(obj) => Some(obj),
+                        _ => None,
+                    }),
+                Target::Player(_) => None,
+            })
+            .collect()
     }
 
     /// Broadcast a `Targeted` event for each object that became a target (CR 603.2), controlled by
@@ -2576,16 +2599,6 @@ fn reflexive_reward<'a>(
     }
 }
 
-/// The object ids among a set of chosen `Target`s (dropping player/stack targets).
-fn object_ids_of(targets: &[Target]) -> Vec<ObjId> {
-    targets
-        .iter()
-        .filter_map(|t| match t {
-            Target::Object(id) => Some(*id),
-            _ => None,
-        })
-        .collect()
-}
 
 /// The object ids a `DecisionRequest` names as choices/recipients — so the deciding seat's view can
 /// describe them (CR-wise: the player is entitled to see what they're choosing among). Covers the
@@ -4078,6 +4091,81 @@ mod expect_tests {
         e.state.end_of_turn_continuous_cleanup();
         assert_eq!(e.state.computed(bears).power, Some(2), "the pump wore off at cleanup");
         assert!(e.state.continuous_effects.is_empty());
+    }
+
+    #[test]
+    fn becomes_targeted_creature_spell_on_stack_half_surrak() {
+        use crate::basics::Target;
+        use crate::effects::ability::{Ability, EventPattern};
+        use crate::effects::target::CardFilter;
+        use crate::effects::value::{PlayerRef, ValueExpr};
+        use crate::effects::Effect;
+        use crate::stack::{StackObject, StackObjectKind};
+        use std::sync::Arc;
+        // Surrak's stack-half: "a creature SPELL you control becomes the target of a spell/ability an
+        // opponent controls → draw." A creature spell on the stack, targeted by P1, fires P0's Surrak
+        // — the becomes-targeted firing resolves a Target::Stack to the spell's card object (CR 603.2).
+        let mut db = cards::starter_db();
+        db.insert(cards::CardDef {
+            chars: Characteristics {
+                name: "Surrak (test)".into(),
+                card_types: vec![CardType::Creature],
+                power: Some(4),
+                toughness: Some(3),
+                grp_id: 9601,
+                ..Default::default()
+            },
+            abilities: vec![Ability::Triggered {
+                event: EventPattern::BecomesTargeted {
+                    filter: CardFilter::All(vec![
+                        CardFilter::HasCardType(CardType::Creature),
+                        CardFilter::ControlledBy(PlayerRef::Controller),
+                    ]),
+                    by_opponent: true,
+                },
+                condition: None,
+                intervening_if: false,
+                effect: Effect::Draw { who: PlayerRef::Controller, count: ValueExpr::Fixed(1) },
+            }],
+            text: String::new(),
+            ..Default::default()
+        });
+        let mut state = GameState::new(2, 1);
+        state.set_card_db(Arc::new(db));
+        let surrak_chars = state.card_db().get(9601).unwrap().chars.clone();
+        state.add_card(PlayerId(0), surrak_chars, Zone::Battlefield); // the watcher
+        let bears_chars = state.card_db().get(grp::GRIZZLY_BEARS).unwrap().chars.clone();
+        let spell_card = state.add_card(PlayerId(0), bears_chars, Zone::Stack); // a creature spell
+        let lib_chars = state.card_db().get(grp::FOREST).unwrap().chars.clone();
+        state.add_card(PlayerId(0), lib_chars, Zone::Library); // a card to draw
+        let sid = state.mint_stack();
+        state.stack.push(StackObject {
+            id: sid,
+            controller: PlayerId(0),
+            source: Some(spell_card),
+            kind: StackObjectKind::Spell(spell_card),
+            targets: Vec::new(),
+            x: None,
+            modes: Vec::new(),
+        });
+        let mut e = pass_engine(state);
+
+        // A Target::Stack resolves to the spell's card object for the becomes-targeted event.
+        assert_eq!(
+            e.targeted_object_ids(&[Target::Stack(sid)]),
+            vec![spell_card],
+            "the targeted creature spell resolves to its card object"
+        );
+        let before = e.state.player(PlayerId(0)).hand.len();
+        // P1 targets the creature spell on the stack.
+        e.fire_targeted(&[spell_card], PlayerId(1));
+        e.run_agenda();
+        e.resolve_top();
+        assert_eq!(
+            e.state.player(PlayerId(0)).hand.len(),
+            before + 1,
+            "Surrak draws when an opponent targets your creature spell on the stack"
+        );
     }
 
     #[test]
