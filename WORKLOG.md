@@ -14,13 +14,16 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
   No silent approximation: the unbuildable clauses are absent or inert + flagged. 153 core tests green.
   (2) **Pending-cap card IR staged** (Scryfall-verified oracle text → agreed IR shape, so authoring is
   mechanical when each cap lands):
-  - **earthbend (C12, imminent)** — corrected: earthbend **always targets** "target land you control"
-    (even ETB forms). `Effect::Earthbend{target: Target(land you control), n: ValueExpr}`.
-    *Badgermole Cub* (tla, `{1}{G}` 2/2): ETB earthbend 1 (✓ once C12) + "whenever you tap a creature
-    for mana, add {G}" (reflexive-mana-trigger subsystem → tracked-incomplete). *Earthbender Ascension*
-    (tla, `{2}{G}` Ench): `Sequence[earthbend 2, fetch_basic_tapped]` ETB (✓) + a landfall→quest-counter
-    →reflexive "when you do" intervening-if(≥4)→+1/+1 + trample-until-EOT chain (multi-subsystem →
-    tracked-incomplete). *Ba Sing Se* (already authored): flip its deferred activated earthbend on.
+  - **earthbend (C12) — LANDED + 3 cards authored** (commit d4da45f). Engine shipped
+    `Effect::Earthbend{target,n}` + `Action::GrantContinuous` + collect arm (db81497). Corrected: earthbend
+    **always targets** "target land you control" (even ETB forms). New shared `helpers::earthbend(n)` →
+    `Earthbend{target: Target(Permanent(land you control)), n: Fixed(n)}`. Authored: *Badgermole Cub* (tla,
+    `{1}{G}` 2/2, ETB earthbend 1 ✓; "whenever you tap a creature for mana, add {G}" reflexive-mana subsystem
+    deferred), *Earthbender Ascension* (tla, `{2}{G}` Ench, ETB `Sequence[earthbend 2, fetch]` ✓; landfall→
+    quest-counter→reflexive(≥4)→+1/+1+trample-EOT chain deferred), and flipped *Ba Sing Se*'s `{2}{G},{T}:
+    Earthbend 2` activated (Timing::Sorcery) on. All three held `fully_implemented:false` only for the
+    earthbend **return-tapped** delayed trigger (engine commit C, imminent) — flip to true with no card change
+    when C lands. 156 core tests green.
   - **Mightform Harmonizer** (eoe, `{2}{G}{G}` 4/4): Landfall→**double target creature's power until EOT**
     needs **C15** (double-power continuous); **Warp {2}{G}** needs **C14** (alt-cast + exile-EOT + recast).
   - **Dyadrine, Synthesis Amalgam** (`{X}{G}{W}` Legendary Artifact Creature 0/1): trample ✓; enters-with-
