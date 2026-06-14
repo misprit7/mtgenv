@@ -52,13 +52,13 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
     Dyadrine, Mightform. **STANDING RULE** (lead, no need to re-ask): whenever a landfall card crosses
     unimplemented→at-least-partial, fold it into `selesnya_landfall_deck()` at its mtggoldfish qty and rebalance
     basics; when all 18 are in, the preset = the real 60 and the basic padding is gone.
-  - **Mightform Harmonizer** (eoe, `{2}{G}{G}` 4/4): Landfall→**double target creature's power until EOT** is a
-    one-shot **snapshot** (+X/+0 fixed at resolution, X = current power; does NOT recompute) per the user — so
-    **C15** = materialize the already-existing `Effect::PumpPT{what,power,toughness,duration}` (reuses earthbend
-    commit-A's floating-continuous registry) + a new `ValueExpr::PowerOfTarget(u32)` (snapshot of the chosen
-    target's computed power, indexed like `PlayerRef::ControllerOfTarget`). Card IR:
-    `PumpPT{ what: Target(creature you control), power: PowerOfTarget(0), toughness: Fixed(0), UntilEndOfTurn }`.
-    **Warp {2}{G}** still needs **C14** (alt-cast cost + exile-at-end-step + recast-from-exile).
+  - **Mightform Harmonizer (eoe, `{2}{G}{G}` 4/4) — AUTHORED** (faebf93). C15 landed (engine 557b6b5:
+    PumpPT materialized + `ValueExpr::PowerOfTarget(n)`). Landfall→double-power as the CR-correct **snapshot**:
+    `Triggered{PermanentEnters(land you control), PumpPT{ what: Target(creature you control), power:
+    PowerOfTarget(0), toughness: Fixed(0), UntilEndOfTurn }}` (+X/+0 fixed at resolution, X=current power; wears
+    off at cleanup CR 514.2). `fully_implemented:false` only on **Warp {2}{G}** (C14: alt-cast + exile-at-end-step
+    + recast). Folded ×4 into the selesnya preset (standing rule) → 48 nonbasics, basics 9F/3P; only Keen-Eyed
+    Curator + Dyadrine (3 copies) remain as basic padding. **17/18 distinct cards authored; 159 tests green.**
   - **Dyadrine, Synthesis Amalgam** (`{X}{G}{W}` Legendary Artifact Creature 0/1): trample ✓; enters-with-
     counters = mana-spent-to-cast (needs mana-spent value); **YouAttack** trigger → optional remove +1/+1
     from each of two creatures → reflexive draw + 2/2 Robot token (needs YouAttack event + multi-target
