@@ -5,6 +5,18 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-14
 
+- **engine (#65):** Fixed Dyadrine — its attack drew a card + made a Robot **even when no counters
+  were removed**. The "you may remove a +1/+1 counter from each of two creatures you control. **If
+  you do**, draw + create a Robot" was modeled as `Optional{ Sequence[ForEach{min:2}, Draw,
+  CreateToken] }`, so the `Sequence` ran the reward regardless of whether the `ForEach` could reach
+  two. Added a general `Effect::IfYouDo{cost,reward}` and made `whiteboard::interpret` return a
+  *performed* bool (a `ForEach` reports done only when it reaches `min`; an `Optional` only when
+  accepted **and** its body performs). Dyadrine is now `IfYouDo{ cost: Optional{ForEach}, reward:
+  Sequence[Draw, CreateToken] }`. Gating rides the ForEach's real execution, not a chars-only
+  `CountAtLeast` (the condition system can't see +1/+1 counters). +1 regression test (yes-but-only-
+  one-counter → no removal, no draw, no token); 232 mtg-core tests green. NB: gre-server must be
+  rebuilt/restarted to pick this up.
+
 - **webui:** Fixed combat-lane bug — a blocker that KILLED its attacker (attacker dead, blocker
   survived) went invisible during the damage/end-combat steps and only reappeared at main 2.
   `engagedIds` pulled every declared attacker/blocker out of its band, but `renderCombatLane` did
