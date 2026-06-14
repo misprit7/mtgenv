@@ -5,6 +5,17 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-14
 
+- **engine (#49 — modal target-legality fix):** **Don't offer a modal mode whose targets can't be chosen
+  (5df860e, CR 601.2c/700.2d).** Self-served the repro the lead asked for: instrumented the central `ask`
+  to flag any `ChooseTargets` with an effective-required (min≥1) slot + zero candidates, ran 200 Selesnya
+  self-play games → **42/200 tripped on Bushwhack** (a "choose one" modal: mode 0 = fight two creatures,
+  mode 1 = untargeted search). Root cause: `choose_modes` offered the fight mode even with no creatures in
+  play, then emitted a `ChooseTargets` with two empty min=1 slots — a genuine engine leak, **not** a codec
+  min=0 misread. Fix: `choose_modes` now offers only *legal* modes (a mode is legal iff every target it
+  declares is satisfiable; untargeted modes always legal), mapping the agent's pick back to original mode
+  indices; `spell_castable_targets` makes cast-legality modal-aware (≥min legal modes). **0 leaks across 300
+  seeds post-fix.** Regression test added; instrumentation removed. 191 core tests green.
+
 - **design (quality pass):** **Behaviour-test coverage expanded across the pool + post-flip self-play
   re-validation.** Added resolve-level behaviour tests (exercise the *resolved* effect, not just IR) for the
   distinct mechanic types: Sazh's Chocobo (landfall → +1/+1 on self), Mossborn Hydra (landfall → double
