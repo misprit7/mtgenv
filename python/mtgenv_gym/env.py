@@ -38,7 +38,7 @@ class MtgEnv(_GymEnv):
     metadata = {"render_modes": []}
 
     def __init__(self, deck="demo", auto_pass=True, agent_seat=0, opponent="random",
-                 max_decisions=200_000):
+                 max_decisions=200_000, record_replay=False, replay_step=0):
         super().__init__()
         if spaces is None:
             raise ImportError("gymnasium is required for MtgEnv")
@@ -47,8 +47,10 @@ class MtgEnv(_GymEnv):
         self.agent_seat = int(agent_seat)
         self.opponent = opponent
         self.max_decisions = int(max_decisions)
+        self.record_replay = bool(record_replay)
+        self.replay_step = int(replay_step)
 
-        self._game = mtg_py.PyGame(deck, auto_pass)
+        self._game = mtg_py.PyGame(deck, auto_pass, self.record_replay, self.replay_step)
         self.action_dim = mtg_py.PyGame.action_dim()
         self._spec = mtg_py.PyGame.obs_spec()  # [(name, rows, cols, is_int)]
 
@@ -140,6 +142,21 @@ class MtgEnv(_GymEnv):
         if is_int:
             return spaces.Box(low=0, high=_INT_HIGH, shape=shape, dtype=np.int64)
         return spaces.Box(low=-np.inf, high=np.inf, shape=shape, dtype=np.float32)
+
+    def export_replay(self, out_dir, created_at_ms, names=None, decks=None):
+        """Write the just-finished game's omniscient replay JSON to ``out_dir`` (training-replay
+        export, REPLAY_PLAN §3). Requires ``record_replay=True`` and a terminated episode. Returns
+        the written path, or ``None`` if no replay was recorded."""
+        js = self._game.replay_json(int(created_at_ms), names, decks)
+        if js is None:
+            return None
+        import os
+
+        os.makedirs(out_dir, exist_ok=True)
+        path = os.path.join(out_dir, f"aitrain-{self.deck}-step{self.replay_step:07d}-{created_at_ms}.json")
+        with open(path, "w") as f:
+            f.write(js)
+        return path
 
     def summary(self):
         s = self._game.summary()
