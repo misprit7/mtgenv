@@ -38,7 +38,7 @@ class MtgEnv(_GymEnv):
     metadata = {"render_modes": []}
 
     def __init__(self, deck="demo", auto_pass=True, agent_seat=0, opponent="random",
-                 max_decisions=200_000, record_replay=False, replay_step=0):
+                 max_decisions=3000, record_replay=False, replay_step=0):
         super().__init__()
         if spaces is None:
             raise ImportError("gymnasium is required for MtgEnv")

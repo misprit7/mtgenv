@@ -107,7 +107,7 @@ class _PooledBatchedOpponent:
 class BatchedSelfPlayVecEnv(VecEnv):
     """N self-play `MtgEnv` games stepped in lockstep, opponent inference batched across games."""
 
-    def __init__(self, deck, pool_dir, num_envs, p_random=0.2, seed=0, max_decisions=200_000,
+    def __init__(self, deck, pool_dir, num_envs, p_random=0.2, seed=0, max_decisions=3000,
                  device="cpu", shaping_coef=0.0, gamma=0.999):
         self.deck = deck
         self.envs = [

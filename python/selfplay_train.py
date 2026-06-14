@@ -153,7 +153,7 @@ def train_selfplay(deck="demo", timesteps=120_000, n_envs=8, pool_dir=DEFAULT_PO
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--deck", default="demo", choices=["lands", "demo", "burn_vs_bears"])
+    ap.add_argument("--deck", default="demo", choices=["lands", "demo", "burn_vs_bears", "selesnya"])
     ap.add_argument("--timesteps", type=int, default=120_000)
     ap.add_argument("--n-envs", type=int, default=8)
     ap.add_argument("--pool-dir", default=DEFAULT_POOL)

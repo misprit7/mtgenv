@@ -25,14 +25,16 @@ use mtg_core::priority::{EndReason, Engine};
 use mtg_core::replay::{Replay, ReplaySource};
 use mtg_core::state::{Characteristics, GameState};
 
-/// Which tiny built-in deck/matchup a game uses. The card pool grows in later milestones; for
-/// milestone 0 these three exercise lands-only (deck-out), casting + the stack + combat (demo),
-/// and a burn-vs-creatures race.
+/// Which built-in deck/matchup a game uses. `LandsOnly`/`Demo`/`BurnVsBears` are the tiny milestone-0
+/// pools (deck-out, casting+stack+combat, a burn-vs-creatures race); `Selesnya` is the M4 mirror on
+/// the implemented landfall pool — a real card pool to test that the policy's `grp_id` embedding
+/// generalizes past the 3-card demo.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Deck {
     LandsOnly,
     Demo,
     BurnVsBears,
+    Selesnya,
 }
 
 impl Deck {
@@ -41,6 +43,7 @@ impl Deck {
             "lands" | "lands_only" | "landsonly" => Some(Deck::LandsOnly),
             "demo" => Some(Deck::Demo),
             "burn_vs_bears" | "burnvsbears" | "bvb" => Some(Deck::BurnVsBears),
+            "selesnya" | "landfall" => Some(Deck::Selesnya),
             _ => None,
         }
     }
@@ -50,6 +53,11 @@ impl Deck {
             Deck::LandsOnly => lands_only_state(2, seed),
             Deck::Demo => mtg_core::cards::two_player_demo_game(seed),
             Deck::BurnVsBears => mtg_core::cards::burn_vs_bears_game(seed),
+            Deck::Selesnya => {
+                // Mirror of the engine's Selesnya landfall preset (one library per seat).
+                let d = mtg_core::cards::preset_deck("selesnya").expect("selesnya preset deck");
+                mtg_core::cards::build_game(seed, &[d.as_slice(), d.as_slice()])
+            }
         }
     }
 }
