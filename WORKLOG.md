@@ -5,6 +5,16 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-14
 
+- **webui:** Fixed combat-lane bug — a blocker that KILLED its attacker (attacker dead, blocker
+  survived) went invisible during the damage/end-combat steps and only reappeared at main 2.
+  `engagedIds` pulled every declared attacker/blocker out of its band, but `renderCombatLane` did
+  `if (!atk) return` — so a matchup whose attacker died was skipped entirely, dropping the surviving
+  blocker (it was in neither band nor lane). Fix: (1) only add STILL-ALIVE creatures to `engagedIds`;
+  (2) render whoever survived each matchup — a cell with a dead attacker now shows its surviving
+  blocker(s) alone; (3) `matchupCell` handles a null attacker. Mirrored in
+  `embedded_client.html`/`main.ts`. Verified via Playwright (Llanowar that out-fought its attacker
+  now renders once in the lane, not duplicated, never invisible).
+
 - **webui:** Fixed hover-preview not working for spells/abilities on the stack. The `.stack` overlay
   is `pointer-events:none` (so its gaps don't block the board beneath it), but that also made
   `elementFromPoint` — which `refreshPreview` uses to find the hovered `[data-preview]` — hit the

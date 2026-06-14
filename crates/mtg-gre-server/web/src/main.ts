@@ -459,26 +459,37 @@ function computeCombat(): void {
   combatByAtk = null; engagedIds = new Set();
   const c = view && view.combat;
   if (!c || !(c.blockers || []).length) return; // lane only appears once a block exists
+  // Only pull creatures that are STILL on the battlefield into the lane — a creature that died in
+  // combat is gone, and a SURVIVOR must keep being rendered (in the lane below). Adding a dead-or-
+  // alive id blindly is what made survivors-whose-attacker-died vanish until combat cleared.
+  const alive = new Set<number>();
+  (view.battlefield || []).forEach((o: Any) => { if (o.Visible) alive.add(o.Visible.id); });
   combatByAtk = new Map();
   (c.blockers || []).forEach((pr: Any) => {      // pr = [blocker, attacker]
     const bl = pr[0], atk = pr[1];
     if (!combatByAtk!.has(atk)) combatByAtk!.set(atk, []);
     combatByAtk!.get(atk)!.push(bl);
-    engagedIds.add(bl);
+    if (alive.has(bl)) engagedIds.add(bl);       // surviving blockers
   });
-  (c.attackers || []).forEach((a: Any) => engagedIds.add(a[0])); // all attackers join the lane too
+  (c.attackers || []).forEach((a: Any) => { if (alive.has(a[0])) engagedIds.add(a[0]); }); // surviving attackers
 }
 function renderCombatLane(): void {
   const host = $("combatLane");
   host.innerHTML = "";
   if (!combatByAtk || !view.combat) { host.hidden = true; return; }
-  host.hidden = false;
   const allById: Any = {}; (view.battlefield || []).map(norm).forEach((o: Any) => { allById[o.id] = o; });
+  // One cell per declared attacker, rendering whoever SURVIVED. If the attacker died but a blocker
+  // lived, the cell still shows the surviving blocker (so it never disappears); skip a matchup only
+  // when nothing on either side survives.
+  let any = false;
   (view.combat.attackers || []).forEach((a: Any) => {
-    const atk = allById[a[0]]; if (!atk) return;
-    const blks = (combatByAtk!.get(a[0]) || []).map((id: number) => allById[id]).filter(Boolean);
+    const atk = allById[a[0]] || null; // may have died in combat
+    const blks = (combatByAtk!.get(a[0]) || []).map((id: number) => allById[id]).filter(Boolean); // survivors
+    if (!atk && !blks.length) return;
     host.appendChild(matchupCell(atk, blks, allById));
+    any = true;
   });
+  host.hidden = !any;
 }
 // One attacker and the creatures blocking it, stacked so they face off across a ⚔. The attacker
 // sits toward its own controller's side (opponent on top, you on the bottom) — mirroring the board —
@@ -486,6 +497,12 @@ function renderCombatLane(): void {
 // alone with an arrow toward the player they're hitting.
 function matchupCell(atk: Any, blks: Any[], allById: Any): HTMLElement {
   const cell = el("div", "matchup" + (blks.length ? "" : " unblocked"));
+  if (!atk) { // attacker died in combat → show the surviving blocker(s) on their own
+    const blkRow = el("div", "matchrow blk");
+    blks.forEach((b) => blkRow.appendChild(permEl(b, allById)));
+    cell.appendChild(blkRow);
+    return cell;
+  }
   const atkMine = atk.controller === view.seat;
   const atkRow = el("div", "matchrow atk"); atkRow.appendChild(permEl(atk, allById));
   if (blks.length) {
