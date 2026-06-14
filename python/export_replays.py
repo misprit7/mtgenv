@@ -106,6 +106,9 @@ def main():
     ap.add_argument("--shaping-coef", type=float, default=0.5,
                     help="initial potential-based shaping coef (annealed to 0 over 60%% of training; "
                          "0 disables — GYM_PLAN §5)")
+    ap.add_argument("--big-net", action="store_true",
+                    help="attention-based AttnEntityExtractor + [256,256] heads (~630k params) "
+                         "instead of the DeepSets mean-pool baseline (~144k) — A/B for net capacity")
     args = ap.parse_args()
 
     # Descriptive run name → TensorBoard run folder AND the replay run tag (the lobby groups by it).
@@ -118,9 +121,16 @@ def main():
     for f in glob.glob(os.path.join(args.pool_dir, "*.zip")):
         os.remove(f)
     venv = make_vecenv(args.deck, args.pool_dir, args.n_envs, 0, subproc=False)
+    if args.big_net:
+        from mtgenv_gym.policy import AttnEntityExtractor
+
+        policy_kwargs = dict(features_extractor_class=AttnEntityExtractor,
+                             net_arch=dict(pi=[256, 256], vf=[256, 256]))
+    else:
+        policy_kwargs = dict(features_extractor_class=EntityExtractor)
     model = MaskablePPO(
         "MultiInputPolicy", venv,
-        policy_kwargs=dict(features_extractor_class=EntityExtractor),
+        policy_kwargs=policy_kwargs,
         n_steps=256, batch_size=256, gamma=0.999, ent_coef=0.01,
         tensorboard_log=args.tensorboard, verbose=1,
     )

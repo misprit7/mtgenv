@@ -71,3 +71,63 @@ class EntityExtractor(BaseFeaturesExtractor):
             pooled.append(summed / count)
         g = obs["globals"]                                   # (B, G)
         return self.head(torch.cat([g, *pooled], dim=-1))
+
+
+class AttnEntityExtractor(BaseFeaturesExtractor):
+    """A bigger, attention-based extractor (the A/B against ``EntityExtractor``'s mean-pool).
+
+    Two upgrades over the DeepSets baseline, both targeting *game-playing* capacity rather than card
+    count: (1) **self-attention over entities** — all bf/hand/stack rows are projected into one set
+    (with a table-type embedding + a learned always-present "sink" token) and run through a
+    Transformer encoder layer, so entities can *relate* (attacker↔blocker, aura↔host, threat
+    assessment) instead of being averaged independently; (2) **attention pooling** — a learned query
+    attends over the encoded set (masked to present rows) instead of a mean. Wider too
+    (``d_model``/``features_dim``). The sink token guarantees ≥1 valid key, so the empty-board opening
+    obs can't NaN the masked softmax.
+    """
+
+    def __init__(self, observation_space, embed_dim=16, vocab=4096, d_model=128, nhead=4,
+                 ff=256, features_dim=256):
+        super().__init__(observation_space, features_dim=features_dim)
+        self.vocab = vocab
+        self.embed = nn.Embedding(vocab, embed_dim)
+        self.proj = nn.ModuleDict()
+        self.cardid_dims = {}
+        self.tables = []
+        for name in _TABLES:
+            if f"{name}_feat" not in observation_space.spaces:
+                continue
+            fdim = observation_space[f"{name}_feat"].shape[-1]
+            cid = f"{name}_cardid"
+            cdim = observation_space[cid].shape[-1] if cid in observation_space.spaces else 0
+            self.cardid_dims[name] = cdim
+            self.proj[name] = nn.Linear(fdim + embed_dim + cdim, d_model)
+            self.tables.append(name)
+        self.type_emb = nn.Embedding(len(self.tables), d_model)  # which table a row came from
+        self.sink = nn.Parameter(torch.randn(1, 1, d_model) * 0.02)  # always-present token (no-NaN + global)
+        self.encoder = nn.TransformerEncoderLayer(d_model, nhead, ff, batch_first=True, dropout=0.0)
+        self.query = nn.Parameter(torch.randn(1, 1, d_model) * 0.02)  # learned pooling query
+        self.pool = nn.MultiheadAttention(d_model, nhead, batch_first=True, dropout=0.0)
+        g = observation_space["globals"].shape[0]
+        self.head = nn.Sequential(nn.Linear(g + d_model, features_dim), nn.ReLU())
+
+    def forward(self, obs):
+        B = obs["globals"].shape[0]
+        rows, present = [], []
+        for ti, name in enumerate(self.tables):
+            feat = obs[f"{name}_feat"]                         # (B, R, F)
+            ids = (obs[f"{name}_ids"].long() % self.vocab)
+            parts = [feat, self.embed(ids)]
+            if self.cardid_dims[name]:
+                parts.append(obs[f"{name}_cardid"])
+            h = self.proj[name](torch.cat(parts, dim=-1)) + self.type_emb.weight[ti]  # (B, R, d)
+            rows.append(h)
+            present.append(feat[..., 0] > 0.5)                # (B, R)
+        sink = self.sink.expand(B, -1, -1)                    # (B, 1, d)
+        H = torch.cat([sink, *rows], dim=1)                   # (B, 1+Rtot, d)
+        pad = torch.cat([torch.zeros(B, 1, dtype=torch.bool, device=H.device),
+                         ~torch.cat(present, dim=1)], dim=1)  # True = padded (ignored); sink never padded
+        enc = self.encoder(H, src_key_padding_mask=pad)       # entities relate
+        q = self.query.expand(B, -1, -1)
+        pooled, _ = self.pool(q, enc, enc, key_padding_mask=pad)  # attention pool → (B, 1, d)
+        return self.head(torch.cat([obs["globals"], pooled.squeeze(1)], dim=-1))
