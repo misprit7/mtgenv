@@ -5,6 +5,17 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-14
 
+- **webui:** Combat clarity — blockers now physically move in front of the attacker they block. New
+  **combat lane** at the midline: once blocks are declared, each attacker is pulled out of its band
+  into a matchup cell with its blocker(s) stacked facing it across a ⚔ (attacker toward its own
+  side — opp on top, you on the bottom — mirroring the board); unblocked attackers stand alone with
+  a "↓/↑ unblocked" marker. Creatures snap back to their normal rows when combat ends (lane hidden
+  when `view.combat`/blockers empty). `computeCombat`/`renderCombatLane`/`matchupCell` + `engagedIds`
+  skip in `renderHalf`, mirrored across `embedded_client.html` / `main.ts` / `index.html` (Vite
+  shell) / `style.css`. Verified via Playwright on a synthetic combat frame: blocked cell stacks
+  attacker over blocker, unblocked cell solo, engaged creatures move to the lane (not duplicated),
+  zero console errors. Works in live play and replays/spectate (god-view combat too).
+
 - **engine (#55 — training-hang safety net):** **Loop-guard aborts wedged games to a draw + names the loop
   (e502ba6); deterministic-greedy termination test (dd6e9b6).** A demo self-play training run froze for hours
   spinning one CPU core — a single `env.step()` entered an in-engine infinite loop (no `Agent::decide` call, so

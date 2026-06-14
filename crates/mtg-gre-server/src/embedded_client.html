@@ -59,6 +59,17 @@
   .half.you { justify-content: flex-start; }
   .half.oppo { justify-content: flex-end; }
   .midline { height: 0; border-top: 1px dashed rgba(255,255,255,.18); margin: 2px 0; }
+  /* Combat lane: blocked attackers + their blockers face off here during combat. */
+  .combatlane { display: flex; justify-content: center; flex-wrap: wrap; gap: 16px; padding: 6px 10px;
+    margin: 2px 0; background: rgba(224,132,111,.07); border: 1px solid rgba(224,132,111,.28);
+    border-radius: 10px; }
+  .combatlane[hidden] { display: none; }
+  .matchup { display: flex; flex-direction: column; align-items: center; gap: 1px;
+    padding: 5px 7px; border-radius: 9px; background: rgba(0,0,0,.18); box-shadow: inset 0 0 0 1px rgba(224,132,111,.22); }
+  .matchrow { display: flex; gap: 5px; align-items: flex-start; justify-content: center; }
+  .matchup .vs { color: #e0846f; font-size: 12px; line-height: 1; font-weight: 700; letter-spacing: .04em; }
+  .matchup.unblocked { box-shadow: inset 0 0 0 1px rgba(224,132,111,.5); }
+  .matchup .vs.through { color: #e8b06a; }
   .row { display: flex; gap: 7px; flex-wrap: wrap; align-items: flex-start; min-height: 96px; align-content: flex-start; }
   .row.lands { min-height: 80px; }
   /* Creature band: two side-by-side groups (don't wrap the groups; each wraps internally). */
@@ -301,6 +312,9 @@
     <div class="play">
       <div class="half oppo" id="oppoHalf"></div>
       <div class="midline"></div>
+      <!-- Combat lane: during combat, blocked attackers + their blockers move here (facing off) so
+           it's clear what's blocking what; empty/hidden otherwise. -->
+      <div class="combatlane" id="combatLane" hidden></div>
       <div class="half you" id="youHalf"></div>
       <div class="stack" id="stack"></div>
     </div>
@@ -541,8 +555,10 @@
     $("turn").textContent = "Turn " + view.turn + " · " + view.phase + " · active P" + view.active_player +
       (view.priority_player != null ? " · priority P" + view.priority_player : "");
     renderRail();
+    computeCombat();   // figure out which creatures are engaged BEFORE drawing the halves
     renderHalf("oppoHalf", oppId(), true);
     renderHalf("youHalf", me(), false);
+    renderCombatLane();
     renderStack();
     renderStepBar();
     renderHand();
@@ -723,7 +739,9 @@
     const byId = {}; perms.forEach(c => byId[c.id] = c);
     const attached = new Set();
     perms.forEach(c => (c.attachments || []).forEach(id => attached.add(id)));
-    const top = perms.filter(c => !attached.has(c.id));
+    // Skip creatures pulled into the combat lane (blocked attackers + their blockers, and the rest
+    // of the attackers) — they render there instead, and return to the band once combat ends.
+    const top = perms.filter(c => !attached.has(c.id) && !engagedIds.has(c.id));
     // Three buckets. Creatures take priority over every other type: an artifact/enchantment/land
     // that is ALSO a creature goes with the creatures (it attacks/blocks). Unknown (no chars,
     // e.g. face-down) defaults to the creature row too. Remaining noncreature permanents split into
@@ -761,6 +779,58 @@
       row.appendChild(og);
     }
     return row;
+  }
+
+  // ── combat lane: blockers move in front of the attacker they block ───────────────
+  // `combatByAtk` maps attackerId → [blockerId…] (only once blocks are declared); `engagedIds` is
+  // every creature pulled out of its band into the lane. Both are recomputed each render and cleared
+  // when combat ends, so creatures snap back to their normal rows afterward.
+  let combatByAtk = null, engagedIds = new Set();
+  function computeCombat() {
+    combatByAtk = null; engagedIds = new Set();
+    const c = view && view.combat;
+    if (!c || !(c.blockers || []).length) return; // lane only appears once a block exists
+    combatByAtk = new Map();
+    (c.blockers || []).forEach(pr => {            // pr = [blocker, attacker]
+      const bl = pr[0], atk = pr[1];
+      if (!combatByAtk.has(atk)) combatByAtk.set(atk, []);
+      combatByAtk.get(atk).push(bl);
+      engagedIds.add(bl);
+    });
+    (c.attackers || []).forEach(a => engagedIds.add(a[0])); // all attackers join the lane too
+  }
+  function renderCombatLane() {
+    const host = $("combatLane");
+    host.innerHTML = "";
+    if (!combatByAtk || !view.combat) { host.hidden = true; return; }
+    host.hidden = false;
+    const allById = {}; (view.battlefield || []).map(norm).forEach(o => { allById[o.id] = o; });
+    (view.combat.attackers || []).forEach(a => {
+      const atk = allById[a[0]]; if (!atk) return;
+      const blks = (combatByAtk.get(a[0]) || []).map(id => allById[id]).filter(Boolean);
+      host.appendChild(matchupCell(atk, blks, allById));
+    });
+  }
+  // One attacker and the creatures blocking it, stacked so they face off across a ⚔. The attacker
+  // sits toward its own controller's side (opponent on top, you on the bottom) — mirroring the board
+  // — so a blocker visibly stands in front of the attacker it's stopping. Unblocked attackers stand
+  // alone with an arrow toward the player they're hitting.
+  function matchupCell(atk, blks, allById) {
+    const cell = el("div", "matchup" + (blks.length ? "" : " unblocked"));
+    const atkMine = atk.controller === view.seat;
+    const atkRow = el("div", "matchrow atk"); atkRow.appendChild(permEl(atk, allById));
+    if (blks.length) {
+      const blkRow = el("div", "matchrow blk");
+      blks.forEach(b => blkRow.appendChild(permEl(b, allById)));
+      const vs = el("div", "vs", "⚔");
+      if (atkMine) { cell.appendChild(blkRow); cell.appendChild(vs); cell.appendChild(atkRow); }
+      else { cell.appendChild(atkRow); cell.appendChild(vs); cell.appendChild(blkRow); }
+    } else {
+      const thru = el("div", "vs through", atkMine ? "↑ unblocked" : "↓ unblocked");
+      if (atkMine) { cell.appendChild(thru); cell.appendChild(atkRow); }
+      else { cell.appendChild(atkRow); cell.appendChild(thru); }
+    }
+    return cell;
   }
 
   // A battlefield permanent plus any auras/equipment attached to it, stacked slightly offset

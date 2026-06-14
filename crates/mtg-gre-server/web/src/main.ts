@@ -222,8 +222,10 @@ function render(): void {
   $("turn").textContent = `Turn ${view.turn} · ${view.phase} · active P${view.active_player}` +
     (view.priority_player != null ? ` · priority P${view.priority_player}` : "");
   renderRail();
+  computeCombat();   // figure out which creatures are engaged BEFORE drawing the halves
   renderHalf("oppoHalf", oppId(), true);
   renderHalf("youHalf", meSeat(), false);
+  renderCombatLane();
   renderStack();
   renderStepBar();
   renderHand();
@@ -406,7 +408,9 @@ function renderHalf(elId: string, pid: number | null, isOppo: boolean): void {
   const byId: Any = {}; perms.forEach((c) => { byId[c.id] = c; });
   const attached = new Set<number>();
   perms.forEach((c) => (c.attachments || []).forEach((id: number) => attached.add(id)));
-  const top = perms.filter((c) => !attached.has(c.id));
+  // Skip creatures pulled into the combat lane (blocked attackers + their blockers, and the rest of
+  // the attackers) — they render there instead, and return to the band once combat ends.
+  const top = perms.filter((c) => !attached.has(c.id) && !engagedIds.has(c.id));
   // Three buckets. Creatures take priority over every other type: an artifact/enchantment/land that
   // is ALSO a creature goes with the creatures (it attacks/blocks). Unknown (no chars, e.g.
   // face-down) defaults to the creature row too. Remaining noncreature permanents split into lands
@@ -443,6 +447,59 @@ function creatureBand(creatures: Any[], others: Any[], byId?: Any): HTMLElement 
     row.appendChild(og);
   }
   return row;
+}
+
+// ── combat lane: blockers move in front of the attacker they block ───────────────
+// `combatByAtk` maps attackerId → [blockerId…] (only once blocks are declared); `engagedIds` is
+// every creature pulled out of its band into the lane. Both are recomputed each render and cleared
+// when combat ends, so creatures snap back to their normal rows afterward.
+let combatByAtk: Map<number, number[]> | null = null;
+let engagedIds: Set<number> = new Set();
+function computeCombat(): void {
+  combatByAtk = null; engagedIds = new Set();
+  const c = view && view.combat;
+  if (!c || !(c.blockers || []).length) return; // lane only appears once a block exists
+  combatByAtk = new Map();
+  (c.blockers || []).forEach((pr: Any) => {      // pr = [blocker, attacker]
+    const bl = pr[0], atk = pr[1];
+    if (!combatByAtk!.has(atk)) combatByAtk!.set(atk, []);
+    combatByAtk!.get(atk)!.push(bl);
+    engagedIds.add(bl);
+  });
+  (c.attackers || []).forEach((a: Any) => engagedIds.add(a[0])); // all attackers join the lane too
+}
+function renderCombatLane(): void {
+  const host = $("combatLane");
+  host.innerHTML = "";
+  if (!combatByAtk || !view.combat) { host.hidden = true; return; }
+  host.hidden = false;
+  const allById: Any = {}; (view.battlefield || []).map(norm).forEach((o: Any) => { allById[o.id] = o; });
+  (view.combat.attackers || []).forEach((a: Any) => {
+    const atk = allById[a[0]]; if (!atk) return;
+    const blks = (combatByAtk!.get(a[0]) || []).map((id: number) => allById[id]).filter(Boolean);
+    host.appendChild(matchupCell(atk, blks, allById));
+  });
+}
+// One attacker and the creatures blocking it, stacked so they face off across a ⚔. The attacker
+// sits toward its own controller's side (opponent on top, you on the bottom) — mirroring the board —
+// so a blocker visibly stands in front of the attacker it's stopping. Unblocked attackers stand
+// alone with an arrow toward the player they're hitting.
+function matchupCell(atk: Any, blks: Any[], allById: Any): HTMLElement {
+  const cell = el("div", "matchup" + (blks.length ? "" : " unblocked"));
+  const atkMine = atk.controller === view.seat;
+  const atkRow = el("div", "matchrow atk"); atkRow.appendChild(permEl(atk, allById));
+  if (blks.length) {
+    const blkRow = el("div", "matchrow blk");
+    blks.forEach((b) => blkRow.appendChild(permEl(b, allById)));
+    const vs = el("div", "vs", "⚔");
+    if (atkMine) { cell.appendChild(blkRow); cell.appendChild(vs); cell.appendChild(atkRow); }
+    else { cell.appendChild(atkRow); cell.appendChild(vs); cell.appendChild(blkRow); }
+  } else {
+    const thru = el("div", "vs through", atkMine ? "↑ unblocked" : "↓ unblocked");
+    if (atkMine) { cell.appendChild(thru); cell.appendChild(atkRow); }
+    else { cell.appendChild(atkRow); cell.appendChild(thru); }
+  }
+  return cell;
 }
 
 // A battlefield permanent plus any auras/equipment attached to it, stacked slightly offset behind
