@@ -353,10 +353,22 @@ it directly).
 
 ## 6. Throughput, vectorization, self-play
 
+> **M2 measurement (2026-06-13, demo deck) — corrects the assumption below.** Once a *NN opponent*
+> is in the loop (self-play), the simulator is **not** the bottleneck — inference is. Measured:
+> raw engine **54 games/s/core** (no NN); self-play `DummyVecEnv(8)` **~14 games/s/core** (capped by
+> the per-env *synchronous opponent* `predict`); **`SubprocVecEnv` was *slower*** (~0.6/core) because
+> the large `Dict` observation makes per-step pipe IPC cost more than the parallelism buys on a fast
+> sim — so multiprocessing is the wrong lever here. Hitting the ≥10² games/s/core bar **with the NN**
+> needs **async batched inference** (one forward over all envs' pending decisions, learner *and*
+> opponent), which is cleanest after M3's resumable step API removes the per-game threads. Tracked as
+> a deferred item (paired with M3); M2 ships on `DummyVecEnv` (self-play trains + improves in minutes
+> at demo scale). The bar was always for M4-scale training.
+
 - **Why Rust matters:** the simulator, not the (small, GPU-batched) net, is the self-play
   bottleneck. A pure-Python engine caps at ~10²–10³ decisions/s; Rust + no-serialization PyO3 targets
   ~10⁵–10⁶ simple decisions/s/thread, i.e. ~10²–10³ *games*/s/core on the tiny pool, scaling with
-  cores. Auto-pass (§5) is the dominant multiplier on effective episode length.
+  cores. Auto-pass (§5) is the dominant multiplier on effective episode length. (But see the M2 note
+  above: the *NN inference*, not the sim, gates self-play throughput until async batched inference.)
 - **Vectorized envs:** `N` independent `PyGame`s (each its own game thread under approach 2.2-A, or
   a cheap re-entrant handle under 2.2-B). Games desync (different decision kinds per env), so the
   throughput sweet spot is **async batched inference**: each env advances to its next decision, the
