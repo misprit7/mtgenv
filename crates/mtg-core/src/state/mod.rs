@@ -363,9 +363,6 @@ impl GameState {
     /// Mints a fresh layer timestamp (CR 613.7d — a resolution-created effect orders after every
     /// effect that already existed) and marks the layer cache dirty. Returns the effect's id (for
     /// later targeted removal). See [`crate::chars::ContinuousEffect`].
-    // Wired into the whiteboard by the Earthbend materializer (`Action::GrantContinuous`); used by
-    // tests until then.
-    #[allow(dead_code)]
     pub(crate) fn add_continuous_effect(
         &mut self,
         source: Option<ObjId>,

@@ -2000,6 +2000,8 @@ fn collect_specs_into(effect: &Effect, out: &mut Vec<TargetSpec>) {
                 }
             }
         }
+        // Earthbend targets "target land you control" (CR 601.2c).
+        Effect::Earthbend { target: EffectTarget::Target(spec), .. } => out.push(spec.clone()),
         Effect::Sequence(effects) => {
             for e in effects {
                 collect_specs_into(e, out);
@@ -3352,6 +3354,45 @@ mod expect_tests {
                 .iter()
                 .any(|s| matches!(s, crate::sba::StateBasedAction::CreatureDies { creature, .. } if *creature == bears)),
             "the 2/2 is marked for death"
+        );
+    }
+
+    #[test]
+    fn earthbend_animates_a_land_and_adds_counters_c12() {
+        use crate::basics::{CardType, Target};
+        use crate::effects::ability::Keyword;
+        use crate::effects::action::{ResolutionCtx, WbReason};
+        use crate::effects::value::ValueExpr;
+        use crate::effects::{Effect, EffectTarget};
+        // Earthbend 2 on a Forest you control: it becomes a 0/0 creature with haste that's still a
+        // land, with two +1/+1 counters → a 2/2 land creature (which therefore survives the 0/0 SBA).
+        let mut state = cards::build_game(1, &[&[], &[]]);
+        let forest = put(&mut state, PlayerId(0), grp::FOREST, Zone::Battlefield);
+        let mut e = pass_engine(state);
+        e.resolve_effect(
+            &Effect::Earthbend { target: EffectTarget::ChosenIndex(0), n: ValueExpr::Fixed(2) },
+            &ResolutionCtx {
+                controller: Some(PlayerId(0)),
+                source: Some(forest),
+                chosen_targets: vec![Target::Object(forest)],
+                ..Default::default()
+            },
+            WbReason::Resolve(crate::ids::StackId(0)),
+        );
+        let cc = e.state.computed(forest);
+        assert!(cc.is_creature(), "the land became a creature");
+        assert!(cc.card_types.contains(&CardType::Land), "and is still a land");
+        assert!(cc.has_keyword(Keyword::Haste), "with haste");
+        assert_eq!(cc.power, Some(2), "0/0 base + two +1/+1 counters");
+        assert_eq!(cc.toughness, Some(2));
+        assert_eq!(e.state.continuous_effects.len(), 1, "one floating animation effect registered");
+        // It's a land creature: not marked to die by the 0/0 SBA, since it's a 2/2.
+        assert!(
+            !crate::sba::collect(&e.state).iter().any(|s| matches!(
+                s,
+                crate::sba::StateBasedAction::CreatureDies { creature, .. } if *creature == forest
+            )),
+            "a 2/2 land creature is not destroyed"
         );
     }
 

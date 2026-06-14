@@ -15,7 +15,8 @@ use crate::agent::{
     ReplacementOption, SelectReason,
 };
 use crate::basics::{CardType, Color, CounterKind, DamageKind, Target, Zone, ZoneDest};
-use crate::effects::ability::{Ability, ActionPattern, Rewrite};
+use crate::effects::ability::{Ability, ActionPattern, Keyword, Rewrite, StaticContribution};
+use crate::effects::condition::Duration;
 use crate::effects::action::{Action, ResolutionCtx, Whiteboard, WbReason};
 use crate::effects::target::{CardFilter, ManaSpec, TokenSpec};
 use crate::effects::value::{PlayerRef, ValueExpr};
@@ -373,6 +374,33 @@ impl Engine {
                     });
                 }
             }
+            // C12: Earthbend N — the chosen land becomes a 0/0 creature with haste that's still a
+            // land (a resolution-granted continuous effect, CR 611) and gets N +1/+1 counters.
+            // The companion delayed "dies/exiled → return tapped" trigger is registered separately.
+            Effect::Earthbend { target, n } => {
+                let n = self.eval_value(n, ctx).max(0);
+                if let Some(Target::Object(land)) = self.resolve_target(target, ctx, cursor) {
+                    let controller = ctx.controller.unwrap_or(PlayerId(0));
+                    wb.push(Action::GrantContinuous {
+                        source: ctx.source,
+                        controller,
+                        affected: vec![land],
+                        contributions: vec![
+                            StaticContribution::AddType(CardType::Creature),
+                            StaticContribution::SetBasePT { power: 0, toughness: 0 },
+                            StaticContribution::GrantKeyword(Keyword::Haste),
+                        ],
+                        duration: Duration::Permanent,
+                    });
+                    if n > 0 {
+                        wb.push(Action::AddCounters {
+                            obj: land,
+                            kind: CounterKind::PlusOnePlusOne,
+                            n: n as i32,
+                        });
+                    }
+                }
+            }
             // C6: create N copies of a token (CR 111).
             Effect::CreateToken { spec, count, controller } => {
                 let count = self.eval_value(count, ctx).max(0) as u32;
@@ -707,6 +735,12 @@ impl Engine {
                     }
                     self.state.mark_chars_dirty();
                 }
+            }
+            Action::GrantContinuous { source, controller, affected, contributions, duration } => {
+                // Register a resolution-granted continuous effect (CR 611). The layer system folds
+                // it in; `add_continuous_effect` marks the chars cache dirty.
+                self.state
+                    .add_continuous_effect(source, controller, affected, contributions, duration);
             }
             // Remaining Action variants are not produced by the milestone-3 interpreter.
             _ => {}

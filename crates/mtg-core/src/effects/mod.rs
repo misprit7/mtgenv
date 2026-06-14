@@ -148,6 +148,16 @@ pub enum Effect {
         what: EffectTarget,
         to: EffectTarget,
     },
+    /// Earthbend N (custom keyword action): the chosen land **becomes a 0/0 creature with haste
+    /// that's still a land** and gets `n` +1/+1 counters (CR 611 animation + 122 counters). The
+    /// "becomes a creature" part is a resolution-granted continuous effect (lowers to
+    /// `Action::GrantContinuous`); the counters lower to `AddCounters`. The companion "when it
+    /// dies or is exiled, return it tapped" clause is a delayed triggered ability registered at
+    /// the same time (CR 603.7). `target` is "target land you control" (or a chosen land).
+    Earthbend {
+        target: EffectTarget,
+        n: ValueExpr,
+    },
 
     // ── composition / control flow ──────────────────────────────────────────────
     Sequence(Vec<Effect>),

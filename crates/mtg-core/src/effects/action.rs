@@ -73,6 +73,17 @@ pub enum Action {
         obj: ObjId,
         source: Option<ObjId>,
     },
+    /// Grant a continuous effect created by resolution (CR 611) over a fixed set of objects —
+    /// "until end of turn" pumps, animations (Earthbend's land→creature), etc. Applied by pushing
+    /// a [`crate::chars::ContinuousEffect`] into game state, where the layer system folds it in
+    /// alongside printed statics. The affected set is fixed here (resolution already chose it).
+    GrantContinuous {
+        source: Option<ObjId>,
+        controller: PlayerId,
+        affected: Vec<ObjId>,
+        contributions: Vec<super::ability::StaticContribution>,
+        duration: super::condition::Duration,
+    },
 }
 
 /// Why an object is changing zones — distinguishes destruction/sacrifice/bounce/etc. so the
