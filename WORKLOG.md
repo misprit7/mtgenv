@@ -5,6 +5,29 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-14
 
+- **engine (#61 — effect ordering fix):** **Flush deferred actions before imperative effects (3487141).**
+  `resolve_effect` accumulated deferred whiteboard actions (Destroy/Tap/counters) and committed at the END,
+  but Search/AddMana run imperatively during interpret — so Erode's `Sequence[Destroy target, fetch a land]`
+  let the fetched land enter while the doomed creature was still on the battlefield, wrongly firing its
+  landfall. Fix: `flush_pending()` commits the accumulated whiteboard before each imperative effect, so a
+  resolving spell's instructions take effect IN ORDER with intermediate state visible across the
+  imperative/deferred boundary; deferred-only runs still batch (replacement/prevention unaffected). Regression
+  test (verified red without the flush): Erode a landfall creature → no landfall; vanilla → land still fetched.
+
+- **engine (#58 — Fabled Passage NOT reproducible):** **Conditional untap works through the full path (96352df).**
+  Drove the real flow — activate `{T},Sacrifice`, pay the cost (sacrifices Fabled Passage), resolve — and the
+  fetched land untaps correctly (3 other lands + fetched = 4 → untapped; 2 → tapped). All 3 suspect checks pass
+  (`Searched(0)` resolves, `CountAtLeast` counts the fetched land + excludes the sacrificed source, `Tap{tap:false}`
+  untaps). `bcff1cd` already works. Added full-path coverage closing the test gap; flagged the lead it's likely a
+  Ba Sing Se landfall→Earthbend re-tap or a display issue — need the user's board state.
+
+- **engine (#56 — Badgermole point-fix):** **Count the TapCreatureForMana bonus in affordability + payment
+  (fdfea6c).** The solver treated each source as 1 mana; the bonus was added to the pool only AFTER selection,
+  so bonus-dependent casts were wrongly blocked. Modeled each creature mana-source as base + bonus mana units;
+  only genuinely-surplus bonus floats. Regression: Llanowar+Forest+Badgermole afford {2}{G}; two creature
+  sources + Badgermole afford {2}{G}{G}. (NB: lead queued #59 pool-based rework that would supersede this +
+  fix #57 — scope decision pending.)
+
 - **webui:** Verified the engine's Badgermole mana point-fix (#56, `fdfea6c`) at the UI projection
   layer. New driver test `badgermole_bonus_makes_warp_mightform_castable` builds the user's exact
   board (Badgermole Cub + Llanowar Elves + Forest untapped, Mightform in hand), pulls
