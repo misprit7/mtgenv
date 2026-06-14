@@ -524,8 +524,12 @@ impl Interaction {
                     .unwrap_or_else(|| table[0].1.clone());
                 Some(r)
             }
-            IState::Subset { slot_of, picked, min, max } => {
-                if action == COMMIT && picked.len() as u32 >= *min {
+            IState::Subset { slot_of, picked, min: _, max } => {
+                // COMMIT finalizes the subset. The mask only offers COMMIT once `picked.len() >= min`
+                // OR when stuck (min required but no legal option left to add), so committing here is
+                // always intended — guarding on `>= min` would spin forever in the stuck case (same
+                // class of hang as IState::Targets).
+                if action == COMMIT {
                     return Some(DecisionResponse::Indices(picked.clone()));
                 }
                 // Add the first not-yet-picked option whose slot matches.
@@ -542,10 +546,16 @@ impl Interaction {
                 }
                 None
             }
-            IState::Targets { cand_slot, mins, maxs, cur, current, done } => {
-                let min = mins.get(*cur).copied().unwrap_or(0);
+            IState::Targets { cand_slot, maxs, cur, current, done, .. } => {
                 let max = maxs.get(*cur).copied().unwrap_or(0);
-                if action == COMMIT && current.len() as u32 >= min {
+                // COMMIT finalizes this target slot with whatever's chosen. The mask only offers
+                // COMMIT once `current.len() >= min` OR when the slot is *stuck* — `min` targets are
+                // required but no legal candidate maps to a slot, so `legal_slots` falls back to
+                // COMMIT. We MUST advance in the stuck case too: guarding on `>= min` here would
+                // re-present the same slot forever (a real selesnya self-play hang). Best-effort
+                // (possibly < min) is the robust choice; an unsatisfiable required slot is an engine
+                // bug, flagged separately — the codec must never wedge regardless.
+                if action == COMMIT {
                     done.push(std::mem::take(current));
                     *cur += 1;
                 } else if let Some(cands) = cand_slot.get(*cur) {
@@ -747,6 +757,49 @@ mod tests {
         assert_eq!(it.apply(HAND_BASE), None);
         let r = it.apply(HAND_BASE + 2); // reaches max=2 → auto-commit
         assert_eq!(r, Some(DecisionResponse::Indices(vec![0, 2])));
+    }
+
+    // Regression: a required target slot (min≥1) with NO legal candidates must COMMIT best-effort,
+    // not loop forever. This is the real Selesnya self-play hang — the mask falls back to COMMIT but
+    // the old code only advanced when `current.len() >= min`, re-presenting the slot indefinitely.
+    #[test]
+    fn unsatisfiable_target_slot_commits_instead_of_looping() {
+        let req = DecisionRequest::ChooseTargets {
+            for_action: ActionRef(StackId(1)),
+            slots: vec![TargetSlot {
+                description: "needs a target but none legal".into(),
+                legal: vec![], // min≥1 with zero legal candidates → the stuck case
+                min: 1,
+                max: 1,
+            }],
+        };
+        let mut it = Interaction::new(&base_view(), &req);
+        let mask = it.mask();
+        assert_eq!(mask.iter().filter(|b| **b).count(), 1, "only COMMIT is legal");
+        assert!(mask[COMMIT]);
+        // ONE COMMIT must finalize (best-effort: no targets), not return None forever.
+        assert_eq!(it.apply(COMMIT), Some(DecisionResponse::Pairs(vec![])));
+    }
+
+    // Regression: a subset with min greater than the number of selectable options must also COMMIT
+    // best-effort rather than spin (same bug class as the target slot above).
+    #[test]
+    fn unsatisfiable_subset_commits_instead_of_looping() {
+        let mut view = base_view();
+        view.me.hand = vec![vis(1)];
+        let req = DecisionRequest::SelectCards {
+            reason: SelectReason::Discard,
+            from: vec![ObjId(1)],
+            min: 2, // want 2 but only 1 selectable
+            max: 2,
+            description: "discard two (only one available)".into(),
+        };
+        let mut it = Interaction::new(&view, &req);
+        assert_eq!(it.apply(HAND_BASE), None); // pick the one available
+        // now stuck: min=2 unmet, nothing left to add → mask falls back to COMMIT
+        let mask = it.mask();
+        assert!(mask[COMMIT] && mask.iter().filter(|b| **b).count() == 1);
+        assert_eq!(it.apply(COMMIT), Some(DecisionResponse::Indices(vec![0])));
     }
 
     #[test]
