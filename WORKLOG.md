@@ -5,6 +5,20 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-14
 
+- **engine (#36, manual mana):** The engine now offers **manual mana activation at priority** so a
+  human can tap SPECIFIC sources (e.g. to control which lands fund a spell) — while keeping mana
+  abilities out of auto-stops and the RL agent's action space. New per-seat `StopConfig.manual_mana`
+  (default OFF) + `Engine::set_manual_mana`. When ON, `legal_priority_actions` appends one
+  `ActivateMana` per untapped usable source; `activate_mana_ability` taps it and floats the mana
+  (asking `ChooseColor` for multi-color sources), no stack (CR 605.3). `priority_round` keys the
+  SmartStop/auto-pass decision off **non-mana** actions, so manual mana never forces a stop; and the
+  enumeration is hidden from default seats, so the gym agent is unaffected (it auto-pays). Casting
+  already spends floating mana first (#59), so the chosen sources pay and others stay untapped.
+  Added `mana::usable_mana_sources` + `mana::produce_mana` (with the TapCreatureForMana bonus). +1
+  test (`manual_mana_lets_a_seat_tap_chosen_sources_then_cast_from_float`), 233 mtg-core green.
+  Commit cf23567. UI wiring delegated to webui (set the flag for human seats, click-a-land-to-tap,
+  ChooseColor for duals); gym to confirm no ActivateMana in the agent mask.
+
 - **engine (#65):** Fixed Dyadrine — its attack drew a card + made a Robot **even when no counters
   were removed**. The "you may remove a +1/+1 counter from each of two creatures you control. **If
   you do**, draw + create a Robot" was modeled as `Optional{ Sequence[ForEach{min:2}, Draw,
