@@ -94,10 +94,18 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
     off at cleanup CR 514.2). `fully_implemented:false` only on **Warp {2}{G}** (C14: alt-cast + exile-at-end-step
     + recast). Folded ×4 into the selesnya preset (standing rule) → 48 nonbasics, basics 9F/3P; only Keen-Eyed
     Curator + Dyadrine (3 copies) remain as basic padding. **17/18 distinct cards authored; 159 tests green.**
-  - **Dyadrine, Synthesis Amalgam** (`{X}{G}{W}` Legendary Artifact Creature 0/1): trample ✓; enters-with-
-    counters = mana-spent-to-cast (needs mana-spent value); **YouAttack** trigger → optional remove +1/+1
-    from each of two creatures → reflexive draw + 2/2 Robot token (needs YouAttack event + multi-target
-    counter removal). Tracked-incomplete pending those caps.
+  - **Dyadrine, Synthesis Amalgam** (`{X}{G}{W}` Legendary Artifact Creature — Construct 0/1) — THREE clauses
+    (not alternatives): (1) **trample** ✓ today; (2) **"enters with +1/+1 counters = mana spent to cast"** —
+    the **includability gate** (without it Dyadrine is a 0/1 husk → can't ship; with 1+2 it's a faithful
+    partial like Surrak). IR: `Replacement{ WouldEnterBattlefield(ItSelf), EntersWithCounters{ PlusOnePlusOne,
+    n: ValueExpr::ManaSpent } }` — needs a new `ValueExpr::ManaSpent` + **generalize `EntersWithCounters{n}`
+    from `u32` → `ValueExpr`** (only Mossborn Hydra's `n:1` literal is affected → I update it to `Fixed(1)` in
+    the same window). (3) **"Whenever you attack, you may remove a +1/+1 counter from each of two creatures
+    you control. If you do, draw a card and create a 2/2 colorless Robot artifact creature token."** —
+    `YouAttack` is now LIVE (engine 4613d51), but the body still needs a **remove-counter effect** (none
+    exists — only `PutCounters`) on two targets + reflexive "if you do" + `CreateToken` (C6, exists; Robot
+    subtype exists). So clause 3 stays a tracked deferral; Dyadrine ships on 1+2. **Rec to engine: build
+    clause-2 mana-spent cap next** (+2 to the deck).
   - **Keen-Eyed Curator** (blb, `{G}{G}` 3/3): **fully blocked** — conditional static keyed on "card types
     among cards exiled with this" (exile-association + count-distinct-types, C17) + `{1}: Exile target card
     from a graveyard` (Effect::Exile uninterpreted + CardInZone targeting skipped).
