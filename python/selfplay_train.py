@@ -18,7 +18,7 @@ import os
 from sb3_contrib import MaskablePPO
 from sb3_contrib.common.wrappers import ActionMasker
 from stable_baselines3.common.callbacks import BaseCallback
-from stable_baselines3.common.vec_env import DummyVecEnv
+from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 
 from mtgenv_gym import MtgEnv
 from mtgenv_gym.league import ModelOpponent, OpponentPool, PoolCheckpoint
@@ -29,6 +29,23 @@ DEFAULT_POOL = "/tmp/mtgenv_pool"
 
 def _mask_fn(env):
     return env.action_masks()
+
+
+def make_env(deck, pool_dir, seed):
+    """Factory (picklable for SubprocVecEnv) for one self-play env with its own opponent pool."""
+    def thunk():
+        env = MtgEnv(deck=deck, opponent=OpponentPool(pool_dir, rng_seed=seed))
+        return ActionMasker(env, _mask_fn)
+
+    return thunk
+
+
+def make_vecenv(deck, pool_dir, n_envs, seed, subproc=False):
+    factories = [make_env(deck, pool_dir, seed * 100 + i) for i in range(n_envs)]
+    if subproc:
+        # spawn (not fork) so each worker re-imports torch cleanly — fork + torch is fragile.
+        return SubprocVecEnv(factories, start_method="spawn")
+    return DummyVecEnv(factories)
 
 
 def play_winrate(model, deck, opponent, n_games, seed0):
@@ -85,19 +102,13 @@ def _clean(*paths):
 
 
 def train_selfplay(deck="demo", timesteps=120_000, n_envs=8, pool_dir=DEFAULT_POOL,
-                   tensorboard_log=None, seed=0, pool_every=8000, eval_every=8000, verbose=0):
+                   tensorboard_log=None, seed=0, pool_every=8000, eval_every=8000, subproc=False,
+                   verbose=0):
     os.makedirs(pool_dir, exist_ok=True)
     ref_path = os.path.join(os.path.dirname(pool_dir.rstrip("/")) or ".", "mtgenv_ref_initial.zip")
     _clean(os.path.join(pool_dir, "*.zip"), ref_path)  # fresh league each run
 
-    def make(i):
-        def thunk():
-            env = MtgEnv(deck=deck, opponent=OpponentPool(pool_dir, rng_seed=seed * 100 + i))
-            return ActionMasker(env, _mask_fn)
-
-        return thunk
-
-    venv = DummyVecEnv([make(i) for i in range(n_envs)])
+    venv = make_vecenv(deck, pool_dir, n_envs, seed, subproc=subproc)
     model = MaskablePPO(
         "MultiInputPolicy",
         venv,
@@ -130,11 +141,12 @@ def main():
     ap.add_argument("--n-envs", type=int, default=8)
     ap.add_argument("--pool-dir", default=DEFAULT_POOL)
     ap.add_argument("--tensorboard", default=None)
+    ap.add_argument("--subproc", action="store_true", help="SubprocVecEnv (parallel workers)")
     args = ap.parse_args()
 
     model, ref = train_selfplay(
         deck=args.deck, timesteps=args.timesteps, n_envs=args.n_envs, pool_dir=args.pool_dir,
-        tensorboard_log=args.tensorboard, verbose=1,
+        tensorboard_log=args.tensorboard, subproc=args.subproc, verbose=1,
     )
     wr_rand = play_winrate(model, args.deck, "random", 200, 9_000_000)
     wr_init = play_winrate(model, args.deck, ModelOpponent(ref), 200, 9_500_000)
