@@ -48,6 +48,11 @@ const MAX_TURNS: u32 = 2000;
 /// the loop. Bounding the loops, not wall-clock, keeps the engine deterministic/replayable.
 const AGENDA_LOOP_LIMIT: usize = 100_000;
 const PRIORITY_LOOP_LIMIT: usize = 1_000_000;
+/// Ceiling for the replacement/prevention rewrite fixpoint (`whiteboard::rewrite`, CR 614/616),
+/// which runs inside `commit`/`resolve_top` — i.e. *below* the priority/agenda loops, so it needs
+/// its own guard. Bounded by distinct (source, ability, affected) triples in legal play (small); a
+/// pathological object-creating replacement chain is what this catches.
+pub(crate) const REWRITE_LOOP_LIMIT: usize = 100_000;
 
 /// Why the game ended.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1889,8 +1894,9 @@ impl Engine {
     /// Safety ceiling for an unbounded engine fixpoint loop (#55). Once a single loop has spun
     /// `limit` times without the game ending, it is wedged (an infinite loop bug): abort the game to
     /// a DRAW and log once, naming the loop, so self-play/training can NEVER hang. Returns `true`
-    /// when tripped so the caller bails out of its loop.
-    fn loop_guard_tripped(&mut self, iters: usize, limit: usize, loop_name: &str) -> bool {
+    /// when tripped so the caller bails out of its loop. `pub(crate)` so the resolution-side fixpoints
+    /// in `whiteboard.rs` (replacement/prevention rewrite) share the same guard.
+    pub(crate) fn loop_guard_tripped(&mut self, iters: usize, limit: usize, loop_name: &str) -> bool {
         if iters < limit {
             return false;
         }

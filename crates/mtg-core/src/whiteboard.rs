@@ -628,7 +628,18 @@ impl Engine {
     /// controller chooses which applies first (CR 616.1f), then we re-check.
     fn rewrite(&mut self, wb: &mut Whiteboard) {
         let mut applied: Vec<(ObjId, usize, ObjId)> = Vec::new();
+        let mut iters = 0usize;
         loop {
+            // Safety ceiling (#55): this fixpoint runs below the priority/agenda loops, so it carries
+            // its own guard — a pathological replacement chain can't wedge resolution.
+            if self.loop_guard_tripped(
+                iters,
+                crate::priority::REWRITE_LOOP_LIMIT,
+                "rewrite (replacement/prevention fixpoint)",
+            ) {
+                return;
+            }
+            iters += 1;
             // First action with ≥1 applicable, not-yet-applied replacement.
             let mut hit: Option<(usize, ObjId, Vec<Applicable>)> = None;
             for (ai, action) in wb.actions.iter().enumerate() {
