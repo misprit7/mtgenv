@@ -162,4 +162,91 @@ mod tests {
             ]"#]]
         .assert_eq(&format!("{:#?}", def.abilities));
     }
+
+    /// #60 end-to-end (REAL opponent spell → becomes-targeted trigger): "Whenever a creature you
+    /// control … becomes the target of a spell or ability an opponent controls, draw a card." The
+    /// opponent (P1) casts Erode targeting a creature P0 controls; on targeting (CR 603.2e), Surrak's
+    /// trigger fires and P0 draws. Driven via P1 `cast_spell` (real `{W}`, ChooseTargets) → `run_agenda`
+    /// (stacks the draw trigger) → `resolve_top`. This whole clause had no behaviour test before.
+    #[test]
+    fn surrak_becomes_targeted_draw_via_opponent_spell() {
+        use crate::agent::{Agent, CastVariant, DecisionRequest, DecisionResponse, PlayerView};
+        use crate::basics::{Target, Zone};
+        use crate::cards::sos::erode::ERODE;
+        use crate::cards::{grp, starter_db};
+        use crate::ids::{ObjId, PlayerId};
+        use crate::priority::Engine;
+        use crate::state::GameState;
+        use std::sync::Arc;
+
+        // P1 targets the chosen creature with Erode; both seats take any offered "may" fetch.
+        #[derive(Clone)]
+        struct PlayAgent {
+            want: ObjId,
+        }
+        impl Agent for PlayAgent {
+            fn decide(&mut self, _v: &PlayerView, req: &DecisionRequest) -> DecisionResponse {
+                match req {
+                    DecisionRequest::ChooseTargets { slots, .. } => {
+                        let i = slots[0]
+                            .legal
+                            .iter()
+                            .position(|t| matches!(t, Target::Object(o) if *o == self.want))
+                            .unwrap_or(0);
+                        DecisionResponse::Pairs(vec![(0, i as u32)])
+                    }
+                    DecisionRequest::Confirm { .. } => DecisionResponse::Bool(true),
+                    DecisionRequest::SelectCards { from, min, max, .. } => {
+                        let n = (*min).max(1).min(*max).min(from.len() as u32);
+                        DecisionResponse::Indices((0..n).collect())
+                    }
+                    _ => DecisionResponse::Pass,
+                }
+            }
+        }
+
+        let mut state = GameState::new(2, 1);
+        state.set_card_db(Arc::new(starter_db()));
+        // P0 controls Surrak + a bystander creature, and has a card to draw.
+        {
+            let c = state.card_db().get(SURRAK_ELUSIVE_HUNTER).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, Zone::Battlefield);
+        }
+        let victim = {
+            let c = state.card_db().get(grp::GRIZZLY_BEARS).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, Zone::Battlefield)
+        };
+        {
+            let c = state.card_db().get(grp::FOREST).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, Zone::Library); // the card Surrak's trigger draws
+        }
+        // P1 (opponent) casts Erode {W} at P0's creature.
+        let erode = {
+            let c = state.card_db().get(ERODE).unwrap().chars.clone();
+            state.add_card(PlayerId(1), c, Zone::Hand)
+        };
+        {
+            let c = state.card_db().get(grp::PLAINS).unwrap().chars.clone();
+            state.add_card(PlayerId(1), c, Zone::Battlefield); // pays {W}
+        }
+        let mut e = Engine::new(
+            state,
+            vec![Box::new(PlayAgent { want: victim }), Box::new(PlayAgent { want: victim })],
+        );
+        assert_eq!(e.state.players[0].hand.len(), 0, "P0 starts with an empty hand");
+
+        e.cast_spell(PlayerId(1), erode, CastVariant::Normal); // targets P0's creature → Surrak triggers
+        e.run_agenda();
+        while !e.state.stack.items.is_empty() {
+            e.resolve_top();
+            e.run_agenda();
+        }
+
+        assert_eq!(
+            e.state.players[0].hand.len(),
+            1,
+            "Surrak's controller drew a card when their creature became the target of an opponent's spell"
+        );
+        assert!(e.state.players[0].library.is_empty(), "the draw came from P0's library");
+    }
 }
