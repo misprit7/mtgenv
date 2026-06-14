@@ -52,6 +52,8 @@
   a.joinbtn:hover { filter:brightness(1.08); }
   .winner { color: var(--accent2); font-weight:700; }
   .empty { color: var(--muted); padding: 8px 2px; }
+  .runhdr { font-weight: 600; margin: 12px 0 4px; opacity: .85; font-size: 13px; color: var(--accent); }
+  .runhdr:first-child { margin-top: 0; }
   .hint { color: var(--muted); font-size: 12px; margin-top: 10px; }
   .links a { color: var(--accent2); }
   #newlinks { margin-top: 10px; font-size: 13px; }
@@ -255,10 +257,31 @@ async function refreshReplays() {
     return;
   }
   const ai = reps.filter((r) => r.source && r.source.AiTraining);
-  ai.sort((a, b) => (b.source.AiTraining.step || 0) - (a.source.AiTraining.step || 0));
   host.innerHTML = "";
   if (!ai.length) { host.appendChild(el("div", "empty", "No AI training replays yet.")); return; }
-  ai.forEach((r) => host.appendChild(replayRow(r)));
+  // Group by training run; newest run first, steps ascending within a run (so you watch it learn).
+  const groups = {};
+  ai.forEach((r) => (groups[aiRun(r)] = groups[aiRun(r)] || []).push(r));
+  const runs = Object.keys(groups).sort((a, b) =>
+    Math.max(...groups[b].map((x) => x.created_at || 0)) -
+    Math.max(...groups[a].map((x) => x.created_at || 0)));
+  runs.forEach((run) => {
+    const deck = (groups[run][0].players || []).map((p) => p.deck).filter(Boolean)[0] || "";
+    host.appendChild(el("div", "runhdr",
+      run + " · " + groups[run].length + " checkpoint" + (groups[run].length === 1 ? "" : "s") + (deck ? " · " + deck : "")));
+    groups[run].sort((a, b) => (a.source.AiTraining.step || 0) - (b.source.AiTraining.step || 0));
+    groups[run].forEach((r) => host.appendChild(replayRow(r)));
+  });
+}
+
+// The training-run a replay belongs to. The gym stamps it into the player name ("PPO@<run>:<step>")
+// and the file id ("aitrain-<run>-<deck>-stepNNNN-…"); parse name first, fall back to id.
+function aiRun(r) {
+  const pn = (r.players && r.players[0] && r.players[0].name) || "";
+  const m = pn.match(/^PPO@(.+):\d+$/);
+  if (m) return m[1];
+  const im = (r.id || "").match(/^aitrain-(.+)-[^-]+-step\d/);
+  return im ? im[1] : "(unnamed run)";
 }
 
 function replayRow(r) {
