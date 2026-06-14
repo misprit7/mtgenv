@@ -60,6 +60,36 @@
   .links a { color: var(--accent2); }
   #newlinks { margin-top: 10px; font-size: 13px; }
   #newlinks a { color: var(--accent2); margin-right: 12px; }
+  /* tabs */
+  .tabbar { display: flex; gap: 4px; margin-bottom: 18px; border-bottom: 1px solid var(--line); }
+  .tabbtn { background: transparent; color: var(--muted); border: none; border-bottom: 2px solid transparent;
+    padding: 8px 16px; font-weight: 700; font-size: 14px; cursor: pointer; }
+  .tabbtn:hover { color: var(--ink); }
+  .tabbtn.active { color: var(--accent); border-bottom-color: var(--accent); }
+  /* deck viewer */
+  .decktabs { display: flex; gap: 6px; flex-wrap: wrap; }
+  .decktab { background: #0c120f; color: var(--ink); border: 1px solid var(--line); border-radius: 7px;
+    padding: 5px 10px; font-size: 12px; cursor: pointer; }
+  .decktab:hover { border-color: var(--accent); }
+  .decktab.active { border-color: var(--accent); color: var(--accent); }
+  .decksummary { color: var(--muted); font-size: 13px; margin: 2px 0 12px; }
+  .deckgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); gap: 10px; }
+  .dcard { background: var(--rail); border: 1px solid var(--line); border-radius: 8px; padding: 8px;
+    position: relative; display: flex; flex-direction: column; gap: 5px; cursor: help; }
+  .dcard.partial { border-color: #f5c518; }
+  .dchdr { display: flex; justify-content: space-between; align-items: center; gap: 4px; }
+  .dcname { font-weight: 700; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dcmana { display: flex; gap: 1px; flex: 0 0 auto; }
+  .dcmana .ms { width: 13px; height: 13px; }
+  .dcart { height: 70px; border-radius: 5px; background: #0c120f center/cover no-repeat; border: 1px solid var(--line); }
+  .dctype { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dcfoot { display: flex; justify-content: space-between; align-items: center; font-size: 11px; }
+  .dccount { background: var(--accent); color: #06140b; border-radius: 999px; padding: 1px 7px; font-weight: 800; }
+  .dcpt { color: var(--ink); font-weight: 700; }
+  .dcwarn { position: absolute; top: 4px; right: 4px; background: #f5c518; color: #1a1205; border-radius: 4px;
+    font-size: 11px; font-weight: 900; padding: 0 3px; line-height: 15px; }
+  #cardpreview { position: fixed; display: none; width: 300px; border-radius: 12px; z-index: 200;
+    box-shadow: 0 12px 44px rgba(0,0,0,.8); pointer-events: none; }
 </style>
 </head>
 <body>
@@ -68,6 +98,12 @@
   <p class="sub">Set up a game and choose who plays each seat. Open one browser tab per human seat —
     games start automatically once every human seat is connected.</p>
 
+  <div class="tabbar">
+    <button class="tabbtn active" data-pane="lobby">Lobby</button>
+    <button class="tabbtn" data-pane="decks">Decks</button>
+  </div>
+
+  <div class="tabpane" id="pane-lobby">
   <div class="panel">
     <h2>New game</h2>
     <div class="seats" id="seatForm"></div>
@@ -104,7 +140,20 @@
     </div>
     <div class="games" id="replays"><div class="empty">Loading…</div></div>
   </div>
+  </div><!-- /pane-lobby -->
+
+  <div class="tabpane" id="pane-decks" hidden>
+    <div class="panel">
+      <div class="ghdr">
+        <h2>Decks</h2>
+        <div class="decktabs" id="deckTabs"></div>
+      </div>
+      <div id="deckBody"><div class="empty">Loading decks…</div></div>
+    </div>
+  </div>
 </div>
+
+<img id="cardpreview" alt="" />
 
 <script>
 "use strict";
@@ -342,6 +391,104 @@ function el(tag, cls, text) {
   if (text != null) e.textContent = text;
   return e;
 }
+
+// ── deck viewer (Decks tab) ─────────────────────────────────────────────────
+const WUBRG = ["White", "Blue", "Black", "Red", "Green", "Colorless"];
+const CODE = { White: "W", Blue: "U", Black: "B", Red: "R", Green: "G", Colorless: "C" };
+let artMap = {};
+fetch("/card-art.json").then((r) => r.json()).then((m) => { artMap = m; }).catch(() => {});
+function symImg(code) {
+  const i = el("img", "ms"); i.src = "https://svgs.scryfall.io/card-symbols/" + code + ".svg";
+  i.alt = "{" + code + "}"; i.loading = "lazy"; return i;
+}
+function manaPips(c) {
+  const out = []; const mc = c.mana_cost; if (!mc) return out;
+  const colored = mc.colored || {};
+  const totalC = Object.values(colored).reduce((a, b) => a + b, 0);
+  const land = (c.card_types || []).includes("Land");
+  if (!land && (mc.generic > 0 || totalC === 0)) out.push(symImg(String(mc.generic)));
+  WUBRG.forEach((col) => { const n = colored[col] || 0; for (let i = 0; i < n; i++) out.push(symImg(CODE[col])); });
+  return out;
+}
+function typeLine(c) {
+  const s = [(c.supertypes || []).join(" "), (c.card_types || []).join(" ")].filter(Boolean).join(" ");
+  const sub = (c.subtypes || []).join(" ");
+  return sub ? s + " — " + sub : s;
+}
+let deckList = [], curDeck = null;
+async function loadDecks() {
+  try { deckList = await (await fetch("/api/decks")).json(); } catch (e) { return; }
+  const tabs = $("deckTabs"); tabs.innerHTML = "";
+  deckList.forEach((d) => {
+    const t = el("button", "decktab", d.name + " (" + d.total + ")");
+    t.dataset.deck = d.name;
+    t.onclick = () => loadDeck(d.name);
+    tabs.appendChild(t);
+  });
+  loadDeck((curDeck && deckList.some((d) => d.name === curDeck)) ? curDeck : (deckList[0] || {}).name);
+}
+async function loadDeck(name) {
+  if (!name) return;
+  curDeck = name;
+  [...$("deckTabs").children].forEach((t) => t.classList.toggle("active", t.dataset.deck === name));
+  const body = $("deckBody");
+  let d;
+  try { const r = await fetch("/api/decks/" + encodeURIComponent(name)); if (!r.ok) throw 0; d = await r.json(); }
+  catch (e) { body.innerHTML = '<div class="empty">Couldn\'t load deck.</div>'; return; }
+  body.innerHTML = "";
+  const partialDistinct = d.cards.filter((c) => c.fully_implemented === false).length;
+  body.appendChild(el("div", "decksummary",
+    d.total + " cards · " + d.cards.length + " distinct" +
+    (partialDistinct ? " · " + partialDistinct + " partially implemented ⚠" : "")));
+  const grid = el("div", "deckgrid");
+  d.cards.forEach((c) => grid.appendChild(deckCard(c)));
+  body.appendChild(grid);
+}
+function deckCard(c) {
+  const d = el("div", "dcard" + (c.fully_implemented === false ? " partial" : ""));
+  if (c.rules_text) d.title = c.name + "\n\n" + c.rules_text;
+  const hdr = el("div", "dchdr");
+  hdr.appendChild(el("div", "dcname", c.name));
+  const mana = el("div", "dcmana"); manaPips(c).forEach((p) => mana.appendChild(p)); hdr.appendChild(mana);
+  d.appendChild(hdr);
+  const art = el("div", "dcart");
+  const info = artMap[c.grp_id];
+  if (info && info.art) art.style.backgroundImage = "url('" + info.art + "')";
+  d.appendChild(art);
+  d.appendChild(el("div", "dctype", typeLine(c)));
+  const foot = el("div", "dcfoot");
+  foot.appendChild(el("span", "dccount", "×" + c.count));
+  if (c.power != null) foot.appendChild(el("span", "dcpt", c.power + "/" + c.toughness));
+  d.appendChild(foot);
+  if (c.fully_implemented === false) {
+    const w = el("div", "dcwarn", "⚠");
+    w.title = "Not fully implemented" + (c.rules_text ? ":\n" + c.rules_text : "");
+    d.appendChild(w);
+  }
+  if (info && info.img) {
+    d.addEventListener("mousemove", (e) => showCardPreview(info.img, e));
+    d.addEventListener("mouseleave", hideCardPreview);
+  }
+  return d;
+}
+function showCardPreview(url, ev) {
+  const p = $("cardpreview"); p.src = url; p.style.display = "block";
+  const w = 300, h = 418; let x = ev.clientX + 20, y = ev.clientY - h / 2;
+  if (x + w > window.innerWidth) x = ev.clientX - w - 20;
+  y = Math.max(8, Math.min(y, window.innerHeight - h - 8));
+  p.style.left = x + "px"; p.style.top = y + "px";
+}
+function hideCardPreview() { $("cardpreview").style.display = "none"; }
+
+[...document.querySelectorAll(".tabbtn")].forEach((btn) => {
+  btn.onclick = () => {
+    document.querySelectorAll(".tabbtn").forEach((b) => b.classList.toggle("active", b === btn));
+    const pane = btn.dataset.pane;
+    $("pane-lobby").hidden = pane !== "lobby";
+    $("pane-decks").hidden = pane !== "decks";
+    if (pane === "decks" && !deckList.length) loadDecks();
+  };
+});
 
 buildForm();
 $("createBtn").onclick = createGame;
