@@ -5,6 +5,15 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **engine:** **Bushwhack cap: cast-time modal-with-targets** (6a3eb78) — `StackObject.modes`;
+  `cast_spell` chooses a modal spell's modes at 601.2b then collects target specs for ONLY the chosen
+  modes at 601.2c (added the `Fight` arm to `collect_specs_into` so its two targets get declared);
+  chosen modes ride to `ResolutionCtx.chosen_modes` and `choose_modes` reads them instead of re-asking,
+  so resolution runs only the chosen mode with cast-locked targets. Behavioral test (cast modal Fight/
+  GainLife → Fight runs, both creatures take damage, gain-life doesn't). Existing C7 modal-resolution
+  test preserved (resolution-time choice via fallback). Unblocks Bushwhack (design pre-staged it — just
+  needs UPDATE_EXPECT). 5th C11–C18 cap today (Sacrifice, ControllerOfTarget, attachments, C11, Bushwhack).
+
 - **engine:** **C11 cap: conditional enters-tapped rewrites** (b98afdc) — two `Rewrite` variants on
   `WouldEnterBattlefield(ItSelf)`: `EntersTappedUnless(Condition)` (check lands — taps iff condition
   fails, no choice) and `EntersTappedUnlessPay{life}` (shock lands — Confirm as it enters; pay→LoseLife
