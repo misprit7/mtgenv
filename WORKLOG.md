@@ -5,6 +5,13 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-14
 
+- **webui:** Verified the engine's variant-cost cast labels (`71375ef`) live on the wire — the warp
+  option now reads `Warp Mightform Harmonizer {2}{G}` (cheaper warp cost) instead of `[Warp]`, shown
+  in the cast-variant menu; consistent with the rest of the UI (option labels are plain text, no
+  mana-symbol SVGs). Fixed my now-stale `fully_implemented_flag_reaches_the_wire_for_a_real_partial_card`
+  driver test: Lumbering Worldwagon flipped to fully-implemented (Crew cap landed), so swapped the
+  partial-card example to **Surrak, Elusive Hunter** (the lone remaining partial).
+
 - **design (overnight quality):** **Behaviour tests + full-deck self-play re-validation.** Added card-level
   *behaviour* tests (resolve/computed, not just IR snapshots) for the trickiest mechanics: Lumbering `*`/4
   CDA (layer-7a `computed` = lands you control, opponent's lands excluded) + Crew (resolve `BecomeCreature`

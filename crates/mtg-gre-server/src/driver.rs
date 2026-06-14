@@ -459,26 +459,27 @@ mod tests {
     #[test]
     fn fully_implemented_flag_reaches_the_wire_for_a_real_partial_card() {
         // Real-data verification of the ⚠ "not fully implemented" badge (task #30): a board with a
-        // genuinely tracked-incomplete card (Lumbering Worldwagon — Crew 4 deferred) and a complete
-        // vanilla (Grizzly Bears). Project the seat view, wrap it in the exact `ServerMsg::Event`
-        // the server pushes, serialize, and assert the per-card flag the web client reads.
+        // genuinely tracked-incomplete card (Surrak, Elusive Hunter — can't-be-countered clause
+        // deferred; the lone remaining partial in the pool) and a complete vanilla (Grizzly Bears).
+        // Project the seat view, wrap it in the exact `ServerMsg::Event` the server pushes,
+        // serialize, and assert the per-card flag the web client reads.
         use mtg_core::agent::GameEvent;
         use mtg_core::basics::{Phase, Zone};
-        use mtg_core::cards::dft::lumbering_worldwagon::LUMBERING_WORLDWAGON;
         use mtg_core::cards::grp;
+        use mtg_core::cards::tdm::surrak_elusive_hunter::SURRAK_ELUSIVE_HUNTER;
         use mtg_core::state::view::view_for;
         use std::sync::Arc;
 
         let mut state = GameState::new(2, 1);
         state.set_card_db(Arc::new(mtg_core::cards::starter_db()));
-        let (wagon, bear) = {
+        let (surrak, bear) = {
             let db = state.card_db();
             (
-                db.get(LUMBERING_WORLDWAGON).unwrap().chars.clone(),
+                db.get(SURRAK_ELUSIVE_HUNTER).unwrap().chars.clone(),
                 db.get(grp::GRIZZLY_BEARS).unwrap().chars.clone(),
             )
         };
-        state.add_card(PlayerId(0), wagon, Zone::Battlefield);
+        state.add_card(PlayerId(0), surrak, Zone::Battlefield);
         state.add_card(PlayerId(0), bear, Zone::Battlefield);
 
         let view = view_for(&state, PlayerId(0));
@@ -493,7 +494,7 @@ mod tests {
         // The partial card serializes as `false` (client renders ⚠ + deferred-clause tooltip); the
         // complete card as `true` (no badge). This is the exact JSON the client parses.
         assert_eq!(
-            flags.get("Lumbering Worldwagon"),
+            flags.get("Surrak, Elusive Hunter"),
             Some(&Some(false)),
             "tracked-incomplete card must reach the wire as fully_implemented:false"
         );
