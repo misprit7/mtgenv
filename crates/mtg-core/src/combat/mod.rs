@@ -194,6 +194,36 @@ impl Engine {
         self.broadcast(GameEvent::AttackersDeclared { attackers: attacker_ids, by: ap });
     }
 
+    /// Declare exactly `attackers` (all attacking the defending player), bypassing the agent prompt
+    /// — for in-crate tests / the #60 audit harness that need to drive a specific attack so the
+    /// "whenever you attack" / "whenever this creature attacks" triggers fire (Lumbering, Dyadrine).
+    /// Mirrors [`declare_attackers`] minus eligibility/prompt: taps non-vigilant attackers, sets up
+    /// combat, and fires `AttackersDeclared` (the triggers are queued for the next `run_agenda`).
+    #[allow(dead_code)] // test/audit-harness primitive (in-crate tests only)
+    pub(crate) fn declare_attackers_explicit(&mut self, attackers: &[ObjId]) {
+        if attackers.is_empty() {
+            return;
+        }
+        let ap = self.state.active_player;
+        let defender = self.opponent_of(ap);
+        let attacks: Vec<Attack> = attackers
+            .iter()
+            .map(|&id| Attack { attacker: id, defender: Target::Player(defender) })
+            .collect();
+        // Tap non-vigilant attackers (CR 508.1f — not a cost).
+        for a in &attacks {
+            if self.state.computed(a.attacker).has_keyword(Keyword::Vigilance) {
+                continue;
+            }
+            if let Some(o) = self.state.objects.get_mut(&a.attacker) {
+                o.status.tapped = true;
+            }
+        }
+        let attacker_ids: Vec<ObjId> = attacks.iter().map(|a| a.attacker).collect();
+        self.state.combat = Some(CombatState { attackers: attacks, blocks: Vec::new() });
+        self.broadcast(GameEvent::AttackersDeclared { attackers: attacker_ids, by: ap });
+    }
+
     /// Declare Blockers step (CR 509): the defending player assigns untapped creatures to
     /// block declared attackers. No evasion in milestone 3, so any blocker may block any
     /// attacker. (`RandomAgent` never blocks; a human can.)

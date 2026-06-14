@@ -1963,6 +1963,25 @@ impl Engine {
         true
     }
 
+    /// Test/audit helper: drive to an empty stack — stabilize (SBAs + queue pending triggers via
+    /// [`run_agenda`]) then resolve the top, repeating until the stack is empty (or the game ends).
+    /// Lets a trigger test be a one-liner after `play_land`/`cast_spell`/`declare_attackers_explicit`.
+    #[allow(dead_code)] // test/audit-harness helper (in-crate tests only)
+    pub(crate) fn resolve_to_stable(&mut self) {
+        let mut iters = 0usize;
+        loop {
+            if self.loop_guard_tripped(iters, PRIORITY_LOOP_LIMIT, "resolve_to_stable") {
+                break;
+            }
+            iters += 1;
+            self.run_agenda();
+            if self.state.game_over || self.state.stack.is_empty() {
+                break;
+            }
+            self.resolve_top();
+        }
+    }
+
     /// Drive the game to a stable state (CR 704/603.3): perform state-based actions and put any
     /// waiting triggered abilities on the stack, repeating to a fixpoint. `pub(crate)` so in-crate
     /// tests (and design's #60 end-to-end card audit) can drain the triggers/SBAs a `cast_spell` /
@@ -5429,6 +5448,60 @@ mod expect_tests {
             !e2.can_pay_cost(PlayerId(0), bss2, &cost_of(&e2, bss2)),
             "2 other lands can't pay {{2}}{{G}} once Ba Sing Se is committed to {{T}}"
         );
+    }
+
+    #[test]
+    fn audit_harness_declare_attackers_explicit_and_resolve_to_stable() {
+        // Validates the #60 attack-trigger harness primitives: `declare_attackers_explicit` (declare a
+        // specific attacker, bypassing the agent prompt) fires `AttackersDeclared`, and
+        // `resolve_to_stable` drains the resulting trigger (queue via run_agenda → resolve_top). A
+        // "whenever you attack, gain 2 life" creature → attacking gains the life.
+        use crate::basics::CardType;
+        use crate::effects::ability::{Ability, EventPattern};
+        use crate::effects::value::{PlayerRef, ValueExpr};
+        use crate::effects::Effect;
+        use crate::state::Characteristics;
+        use std::sync::Arc;
+
+        let mut db = cards::starter_db();
+        db.insert(cards::CardDef {
+            chars: Characteristics {
+                name: "Attack Pinger".into(),
+                card_types: vec![CardType::Creature],
+                power: Some(2),
+                toughness: Some(2),
+                grp_id: 9985,
+                ..Default::default()
+            },
+            abilities: vec![Ability::Triggered {
+                event: EventPattern::YouAttack,
+                condition: None,
+                intervening_if: false,
+                effect: Effect::GainLife { who: PlayerRef::Controller, amount: ValueExpr::Fixed(2) },
+            }],
+            text: String::new(),
+            ..Default::default()
+        });
+        let mut state = GameState::new(2, 1);
+        state.set_card_db(Arc::new(db));
+        let atkr = {
+            let c = state.card_db().get(9985).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, Zone::Battlefield)
+        };
+        state.objects.get_mut(&atkr).unwrap().summoning_sick = false;
+        state.active_player = PlayerId(0);
+        let mut e = Engine::new(state, vec![Box::new(PassAgent), Box::new(PassAgent)]);
+        let life_before = e.state.player(PlayerId(0)).life;
+
+        e.declare_attackers_explicit(&[atkr]); // fires AttackersDeclared → queues the YouAttack trigger
+        e.resolve_to_stable(); // run_agenda stacks it, resolve_top resolves it
+
+        assert_eq!(
+            e.state.player(PlayerId(0)).life,
+            life_before + 2,
+            "the 'whenever you attack' trigger resolved and gained 2 life"
+        );
+        assert!(e.state.object(atkr).status.tapped, "the attacker tapped (no vigilance)");
     }
 
     #[test]
