@@ -164,6 +164,7 @@ function showFrame(i: number): void {
   $("rbLabel").textContent = fr.label || "";
   ($("rbBack") as HTMLButtonElement).disabled = frameIdx === 0;
   ($("rbFwd") as HTMLButtonElement).disabled = frameIdx === n - 1;
+  const sc = $("rbScrub") as HTMLInputElement; sc.max = `${n - 1}`; sc.value = `${frameIdx}`; // keep scrubber synced
   if (playing && frameIdx >= n - 1) pauseReplay();
 }
 function stepReplay(d: number): void { pauseReplay(); showFrame(frameIdx + d); }
@@ -179,6 +180,7 @@ if (replayId) {
   $("rbBack").onclick = () => stepReplay(-1);
   $("rbFwd").onclick = () => stepReplay(1);
   $("rbPlay").onclick = togglePlay;
+  ($("rbScrub") as HTMLInputElement).oninput = (e) => { pauseReplay(); showFrame(+(e.target as HTMLInputElement).value); };
   ($("rbRate") as HTMLInputElement).oninput = (e) => {
     frameRate = +(e.target as HTMLInputElement).value || 1; $("rbRateV").textContent = `${frameRate}`;
     if (playing) { pauseReplay(); playReplay(); }

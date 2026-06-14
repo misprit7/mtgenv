@@ -234,9 +234,11 @@
     padding: 4px 10px; font-weight: 800; cursor: pointer; font-size: 13px; }
   .replaybar .rbtn:hover { filter: brightness(1.08); }
   .replaybar .rbtn:disabled { opacity: .4; cursor: not-allowed; }
+  .replaybar .rbscrub { flex: 1 1 220px; min-width: 140px; accent-color: var(--accent2); cursor: pointer; }
   .replaybar .rbframe { font-variant-numeric: tabular-nums; color: var(--muted); min-width: 64px; }
   .replaybar .rbrate { color: var(--muted); font-size: 12px; display: flex; align-items: center; gap: 5px; }
-  .replaybar .rblabel { color: var(--ink); font-size: 12px; flex: 1; min-width: 160px;
+  .replaybar .rbrate input { accent-color: var(--accent2); }
+  .replaybar .rblabel { color: var(--ink); font-size: 12px; flex: 1 1 140px; min-width: 120px;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 </style>
 </head>
@@ -269,11 +271,12 @@
     <div class="stepbar" id="stepbar"></div>
     <!-- Replay playback bar (god-view frame player). Hidden unless ?replay=<id>. -->
     <div class="replaybar" id="replaybar" hidden>
-      <button class="rbtn" id="rbBack" title="Step back (←)">◀</button>
+      <button class="rbtn" id="rbBack" title="Step back (←)">⏮</button>
       <button class="rbtn" id="rbPlay" title="Play / pause (space)">▶</button>
-      <button class="rbtn" id="rbFwd" title="Step forward (→)">▶▶</button>
+      <button class="rbtn" id="rbFwd" title="Step forward (→)">⏭</button>
+      <input type="range" class="rbscrub" id="rbScrub" min="0" max="0" step="1" value="0" title="Scrub through the game" />
       <span class="rbframe" id="rbFrame">0 / 0</span>
-      <label class="rbrate">rate <input type="range" id="rbRate" min="1" max="12" step="1" value="3" /> <span id="rbRateV">3</span>/s</label>
+      <label class="rbrate">rate <input type="range" id="rbRate" min="1" max="30" step="1" value="3" /> <span id="rbRateV">3</span>/s</label>
       <span class="rblabel" id="rbLabel"></span>
     </div>
     <div class="hand" id="hand"></div>
@@ -443,6 +446,7 @@
     $("rbLabel").textContent = fr.label || "";
     $("rbBack").disabled = frameIdx === 0;
     $("rbFwd").disabled = frameIdx === n - 1;
+    const sc = $("rbScrub"); sc.max = n - 1; sc.value = frameIdx; // keep the scrubber in sync
     if (playing && frameIdx >= n - 1) pauseReplay();
   }
   function stepReplay(d) { pauseReplay(); showFrame(frameIdx + d); }
@@ -458,6 +462,7 @@
     $("rbBack").onclick = () => stepReplay(-1);
     $("rbFwd").onclick = () => stepReplay(1);
     $("rbPlay").onclick = togglePlay;
+    $("rbScrub").oninput = (e) => { pauseReplay(); showFrame(+e.target.value); };
     $("rbRate").oninput = (e) => { frameRate = +e.target.value || 1; $("rbRateV").textContent = frameRate;
       if (playing) { pauseReplay(); playReplay(); } };
   }

@@ -227,7 +227,9 @@
     padding: 4px 10px; font-weight: 800; cursor: pointer; font-size: 13px; }
   .replaybar .rbtn:hover { filter: brightness(1.08); }
   .replaybar .rbtn:disabled { opacity: .4; cursor: not-allowed; }
+  .replaybar .rbscrub { flex: 1 1 220px; min-width: 140px; accent-color: var(--accent2); cursor: pointer; }
   .replaybar .rbframe { font-variant-numeric: tabular-nums; color: var(--muted); min-width: 64px; }
   .replaybar .rbrate { color: var(--muted); font-size: 12px; display: flex; align-items: center; gap: 5px; }
-  .replaybar .rblabel { color: var(--ink); font-size: 12px; flex: 1; min-width: 160px;
+  .replaybar .rbrate input { accent-color: var(--accent2); }
+  .replaybar .rblabel { color: var(--ink); font-size: 12px; flex: 1 1 140px; min-width: 120px;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
