@@ -201,4 +201,58 @@ mod tests {
         );
         expect![[r#"library=0 battlefield=1 fetched_status=Some("Status { tapped: true, flipped: false, face_down: false, phased_out: false }")"#]].assert_eq(&render);
     }
+
+    /// Behaviour — the missing `≥4 lands` branch my earlier test didn't cover (the gap that hid #58):
+    /// with **4+ lands you control after the fetch**, the conditional **untaps that land**. Fabled is
+    /// sacrificed (cost), so the board is the *other* 3 lands; the fetched 4th makes the count ≥4 → the
+    /// fetched land ends UNTAPPED. This PASSES at the `resolve_effect` level — the conditional untap
+    /// (Searched(0) + CountAtLeast + Tap{tap:false}) fires correctly (engine #58 resolve-path fix). The
+    /// original #58 scenario was the full *cast* path; that end-to-end verification awaits the #60 harness.
+    #[test]
+    fn fabled_passage_untaps_the_land_at_four_lands() {
+        use crate::agent::{Agent, DecisionRequest, DecisionResponse, PlayerView};
+        use crate::basics::Zone;
+        use crate::cards::{build_game, grp};
+        use crate::effects::action::{ResolutionCtx, WbReason};
+        use crate::ids::{PlayerId, StackId};
+        use crate::priority::Engine;
+
+        #[derive(Clone)]
+        struct TakeItAgent;
+        impl Agent for TakeItAgent {
+            fn decide(&mut self, _v: &PlayerView, req: &DecisionRequest) -> DecisionResponse {
+                match req {
+                    DecisionRequest::Confirm { .. } => DecisionResponse::Bool(true),
+                    DecisionRequest::SelectCards { from, min, max, .. } => {
+                        let n = (*min).max(1).min(*max).min(from.len() as u32);
+                        DecisionResponse::Indices((0..n).collect())
+                    }
+                    _ => DecisionResponse::Pass,
+                }
+            }
+        }
+
+        let mut state = build_game(1, &[&[grp::FOREST], &[]]); // library = the basic to fetch
+        let forest_chars = state.card_db().get(grp::FOREST).unwrap().chars.clone();
+        // Three *other* lands already in play (Fabled itself is sacrificed as a cost → not present).
+        for _ in 0..3 {
+            state.add_card(PlayerId(0), forest_chars.clone(), Zone::Battlefield);
+        }
+        let fetch = match &state.card_db().get(FABLED_PASSAGE).unwrap().abilities[0] {
+            Ability::Activated { effect, .. } => effect.clone(),
+            o => panic!("expected Activated, got {o:?}"),
+        };
+        let mut e = Engine::new(state, vec![Box::new(TakeItAgent), Box::new(TakeItAgent)]);
+        e.resolve_effect(
+            &fetch,
+            &ResolutionCtx { controller: Some(PlayerId(0)), ..Default::default() },
+            WbReason::Resolve(StackId(0)),
+        );
+        // The fetched land is the 4th battlefield object; with 4 lands it must be untapped.
+        let fetched = e.state.players[0].battlefield[3];
+        assert!(
+            !e.state.objects.get(&fetched).unwrap().status.tapped,
+            "with 4 lands controlled, the fetched land should be untapped (oracle: 'untap that land')",
+        );
+    }
 }
