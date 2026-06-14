@@ -5,6 +5,16 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-14
 
+- **webui:** End-to-end QA of the god-view replay viewer (Playwright, live :8080). **Demo replay:**
+  lobby lists the finished game with a ▶ Replay button → `/play?replay=<id>`; god-view shows both
+  hands face-up + library order (click "Lib" pile → "P# library (top first)" modal, order matches
+  raw data exactly); step fwd/back, rate slider actually changes playback speed (frame 2→26 in
+  1.2s @ 20/s), scrub-to-end renders "Game over — P0 wins" with fwd disabled; zero console errors.
+  **Selesnya (counter-card case, post-#48):** aitrain selesnya replay renders end-to-end incl.
+  `+1/+1×2` counters on board; a fresh selesnya lobby game serializes 363 frames with
+  `PlusOnePlusOne` counters as string keys (#48 fix confirmed). Replay experience verified for both
+  the demo and landfall/"watch it learn" decks. No code changes — verification only.
+
 - **engine (#48 — replay serialization fix):** **String-keyed `CounterBag` (70ded52).**
   `serde_json::to_string(&Replay)` panicked `"key must be a string"` on any Selesnya game with a quest
   counter: `CounterBag` is a `BTreeMap<CounterKind,_>` and serde rejects the non-string keys that
