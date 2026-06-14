@@ -151,4 +151,69 @@ mod tests {
         e.resolve_effect(&double, &ctx, WbReason::Resolve(StackId(0)));
         assert_eq!(e.state.computed(hydra).power, Some(4));
     }
+
+    /// #60 end-to-end (REAL cast + land drops): cast Mossborn `{2}{G}` (enters with one +1/+1 counter
+    /// via its ETB replacement → 1/1), then each land you play fires landfall — "double the number of
+    /// +1/+1 counters on this creature" — 1 → 2 (2/2) → 4 (4/4). Drives the whole loop: `cast_spell`
+    /// (real mana) → `resolve_top` (ETB counter) → `play_land` + `run_agenda`/`resolve_top` (landfall).
+    #[test]
+    fn mossborn_landfall_doubles_via_real_play() {
+        use crate::agent::{Agent, CastVariant, DecisionRequest, DecisionResponse, PlayerView};
+        use crate::basics::{CounterKind, Zone};
+        use crate::cards::{grp, starter_db};
+        use crate::ids::PlayerId;
+        use crate::priority::Engine;
+        use crate::state::GameState;
+        use std::sync::Arc;
+
+        #[derive(Clone)]
+        struct PassiveAgent;
+        impl Agent for PassiveAgent {
+            fn decide(&mut self, _v: &PlayerView, _req: &DecisionRequest) -> DecisionResponse {
+                DecisionResponse::Pass
+            }
+        }
+
+        let mut state = GameState::new(2, 1);
+        state.set_card_db(Arc::new(starter_db()));
+        let hydra = {
+            let c = state.card_db().get(MOSSBORN_HYDRA).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, Zone::Hand)
+        };
+        for _ in 0..3 {
+            let c = state.card_db().get(grp::FOREST).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, Zone::Battlefield); // pays {2}{G}
+        }
+        let hand_lands: Vec<_> = (0..2)
+            .map(|_| {
+                let c = state.card_db().get(grp::FOREST).unwrap().chars.clone();
+                state.add_card(PlayerId(0), c, Zone::Hand)
+            })
+            .collect();
+        let mut e = Engine::new(state, vec![Box::new(PassiveAgent), Box::new(PassiveAgent)]);
+
+        let settle = |e: &mut Engine| {
+            e.run_agenda();
+            while !e.state.stack.items.is_empty() {
+                e.resolve_top();
+                e.run_agenda();
+            }
+        };
+        let counters = |e: &Engine| e.state.object(hydra).counters.get(&CounterKind::PlusOnePlusOne);
+
+        e.cast_spell(PlayerId(0), hydra, CastVariant::Normal);
+        e.resolve_top(); // enters → ETB replacement gives one +1/+1 counter
+        settle(&mut e);
+        assert_eq!(counters(&e), 1, "enters with one +1/+1 counter (→ 1/1)");
+        assert_eq!(e.state.computed(hydra).power, Some(1));
+
+        e.play_land(PlayerId(0), hand_lands[0]);
+        settle(&mut e);
+        assert_eq!(counters(&e), 2, "first landfall doubles 1 → 2 (→ 2/2)");
+
+        e.play_land(PlayerId(0), hand_lands[1]);
+        settle(&mut e);
+        assert_eq!(counters(&e), 4, "second landfall doubles 2 → 4 (→ 4/4)");
+        assert_eq!(e.state.computed(hydra).power, Some(4));
+    }
 }
