@@ -5,6 +5,16 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **gym (#41 batched inference):** built `BatchedPolicy` (batched `act` + `evaluate`→priors+values —
+  the reusable primitive tree search will reuse) and `BatchedSelfPlayVecEnv` (single-threaded lockstep
+  pump; opponent decisions batched across games; drop-in for MaskablePPO; `MtgEnv(opponent="external")`
+  + `ext_*` API). **Honest finding:** the isolated-forward microbench (batch-1 0.57ms ≈ batch-64
+  0.66ms) overpromised — measured end-to-end speedup is only **1.2–1.4× at n=32–64** because `auto_pass`
+  makes opponent decisions sparse + envs desync (eff. batch ~9 at n=64) and the tiny net is cheap on
+  CPU. Opponent NN is ~33% of step cost; the **dominant cost is the per-decision boundary** (engine +
+  PyO3 + obs encoding, ~2.7k env-steps/s no-NN ceiling). The batched infra's real payoff is bigger
+  nets + tree search. 13 gym tests green. Also: single uv venv (`python/.venv` + uv.lock, cu130 torch);
+  `export_replays` now logs `selfplay/winrate_vs_initial`.
 - **design (upgrade tail #44):** **Mightform → `fully_implemented: true`** (7794d2a) — C14 warp piece 3
   (recast-from-exile, 7cc6f9c) completes the card; no IR change, just the flag + docs. Mightform joins
   Keen-Eyed as a fully-faithful "hard" card. **First ⚠ partial flipped to complete in the upgrade tail.**
