@@ -5,6 +5,19 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-14
 
+- **engine (#44 COMPLETE):** **Last two caps — C18 Icetill + Dyadrine c3.** **C18** (`3ca7fef`):
+  `StaticContribution::ExtraLandPlays(u32)` + `PlayLandsFrom(Zone)` — player-level land-play
+  permissions read by the land-play legality (limit = 1 + ΣExtraLandPlays; offers lands from
+  graveyard/exile when permitted). `Player::zone_ids`. **Dyadrine c3** (`0e01d56`): interpret
+  `Effect::Optional` (Confirm → run body on yes) + `Effect::ForEach` (`select_for_each`: chooser's
+  matching objects, [min,max], body per item via new `EffectTarget::Each`) — reusing the
+  single-target PutCounters arm (negative n) for the removal; `count_filter_matches` gained
+  HasCounter + ControlledBy. So "you may remove a +1/+1 from each of two creatures you control; if
+  you do, draw + Robot token" works (non-targeting ⇒ Optional+Select(min:2) gates the reward). 177
+  tests green. **That's the entire #44 upgrade tail done — every in-deck card fully implementable;
+  17/18 fully faithful with Surrak the lone deferred partial** (its 2 gaps inert in-deck, deferred
+  per lead). 8 caps this session: Conditional/GrantKeyword, reflexive sub-trigger, Badgermole mana,
+  Fabled, Escape, Crew, C18, Dyadrine c3.
 - **design (#44):** **Icetill Explorer → `fully_implemented: true`** (7350a74) — cap C18 landed (engine
   3ca7fef: `StaticContribution::ExtraLandPlays(n)` + `PlayLandsFrom(Zone)`), so authored its two land-play
   statics (`ExtraLandPlays(1)` + `PlayLandsFrom(Graveyard)`, `affects: itself()`; the engine reads them
