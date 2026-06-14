@@ -52,6 +52,22 @@ pub struct Prompt {
     /// For [`Mode::Number`]: inclusive numeric bounds.
     pub num_min: i64,
     pub num_max: i64,
+    /// For a multi-slot target choice (`ChooseTargets`): one entry per target "slot", each with its
+    /// own description + min/max + the contiguous range of `options` it owns. The UI groups options
+    /// by slot and enforces each slot's count independently. Empty for every other prompt.
+    pub target_slots: Vec<PromptSlot>,
+}
+
+/// One target slot in a multi-slot [`Prompt`] (e.g. Bushwhack-fight: slot 0 = a creature you
+/// control, slot 1 = a creature you don't). `[start, start+len)` indexes into `Prompt::options`.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PromptSlot {
+    pub description: String,
+    pub min: u32,
+    pub max: u32,
+    pub start: u32,
+    pub len: u32,
 }
 
 impl Prompt {
@@ -67,6 +83,7 @@ impl Prompt {
             max,
             num_min: 0,
             num_max: 0,
+            target_slots: Vec::new(),
         }
     }
 
@@ -229,20 +246,31 @@ pub fn prompt_for(view: &PlayerView, req: &DecisionRequest) -> Prompt {
             p
         }
         R::ChooseTargets { slots, .. } => {
-            // Flatten slot 0's legal candidates (sufficient for the lands-only scaffold; richer
-            // multi-slot targeting arrives with the engine's real targeting in #7).
-            let (opts, objs, min, max) = match slots.first() {
-                Some(s) => (
-                    s.legal.iter().map(|t| describe_target(view, t)).collect(),
-                    s.legal.iter().map(target_obj).collect(),
-                    s.min,
-                    s.max,
-                ),
-                None => (vec![], vec![], 0, 0),
-            };
+            // Flatten EVERY slot's legal candidates into one option list (slot-by-slot, in order),
+            // recording each slot's contiguous option range so the UI groups + enforces per slot.
+            // (Bushwhack-fight is the first multi-slot spell: slot 0 = creature you control, slot 1 =
+            // creature you don't control.) The response maps each pick back to its (slot, target).
+            let mut opts = Vec::new();
+            let mut objs = Vec::new();
+            let mut target_slots = Vec::new();
+            for s in slots {
+                let start = opts.len() as u32;
+                for t in &s.legal {
+                    opts.push(describe_target(view, t));
+                    objs.push(target_obj(t));
+                }
+                target_slots.push(PromptSlot {
+                    description: s.description.clone(),
+                    min: s.min,
+                    max: s.max,
+                    start,
+                    len: s.legal.len() as u32,
+                });
+            }
             let mut p = Prompt::new("Choose target(s)", Mode::SelectMany, opts).with_objs(objs);
-            p.min = min;
-            p.max = max;
+            p.min = slots.iter().map(|s| s.min).sum();
+            p.max = slots.iter().map(|s| s.max).sum();
+            p.target_slots = target_slots;
             p
         }
         R::DeclareAttackers { eligible } => Prompt::new(
@@ -371,9 +399,21 @@ pub fn response_from(req: &DecisionRequest, sel: &Selection) -> DecisionResponse
         R::ChooseModes { .. } => Resp::Indices(sel.picks.clone()),
         R::ChooseNumber { min, .. } => Resp::Number(sel.number.unwrap_or(*min)),
         R::CastingTimeOptions { .. } => Resp::Indices(sel.picks.clone()),
-        R::ChooseTargets { .. } => {
-            // Single-slot projection: every pick is a candidate of slot 0.
-            Resp::Pairs(sel.picks.iter().map(|&c| (0, c)).collect())
+        R::ChooseTargets { slots, .. } => {
+            // Rebuild the SAME flat option order as the projection (slot-by-slot, target-by-target)
+            // and map each picked global option index back to its (slot_idx, target_idx_in_slot).
+            let mut flat: Vec<(u32, u32)> = Vec::new();
+            for (si, slot) in slots.iter().enumerate() {
+                for ti in 0..slot.legal.len() {
+                    flat.push((si as u32, ti as u32));
+                }
+            }
+            Resp::Pairs(
+                sel.picks
+                    .iter()
+                    .filter_map(|&k| flat.get(k as usize).copied())
+                    .collect(),
+            )
         }
         R::Distribute {
             among,
@@ -490,9 +530,46 @@ pub fn default_response(req: &DecisionRequest) -> DecisionResponse {
 mod tests {
     use super::*;
     use expect_test::expect;
-    use mtg_core::agent::{CastVariant, PlayerPrivateView};
+    use mtg_core::agent::{ActionRef, CastVariant, PlayerPrivateView, TargetSlot};
     use mtg_core::basics::Phase;
-    use mtg_core::ids::PlayerId;
+    use mtg_core::ids::{PlayerId, StackId};
+
+    #[test]
+    fn choose_targets_covers_every_slot_and_maps_picks_to_pairs() {
+        // Bushwhack-fight shape: slot 0 = a creature you control (2 legal), slot 1 = one you don't
+        // (1 legal). The bug was that only slot 0 was projected, so slot 1 never got a target.
+        let req = DecisionRequest::ChooseTargets {
+            for_action: ActionRef(StackId(0)),
+            slots: vec![
+                TargetSlot {
+                    description: "creature you control".into(),
+                    legal: vec![Target::Object(ObjId(10)), Target::Object(ObjId(11))],
+                    min: 1,
+                    max: 1,
+                },
+                TargetSlot {
+                    description: "creature you don't control".into(),
+                    legal: vec![Target::Object(ObjId(20))],
+                    min: 1,
+                    max: 1,
+                },
+            ],
+        };
+        let p = prompt_for(&empty_view(), &req);
+        assert_eq!(p.options.len(), 3, "all 3 candidates across both slots projected");
+        assert_eq!(p.option_objs, vec![Some(10), Some(11), Some(20)]);
+        assert_eq!(p.min, 2);
+        assert_eq!(p.max, 2);
+        assert_eq!(p.target_slots.len(), 2);
+        assert_eq!((p.target_slots[0].start, p.target_slots[0].len), (0, 2));
+        assert_eq!((p.target_slots[1].start, p.target_slots[1].len), (2, 1));
+        // Pick the 2nd option of slot 0 (global idx 1) and slot 1's only option (global idx 2).
+        let sel = Selection { picks: vec![1, 2], ..Default::default() };
+        match response_from(&req, &sel) {
+            DecisionResponse::Pairs(pairs) => assert_eq!(pairs, vec![(0, 1), (1, 0)]),
+            other => panic!("expected Pairs, got {other:?}"),
+        }
+    }
 
     fn empty_view() -> PlayerView {
         PlayerView {
@@ -549,6 +626,7 @@ mod tests {
                 max: 2,
                 num_min: 0,
                 num_max: 0,
+                target_slots: [],
             }"#]]
         .assert_eq(&format!("{p:#?}"));
     }

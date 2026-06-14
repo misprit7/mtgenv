@@ -661,6 +661,39 @@ function renderPrompt(): void {
     return;
   }
 
+  // Multi-slot target choice (e.g. Bushwhack-fight: slot 0 = a creature you control, slot 1 = one
+  // you don't). Render each slot as its own group + enforce each slot's count independently.
+  const slots = p.targetSlots || p.target_slots || [];
+  if (slots.length) {
+    slots.forEach((slot: Any) => {
+      const sec = el("div", "slotgroup");
+      sec.appendChild(el("div", "slothdr", slot.description +
+        (slot.min === slot.max ? " — pick " + slot.min : " — " + slot.min + "–" + slot.max)));
+      const sopts = el("div", "opts");
+      let boardN = 0;
+      for (let i = slot.start; i < slot.start + slot.len; i++) {
+        if (objs[i] != null && document.querySelector(`[data-oid="${objs[i]}"]`)) { boardN++; continue; }
+        const b = el("button", "opt" + (multi.has(i) ? " sel" : ""), p.options[i]) as HTMLButtonElement;
+        b.onclick = () => onOptionToggle(i);
+        sopts.appendChild(b);
+      }
+      sec.appendChild(sopts);
+      if (boardN) sec.appendChild(el("div", "hint", "→ click the highlighted card(s) on the board"));
+      root.appendChild(sec);
+    });
+    if (multi.size) root.appendChild(el("div", "chosen", "🎯 Chosen: " +
+      [...multi].sort((a, b) => a - b).map((i) => p.options[i]).join(", ")));
+    const sub = actBtn("Submit", () => send({ picks: [...multi].sort((a, b) => a - b) })) as HTMLButtonElement;
+    sub.disabled = !slots.every((s: Any) => {
+      const c = [...multi].filter((i) => i >= s.start && i < s.start + s.len).length;
+      return c >= s.min && c <= s.max;
+    });
+    const acts2: HTMLElement[] = [sub];
+    if (p.canPass) acts2.push(passBtn("Pass", () => send({ pass: true })));
+    addActions(root, acts2);
+    return;
+  }
+
   // Render a button for every option EXCEPT those whose object is actually on the board (those are
   // clicked on the card). An option whose object isn't on the board — e.g. a library card offered by
   // a Search (Erode/Bushwhack/Worldwagon) — still needs a button, else there's no way to pick it.

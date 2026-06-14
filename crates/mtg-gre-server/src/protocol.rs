@@ -181,7 +181,8 @@ mod tests {
                 "min": 0,
                 "max": 1,
                 "numMin": 0,
-                "numMax": 0
+                "numMax": 0,
+                "targetSlots": []
               },
               "view": {
                 "seat": 0,
@@ -233,7 +234,8 @@ mod tests {
               "min": 1,
               "max": 1,
               "numMin": 0,
-              "numMax": 0
+              "numMax": 0,
+              "targetSlots": []
             }"##]].assert_eq(&json);
     }
 
