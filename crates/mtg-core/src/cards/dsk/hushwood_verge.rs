@@ -159,4 +159,34 @@ mod tests {
                 },
             ]"#]].assert_eq(&format!("{:#?}", def.abilities));
     }
+
+    /// Behaviour: resolving the unconditional `{T}: Add {G}` mana ability adds one green to your pool.
+    /// (The conditional `{W}` is an *activation* gate — `Restriction::OnlyIf` — covered by the IR test.)
+    #[test]
+    fn hushwood_taps_for_green() {
+        use crate::agent::RandomAgent;
+        use crate::basics::{Color, Zone};
+        use crate::cards::build_game;
+        use crate::effects::ability::Ability;
+        use crate::effects::action::{ResolutionCtx, WbReason};
+        use crate::ids::{PlayerId, StackId};
+        use crate::priority::Engine;
+        let mut state = build_game(1, &[&[], &[]]);
+        let chars = state.card_db().get(HUSHWOOD_VERGE).unwrap().chars.clone();
+        let verge = state.add_card(PlayerId(0), chars, Zone::Battlefield);
+        let mana = match &state.card_db().get(HUSHWOOD_VERGE).unwrap().abilities[0] {
+            Ability::Activated { effect, .. } => effect.clone(),
+            o => panic!("expected {{G}} mana Activated, got {o:?}"),
+        };
+        let mut e = Engine::new(
+            state,
+            vec![Box::new(RandomAgent::new(0)), Box::new(RandomAgent::new(1))],
+        );
+        e.resolve_effect(
+            &mana,
+            &ResolutionCtx { controller: Some(PlayerId(0)), source: Some(verge), ..Default::default() },
+            WbReason::Resolve(StackId(0)),
+        );
+        assert_eq!(e.state.players[0].mana_pool.amounts.get(&Color::Green), Some(&1));
+    }
 }

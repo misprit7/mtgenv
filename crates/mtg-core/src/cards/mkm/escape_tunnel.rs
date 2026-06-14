@@ -207,7 +207,7 @@ mod tests {
             }
         }
 
-        let mut state = build_game(1, &[&[grp::FOREST], &[]]); // P0 library = one Forest
+        let state = build_game(1, &[&[grp::FOREST], &[]]); // P0 library = one Forest
         let fetch = match &state.card_db().get(ESCAPE_TUNNEL).unwrap().abilities[0] {
             Ability::Activated { effect, .. } => effect.clone(),
             o => panic!("expected fetch Activated, got {o:?}"),

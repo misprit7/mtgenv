@@ -180,7 +180,7 @@ mod tests {
             }
         }
 
-        let mut state = build_game(1, &[&[grp::FOREST], &[]]); // P0 library = one Forest (a basic)
+        let state = build_game(1, &[&[grp::FOREST], &[]]); // P0 library = one Forest (a basic)
         let fetch = match &state.card_db().get(FABLED_PASSAGE).unwrap().abilities[0] {
             Ability::Activated { effect, .. } => effect.clone(),
             o => panic!("expected Activated, got {o:?}"),
