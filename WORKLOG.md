@@ -5,6 +5,21 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **webui:** **Stop-config redesign (user) + selesnya in picker + ability-text/attachment/zone polish.**
+  (1) **Stops:** per user, the only toggle is now **Full Control**; auto-pass/smart/resolve toggles
+  removed. Off-behaviour is a FIXED rule: STOP iff `[phase is a marked stop OR an opponent spell/
+  ability is on top of stack] AND [you have a usable spell/non-mana ability]`. **Implemented as a
+  client-side filter** (`priorityAutoPass`) over the engine's surfaced superset — driver forces
+  `smart_stops=true` engine-side (surfaces marked-phases + any-action + opp-respond, a superset of
+  the rule) and the client narrows it. NB: this layers the final stop policy in the *client*, on top
+  of the engine's StopConfig (the engine flag model couldn't express the hybrid rule). Verified: a
+  human game auto-passes Untap/Upkeep/Draw and stops at Main 1 (marked + has a play). (2) **selesnya**
+  deck added to the lobby picker (dropped my `resolve_deck` "selesnya"→counters alias so it resolves
+  to design's official preset; counters kept). (3) Earlier same session: ability stack objects show
+  their source card's name+text (dashed marker); auras/equipment offset up-left so names show; replay
+  bar hidden in normal play (`[hidden]{display:none!important}`); hidden zones (opp hand / library)
+  open as N card backs. Commits c872cdf (stops+selesnya), 17d43fc, 5a31ded, a294feb, 3ddd2ee.
+
 - **gym:** **GYM_PLAN milestone 2 in progress — self-play league (demo deck).** User greenlit M2 +
   switched the agent to the **demo deck** (mirror: forests/mountains/bears/giants/shocks). **M2a**
   (99af24d): policy-opponent seam in `MtgEnv` (callable/object opponent, obs threaded; relative obs
