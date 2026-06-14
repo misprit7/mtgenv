@@ -107,6 +107,13 @@ pub enum Effect {
         qualification: self::ability::Qualification,
         duration: Duration,
     },
+    /// The target becomes a creature for a duration (CR 611) — a crewed Vehicle "becomes an artifact
+    /// creature until end of turn." Lowers to `GrantContinuous{ AddType(Creature), duration }` (its
+    /// P/T comes from its own characteristics/CDA; it's already an artifact).
+    BecomeCreature {
+        what: EffectTarget,
+        duration: Duration,
+    },
     AddMana {
         who: PlayerRef,
         mana: ManaSpec,

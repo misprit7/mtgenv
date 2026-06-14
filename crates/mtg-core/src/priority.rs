@@ -1062,6 +1062,15 @@ impl Engine {
                 CostComponent::Sacrifice(spec) => {
                     self.sacrifice_candidates(p, source, spec).len() as u32 >= cost_count(&spec.min)
                 }
+                // Crew N (CR 702.122): payable iff untapped creatures you control total power ≥ N.
+                CostComponent::Crew(n) => {
+                    let total: i32 = self
+                        .crew_candidates(p, source)
+                        .iter()
+                        .map(|&id| self.crew_power(id))
+                        .sum();
+                    total >= *n as i32
+                }
                 _ => true,
             };
             if !ok {
@@ -1158,7 +1167,70 @@ impl Engine {
                     }
                 }
                 CostComponent::Sacrifice(spec) => self.pay_sacrifice(p, source, spec),
+                CostComponent::Crew(n) => self.pay_crew(p, source, *n),
                 _ => {}
+            }
+        }
+    }
+
+    /// The untapped creatures `p` controls that could crew a Vehicle (CR 702.122) — excludes the
+    /// Vehicle itself (it isn't a creature until crewed).
+    fn crew_candidates(&self, p: PlayerId, source: ObjId) -> Vec<ObjId> {
+        self.state
+            .player(p)
+            .battlefield
+            .iter()
+            .copied()
+            .filter(|&id| {
+                id != source
+                    && self.state.objects.get(&id).is_some_and(|o| !o.status.tapped)
+                    && self.state.computed(id).is_creature()
+            })
+            .collect()
+    }
+
+    fn crew_power(&self, id: ObjId) -> i32 {
+        self.state.computed(id).power.unwrap_or(0).max(0)
+    }
+
+    /// Pay Crew N (CR 702.122): the controller taps a chosen subset of its untapped creatures with
+    /// total power ≥ N. `can_pay_cost` already guaranteed a sufficient set exists; if the agent
+    /// under-picks, greedily top up so the cost is met.
+    fn pay_crew(&mut self, payer: PlayerId, source: ObjId, need: u32) {
+        let candidates = self.crew_candidates(payer, source);
+        let idxs = match self.ask(
+            payer,
+            &DecisionRequest::SelectCards {
+                reason: SelectReason::Generic,
+                from: candidates.clone(),
+                min: 0,
+                max: candidates.len() as u32,
+                description: format!("tap creatures with total power {need}+ to crew"),
+            },
+        ) {
+            DecisionResponse::Indices(i) => {
+                self.distinct_valid_indices(&i, candidates.len(), candidates.len() as u32)
+            }
+            _ => Vec::new(),
+        };
+        let mut chosen: Vec<ObjId> = idxs.into_iter().map(|i| candidates[i]).collect();
+        let mut total: i32 = chosen.iter().map(|&id| self.crew_power(id)).sum();
+        if total < need as i32 {
+            for &id in &candidates {
+                if total >= need as i32 {
+                    break;
+                }
+                if !chosen.contains(&id) {
+                    chosen.push(id);
+                    total += self.crew_power(id);
+                }
+            }
+        }
+        if total >= need as i32 {
+            for id in chosen {
+                if let Some(o) = self.state.objects.get_mut(&id) {
+                    o.status.tapped = true;
+                }
             }
         }
     }
@@ -4329,6 +4401,68 @@ mod expect_tests {
         let (power_at2, prompts_at2) = run(1);
         assert_eq!(power_at2, 2, "< 4 → no +1/+1");
         assert_eq!(prompts_at2, 0, "and crucially NO target prompt on a sub-4 landfall");
+    }
+
+    #[test]
+    fn crew_taps_creatures_and_animates_the_vehicle() {
+        use crate::effects::ability::{Ability, Cost, CostComponent, Timing};
+        use crate::effects::condition::Duration;
+        use crate::effects::{Effect, EffectTarget};
+        use crate::subtypes::ArtifactType;
+        use std::sync::Arc;
+        // Crew 4 (CR 702.122): tap creatures with total power ≥4 → the Vehicle becomes an artifact
+        // creature until end of turn (it already has P/T + is an artifact, so just AddType(Creature)).
+        let mut db = cards::starter_db();
+        db.insert(cards::CardDef {
+            chars: Characteristics {
+                name: "Wagon (test)".into(),
+                card_types: vec![CardType::Artifact],
+                subtypes: vec![ArtifactType::Vehicle.into()],
+                power: Some(4),
+                toughness: Some(4),
+                grp_id: 9960,
+                ..Default::default()
+            },
+            abilities: vec![Ability::Activated {
+                cost: Cost { mana: None, components: vec![CostComponent::Crew(4)] },
+                effect: Effect::BecomeCreature {
+                    what: EffectTarget::SourceSelf,
+                    duration: Duration::UntilEndOfTurn,
+                },
+                timing: Timing::Instant,
+                restriction: None,
+                is_mana: false,
+            }],
+            text: String::new(),
+            ..Default::default()
+        });
+        let mut state = GameState::new(2, 1);
+        state.set_card_db(Arc::new(db));
+        let wagon = {
+            let c = state.card_db().get(9960).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, Zone::Battlefield)
+        };
+        let c1 = put(&mut state, PlayerId(0), grp::GRIZZLY_BEARS, Zone::Battlefield); // 2/2
+        let c2 = put(&mut state, PlayerId(0), grp::GRIZZLY_BEARS, Zone::Battlefield); // 2/2
+        let mut e = pass_engine(state);
+
+        assert!(!e.state.computed(wagon).is_creature(), "an uncrewed Vehicle is not a creature");
+        // Crew 4 is payable (two 2/2s total power 4) — activate it.
+        assert!(e.can_pay_cost(
+            PlayerId(0),
+            wagon,
+            &Cost { mana: None, components: vec![CostComponent::Crew(4)] }
+        ));
+        e.activate_ability(PlayerId(0), wagon, crate::agent::AbilityRef(0));
+        e.resolve_top();
+        assert!(e.state.computed(wagon).is_creature(), "crewed → an artifact creature");
+        assert!(
+            e.state.object(c1).status.tapped && e.state.object(c2).status.tapped,
+            "the crewing creatures are tapped"
+        );
+
+        e.state.end_of_turn_continuous_cleanup();
+        assert!(!e.state.computed(wagon).is_creature(), "no longer a creature after end of turn");
     }
 
     #[test]

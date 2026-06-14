@@ -35,6 +35,8 @@ pub enum CostComponent {
     Exile(SelectSpec),
     /// Remove counters from the source.
     RemoveCounters { kind: CounterKind, n: ValueExpr },
+    /// Crew N (CR 702.122): tap any number of untapped creatures you control with total power ≥ N.
+    Crew(u32),
     /// An additional mana payment beyond the base cost.
     AdditionalMana(ManaCost),
     /// A planeswalker loyalty-ability cost (CR 606.2): `+N` adds N loyalty counters, `−N`

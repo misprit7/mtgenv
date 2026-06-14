@@ -473,6 +473,19 @@ impl Engine {
                     });
                 }
             }
+            // A crewed Vehicle becomes a creature for a duration (CR 702.122) — AddType(Creature).
+            Effect::BecomeCreature { what, duration } => {
+                if let Some(Target::Object(obj)) = self.resolve_target(what, ctx, cursor) {
+                    let controller = ctx.controller.unwrap_or(PlayerId(0));
+                    wb.push(Action::GrantContinuous {
+                        source: ctx.source,
+                        controller,
+                        affected: vec![obj],
+                        contributions: vec![StaticContribution::AddType(CardType::Creature)],
+                        duration: *duration,
+                    });
+                }
+            }
             // Paint a qualification for a duration — "can't be blocked this turn" (Escape Tunnel).
             Effect::GrantQualification { what, qualification, duration } => {
                 if let Some(Target::Object(obj)) = self.resolve_target(what, ctx, cursor) {
