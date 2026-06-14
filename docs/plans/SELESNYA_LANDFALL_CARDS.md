@@ -75,8 +75,8 @@ cards/
 > **Status (2026-06-14):** the push is **delivered** — all 18 distinct cards authored and the
 > `selesnya`/`landfall` preset (`cards::selesnya_landfall_deck`) **is the real mtggoldfish 60**
 > (51 nonbasics + 7 Forest / 2 Plains, no padding). It plays end-to-end (validated: `mtg-cli
-> selesnya selesnya` across seeds, clean finishes, zero panics). **14/18 cards are fully faithful;
-> 4 ship as honest tracked-partials** — each with exactly one deferred clause, gated on a
+> selesnya selesnya` across seeds, clean finishes, zero panics). **15/18 cards are fully faithful;
+> 3 ship as honest tracked-partials** — each with exactly one deferred clause, gated on a
 > still-unbuilt cap (see the upgrade-tail table). **No card is husked or approximated.**
 >
 > This is the authoritative capability index (the original C-plan, reconciled to reality):
@@ -96,7 +96,7 @@ cards/
 | C10 | X costs in casting | ✅ | Dyadrine (`{X}` works) |
 | C11 | Conditional ETB-tapped / pay-life duals | ✅ | Temple Garden ✓, Ba Sing Se ✓ |
 | C12 | **Earthbend** (animate land + counters + dies/exile→return-tapped) | ✅ `3d4b636`+`db81497`+`21171dc` | Ba Sing Se ✓; Badgermole/Earthbender ETB works (⏳ on H / A) |
-| C13 | **Crew** (CR 702.122) | ⏳ **cap C** | Lumbering Worldwagon |
+| C13 | **Crew** (CR 702.122) — `CostComponent::Crew(n)` + `Effect::BecomeCreature{what,duration}` | ✅ `80d9ab3` | Lumbering Worldwagon ✓ |
 | C14 | **Warp** (alt cast + exile-at-end-step + recast-from-exile) | ✅ `c445d78`+`7cc6f9c` | Mightform Harmonizer ✓ |
 | C15 | `Effect::PumpPT` + double-power snapshot (`ValueExpr::PowerOfTarget`) | ✅ `557b6b5` | Mightform ✓ |
 | C16 | becomes-targeted trigger (`EventPattern::BecomesTargeted{filter,by_opponent}`) | ✅ `8d006fd` (battlefield half) | Surrak (⏳ stack half = cap F) |
@@ -138,7 +138,7 @@ the moment its cap lands (tracked in task #44; exact card IR staged in `WORKLOG.
 |---|---|---|
 | ~~**A** reflexive sub-trigger~~ ✅ **DONE** `2e13694` | ~~Earthbender Ascension~~ ✓ flipped `e6b9050` | landfall → quest → when-you-do(≥4) → +1/+1 + trample |
 | **B** distinct two-target counter removal (cap A already landed) | Dyadrine, Synthesis Amalgam | attack → remove a +1/+1 from *each of two* creatures → draw + Robot |
-| **C13** Crew (CR 702.122) | Lumbering Worldwagon | Crew 4 |
+| ~~**C13** Crew (CR 702.122)~~ ✅ **DONE** `80d9ab3` | ~~Lumbering Worldwagon~~ ✓ flipped `86742c3` | Crew 4 |
 | ~~**D** searched-permanent reference + `Effect::Tap{tap:false}`~~ ✅ **DONE** `bcff1cd` | ~~Fabled Passage~~ ✓ flipped `968036e` | "if you control 4+ lands, untap that land" |
 | ~~**E** `Qualification::CantBeBlocked` + power≤2 filter + grant-qual-for-duration~~ ✅ **DONE** `7dd18a9` | ~~Escape Tunnel~~ ✓ flipped `5a55600` | "{T},Sac: target power≤2 creature can't be blocked this turn" |
 | **F** `Target::Stack` in `BecomesTargeted` | Surrak, Elusive Hunter | "or a creature spell you control" trigger half |

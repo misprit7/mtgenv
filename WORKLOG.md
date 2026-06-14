@@ -5,6 +5,14 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-14
 
+- **design (#44):** **Lumbering Worldwagon → `fully_implemented: true`** (86742c3) — cap C13 Crew landed
+  (engine 80d9ab3: `CostComponent::Crew(n)` + `Effect::BecomeCreature`), so authored `Activated{ Crew(4),
+  BecomeCreature{ SourceSelf, UntilEndOfTurn } }`. Once crewed it becomes a creature, so its `*`/4 CDA + the
+  attacks-trigger fetch finally come live. **15/18 fully faithful; 3 partials left** (Dyadrine/B, Surrak/F+G,
+  Icetill/C18). 175 tests green. Ledger + trackers updated.
+- **design (#44):** **Escape Tunnel → `fully_implemented: true`** (5a55600) — see prior entry; also flipped
+  this round: Badgermole (c2ef012), Fabled (968036e), Escape (5a55600), Lumbering (86742c3); Earthbender
+  (e6b9050) earlier. Engine ground the whole lead queue (reflexive/Badgermole/Fabled/Escape/Crew) back-to-back.
 - **engine (#44):** **Whole upgrade-tail queue ground through — 5 caps back-to-back, each green.**
   (1) **Reflexive "when you do" sub-trigger** (`2e13694`, CR 603.7c): a targeted `Conditional.then`
   is deferred to a `StackObjectKind::ReflexiveAbility`; its intervening-if re-checks after the parent
