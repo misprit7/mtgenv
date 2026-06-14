@@ -301,4 +301,64 @@ mod tests {
         expect!["bears1=(Some(2), Some(2)) bears2=(Some(2), Some(2)) | hand=1 | battlefield=4 | robot_token_pt=Some((Some(2), Some(2)))"]
         .assert_eq(&render);
     }
+
+    /// #60 end-to-end (the REAL cast path — the clause `resolve_effect` structurally can't test):
+    /// "enters with +1/+1 counters equal to the **mana spent to cast it**". Cast Dyadrine `{X}{G}{W}`
+    /// with X=3 via `cast_spell`, which asks `ChooseNumber{ChooseX}`, then auto-pays `{3}{G}{W}` (5
+    /// mana) from five lands. The `EntersWithCountersValue{ManaSpent}` replacement applies at
+    /// `resolve_top`'s commit → 5 counters → a 0/1 base becomes a **5/6**. This is the deck's most
+    /// mana-dependent clause; driving it through real payment is the whole point of #60.
+    #[test]
+    fn dyadrine_enters_with_counters_equal_to_mana_spent_via_cast() {
+        use crate::agent::{Agent, CastVariant, DecisionRequest, DecisionResponse, NumberReason, PlayerView};
+        use crate::cards::{grp, starter_db};
+        use crate::ids::PlayerId;
+        use crate::priority::Engine;
+        use crate::state::GameState;
+        use std::sync::Arc;
+
+        // Chooses X=3; otherwise cooperative.
+        #[derive(Clone)]
+        struct XAgent;
+        impl Agent for XAgent {
+            fn decide(&mut self, _v: &PlayerView, req: &DecisionRequest) -> DecisionResponse {
+                match req {
+                    DecisionRequest::ChooseNumber { reason: NumberReason::ChooseX, .. } => {
+                        DecisionResponse::Number(3)
+                    }
+                    DecisionRequest::Confirm { .. } => DecisionResponse::Bool(true),
+                    _ => DecisionResponse::Pass,
+                }
+            }
+        }
+
+        let mut state = GameState::new(2, 1);
+        state.set_card_db(Arc::new(starter_db()));
+        let dyadrine = {
+            let c = state.card_db().get(DYADRINE_SYNTHESIS_AMALGAM).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, Zone::Hand)
+        };
+        // Five lands to pay {3}{G}{W} for X=3: 3 Forest (G + generic) + 2 Plains (W + generic).
+        for _ in 0..3 {
+            let c = state.card_db().get(grp::FOREST).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, Zone::Battlefield);
+        }
+        for _ in 0..2 {
+            let c = state.card_db().get(grp::PLAINS).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, Zone::Battlefield);
+        }
+        let mut e = Engine::new(state, vec![Box::new(XAgent), Box::new(XAgent)]);
+        e.cast_spell(PlayerId(0), dyadrine, CastVariant::Normal); // ChooseX=3, auto-pays {3}{G}{W}
+        e.resolve_top(); // enters → EntersWithCountersValue{ManaSpent} replacement applies
+
+        assert_eq!(
+            e.state.object(dyadrine).counters.get(&CounterKind::PlusOnePlusOne),
+            5,
+            "entered with +1/+1 counters equal to the 5 mana spent ({{3}}{{G}}{{W}}, X=3)"
+        );
+        let cc = e.state.computed(dyadrine);
+        assert_eq!(cc.power, Some(5), "0/1 base + 5 counters = 5 power");
+        assert_eq!(cc.toughness, Some(6), "0/1 base + 5 counters = 6 toughness");
+        assert!(cc.has_keyword(crate::effects::ability::Keyword::Trample), "Trample");
+    }
 }
