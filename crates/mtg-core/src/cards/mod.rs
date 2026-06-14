@@ -61,6 +61,7 @@ pub mod rtr;
 pub mod som;
 pub mod sos;
 pub mod sth;
+pub mod tdm;
 pub mod tla;
 pub mod tmp;
 pub mod ulg;
@@ -356,6 +357,7 @@ pub fn starter_db() -> CardDb {
     rav::register(&mut db);
     tla::register(&mut db);
     bro::register(&mut db);
+    tdm::register(&mut db);
     // Per-set folders for the prototype/starter pool (moved out of `misc`).
     aer::register(&mut db);
     ala::register(&mut db);
@@ -488,7 +490,7 @@ mod tests {
     #[test]
     fn starter_db_has_expected_cards() {
         let db = starter_db();
-        assert_eq!(db.len(), 44);
+        assert_eq!(db.len(), 45);
         // Forest is "type line only": a Basic Land with subtype Forest. Mana is intrinsic
         // (CR 305.6) — the engine derives {T}: Add {G} from the subtype, so the CardDef carries
         // no explicit mana ability (and `is_mana_source` only sees authored abilities).
