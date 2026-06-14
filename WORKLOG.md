@@ -12,12 +12,15 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
   (`run_agenda` SBA/trigger stabilization + `priority_round` priority passing) now carry a hard iteration ceiling
   (100k / 1M — no legal game comes close); tripping it aborts that game to a draw and logs the loop + turn/phase/
   stack. Training can NEVER hang again; a wedge degrades to a logged draw that *self-diagnoses* the exact site.
-  **Part 2 (root cause — not reproduced standalone):** audited every engine loop — combat is all bounded `for`s,
-  `move_object` always clears a dying creature (SBA can't re-collect), priority terminates as resources deplete —
-  and swept ~17.5k games (12k random + 1500 greedy without auto-pass; 4000 greedy/random WITH auto-pass, gym's
-  config) with **zero** trips. So the loop needs gym's exact trained-policy + codec + stop conditions; the live
-  loop-guard log on the next training occurrence is the real repro. Added a `GreedyAgent` (never-pass worst case)
-  termination test. 198 core tests green.
+  **Part 2 (root cause — RESOLVED, = #49):** swept ~17.5k games (12k random + 1500 greedy without auto-pass; 4000
+  greedy/random WITH auto-pass, gym's config) → **zero** trips, and audited every loop (combat all bounded `for`s,
+  `move_object` always clears a dying creature, priority depletes resources). gym then confirmed the real freeze
+  was the **#49 Selesnya empty-target spin** (engine spun resolving a required-but-empty `ChooseTargets`), NOT a
+  demo loop — and the reported "4-hour hang" was largely a lead-side EDT-vs-UTC timestamp misread of a
+  minutes-long freeze. **`#49` (5df860e) already fixed it** (gym verified 60/60 Selesnya episodes, no freeze). So
+  the demo loop is almost certainly phantom; the loop-guard is kept as **defense-in-depth + self-diagnosis** (an
+  engine should never be able to spin forever) per the lead. Tests: loop-guard abort-to-draw + `GreedyAgent`
+  never-pass termination (with/without auto-pass). 199 core tests green. (#55 closed.)
 
 - **design (quality pass — behaviour-test coverage, broadly complete):** **16/18 cards now have a card-module
   resolve-level behaviour test** (exercise the *resolved* effect, expect-snapshot or assert on
