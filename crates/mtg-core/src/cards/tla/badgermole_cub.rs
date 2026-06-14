@@ -171,4 +171,75 @@ mod tests {
         );
         assert_eq!(e.state.players[0].mana_pool.amounts.get(&Color::Green), Some(&1)); // +{G}
     }
+
+    /// #60 end-to-end (REAL cast → ETB trigger): cast Badgermole Cub `{1}{G}`; on entering, its
+    /// "When this creature enters, earthbend 1" trigger goes on the stack (prompting `ChooseTargets`
+    /// for a land you control) and resolves to animate that land into a 1/1 haste land-creature
+    /// (0/0 + one +1/+1 counter). Drives `cast_spell` (real mana) → `resolve_top` (enters) →
+    /// `run_agenda` (stacks the ETB trigger) → `resolve_top` (earthbend resolves).
+    #[test]
+    fn badgermole_etb_earthbend_via_real_cast() {
+        use crate::agent::{Agent, CastVariant, DecisionRequest, DecisionResponse, PlayerView};
+        use crate::basics::{CardType, Target, Zone};
+        use crate::cards::{grp, starter_db};
+        use crate::effects::ability::Keyword;
+        use crate::ids::{ObjId, PlayerId};
+        use crate::priority::Engine;
+        use crate::state::GameState;
+        use std::sync::Arc;
+
+        // Earthbend the specific (untapped) land we set aside, not one of the mana lands.
+        #[derive(Clone)]
+        struct TargetAgent {
+            want: ObjId,
+        }
+        impl Agent for TargetAgent {
+            fn decide(&mut self, _v: &PlayerView, req: &DecisionRequest) -> DecisionResponse {
+                match req {
+                    DecisionRequest::ChooseTargets { slots, .. } => {
+                        let i = slots[0]
+                            .legal
+                            .iter()
+                            .position(|t| matches!(t, Target::Object(o) if *o == self.want))
+                            .unwrap_or(0);
+                        DecisionResponse::Pairs(vec![(0, i as u32)])
+                    }
+                    _ => DecisionResponse::Pass,
+                }
+            }
+        }
+
+        let mut state = GameState::new(2, 1);
+        state.set_card_db(Arc::new(starter_db()));
+        let badger = {
+            let c = state.card_db().get(BADGERMOLE_CUB).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, Zone::Hand)
+        };
+        for _ in 0..2 {
+            let c = state.card_db().get(grp::FOREST).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, Zone::Battlefield); // pays {1}{G}
+        }
+        let target_land = {
+            let c = state.card_db().get(grp::FOREST).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, Zone::Battlefield) // the land to earthbend
+        };
+        let mut e = Engine::new(
+            state,
+            vec![Box::new(TargetAgent { want: target_land }), Box::new(TargetAgent { want: target_land })],
+        );
+
+        e.cast_spell(PlayerId(0), badger, CastVariant::Normal);
+        e.resolve_top(); // Badgermole enters
+        e.run_agenda(); // ETB earthbend trigger goes on the stack (targets chosen here)
+        while !e.state.stack.items.is_empty() {
+            e.resolve_top();
+            e.run_agenda();
+        }
+
+        let cc = e.state.computed(target_land);
+        assert!(cc.is_creature(), "the earthbent land is now a creature");
+        assert!(cc.card_types.contains(&CardType::Land), "and is still a land");
+        assert!(cc.has_keyword(Keyword::Haste), "with haste");
+        assert_eq!((cc.power, cc.toughness), (Some(1), Some(1)), "earthbend 1 → 0/0 + one counter = 1/1");
+    }
 }
