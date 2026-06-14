@@ -1164,7 +1164,7 @@ impl Engine {
 
     /// Activate a (non-mana) activated ability (CR 602.2): put it on the stack, choose targets
     /// (locked now, 602.2b), then pay the cost. It resolves via [`Engine::resolve_top`].
-    fn activate_ability(&mut self, p: PlayerId, source: ObjId, ability: AbilityRef) {
+    pub(crate) fn activate_ability(&mut self, p: PlayerId, source: ObjId, ability: AbilityRef) {
         let idx = ability.0 as usize;
         let (cost, effect, restriction) =
             match self.state.def_of(source).and_then(|d| d.abilities.get(idx)) {
@@ -1374,7 +1374,7 @@ impl Engine {
     /// Play a land: a special action (CR 116.2a), no stack. Routed through the whiteboard so
     /// ETB replacement effects (e.g. Root Maze "lands enter tapped") apply and the ETB event
     /// fires from commit. Counts against the one-land-per-turn limit.
-    fn play_land(&mut self, p: PlayerId, card: ObjId) {
+    pub(crate) fn play_land(&mut self, p: PlayerId, card: ObjId) {
         let ctx = ResolutionCtx {
             controller: Some(p),
             source: Some(card),
@@ -1407,7 +1407,7 @@ impl Engine {
     /// which also flags the spell so it's exiled at the next end step when it resolves.
     /// Affordability + target availability are pre-checked in `legal_priority_actions`, so no
     /// rewind (CR 732) is needed. The caller keeps priority with the caster (CR 601.2i).
-    fn cast_spell(&mut self, p: PlayerId, card: ObjId, variant: CastVariant) {
+    pub(crate) fn cast_spell(&mut self, p: PlayerId, card: ObjId, variant: CastVariant) {
         let cost = match variant {
             CastVariant::Warp => self.warp_cost(card),
             _ => self.state.object(card).chars.mana_cost.clone(),
@@ -1738,7 +1738,7 @@ impl Engine {
     /// goes to its owner's graveyard, an ability ceases to exist (608.2n/608.3). Running
     /// the object's effect IR is the effect runtime's job (milestone 4). In a lands-only
     /// game the stack stays empty, so this is exercised only by unit tests.
-    fn resolve_top(&mut self) {
+    pub(crate) fn resolve_top(&mut self) {
         let Some(obj) = self.state.stack.pop() else {
             return;
         };
