@@ -272,11 +272,17 @@ impl Engine {
     /// `any_color` asks the player to pick. (The simplified payment path taps sources directly,
     /// so this is used by explicit mana-ability activation / ritual effects.)
     fn add_mana(&mut self, player: PlayerId, mana: &ManaSpec, ctx: &ResolutionCtx) {
+        let mut changed = false;
         for (color, amount) in &mana.produces {
             let amt = self.eval_value(amount, ctx).max(0) as u32;
             if amt > 0 {
                 *self.state.player_mut(player).mana_pool.amounts.entry(*color).or_insert(0) += amt;
+                changed = true;
             }
+        }
+        if changed {
+            // Live-view refresh so the client shows mana entering the pool as it resolves (#59/#62).
+            self.broadcast(GameEvent::ManaPoolChanged { player });
         }
         if let Some(amount) = &mana.any_color {
             let amt = self.eval_value(amount, ctx).max(0) as u32;

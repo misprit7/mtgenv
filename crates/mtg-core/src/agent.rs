@@ -651,6 +651,10 @@ pub enum GameEvent {
     /// attack" (player-level, once) and "whenever this creature attacks" (per attacker) triggers.
     AttackersDeclared { attackers: Vec<ObjId>, by: PlayerId },
     GameEnded { winner: Option<PlayerId> },
+    /// `player`'s mana pool changed (mana produced or spent during payment/resolution). A *live-view*
+    /// notification: it refreshes observers so the client shows floating mana mid-resolution
+    /// (#59/#62), but is NOT recorded to the event log or replay (it would bloat them with churn).
+    ManaPoolChanged { player: PlayerId },
 }
 
 // ════════════════════════════════════════════════════════════════════════════════════════

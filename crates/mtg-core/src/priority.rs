@@ -481,6 +481,8 @@ impl Engine {
                 Some(w) => format!("Game over — P{} wins", w.0),
                 None => "Game over — draw".to_string(),
             },
+            // Not recorded (gated in `broadcast`); labelled for completeness only.
+            GameEvent::ManaPoolChanged { player } => format!("P{} mana pool changed", player.0),
         }
     }
 
@@ -1255,6 +1257,8 @@ impl Engine {
         // Then pay mana from the REMAINING (still-untapped, still-present) sources, through the pool.
         if let Some(m) = &cost.mana {
             mana::auto_pay(&mut self.state, p, m);
+            // Live-view refresh so the client sees the pool change (produce + spend) as it happens.
+            self.broadcast(GameEvent::ManaPoolChanged { player: p });
         }
     }
 
@@ -2259,11 +2263,14 @@ impl Engine {
     /// Push a public event to every seat's `observe` channel (CR: the GRE diff stream), and
     /// collect any triggered abilities that watch this event (CR 603.2).
     pub(crate) fn broadcast(&mut self, ev: GameEvent) {
-        if self.record_events {
+        // `ManaPoolChanged` is a live-view-only refresh (#59/#62): observers see floating mana
+        // mid-resolution, but it isn't recorded — it would bloat the event log / replay with churn.
+        let record = !matches!(ev, GameEvent::ManaPoolChanged { .. });
+        if record && self.record_events {
             self.event_log.push(ev.clone());
         }
         // Capture an omniscient replay frame of the post-event state, labelled by the event.
-        if self.record_replay {
+        if record && self.record_replay {
             let label = self.event_label(&ev);
             self.push_replay_frame(label);
         }
