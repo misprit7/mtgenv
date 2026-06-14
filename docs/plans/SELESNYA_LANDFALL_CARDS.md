@@ -228,7 +228,7 @@ gates every ETB/landfall/attack *trigger*. (#57/#59 mana are **DONE** — earthb
 | 102 | Sazh's Chocobo | base P/T; landfall = +1 `+1/+1`; only *your* lands | ☐ **blocked: `run_agenda`** (landfall) |
 | 103 | Mossborn Hydra | Trample; enters w/ 1 `+1/+1`; landfall **doubles** counter count | ☐ **blocked: `run_agenda`** (landfall) |
 | 104 | Icetill Explorer | landfall mill 1; +1 land/turn; **play lands from graveyard** | land-permissions: engine synthetic test ✅; landfall mill ☐ **blocked: `run_agenda`** |
-| 105 | Lumbering Worldwagon | power = #lands (CDA); ETB *or* attack fetch basic tapped; Crew 4 | ☐ ETB/attack **blocked: `run_agenda`**; CDA/Crew doable |
+| 105 | Lumbering Worldwagon | power = #lands (CDA); ETB *or* attack fetch basic tapped; Crew 4 | CDA computed ✅; Crew ✅ **E2E** (real Crew-4 cost taps creatures); ETB/attack ☐ **`run_agenda`** |
 | 106 | Fabled Passage | fetch basic tapped; if ≥4 lands → untap it | ✅ **E2E full-activation** (engine `priority.rs`) |
 | 107 | Escape Tunnel | fetch basic tapped; **power≤2 target can't be blocked this turn** | ✅ **E2E activate-path** (real `{T}`+Sacrifice + target + grant) |
 | 108 | Erode | destroy target creature/pw; **its controller may fetch basic tapped** (#61 ✅) | ✅ **E2E cast-path** (real `{W}` + target + auto-snapshotted opponent rider) |
@@ -240,15 +240,19 @@ gates every ETB/landfall/attack *trigger*. (#57/#59 mana are **DONE** — earthb
 | 114 | Earthbender Ascension | ETB earthbend 2 + fetch; landfall quest counter; ≥4 → `+1/+1`+trample | ☐ **blocked: `run_agenda`** (ETB + landfall) |
 | 115 | Mightform Harmonizer | landfall doubles target power (snapshot +X/+0) EOT; Warp `{2}{G}` | ☐ landfall **blocked: `run_agenda`**; Warp queued |
 | 116 | Dyadrine | Trample; **enters w/ counters = mana spent**; attack → remove 1 from 2, draw + Robot | **counters=mana ✅ E2E cast** (X=3→5/6); attack trigger ☐ **`run_agenda`** |
-| 117 | Keen-Eyed Curator | static +4/+4 & trample at ≥4 exiled types; `{1}:` exile gy card | static computed ✅; `{1}` exile ❌ **fizzles → bug #64** (ignored repro committed) |
+| 117 | Keen-Eyed Curator | static +4/+4 & trample at ≥4 exiled types; `{1}:` exile gy card | static computed ✅; `{1}` exile ✅ **E2E** (real activate, post-#64 fix) |
 
-**Tally so far:** **9 cards** have ≥1 clause confirmed through the REAL play loop (100 Llanowar cast,
-101 Hushwood {W}-gate, 106 Fabled, 107 Escape Tunnel, 108 Erode, 109 Temple Garden, 110 Ba Sing Se
-ETB+earthbend, 111 Bushwhack, 116 Dyadrine counters) — incl. the hardest mana clause (Dyadrine
-counters = mana spent) and the #57-fix earthbend payment. **1 bug found: #64** (Keen-Eyed exile
-fizzles — `target_legal` rejects graveyard targets; ignored repro committed). **No flag demoted yet**;
-117 Keen-Eyed's `{1}` exile clause is the first ❌ (engine fix in flight as #64). The remaining ~8 cards
-are trigger-based, all blocked on `run_agenda`.
+**Tally so far:** **11 cards** have ≥1 clause confirmed through the REAL play loop (100 Llanowar cast,
+101 Hushwood {W}-gate, 105 Lumbering Crew + CDA, 106 Fabled, 107 Escape Tunnel, 108 Erode, 109 Temple
+Garden, 110 Ba Sing Se ETB+earthbend, 111 Bushwhack, 116 Dyadrine counters, 117 Keen-Eyed exile) — incl.
+the hardest mana clause (Dyadrine counters = mana spent) and the #57-fix earthbend payment. **1 bug found
+AND fixed: #64** (Keen-Eyed exile fizzled because `target_legal` rejected graveyard targets at
+`resolve_top`; engine made the re-check spec-aware; my repro now passes un-ignored). **No flag demoted**:
+every clause driven matches oracle text. The remaining **7 cards are trigger-based** (102 Sazh's, 103
+Mossborn, 104 Icetill landfall; 112 Surrak becomes-targeted; 113 Badgermole, 114 Earthbender ETB; 115
+Mightform landfall; plus the trigger legs of 105 Lumbering / 116 Dyadrine) — **all blocked on one
+primitive: `run_agenda` (`pub(crate)`)**. Empirically proven required: driving Sazh's landfall via real
+`play_land` + 4× `resolve_top` leaves the counter at 0 — `resolve_top` doesn't drain spawned triggers.
 
 **Honest baseline going in:** all 17 `true` flags are unvalidated through the real path;
 Surrak is correctly `false` (can't-be-countered deferred, no counterspell in pool). Flags will
