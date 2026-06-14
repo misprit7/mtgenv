@@ -72,4 +72,33 @@ mod tests {
                 },
             ]"#]].assert_eq(&format!("{:#?}", def.abilities));
     }
+
+    /// Behaviour: resolving the `{T}: Add {G}` mana ability adds one green mana to your pool.
+    #[test]
+    fn llanowar_taps_for_green() {
+        use crate::agent::RandomAgent;
+        use crate::basics::{Color, Zone};
+        use crate::cards::build_game;
+        use crate::effects::ability::Ability;
+        use crate::effects::action::{ResolutionCtx, WbReason};
+        use crate::ids::{PlayerId, StackId};
+        use crate::priority::Engine;
+        let mut state = build_game(1, &[&[], &[]]);
+        let chars = state.card_db().get(LLANOWAR_ELVES).unwrap().chars.clone();
+        let elf = state.add_card(PlayerId(0), chars, Zone::Battlefield);
+        let mana = match &state.card_db().get(LLANOWAR_ELVES).unwrap().abilities[0] {
+            Ability::Activated { effect, .. } => effect.clone(),
+            o => panic!("expected mana Activated, got {o:?}"),
+        };
+        let mut e = Engine::new(
+            state,
+            vec![Box::new(RandomAgent::new(0)), Box::new(RandomAgent::new(1))],
+        );
+        e.resolve_effect(
+            &mana,
+            &ResolutionCtx { controller: Some(PlayerId(0)), source: Some(elf), ..Default::default() },
+            WbReason::Resolve(StackId(0)),
+        );
+        assert_eq!(e.state.players[0].mana_pool.amounts.get(&Color::Green), Some(&1));
+    }
 }

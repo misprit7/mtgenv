@@ -247,4 +247,56 @@ mod tests {
             ]"#]]
         .assert_eq(&format!("{:#?}", def.abilities));
     }
+
+    /// Behaviour: the ETB ability earthbends a target land you control (→ a 2/2 land-creature) and
+    /// then fetches a basic onto the battlefield tapped.
+    #[test]
+    fn earthbender_etb_animates_a_land_and_fetches() {
+        use crate::agent::{Agent, DecisionRequest, DecisionResponse, PlayerView};
+        use crate::basics::{CardType, Target, Zone};
+        use crate::cards::{build_game, grp};
+        use crate::effects::action::{ResolutionCtx, WbReason};
+        use crate::ids::{PlayerId, StackId};
+        use crate::priority::Engine;
+
+        #[derive(Clone)]
+        struct TakeItAgent;
+        impl Agent for TakeItAgent {
+            fn decide(&mut self, _v: &PlayerView, req: &DecisionRequest) -> DecisionResponse {
+                match req {
+                    DecisionRequest::Confirm { .. } => DecisionResponse::Bool(true),
+                    DecisionRequest::SelectCards { from, min, max, .. } => {
+                        let n = (*min).max(1).min(*max).min(from.len() as u32);
+                        DecisionResponse::Indices((0..n).collect())
+                    }
+                    _ => DecisionResponse::Pass,
+                }
+            }
+        }
+
+        let mut state = build_game(1, &[&[grp::FOREST], &[]]); // library = a Forest to fetch
+        let asc_chars = state.card_db().get(EARTHBENDER_ASCENSION).unwrap().chars.clone();
+        let forest_chars = state.card_db().get(grp::FOREST).unwrap().chars.clone();
+        let asc = state.add_card(PlayerId(0), asc_chars, Zone::Battlefield);
+        let land = state.add_card(PlayerId(0), forest_chars, Zone::Battlefield); // the land to earthbend
+        let etb = match &state.card_db().get(EARTHBENDER_ASCENSION).unwrap().abilities[0] {
+            Ability::Triggered { effect, .. } => effect.clone(),
+            o => panic!("expected SelfEnters Triggered, got {o:?}"),
+        };
+        let mut e = Engine::new(state, vec![Box::new(TakeItAgent), Box::new(TakeItAgent)]);
+        e.resolve_effect(
+            &etb,
+            &ResolutionCtx {
+                controller: Some(PlayerId(0)),
+                source: Some(asc),
+                chosen_targets: vec![Target::Object(land)],
+                ..Default::default()
+            },
+            WbReason::Resolve(StackId(0)),
+        );
+        let cc = e.state.computed(land);
+        assert!(cc.is_creature() && cc.card_types.contains(&CardType::Land)); // earthbent: land-creature
+        assert_eq!((cc.power, cc.toughness), (Some(2), Some(2))); // 0/0 + two +1/+1 counters
+        assert_eq!(e.state.players[0].library.len(), 0); // the basic was fetched out of the library
+    }
 }
