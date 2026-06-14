@@ -138,6 +138,9 @@ pub struct Object {
     /// onto the battlefield the engine arms the "exile at the next end step" delayed trigger. Reset
     /// on every zone change.
     pub warp_cast: bool,
+    /// Set on a card warp-exiled at its end step (CR 702.x) — it may be cast from exile on a later
+    /// turn (for its normal cost). Reset on any zone change (cast it, or it leaves exile).
+    pub castable_from_exile: bool,
 }
 
 impl Object {
@@ -505,6 +508,7 @@ impl GameState {
             mana_spent: 0,
             exiled_with: None,
             warp_cast: false,
+            castable_from_exile: false,
         };
         self.objects.insert(id, obj);
         if let Some(v) = self.player_mut(owner).zone_vec_mut(zone) {
@@ -567,6 +571,7 @@ impl GameState {
             o.mana_spent = 0; // re-recorded only by a fresh cast (CR 400.7)
             o.exiled_with = None; // the exile-association is dropped on any zone change (400.7)
             o.warp_cast = false; // a fresh object identity (CR 400.7)
+            o.castable_from_exile = false; // re-granted only by a fresh warp-exile (400.7)
             if to == Zone::Battlefield {
                 o.controller = to_owner;
                 o.summoning_sick = o.chars.is_creature();

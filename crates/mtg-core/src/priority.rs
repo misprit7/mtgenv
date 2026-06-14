@@ -964,6 +964,30 @@ impl Engine {
             }
         }
 
+        // Cast a warp-exiled card from exile on a later turn (CR 702.x), at sorcery speed for its
+        // normal mana cost — the warp recast.
+        if sorcery_speed {
+            for &card in &s.player(p).exile {
+                let o = s.object(card);
+                if !o.castable_from_exile {
+                    continue;
+                }
+                let affordable = o.chars.mana_cost.as_ref().is_some_and(|c| mana::can_pay(s, p, c));
+                if !affordable {
+                    continue;
+                }
+                let has_targets = match s.def_of(card).and_then(|d| d.spell_effect()) {
+                    Some(eff) => collect_target_specs(eff)
+                        .iter()
+                        .all(|spec| self.target_candidates(spec, p).len() as u32 >= spec.min.max(1)),
+                    None => true,
+                };
+                if has_targets {
+                    actions.push(PlayableAction::Cast { spell: card, variant: CastVariant::Normal });
+                }
+            }
+        }
+
         // Activated abilities (CR 602) of permanents `p` controls — e.g. Equip. Mana abilities
         // (CR 605) use a separate no-stack path and are skipped here. Masked by timing, the
         // activation restriction, cost payability, and (if it targets) a legal target.
@@ -1376,10 +1400,10 @@ impl Engine {
     /// the [`StackObject`] wraps it with a `StackId`).
     fn move_to_stack(&mut self, card: ObjId, controller: PlayerId) {
         let owner = self.state.object(card).owner;
-        let hand = &mut self.state.player_mut(owner).hand;
-        if let Some(pos) = hand.iter().position(|&x| x == card) {
-            hand.remove(pos);
-        }
+        // Remove from its current public source zone — hand, or exile for a warp recast.
+        let pl = self.state.player_mut(owner);
+        pl.hand.retain(|&x| x != card);
+        pl.exile.retain(|&x| x != card);
         if let Some(o) = self.state.objects.get_mut(&card) {
             o.zone = Zone::Stack;
             o.controller = controller;
@@ -1580,7 +1604,7 @@ impl Engine {
                             crate::effects::action::DelayedTriggerEvent::AtBeginningOfNextEndStep,
                             obj.controller,
                             Some(id),
-                            vec![Action::Exile { obj: id, source: None }],
+                            vec![Action::WarpExile { obj: id }],
                         );
                     }
                     // An Aura enters the battlefield attached to its chosen target (CR 303.4f /
@@ -4061,6 +4085,27 @@ mod expect_tests {
         e.resolve_top();
         assert_eq!(e.state.object(card).zone, Zone::Exile, "exiled at the next end step");
         assert!(e.state.delayed_triggers.is_empty(), "the delayed trigger was consumed");
+        assert!(e.state.object(card).castable_from_exile, "warp grants recast-from-exile");
+
+        // Piece 3: a later turn — add untapped mana for the normal {3} and recast it from exile.
+        e.state.phase = Phase::PrecombatMain;
+        let forest_chars = e.state.card_db().get(grp::FOREST).unwrap().chars.clone();
+        for _ in 0..3 {
+            e.state.add_card(PlayerId(0), forest_chars.clone(), Zone::Battlefield);
+        }
+        let actions = e.legal_priority_actions(PlayerId(0));
+        assert!(
+            actions.iter().any(|a| matches!(
+                a,
+                PlayableAction::Cast { spell, variant: CastVariant::Normal } if *spell == card
+            )),
+            "the warp-exiled card is offered for recast from exile at its normal cost"
+        );
+        e.cast_spell(PlayerId(0), card, CastVariant::Normal);
+        e.resolve_top();
+        assert_eq!(e.state.object(card).zone, Zone::Battlefield, "recast from exile resolves");
+        assert!(!e.state.player(PlayerId(0)).exile.contains(&card), "it left exile");
+        assert!(e.state.delayed_triggers.is_empty(), "a normal recast does not re-arm a warp exile");
     }
 
     #[test]

@@ -810,6 +810,19 @@ impl Engine {
                     self.broadcast(GameEvent::ObjectMoved { obj, to: Zone::Exile });
                 }
             }
+            Action::WarpExile { obj } => {
+                let owner = match self.state.objects.get(&obj) {
+                    Some(o) => o.owner,
+                    None => return,
+                };
+                if self.state.move_object(obj, Zone::Exile, owner) {
+                    // Warp grants recast-from-exile permission (CR 702.x).
+                    if let Some(o) = self.state.objects.get_mut(&obj) {
+                        o.castable_from_exile = true;
+                    }
+                    self.broadcast(GameEvent::ObjectMoved { obj, to: Zone::Exile });
+                }
+            }
             Action::GrantContinuous { source, controller, affected, contributions, duration } => {
                 // Register a resolution-granted continuous effect (CR 611). The layer system folds
                 // it in; `add_continuous_effect` marks the chars cache dirty.

@@ -73,6 +73,11 @@ pub enum Action {
         obj: ObjId,
         source: Option<ObjId>,
     },
+    /// Exile a warp-cast permanent at its end step (CR 702.x) and mark it castable from exile on a
+    /// later turn — distinct from a plain `Exile` so only warp grants the recast permission.
+    WarpExile {
+        obj: ObjId,
+    },
     /// Grant a continuous effect created by resolution (CR 611) over a fixed set of objects —
     /// "until end of turn" pumps, animations (Earthbend's land→creature), etc. Applied by pushing
     /// a [`crate::chars::ContinuousEffect`] into game state, where the layer system folds it in
