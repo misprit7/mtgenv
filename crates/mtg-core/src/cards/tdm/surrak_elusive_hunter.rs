@@ -10,27 +10,23 @@
 //! IMPLEMENTED:
 //! - **Trample** (CR 702.19) — a printed `Keyword`, read by combat-damage assignment today.
 //! - 4/3 P/T, Legendary supertype, Human Warrior subtypes (printed characteristics).
-//! - **"Whenever a creature you control becomes the target of a spell or ability an opponent
-//!   controls, draw a card"** (the battlefield-creature half) — a `Triggered{ BecomesTargeted{
-//!   filter: creature you control, by_opponent: true } }` → `Draw 1` (C16). Fires once per matching
-//!   creature that becomes a target (CR 603.2e), so an opponent's spell hitting two of your creatures
-//!   draws two.
+//! - **"Whenever a creature you control or a creature spell you control becomes the target of a spell
+//!   or ability an opponent controls, draw a card"** — a `Triggered{ BecomesTargeted{ filter: creature
+//!   you control, by_opponent: true } }` → `Draw 1`. Covers **both halves**: the battlefield-creature
+//!   half (C16, `8d006fd`) and the **creature-spell-on-stack half** (cap `d3ee9e9`) — the engine now
+//!   fires `BecomesTargeted` for stack objects too, and the same filter (`HasCardType(Creature) +
+//!   ControlledBy(Controller)`) matches a creature *spell* on the stack, so no IR change was needed.
+//!   Fires once per matching object that becomes a target (CR 603.2e).
 //!
-//! INCOMPLETE — TRACKED (`fully_implemented: false`), two genuine capability gaps, NOT approximated:
-//!   1. **"This spell can't be countered."** Modeled faithfully as the CR-correct static ability
-//!      that functions while the spell is on the stack (CR 113.6f / 604.5): a `Qualification(
-//!      CantBeCountered)` painted on `ItSelf` in `Zone::Stack`. It is **inert today** on two counts —
-//!      (a) `chars::gather_statics` only walks the battlefield, so a stack-zone static is never
-//!      gathered; (b) nothing in the engine reads `CantBeCountered` and there is no counter
-//!      subsystem in the pool. The IR declares the intent; the engine grows to interpret it. Flagged
-//!      to engine (capability: stack-zone static gathering + a counter check that respects the
-//!      qualification).
-//!   2. The **"creature SPELL you control"** half of the draw trigger — when an opponent targets your
-//!      creature *spell on the stack* (not a permanent). The C16 event fires only for permanents
-//!      (`Target::Object`); the stack-object case (`Target::Stack`) is a deferred capability. So the
-//!      authored trigger is faithful for the common battlefield half and merely **under-triggers** the
-//!      rarer stack half — an honest missing upside, never a wrong fire. Tracked until `Target::Stack`
-//!      targeting exists.
+//! INCOMPLETE — TRACKED (`fully_implemented: false`), one remaining capability gap, NOT approximated:
+//!   - **"This spell can't be countered."** Modeled faithfully as the CR-correct static ability
+//!     that functions while the spell is on the stack (CR 113.6f / 604.5): a `Qualification(
+//!     CantBeCountered)` painted on `ItSelf` in `Zone::Stack`. It is **inert today** on two counts —
+//!     (a) `chars::gather_statics` only walks the battlefield, so a stack-zone static is never
+//!     gathered; (b) nothing in the engine reads `CantBeCountered` and **there is no counterspell in
+//!     the card pool**, so the qualification has nothing to act on. Per the lead, this is deferred (a
+//!     documented standing gap) until a counter subsystem exists — building it now is pure
+//!     infrastructure for zero current effect. The IR declares the intent; the engine grows to interpret it.
 
 use crate::basics::{CardType, Color, Zone};
 use crate::cards::{creature, mana_cost, CardDb};
@@ -62,10 +58,9 @@ fn cant_be_countered() -> Ability {
     }
 }
 
-/// "Whenever a creature you control … becomes the target of a spell or ability an opponent controls,
-/// draw a card." (the battlefield-creature half — C16). Fires once per matching creature targeted by
-/// an opponent-controlled source (CR 603.2e); the "creature spell you control" half awaits
-/// `Target::Stack` targeting (tracked in the module docs).
+/// "Whenever a creature you control or a creature spell you control becomes the target of a spell or
+/// ability an opponent controls, draw a card." Fires once per matching object (CR 603.2e) — the same
+/// filter covers both the battlefield-creature half (C16) and the creature-spell-on-stack half (d3ee9e9).
 fn becomes_targeted_draw() -> Ability {
     Ability::Triggered {
         event: EventPattern::BecomesTargeted {
@@ -96,8 +91,8 @@ pub fn register(db: &mut CardDb) {
     def.chars.keywords = vec![Keyword::Trample];
     def.text = "This spell can't be countered.\nTrample\nWhenever a creature you control or a creature spell you control becomes the target of a spell or ability an opponent controls, draw a card.".to_string();
     // Tracked-incomplete: "can't be countered" is inert (no stack-static gathering / no counter
-    // subsystem), and the draw trigger covers only the battlefield-creature half — the "creature
-    // spell you control" half awaits Target::Stack targeting. See module docs.
+    // subsystem); the draw trigger now covers BOTH halves (battlefield creature + creature spell on
+    // the stack, cap d3ee9e9). Only can't-be-countered remains deferred. See module docs.
     def.fully_implemented = false;
     db.insert(def);
 }
@@ -118,8 +113,8 @@ mod tests {
         assert_eq!(def.chars.keywords, vec![Keyword::Trample]); // trample works today
         assert_eq!(def.chars.power, Some(4));
         assert_eq!(def.chars.toughness, Some(3));
-        // Tracked-incomplete: can't-be-countered is inert + the draw trigger covers only the
-        // battlefield-creature half (stack-creature-spell half awaits Target::Stack).
+        // Tracked-incomplete on ONLY the inert can't-be-countered (no counterspell in the pool); the
+        // draw trigger now covers both the battlefield-creature and creature-spell-on-stack halves.
         assert!(!def.fully_implemented);
         // The can't-be-countered static + the becomes-targeted draw trigger (battlefield half, C16).
         expect![[r#"
