@@ -191,6 +191,9 @@ pub struct Engine {
     /// effect can reference "that land/creature" (Fabled Passage's "untap that land"). Cleared at
     /// the start of each `resolve_effect`; read by `EffectTarget::Searched`.
     pub(crate) searched_this_resolution: Vec<ObjId>,
+    /// The object currently being iterated by an `Effect::ForEach` — bound while its body
+    /// interprets, read by `EffectTarget::Each` (Dyadrine's "remove a counter from each of …").
+    pub(crate) foreach_current: Option<ObjId>,
     /// When on, capture an omniscient [`ReplayFrame`] (a [`crate::replay::GodView`] + label) at
     /// each public event — the recorded replay stream (REPLAY_PLAN). Off by default.
     record_replay: bool,
@@ -226,6 +229,7 @@ impl Engine {
             event_log: Vec::new(),
             record_events: false,
             searched_this_resolution: Vec::new(),
+            foreach_current: None,
             record_replay: false,
             replay_frames: Vec::new(),
             replay_source: ReplaySource::Human,
@@ -4517,6 +4521,95 @@ mod expect_tests {
         // After two, the (1 base + 1 extra) limit is reached.
         e.state.player_mut(PlayerId(0)).lands_played_this_turn = 2;
         assert_eq!(land_plays(&e), 0, "the land-play limit is reached");
+    }
+
+    #[test]
+    fn dyadrine_optional_foreach_removes_counters_draws_and_makes_token() {
+        use crate::agent::{Agent, DecisionRequest, DecisionResponse, PlayerView};
+        use crate::basics::CounterKind;
+        use crate::effects::action::{ResolutionCtx, WbReason};
+        use crate::effects::target::{CardFilter, SelectSpec, TokenSpec};
+        use crate::effects::value::{PlayerRef, ValueExpr};
+        use crate::effects::{Effect, EffectTarget};
+        use std::sync::Arc;
+        // Dyadrine c3: "you may remove a +1/+1 counter from each of two creatures you control. If you
+        // do, draw a card + make a 2/2 Robot." Optional (you may) + ForEach over a Select (2 distinct
+        // creatures you control with a counter — a resolution-time choice, not targeting) + reward.
+        let pp = CounterKind::PlusOnePlusOne;
+        let effect = Effect::Optional {
+            prompt: "remove?".into(),
+            body: Box::new(Effect::Sequence(vec![
+                Effect::ForEach {
+                    selector: SelectSpec {
+                        zone: Zone::Battlefield,
+                        filter: CardFilter::All(vec![
+                            CardFilter::HasCardType(CardType::Creature),
+                            CardFilter::HasCounter(pp.clone()),
+                        ]),
+                        chooser: PlayerRef::Controller,
+                        min: ValueExpr::Fixed(2),
+                        max: ValueExpr::Fixed(2),
+                    },
+                    body: Box::new(Effect::PutCounters {
+                        what: EffectTarget::Each,
+                        kind: pp.clone(),
+                        n: ValueExpr::Fixed(-1),
+                    }),
+                },
+                Effect::Draw { who: PlayerRef::Controller, count: ValueExpr::Fixed(1) },
+                Effect::CreateToken {
+                    spec: TokenSpec {
+                        name: "Robot".into(),
+                        card_types: vec![CardType::Artifact, CardType::Creature],
+                        subtypes: vec![],
+                        colors: vec![],
+                        power: 2,
+                        toughness: 2,
+                        keywords: vec![],
+                        counters: vec![],
+                    },
+                    count: ValueExpr::Fixed(1),
+                    controller: PlayerRef::Controller,
+                },
+            ])),
+        };
+
+        #[derive(Clone)]
+        struct YesAgent;
+        impl Agent for YesAgent {
+            fn decide(&mut self, _v: &PlayerView, req: &DecisionRequest) -> DecisionResponse {
+                match req {
+                    DecisionRequest::Confirm { .. } => DecisionResponse::Bool(true),
+                    DecisionRequest::SelectCards { min, .. } => {
+                        DecisionResponse::Indices((0..*min).collect())
+                    }
+                    _ => DecisionResponse::Pass,
+                }
+            }
+        }
+
+        let mut state = cards::build_game(1, &[&[], &[]]);
+        let c1 = put(&mut state, PlayerId(0), grp::GRIZZLY_BEARS, Zone::Battlefield);
+        let c2 = put(&mut state, PlayerId(0), grp::GRIZZLY_BEARS, Zone::Battlefield);
+        state.objects.get_mut(&c1).unwrap().counters.counts.insert(pp.clone(), 1);
+        state.objects.get_mut(&c2).unwrap().counters.counts.insert(pp.clone(), 1);
+        let lib = {
+            let f = state.card_db().get(grp::FOREST).unwrap().chars.clone();
+            state.add_card(PlayerId(0), f, Zone::Library)
+        };
+        let before = state.objects.len();
+        let mut e = Engine::new(state, vec![Box::new(YesAgent), Box::new(YesAgent)]);
+
+        e.resolve_effect(
+            &effect,
+            &ResolutionCtx { controller: Some(PlayerId(0)), ..Default::default() },
+            WbReason::Resolve(crate::ids::StackId(0)),
+        );
+
+        assert_eq!(e.state.object(c1).counters.get(&pp), 0, "c1 lost its +1/+1 counter");
+        assert_eq!(e.state.object(c2).counters.get(&pp), 0, "c2 lost its +1/+1 counter");
+        assert!(e.state.player(PlayerId(0)).hand.contains(&lib), "and you drew a card");
+        assert_eq!(e.state.objects.len(), before + 1, "and made a Robot token");
     }
 
     #[test]

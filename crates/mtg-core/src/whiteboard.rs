@@ -20,7 +20,7 @@ use crate::effects::condition::Duration;
 use crate::effects::action::{
     Action, DelayedTriggerEvent, MoveCause, ResolutionCtx, Whiteboard, WbReason,
 };
-use crate::effects::target::{CardFilter, ManaSpec, TokenSpec};
+use crate::effects::target::{CardFilter, ManaSpec, SelectSpec, TokenSpec};
 use crate::effects::value::{PlayerRef, ValueExpr};
 use crate::effects::{Effect, EffectTarget, Mode};
 use crate::ids::{ObjId, PlayerId, StackId};
@@ -117,6 +117,27 @@ impl Engine {
                 let player = self.eval_player(*who, ctx);
                 self.add_mana(player, mana, ctx);
             }
+            // "You may …" (CR 603.5 / optional effect): ask the controller; run `body` on yes.
+            Effect::Optional { prompt: _, body } => {
+                let controller = ctx.controller.unwrap_or(PlayerId(0));
+                let yes = matches!(
+                    self.ask(controller, &DecisionRequest::Confirm { kind: ConfirmKind::MayEffect }),
+                    DecisionResponse::Bool(true)
+                );
+                if yes {
+                    self.interpret(body, ctx, sid, wb, cursor);
+                }
+            }
+            // "For each [selector] …" (CR): select the objects (asking if it's a choice), then run
+            // `body` once per object with it bound as `EffectTarget::Each` (Dyadrine's "remove a
+            // counter from each of two creatures you control").
+            Effect::ForEach { selector, body } => {
+                for item in self.select_for_each(selector, ctx) {
+                    let prev = self.foreach_current.replace(item);
+                    self.interpret(body, ctx, sid, wb, cursor);
+                    self.foreach_current = prev;
+                }
+            }
             // Pure leaves (and not-yet-interactive nodes) lower without agent interaction.
             _ => self.materialize(effect, ctx, wb, cursor),
         }
@@ -182,6 +203,49 @@ impl Engine {
         if zone == Zone::Library {
             self.state.shuffle_library(searcher);
         }
+    }
+
+    /// Select the objects a `ForEach`/`Select` ranges over: the `chooser`'s objects in `selector.zone`
+    /// matching its filter, narrowed to `[min, max]` (asking which when there are more than `max`).
+    /// Returns empty if fewer than `min` candidates exist (the "for each of two …" can't be met).
+    fn select_for_each(&mut self, selector: &SelectSpec, ctx: &ResolutionCtx) -> Vec<ObjId> {
+        let chooser = self.eval_player(selector.chooser, ctx);
+        let min = self.eval_value(&selector.min, ctx).max(0) as usize;
+        let max = self.eval_value(&selector.max, ctx).max(0) as usize;
+        let candidates: Vec<ObjId> = self
+            .state
+            .player(chooser)
+            .zone_ids(selector.zone)
+            .iter()
+            .copied()
+            .filter(|&id| self.count_filter_matches(id, &selector.filter))
+            .collect();
+        if candidates.len() < min {
+            return Vec::new();
+        }
+        let want = max.min(candidates.len());
+        if candidates.len() <= want {
+            return candidates;
+        }
+        let req = DecisionRequest::SelectCards {
+            reason: SelectReason::Generic,
+            from: candidates.clone(),
+            min: want as u32,
+            max: want as u32,
+            description: "choose".into(),
+        };
+        let mut seen = std::collections::BTreeSet::new();
+        let idxs: Vec<usize> = match self.ask(chooser, &req) {
+            DecisionResponse::Indices(i) => i
+                .iter()
+                .map(|&x| x as usize)
+                .filter(|&x| x < candidates.len() && seen.insert(x))
+                .take(want)
+                .collect(),
+            _ => Vec::new(),
+        };
+        let idxs = if idxs.len() == want { idxs } else { (0..want).collect() };
+        idxs.into_iter().map(|i| candidates[i]).collect()
     }
 
     /// C19: add a `ManaSpec`'s mana to `player`'s pool (CR 106.4). `produces` is fixed colours;
@@ -1121,6 +1185,12 @@ impl Engine {
             CardFilter::Supertype(s) => {
                 self.state.objects.get(&id).is_some_and(|o| o.chars.supertypes.contains(s))
             }
+            CardFilter::HasCounter(kind) => {
+                self.state.objects.get(&id).is_some_and(|o| o.counters.get(kind) > 0)
+            }
+            // The enumeration scope already restricts by controller (a `Count`'s controller
+            // restriction / a `ForEach`'s chooser), so a `ControlledBy` in the filter is redundant.
+            CardFilter::ControlledBy(_) => true,
             CardFilter::All(fs) => fs.iter().all(|f| self.count_filter_matches(id, f)),
             CardFilter::AnyOf(fs) => fs.iter().any(|f| self.count_filter_matches(id, f)),
             CardFilter::Not(f) => !self.count_filter_matches(id, f),
@@ -1173,6 +1243,7 @@ impl Engine {
             EffectTarget::Searched(n) => {
                 self.searched_this_resolution.get(*n as usize).copied().map(Target::Object)
             }
+            EffectTarget::Each => self.foreach_current.map(Target::Object),
             EffectTarget::Player(who) => Some(Target::Player(self.eval_player(*who, ctx))),
             EffectTarget::SourceSelf => ctx.source.map(Target::Object),
             EffectTarget::Select(_) => None,

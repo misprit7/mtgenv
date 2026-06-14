@@ -44,6 +44,9 @@ pub enum EffectTarget {
     /// The Nth permanent found by a `Search` earlier in this same resolution — "that land/creature"
     /// (Fabled Passage's "untap that land"). No targeting; it's whatever was fetched.
     Searched(u32),
+    /// The object currently being iterated by the enclosing `ForEach` (CR "for each …") — used by a
+    /// per-iteration body, e.g. "remove a counter from each of two creatures you control."
+    Each,
 }
 
 /// One mode of a modal spell/ability (CR 700.2): a presented label + the effect it runs.
