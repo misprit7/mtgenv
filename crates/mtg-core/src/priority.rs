@@ -3391,6 +3391,26 @@ mod expect_tests {
     }
 
     #[test]
+    fn loop_guard_aborts_a_wedged_game_to_a_draw() {
+        // #55 safety net: directly verify the loop-guard. Below the ceiling it is a no-op; at/above
+        // it, it aborts the game to a DRAW (game_over, winner = None) so a wedged engine loop can
+        // never hang — a single env.step() always returns.
+        let state = crate::cards::two_player_demo_game(0);
+        let mut e = pass_engine(state);
+        assert!(!e.state.game_over);
+        // One short of the ceiling → no-op, game still live.
+        assert!(!e.loop_guard_tripped(PRIORITY_LOOP_LIMIT - 1, PRIORITY_LOOP_LIMIT, "test"));
+        assert!(!e.state.game_over, "below the ceiling does nothing");
+        // Reaching the ceiling → trips: returns true, game over as a draw.
+        assert!(e.loop_guard_tripped(PRIORITY_LOOP_LIMIT, PRIORITY_LOOP_LIMIT, "test-loop"));
+        assert!(e.state.game_over, "hitting the ceiling ends the game");
+        assert_eq!(e.state.winner, None, "a loop-abort is a draw, not a win");
+        // Idempotent: a second trip doesn't panic or change the (already drawn) result.
+        assert!(e.loop_guard_tripped(PRIORITY_LOOP_LIMIT, PRIORITY_LOOP_LIMIT, "test-loop"));
+        assert_eq!(e.state.winner, None);
+    }
+
+    #[test]
     fn greedy_demo_self_play_terminates() {
         // #55 guard: a DETERMINISTIC, never-voluntarily-pass policy is the worst case for
         // repeatable-action infinite loops (a `RandomAgent` masks them by passing at random). Every
