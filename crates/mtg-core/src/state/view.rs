@@ -81,6 +81,14 @@ fn obj_views<'a>(state: &'a GameState, ids: impl IntoIterator<Item = &'a ObjId>)
         .collect()
 }
 
+/// Build `Visible` ObjViews for `ids` (skipping unknown ids). Used to surface the specific
+/// candidate cards a `DecisionRequest` references — chiefly a Search/`SelectCards` drawing from the
+/// hidden library — to the seat making the choice, which is entitled to see exactly those cards
+/// (the rest of the hidden zone stays masked). See `Engine::reveal_request_objects`.
+pub(crate) fn reveal_objects(state: &GameState, ids: &[ObjId]) -> Vec<ObjView> {
+    obj_views(state, ids.iter())
+}
+
 fn stack_view(state: &GameState, s: &StackObject) -> StackObjView {
     let chars = match s.kind {
         StackObjectKind::Spell(id) => state

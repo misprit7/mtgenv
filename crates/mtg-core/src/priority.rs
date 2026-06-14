@@ -13,7 +13,7 @@
 
 use crate::agent::{
     AbilityRef, ActionRef, Agent, CastVariant, DecisionRequest, DecisionResponse, GameEvent,
-    NumberReason, PlayableAction, PlayerView, SelectReason, StopStateView, TargetSlot,
+    NumberReason, ObjView, PlayableAction, PlayerView, SelectReason, StopStateView, TargetSlot,
 };
 use crate::basics::{CardType, CounterKind, ManaCost, Phase, Target, Zone, ZonePos};
 use crate::subtypes::{EnchantmentType, Subtype};
@@ -1803,8 +1803,42 @@ impl Engine {
     /// Ask seat `p` to decide `req`, presenting its information-filtered view. The single
     /// place the engine consults an agent for a choice.
     pub(crate) fn ask(&mut self, p: PlayerId, req: &DecisionRequest) -> DecisionResponse {
-        let view = self.view_for_seat(p);
+        let mut view = self.view_for_seat(p);
+        self.reveal_request_objects(&mut view, req);
         self.agents[p.0 as usize].decide(&view, req)
+    }
+
+    /// Surface, in the deciding seat's view, the characteristics of any objects the
+    /// `DecisionRequest` references that aren't already perceivable — chiefly a Search /
+    /// `SelectCards` whose candidates are drawn from the hidden library. The seat is choosing among
+    /// those exact cards, so it's entitled to see them (the rest of the hidden zone stays masked);
+    /// without this they render as bare ids (#43). Added to `me.revealed_to_me` (self-only, rebuilt
+    /// per decision). The general invariant: the view handed to `decide()` describes every object
+    /// the request names.
+    fn reveal_request_objects(&self, view: &mut PlayerView, req: &DecisionRequest) {
+        let referenced = request_object_ids(req);
+        if referenced.is_empty() {
+            return;
+        }
+        // Ids already perceivable in the view, so we don't duplicate on-board/in-hand/public cards.
+        let id_of = |v: &ObjView| match v {
+            ObjView::Visible { id, .. } | ObjView::Hidden { id, .. } => *id,
+        };
+        let mut seen: std::collections::BTreeSet<ObjId> = std::collections::BTreeSet::new();
+        seen.extend(view.battlefield.iter().map(id_of));
+        seen.extend(view.me.hand.iter().map(id_of));
+        seen.extend(view.me.known_library.iter().map(id_of));
+        seen.extend(view.me.revealed_to_me.iter().map(id_of));
+        for pv in &view.players {
+            seen.extend(pv.graveyard.iter().map(id_of));
+            seen.extend(pv.exile_public.iter().map(id_of));
+        }
+        let missing: Vec<ObjId> = referenced.into_iter().filter(|id| !seen.contains(id)).collect();
+        if !missing.is_empty() {
+            view.me
+                .revealed_to_me
+                .extend(crate::state::view::reveal_objects(&self.state, &missing));
+        }
     }
 
     /// The info-filtered [`PlayerView`] for `p`, augmented with the seat's Arena stop state
@@ -2061,6 +2095,34 @@ fn collect_specs_into(effect: &Effect, out: &mut Vec<TargetSpec>) {
             }
         }
         _ => {}
+    }
+}
+
+/// The object ids a `DecisionRequest` names as choices/recipients — so the deciding seat's view can
+/// describe them (CR-wise: the player is entitled to see what they're choosing among). Covers the
+/// requests that can reference cards in otherwise-hidden zones (Search/`SelectCards`, ordering,
+/// arranging) plus object targets/recipients; other requests reference nothing extra.
+fn request_object_ids(req: &DecisionRequest) -> Vec<ObjId> {
+    let from_targets = |ts: &[Target]| -> Vec<ObjId> {
+        ts.iter()
+            .filter_map(|t| match t {
+                Target::Object(id) => Some(*id),
+                _ => None,
+            })
+            .collect()
+    };
+    match req {
+        DecisionRequest::SelectCards { from, .. } => from.clone(),
+        DecisionRequest::SelectFromGroups { groups, .. } => {
+            groups.iter().flat_map(|g| g.options.iter().copied()).collect()
+        }
+        DecisionRequest::ArrangeCards { cards, .. } => cards.clone(),
+        DecisionRequest::OrderObjects { items, .. } => items.clone(),
+        DecisionRequest::ChooseTargets { slots, .. } => {
+            slots.iter().flat_map(|s| from_targets(&s.legal)).collect()
+        }
+        DecisionRequest::Distribute { among, .. } => from_targets(among),
+        _ => Vec::new(),
     }
 }
 
@@ -3527,6 +3589,51 @@ mod expect_tests {
         e.state.end_of_turn_continuous_cleanup();
         assert_eq!(e.state.computed(bears).power, Some(2), "the pump wore off at cleanup");
         assert!(e.state.continuous_effects.is_empty());
+    }
+
+    #[test]
+    fn search_candidates_are_revealed_to_the_searcher_43() {
+        use crate::agent::{Agent, ObjView, SelectReason};
+        use std::sync::{Arc, Mutex};
+        // A SelectCards drawing candidates from the hidden library must surface those exact cards'
+        // characteristics in the searcher's view (me.revealed_to_me) so the client can name/render
+        // them (#43) — while the rest of the library stays masked.
+        let mut state = cards::build_game(1, &[&[], &[]]);
+        let forest_chars = state.card_db().get(grp::FOREST).unwrap().chars.clone();
+        let mountain_chars = state.card_db().get(grp::MOUNTAIN).unwrap().chars.clone();
+        let forest = state.add_card(PlayerId(0), forest_chars, Zone::Library); // a search candidate
+        let hidden = state.add_card(PlayerId(0), mountain_chars, Zone::Library); // NOT in the request
+
+        #[derive(Clone)]
+        struct CaptureAgent(Arc<Mutex<Option<PlayerView>>>);
+        impl Agent for CaptureAgent {
+            fn decide(&mut self, view: &PlayerView, _req: &DecisionRequest) -> DecisionResponse {
+                *self.0.lock().unwrap() = Some(view.clone());
+                DecisionResponse::Indices(vec![0])
+            }
+        }
+        let captured = Arc::new(Mutex::new(None));
+        let agents: Vec<Box<dyn Agent>> =
+            vec![Box::new(CaptureAgent(captured.clone())), Box::new(PassAgent)];
+        let mut e = Engine::new(state, agents); // no start_game ⇒ library untouched
+        let req = DecisionRequest::SelectCards {
+            reason: SelectReason::Search,
+            from: vec![forest],
+            min: 1,
+            max: 1,
+            description: "search your library for a basic land".into(),
+        };
+        e.ask(PlayerId(0), &req);
+
+        let view = captured.lock().unwrap().take().expect("the agent was asked");
+        let named = |id: ObjId| {
+            view.me.revealed_to_me.iter().find_map(|o| match o {
+                ObjView::Visible { id: vid, chars, .. } if *vid == id => Some(chars.name.clone()),
+                _ => None,
+            })
+        };
+        assert_eq!(named(forest).as_deref(), Some("Forest"), "the candidate is revealed by name");
+        assert!(named(hidden).is_none(), "the rest of the library stays masked");
     }
 
     #[test]
