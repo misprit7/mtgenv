@@ -40,6 +40,15 @@ use std::sync::{Arc, Mutex};
 /// ends the game as a draw.
 const MAX_TURNS: u32 = 2000;
 
+/// Hard safety ceilings for the engine's two unbounded fixpoint loops (#55). A wedged game — an SBA
+/// that never clears, a triggered ability that re-queues itself, a free repeatable action — would
+/// otherwise spin a CPU core forever and hang training (a single `env.step()` never returns). These
+/// are *absurdly* high relative to any legal game (a real phase settles in a handful of iterations),
+/// so they never fire in correct play; when one does, the engine aborts the game to a draw and logs
+/// the loop. Bounding the loops, not wall-clock, keeps the engine deterministic/replayable.
+const AGENDA_LOOP_LIMIT: usize = 100_000;
+const PRIORITY_LOOP_LIMIT: usize = 1_000_000;
+
 /// Why the game ended.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EndReason {
@@ -858,8 +867,14 @@ impl Engine {
         let n = order.len();
         let mut idx = 0usize; // whose priority: index into `order` (starts at active player)
         let mut passes = 0usize; // consecutive passes
+        let mut iters = 0usize;
 
         loop {
+            if self.loop_guard_tripped(iters, PRIORITY_LOOP_LIMIT, "priority_round") {
+                self.state.priority_player = None;
+                return;
+            }
+            iters += 1;
             self.run_agenda();
             if self.state.game_over {
                 self.state.priority_player = None;
@@ -1871,8 +1886,36 @@ impl Engine {
     /// Run the agenda to a fixpoint: recompute continuous effects → perform SBAs (loop
     /// until none) → put waiting triggers on the stack (APNAP) → repeat until stable.
     /// This is the law from WHITEBOARD_MODEL §2.2; run before any player receives priority.
+    /// Safety ceiling for an unbounded engine fixpoint loop (#55). Once a single loop has spun
+    /// `limit` times without the game ending, it is wedged (an infinite loop bug): abort the game to
+    /// a DRAW and log once, naming the loop, so self-play/training can NEVER hang. Returns `true`
+    /// when tripped so the caller bails out of its loop.
+    fn loop_guard_tripped(&mut self, iters: usize, limit: usize, loop_name: &str) -> bool {
+        if iters < limit {
+            return false;
+        }
+        if !self.state.game_over {
+            eprintln!(
+                "mtgenv: engine loop-guard tripped in {loop_name} after {limit} iterations \
+                 (turn {}, phase {:?}, stack {}) — aborting game to a draw; this is an engine \
+                 infinite-loop bug.",
+                self.state.turn_number,
+                self.state.phase,
+                self.state.stack.items.len(),
+            );
+            self.state.game_over = true;
+            self.state.winner = None;
+        }
+        true
+    }
+
     fn run_agenda(&mut self) {
+        let mut iters = 0usize;
         loop {
+            if self.loop_guard_tripped(iters, AGENDA_LOOP_LIMIT, "run_agenda (SBA/trigger fixpoint)") {
+                return;
+            }
+            iters += 1;
             // (1) Recompute layered characteristics if dirty — no-op until the layer
             // system arrives (chars/, milestone 5).
             self.recompute_continuous_if_dirty();
