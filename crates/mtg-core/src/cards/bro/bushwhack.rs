@@ -184,4 +184,89 @@ mod tests {
         assert_eq!(e.state.objects.get(&mine).unwrap().damage_marked, 2, "mine took 2 from theirs");
         assert_eq!(e.state.objects.get(&theirs).unwrap().damage_marked, 2, "theirs took 2 from mine");
     }
+
+    /// #60 end-to-end (the REAL cast path): cast Bushwhack from hand via `cast_spell`, which pays `{G}`
+    /// from a Forest and runs the modal flow — `ChooseModes` picks the mode, then `ChooseTargets`
+    /// collects **only the chosen mode's** targets (CR 700.2 / 601.2c). Drives **both** modes:
+    /// mode 0 = search a basic to **hand** (the previously-untested mode); mode 1 = fight (2 targets).
+    #[test]
+    fn bushwhack_cast_path_both_modes() {
+        use crate::agent::{Agent, CastVariant, DecisionRequest, DecisionResponse, PlayerView};
+        use crate::cards::{grp, starter_db};
+        use crate::ids::PlayerId;
+        use crate::priority::Engine;
+        use crate::state::GameState;
+        use std::sync::Arc;
+
+        #[derive(Clone)]
+        struct PlayAgent {
+            mode: u32,
+        }
+        impl Agent for PlayAgent {
+            fn decide(&mut self, _v: &PlayerView, req: &DecisionRequest) -> DecisionResponse {
+                match req {
+                    DecisionRequest::ChooseModes { .. } => DecisionResponse::Indices(vec![self.mode]),
+                    // Fight has two slots (yours, theirs); search has none — extra pairs are ignored.
+                    DecisionRequest::ChooseTargets { .. } => {
+                        DecisionResponse::Pairs(vec![(0, 0), (1, 0)])
+                    }
+                    DecisionRequest::SelectCards { from, min, max, .. } => {
+                        let n = (*min).max(1).min(*max).min(from.len() as u32);
+                        DecisionResponse::Indices((0..n).collect())
+                    }
+                    DecisionRequest::Confirm { .. } => DecisionResponse::Bool(true),
+                    _ => DecisionResponse::Pass,
+                }
+            }
+        }
+
+        let setup = || {
+            let mut state = GameState::new(2, 1);
+            state.set_card_db(Arc::new(starter_db()));
+            {
+                let c = state.card_db().get(BUSHWHACK).unwrap().chars.clone();
+                state.add_card(PlayerId(0), c, Zone::Hand);
+            }
+            {
+                let c = state.card_db().get(grp::FOREST).unwrap().chars.clone();
+                state.add_card(PlayerId(0), c, Zone::Battlefield); // pays {G}
+            }
+            state
+        };
+
+        // Mode 0 — search a basic to hand.
+        {
+            let mut state = setup();
+            let lib_forest = {
+                let c = state.card_db().get(grp::FOREST).unwrap().chars.clone();
+                state.add_card(PlayerId(0), c, Zone::Library)
+            };
+            let hand0 = state.players[0].hand[0];
+            let mut e = Engine::new(
+                state,
+                vec![Box::new(PlayAgent { mode: 0 }), Box::new(PlayAgent { mode: 0 })],
+            );
+            e.cast_spell(PlayerId(0), hand0, CastVariant::Normal);
+            e.resolve_top();
+            assert_eq!(e.state.object(lib_forest).zone, Zone::Hand, "mode 0 puts the basic into hand");
+            assert!(e.state.players[0].library.is_empty(), "and removes it from the library");
+        }
+
+        // Mode 1 — fight (your 2/2 vs their 2/2 → 2 damage each).
+        {
+            let mut state = setup();
+            let bears = state.card_db().get(grp::GRIZZLY_BEARS).unwrap().chars.clone();
+            let mine = state.add_card(PlayerId(0), bears.clone(), Zone::Battlefield);
+            let theirs = state.add_card(PlayerId(1), bears, Zone::Battlefield);
+            let hand0 = state.players[0].hand[0];
+            let mut e = Engine::new(
+                state,
+                vec![Box::new(PlayAgent { mode: 1 }), Box::new(PlayAgent { mode: 1 })],
+            );
+            e.cast_spell(PlayerId(0), hand0, CastVariant::Normal);
+            e.resolve_top();
+            assert_eq!(e.state.object(mine).damage_marked, 2, "mode 1: mine took 2 from theirs");
+            assert_eq!(e.state.object(theirs).damage_marked, 2, "mode 1: theirs took 2 from mine");
+        }
+    }
 }
