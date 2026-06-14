@@ -103,6 +103,12 @@ fn eval_value(
         ValueExpr::DistinctCardTypesAmongExiledWith => {
             distinct_card_types_among_exiled_with(state, source)
         }
+        // Counters on the source object — for an intervening-"if" like "if it has four or more
+        // quest counters on it" (Earthbender Ascension).
+        ValueExpr::CountersOnSelf(kind) => source
+            .and_then(|s| state.objects.get(&s))
+            .map(|o| o.counters.get(kind) as i64)
+            .unwrap_or(0),
         _ => 0,
     }
 }

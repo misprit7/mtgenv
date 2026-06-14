@@ -19,6 +19,7 @@ pub mod native;
 pub mod target;
 pub mod value;
 
+use self::ability::Keyword;
 use self::condition::{Condition, Duration};
 use self::native::NativeFn;
 use self::target::{CardFilter, ManaSpec, SelectSpec, TargetSpec, TokenSpec};
@@ -87,6 +88,13 @@ pub enum Effect {
         what: EffectTarget,
         power: ValueExpr,
         toughness: ValueExpr,
+        duration: Duration,
+    },
+    /// Grant a keyword to the target for a duration (CR 611) — e.g. "it gains trample until end of
+    /// turn." Lowers to a floating `GrantContinuous{ GrantKeyword(keyword), duration }`.
+    GrantKeyword {
+        what: EffectTarget,
+        keyword: Keyword,
         duration: Duration,
     },
     AddMana {

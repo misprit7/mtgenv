@@ -451,6 +451,32 @@ impl Engine {
                     }
                 }
             }
+            // Grant a keyword for a duration (CR 611) — "it gains trample until end of turn".
+            Effect::GrantKeyword { what, keyword, duration } => {
+                if let Some(Target::Object(obj)) = self.resolve_target(what, ctx, cursor) {
+                    let controller = ctx.controller.unwrap_or(PlayerId(0));
+                    wb.push(Action::GrantContinuous {
+                        source: ctx.source,
+                        controller,
+                        affected: vec![obj],
+                        contributions: vec![StaticContribution::GrantKeyword(*keyword)],
+                        duration: *duration,
+                    });
+                }
+            }
+            // Intervening-"if" (CR 603.4) / conditional effect: run `then` when the condition holds
+            // (evaluated source-aware), else `otherwise`. NOTE: a *targeted* `then` is a reflexive
+            // trigger (603.7c) whose target is chosen only if the condition is met — that deferral
+            // is the reflexive-sub-trigger cap; `collect_specs_into` deliberately does NOT pull
+            // targets out of a `Conditional.then` here.
+            Effect::Conditional { cond, then, otherwise } => {
+                let controller = ctx.controller.unwrap_or(PlayerId(0));
+                if crate::conditions::holds_for_source(&self.state, cond, controller, ctx.source) {
+                    self.materialize(then, ctx, wb, cursor);
+                } else if let Some(otherwise) = otherwise {
+                    self.materialize(otherwise, ctx, wb, cursor);
+                }
+            }
             // C6: create N copies of a token (CR 111).
             Effect::CreateToken { spec, count, controller } => {
                 let count = self.eval_value(count, ctx).max(0) as u32;

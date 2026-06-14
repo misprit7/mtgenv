@@ -4109,6 +4109,65 @@ mod expect_tests {
     }
 
     #[test]
+    fn conditional_gates_grant_keyword_until_eot() {
+        use crate::basics::{CounterKind, Target};
+        use crate::effects::ability::Keyword;
+        use crate::effects::action::{ResolutionCtx, WbReason};
+        use crate::effects::condition::{Condition, Duration};
+        use crate::effects::value::ValueExpr;
+        use crate::effects::{Effect, EffectTarget};
+        // "If [source] has ≥4 quest counters, target creature gains trample until end of turn."
+        // Effect::Conditional (source-aware intervening-if) gates Effect::GrantKeyword — the two
+        // reusable caps behind Earthbender's reward. Wears off at cleanup (CR 514.2).
+        let mut state = cards::build_game(1, &[&[], &[]]);
+        let src = put(&mut state, PlayerId(0), grp::GRIZZLY_BEARS, Zone::Battlefield);
+        let creature = put(&mut state, PlayerId(0), grp::GRIZZLY_BEARS, Zone::Battlefield);
+        let mut e = pass_engine(state);
+        let quest = CounterKind::Named("quest".into());
+
+        let effect = Effect::Conditional {
+            cond: Condition::ValueAtLeast(
+                ValueExpr::CountersOnSelf(quest.clone()),
+                ValueExpr::Fixed(4),
+            ),
+            then: Box::new(Effect::GrantKeyword {
+                what: EffectTarget::ChosenIndex(0),
+                keyword: Keyword::Trample,
+                duration: Duration::UntilEndOfTurn,
+            }),
+            otherwise: None,
+        };
+        let run = |e: &mut Engine| {
+            e.resolve_effect(
+                &effect,
+                &ResolutionCtx {
+                    controller: Some(PlayerId(0)),
+                    source: Some(src),
+                    chosen_targets: vec![Target::Object(creature)],
+                    ..Default::default()
+                },
+                WbReason::Resolve(crate::ids::StackId(0)),
+            );
+        };
+
+        // 3 quest counters → condition false → no grant.
+        e.state.objects.get_mut(&src).unwrap().counters.counts.insert(quest.clone(), 3);
+        run(&mut e);
+        assert!(!e.state.computed(creature).has_keyword(Keyword::Trample), "3 < 4 → no trample");
+
+        // 4 quest counters → condition true → trample granted until end of turn.
+        e.state.objects.get_mut(&src).unwrap().counters.counts.insert(quest.clone(), 4);
+        run(&mut e);
+        assert!(e.state.computed(creature).has_keyword(Keyword::Trample), "≥4 → trample granted");
+
+        e.state.end_of_turn_continuous_cleanup();
+        assert!(
+            !e.state.computed(creature).has_keyword(Keyword::Trample),
+            "the granted trample wears off at end of turn"
+        );
+    }
+
+    #[test]
     fn exile_target_card_from_a_graveyard_c17() {
         use crate::basics::Target;
         use crate::effects::action::{ResolutionCtx, WbReason};
