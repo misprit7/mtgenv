@@ -5,6 +5,15 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-14
 
+- **webui:** No-mana-cost cards (tokens, abilities on the stack, "—" cards like Living End) now
+  render **no** cost pips instead of a bogus "0". The engine already distinguishes None vs Some({0})
+  (`CharacteristicsView.mana_cost: Option<ManaCost>` → wire `null` vs object; tokens get `None` via
+  `create_token`'s `Default`), so no engine change — the bug was the game-board `manaPips` fallback,
+  which fabricated "0" for `cmc === 0` when the structured cost was absent. Now: structured cost
+  present (incl. a real `{0}`) → render it ("0" preserved); absent → render nothing unless a positive
+  CMC is implied (defensive). Fixed in `embedded_client.html` + `main.ts` (lobby deck viewer already
+  returned `[]`). Verified: a token shows 0 pips, a genuine `{0}` still shows "0".
+
 - **webui:** Wired manual mana activation (#36) now that the engine offers it (`cf23567`). Turn it
   ON for every human seat (`set_manual_mana(p, true)` in `apply_stops`/`engine_with_stops`/
   `room_engine`). The engine appends an `ActivateMana` per untapped source; `options.rs` already

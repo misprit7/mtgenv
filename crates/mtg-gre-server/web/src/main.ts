@@ -721,10 +721,15 @@ function manaPips(chars: Any): HTMLElement[] {
     WUBRG.forEach((c) => { const n = colored[c] || 0; for (let i = 0; i < n; i++) out.push(symImg(CODE[c])); });
     return out;
   }
-  const cols = chars.colors || [];
+  // No structured mana cost in the view → the card has NO cost (a token, an ability on the stack, or
+  // a genuinely costless card like Living End) and shows NOTHING — distinct from a real {0} (which
+  // arrives as mana_cost {generic:0} and renders "0" above). Only approximate from CMC if the view
+  // actually implies a positive cost (defensive; current views always carry mana_cost).
   const cmc = chars.mana_value ?? chars.manaValue ?? 0;
+  if (cmc <= 0) return out; // no cost → no pips (NOT a "0")
+  const cols = chars.colors || [];
   const generic = Math.max(0, cmc - cols.length);
-  if (generic > 0 || cmc === 0) out.push(symImg(String(generic)));
+  if (generic > 0) out.push(symImg(String(generic)));
   cols.forEach((c: string) => out.push(symImg(CODE[c] || "C")));
   return out;
 }
