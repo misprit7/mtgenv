@@ -189,4 +189,57 @@ mod tests {
         );
         assert_eq!(e.state.players[0].mana_pool.amounts.get(&Color::Green), Some(&1));
     }
+
+    /// #60 end-to-end (the REAL affordability/activation gate): "{T}: Add {W}. Activate only if you
+    /// control a Forest or a Plains." We probe it through `legal_actions`: a `{W}` spell (Erode) is
+    /// castable iff Hushwood can make white — i.e. iff you control a Forest/Plains. A **Forest** is the
+    /// clean isolator: it doesn't produce white itself, it only *enables* Hushwood's `{W}`. So with
+    /// Hushwood alone, Erode is NOT offered; add a Forest and it IS. (Mana abilities aren't surfaced in
+    /// `legal_actions` directly — CR 605 no-stack path — so the spell-affordability gate is the probe.)
+    #[test]
+    fn hushwood_white_ability_gated_on_controlling_a_forest_or_plains() {
+        use crate::agent::{PlayableAction, RandomAgent};
+        use crate::basics::{Phase, Zone};
+        use crate::cards::sos::erode::ERODE;
+        use crate::cards::{grp, starter_db};
+        use crate::ids::PlayerId;
+        use crate::priority::Engine;
+        use crate::state::GameState;
+        use std::sync::Arc;
+
+        // Whether P0 may cast Erode ({W}), given whether a Forest is also in play to enable Hushwood's {W}.
+        let can_cast_erode = |with_forest: bool| -> bool {
+            let mut state = GameState::new(2, 1);
+            state.set_card_db(Arc::new(starter_db()));
+            {
+                let c = state.card_db().get(HUSHWOOD_VERGE).unwrap().chars.clone();
+                state.add_card(PlayerId(0), c, Zone::Battlefield);
+            }
+            if with_forest {
+                let c = state.card_db().get(grp::FOREST).unwrap().chars.clone(); // enables {W}, makes only {G}
+                state.add_card(PlayerId(0), c, Zone::Battlefield);
+            }
+            let erode = {
+                let c = state.card_db().get(ERODE).unwrap().chars.clone();
+                state.add_card(PlayerId(0), c, Zone::Hand)
+            };
+            // A victim so Erode has a legal target (affordability + targeting are both pre-checked).
+            {
+                let c = state.card_db().get(grp::GRIZZLY_BEARS).unwrap().chars.clone();
+                state.add_card(PlayerId(1), c, Zone::Battlefield);
+            }
+            state.active_player = PlayerId(0);
+            state.phase = Phase::PrecombatMain;
+            let e = Engine::new(
+                state,
+                vec![Box::new(RandomAgent::new(0)), Box::new(RandomAgent::new(1))],
+            );
+            e.legal_actions(PlayerId(0))
+                .iter()
+                .any(|a| matches!(a, PlayableAction::Cast { spell, .. } if *spell == erode))
+        };
+
+        assert!(!can_cast_erode(false), "Hushwood alone can't make {{W}} (no Forest/Plains) → Erode uncastable");
+        assert!(can_cast_erode(true), "a Forest enables Hushwood's {{W}} → Erode castable");
+    }
 }
