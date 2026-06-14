@@ -5,6 +5,17 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-14
 
+- **engine (#48 — replay serialization fix):** **String-keyed `CounterBag` (70ded52).**
+  `serde_json::to_string(&Replay)` panicked `"key must be a string"` on any Selesnya game with a quest
+  counter: `CounterBag` is a `BTreeMap<CounterKind,_>` and serde rejects the non-string keys that
+  data-carrying kinds (`Named("quest")` from Earthbender/Dyadrine, `Keyword`) produce — this crashed
+  GodView/Replay export for BOTH the webui lobby and gym training-replay export. Fix: a `#[serde(with)]`
+  adapter keys the map by `CounterKind`'s canonical `Display`, with a total `FromStr` inverse. **Built-ins
+  keep their exact variant-name key** (`"PlusOnePlusOne"`/`"MinusOneMinusOne"`/…) — unchanged wire format,
+  so the web client's `CTR_LABEL` lookup is untouched; `Named` is the bare name (`"quest"` → renders
+  `quest×N`), `Keyword` is `kw:`-tagged. Round-trip expect-test over a `Replay` with a +1/+1 and a quest
+  counter. 183 core tests green; workspace builds. Pinged gym (export unblocked) + webui (no client change).
+
 - **design (#44 — 🎉 DECK COMPLETE):** **Dyadrine flipped + Surrak stack-half → 18/18-minus-Surrak's-countered.**
   (1) **Dyadrine → `fully_implemented: true`** (575bb2a) against cap 0e01d56: `Triggered{ YouAttack, Optional{
   Sequence[ ForEach{ select 2 creatures you control w/ a +1/+1 counter, body: PutCounters{Each, -1} }, Draw,
