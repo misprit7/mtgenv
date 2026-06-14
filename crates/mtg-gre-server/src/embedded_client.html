@@ -187,6 +187,15 @@
   .card.selected { box-shadow: 0 0 0 3px var(--sel), 0 0 14px rgba(91,140,255,.7); position: relative; }
   .card.selected::after { content: "🎯"; position: absolute; top: 2px; right: 3px; font-size: 13px;
     text-shadow: 0 0 3px #000; }
+  /* Cast-variant chooser: a small popup when a card has >1 legal cast (e.g. Normal + Warp). */
+  .varmenu { position: fixed; z-index: 80; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 8px; padding: 5px; box-shadow: 0 6px 22px rgba(0,0,0,.55); display: flex;
+    flex-direction: column; gap: 4px; min-width: 170px; }
+  .varhdr { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .06em;
+    padding: 2px 6px 3px; }
+  .varitem { text-align: left; background: var(--rail); color: var(--ink); border: 1px solid var(--line);
+    border-radius: 6px; padding: 7px 10px; font-size: 12px; cursor: pointer; }
+  .varitem:hover { border-color: var(--accent); background: var(--panel); }
   /* chosen target/option feedback: selected side-panel buttons, player panels, and a summary line */
   button.opt.sel { background: var(--sel); color: #06140b; border-color: var(--sel); font-weight: 700; }
   button.opt.sel::before { content: "✓ "; }
@@ -420,6 +429,7 @@
 
   function send(payload) {
     if (!cur) return;
+    closeVariantMenu();
     ws.send(JSON.stringify(Object.assign({ type: "response", id: cur.id, picks: [], number: null, pass: false, order: [] }, payload)));
     cur = null; multi.clear();
     $("prompt").innerHTML = '<div class="waiting">Waiting for the opponent…</div>';
@@ -515,7 +525,15 @@
   function pub(pid) { return view.players.find(p => p.player === pid) || {}; }
 
   // option_objs lookup → option index for a clicked card (or -1)
-  function legalIdx(id) { return cur ? (cur.prompt.option_objs || cur.prompt.optionObjs || []).indexOf(id) : -1; }
+  // ALL option indices whose object is `id`. A single card can map to several legal options — e.g.
+  // a spell castable both for its normal cost and an alt-cost (Warp), or any future multi-mode cast.
+  // The card click disambiguates between them (see onCardClick / showVariantMenu).
+  function legalIdxs(id) {
+    if (!cur) return [];
+    const objs = cur.prompt.option_objs || cur.prompt.optionObjs || [];
+    const out = []; for (let i = 0; i < objs.length; i++) if (objs[i] === id) out.push(i);
+    return out;
+  }
 
   // ── render ─────────────────────────────────────────────────────────────
   function render() {
@@ -849,8 +867,9 @@
     ctx = ctx || {};
     if (c.hidden) { const b = el("div", "card back"); return b; }
     const chars = c.chars || {};
-    const idx = ctx.interactive ? legalIdx(c.id) : -1;
-    const selected = ctx.interactive && multi.has(idx) && idx >= 0;
+    const idxs = ctx.interactive ? legalIdxs(c.id) : [];
+    const idx = idxs.length ? idxs[0] : -1;
+    const selected = ctx.interactive && idx >= 0 && multi.has(idx);
     const d = el("div", ["card", colorClass(chars), c.tapped ? "tapped" : "", c.sick ? "sick" : "",
       idx >= 0 ? "legal" : "", selected ? "selected" : "", ctx.attach ? "attach" : "",
       ctx.hand ? "" : (ctx.onStack ? "" : "")].filter(Boolean).join(" "));
@@ -908,7 +927,7 @@
       d.appendChild(wrap);
     }
 
-    if (idx >= 0) d.onclick = () => onCardClick(idx);
+    if (idxs.length) d.onclick = (e) => onCardClick(idxs, e);
     return d;
   }
   function counterLabel(k) { return ({ PlusOnePlusOne: "+1/+1", MinusOneMinusOne: "−1/−1" })[k] || k; }
@@ -975,18 +994,51 @@
   function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
 
   // ── click-to-act ───────────────────────────────────────────────────────
-  function onCardClick(idx) {
-    if (!cur) return;
+  function onCardClick(idxs, e) {
+    if (!cur || !idxs || !idxs.length) return;
     const mode = cur.prompt.mode;
-    if (mode === "action" || mode === "selectOne") { send({ picks: [idx] }); }
-    else if (mode === "selectMany") {
-      if (multi.has(idx)) multi.delete(idx); else multi.add(idx);
+    if (mode === "selectMany") {
+      const i = idxs[0];
+      if (multi.has(i)) multi.delete(i); else multi.add(i);
       render(); renderPrompt();
+      return;
     }
+    // action / selectOne: one option → act immediately; several options on the same card (e.g.
+    // Normal + Warp / any alt-cost cast) → pop a small menu so the player chooses the variant.
+    if (idxs.length === 1) { send({ picks: [idxs[0]] }); return; }
+    showVariantMenu(idxs, e);
+  }
+
+  // A small popup anchored at the click, one button per legal option on the clicked card. Used when
+  // a card has multiple cast variants (the engine pre-enumerated each as its own action).
+  function closeVariantMenu() { const m = $("varmenu"); if (m) m.remove(); }
+  function showVariantMenu(idxs, e) {
+    closeVariantMenu();
+    const opts = cur.prompt.options || [];
+    const menu = el("div", "varmenu"); menu.id = "varmenu";
+    menu.appendChild(el("div", "varhdr", "Choose how to cast"));
+    idxs.forEach(i => {
+      const b = el("button", "varitem", opts[i] || ("Option " + i));
+      b.onclick = (ev) => { ev.stopPropagation(); closeVariantMenu(); send({ picks: [i] }); };
+      menu.appendChild(b);
+    });
+    document.body.appendChild(menu);
+    const x = (e && e.clientX != null) ? e.clientX : 80, y = (e && e.clientY != null) ? e.clientY : 80;
+    const r = menu.getBoundingClientRect();
+    menu.style.left = Math.max(6, Math.min(x, window.innerWidth - r.width - 8)) + "px";
+    menu.style.top = Math.max(6, Math.min(y, window.innerHeight - r.height - 8)) + "px";
+    // Dismiss on the next outside click or Escape (defer so this same click doesn't close it).
+    setTimeout(() => {
+      document.addEventListener("click", closeVariantMenu, { once: true });
+      document.addEventListener("keydown", function esc(k) {
+        if (k.key === "Escape") { closeVariantMenu(); document.removeEventListener("keydown", esc); }
+      });
+    }, 0);
   }
 
   // ── prompt panel (non-card options + controls) ─────────────────────────
   function renderPrompt() {
+    closeVariantMenu(); // a fresh prompt invalidates any open cast-variant menu
     const p = cur.prompt;
     const root = $("prompt");
     root.innerHTML = "";

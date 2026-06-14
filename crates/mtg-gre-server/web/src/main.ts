@@ -109,6 +109,7 @@ function logEvent(ev: Any): void {
 
 function send(payload: Any): void {
   if (!cur || !ws) return;
+  closeVariantMenu();
   ws.send(JSON.stringify(Object.assign(
     { type: "response", id: cur.id, picks: [], number: null, pass: false, order: [] }, payload)));
   cur = null; multi.clear();
@@ -205,7 +206,15 @@ function bfOf(pid: number): Any[] { return view.battlefield.map(norm).filter((c:
 function isLand(chars: Any): boolean { return (chars.card_types || chars.cardTypes || []).includes("Land"); }
 function isCreature(chars: Any): boolean { return (chars.card_types || chars.cardTypes || []).includes("Creature"); }
 function pub(pid: number | null): Any { return view.players.find((p: Any) => p.player === pid) || {}; }
-function legalIdx(id: number): number { return cur ? (cur.prompt.option_objs || cur.prompt.optionObjs || []).indexOf(id) : -1; }
+// ALL option indices whose object is `id`. A single card can map to several legal options — e.g. a
+// spell castable both for its normal cost and an alt-cost (Warp), or any future multi-mode cast. The
+// card click disambiguates between them (see onCardClick / showVariantMenu).
+function legalIdxs(id: number): number[] {
+  if (!cur) return [];
+  const objs = cur.prompt.option_objs || cur.prompt.optionObjs || [];
+  const out: number[] = []; for (let i = 0; i < objs.length; i++) if (objs[i] === id) out.push(i);
+  return out;
+}
 
 // ── render ───────────────────────────────────────────────────────────────────
 function render(): void {
@@ -537,7 +546,8 @@ function renderHand(): void {
 function cardEl(c: Any, ctx: Any): HTMLElement {
   if (c.hidden) return el("div", "card back");
   const chars = c.chars || {};
-  const idx = ctx.interactive ? legalIdx(c.id) : -1;
+  const idxs = ctx.interactive ? legalIdxs(c.id) : [];
+  const idx = idxs.length ? idxs[0] : -1;
   const selected = ctx.interactive && idx >= 0 && multi.has(idx);
   const d = el("div", ["card", colorClass(chars), c.tapped ? "tapped" : "", c.sick ? "sick" : "",
     idx >= 0 ? "legal" : "", selected ? "selected" : "", ctx.attach ? "attach" : ""].filter(Boolean).join(" "));
@@ -594,7 +604,7 @@ function cardEl(c: Any, ctx: Any): HTMLElement {
     d.appendChild(wrap);
   }
 
-  if (idx >= 0) d.onclick = () => onCardClick(idx);
+  if (idxs.length) d.onclick = (e: MouseEvent) => onCardClick(idxs, e);
   return d;
 }
 const CTR_LABEL: Any = { PlusOnePlusOne: "+1/+1", MinusOneMinusOne: "−1/−1" };
@@ -663,15 +673,49 @@ function esc(s: string): string {
 }
 
 // ── click-to-act ─────────────────────────────────────────────────────────────
-function onCardClick(idx: number): void {
-  if (!cur) return;
+function onCardClick(idxs: number[], e?: MouseEvent): void {
+  if (!cur || !idxs.length) return;
   const mode = cur.prompt.mode;
-  if (mode === "action" || mode === "selectOne") send({ picks: [idx] });
-  else if (mode === "selectMany") { if (multi.has(idx)) multi.delete(idx); else multi.add(idx); render(); renderPrompt(); }
+  if (mode === "selectMany") {
+    const i = idxs[0];
+    if (multi.has(i)) multi.delete(i); else multi.add(i); render(); renderPrompt();
+    return;
+  }
+  // action / selectOne: one option → act immediately; several options on the same card (e.g. Normal
+  // + Warp / any alt-cost cast) → pop a small menu so the player chooses the variant.
+  if (idxs.length === 1) { send({ picks: [idxs[0]] }); return; }
+  showVariantMenu(idxs, e);
+}
+
+// A small popup anchored at the click, one button per legal option on the clicked card. Used when a
+// card has multiple cast variants (the engine pre-enumerated each as its own action).
+function closeVariantMenu(): void { const m = document.getElementById("varmenu"); if (m) m.remove(); }
+function showVariantMenu(idxs: number[], e?: MouseEvent): void {
+  closeVariantMenu();
+  const opts = cur.prompt.options || [];
+  const menu = el("div", "varmenu"); menu.id = "varmenu";
+  menu.appendChild(el("div", "varhdr", "Choose how to cast"));
+  idxs.forEach((i) => {
+    const b = el("button", "varitem", opts[i] || ("Option " + i));
+    b.onclick = (ev: MouseEvent) => { ev.stopPropagation(); closeVariantMenu(); send({ picks: [i] }); };
+    menu.appendChild(b);
+  });
+  document.body.appendChild(menu);
+  const x = (e && e.clientX != null) ? e.clientX : 80, y = (e && e.clientY != null) ? e.clientY : 80;
+  const r = menu.getBoundingClientRect();
+  menu.style.left = Math.max(6, Math.min(x, window.innerWidth - r.width - 8)) + "px";
+  menu.style.top = Math.max(6, Math.min(y, window.innerHeight - r.height - 8)) + "px";
+  setTimeout(() => {
+    document.addEventListener("click", closeVariantMenu, { once: true });
+    document.addEventListener("keydown", function esc(k: KeyboardEvent) {
+      if (k.key === "Escape") { closeVariantMenu(); document.removeEventListener("keydown", esc); }
+    });
+  }, 0);
 }
 
 // ── prompt panel (non-card options + controls) ───────────────────────────────
 function renderPrompt(): void {
+  closeVariantMenu(); // a fresh prompt invalidates any open cast-variant menu
   const p = cur.prompt;
   const root = $("prompt");
   root.innerHTML = "";

@@ -5,6 +5,16 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **webui:** Fixed alt-cost casting (Mightform's Warp) being unreachable in the web UI. The engine
+  enumerates Normal + Warp as two `Cast` actions on the **same** spell object; the client's
+  click-to-cast did `option_objs.indexOf(id)` → only the first (Normal) was reachable and the button
+  list skips on-board options. Now a card with >1 legal cast option pops a **variant chooser menu**
+  on click (`legalIdxs`/`onCardClick`/`showVariantMenu` + `.varmenu` CSS, mirrored in
+  `embedded_client.html`/`main.ts`/`style.css`); single-option cards cast directly as before.
+  Generalizes to any future multi-mode/alt-cost cast. New options.rs test
+  `priority_keeps_both_cast_variants_of_one_card_distinct`. (Engine confirmed correct — both
+  variants are emitted at `priority.rs:959–966`.)
+
 - **design (#44):** **Badgermole Cub → `fully_implemented: true`** (c2ef012) — cap H landed (engine
   23242f2: `EventPattern::TapCreatureForMana`), so authored its 2nd ability: `Triggered{ TapCreatureForMana,
   AddMana{Controller, {G}} }` (no-stack mana trigger, CR 605.1b). **12/18 fully faithful; 6 partials left.**

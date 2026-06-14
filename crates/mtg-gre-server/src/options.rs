@@ -632,6 +632,31 @@ mod tests {
     }
 
     #[test]
+    fn priority_keeps_both_cast_variants_of_one_card_distinct() {
+        // Mightform Harmonizer is castable for its normal cost AND its Warp alt-cost — the engine
+        // enumerates BOTH as separate `Cast` actions on the SAME spell object. The projection must
+        // keep both options (same option_obj, distinct labels + indices) so the web client can let
+        // the player choose the variant via the card click (instead of collapsing to the first).
+        let req = DecisionRequest::Priority {
+            actions: vec![
+                PlayableAction::Cast { spell: ObjId(5), variant: CastVariant::Normal },
+                PlayableAction::Cast { spell: ObjId(5), variant: CastVariant::Warp },
+            ],
+            can_pass: true,
+        };
+        let p = prompt_for(&empty_view(), &req);
+        assert_eq!(p.options.len(), 2, "both cast variants surfaced");
+        assert_eq!(p.option_objs, vec![Some(5), Some(5)], "both reference the same card");
+        assert_ne!(p.options[0], p.options[1], "labels distinguish the variants");
+        assert!(p.options[0].contains("Normal") && p.options[1].contains("Warp"));
+        // Each maps back to its own action index (the client picks one variant → that action).
+        for (i, want) in [(0u32, 0u32), (1, 1)] {
+            let sel = Selection { picks: vec![i], ..Default::default() };
+            assert_eq!(response_from(&req, &sel), DecisionResponse::Action(want));
+        }
+    }
+
+    #[test]
     fn priority_selection_maps_to_action_or_pass() {
         let req = DecisionRequest::Priority {
             actions: vec![PlayableAction::PlayLand { card: ObjId(1) }],
