@@ -287,4 +287,54 @@ mod tests {
         assert!(cc.is_creature(), "crewed → an artifact creature");
         assert!(cc.card_types.contains(&CardType::Artifact), "still an artifact");
     }
+
+    /// #60 end-to-end (the REAL activate path): Crew 4 via `activate_ability` actually **pays the crew
+    /// cost** — taps untapped creatures you control with total power ≥ 4 (CR 702.122) — which the
+    /// resolve-level test above skips. Two 2/2s (total power 4) crew the Vehicle: both end **tapped**
+    /// and the Worldwagon becomes an artifact *creature* until end of turn (keeping its `*`/4 CDA).
+    #[test]
+    fn lumbering_crew_via_full_activation_taps_creatures() {
+        use crate::agent::{AbilityRef, Agent, DecisionRequest, DecisionResponse, PlayerView};
+        use crate::basics::{CardType, Zone};
+        use crate::cards::{grp, starter_db};
+        use crate::ids::PlayerId;
+        use crate::priority::Engine;
+        use crate::state::GameState;
+        use std::sync::Arc;
+
+        // Passive: pay_crew auto-fills the crew from candidates when the agent under-selects.
+        #[derive(Clone)]
+        struct PassiveAgent;
+        impl Agent for PassiveAgent {
+            fn decide(&mut self, _v: &PlayerView, _req: &DecisionRequest) -> DecisionResponse {
+                DecisionResponse::Pass
+            }
+        }
+
+        let mut state = GameState::new(2, 1);
+        state.set_card_db(Arc::new(starter_db()));
+        let wagon = {
+            let c = state.card_db().get(LUMBERING_WORLDWAGON).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, Zone::Battlefield)
+        };
+        let bears: Vec<_> = (0..2)
+            .map(|_| {
+                let c = state.card_db().get(grp::GRIZZLY_BEARS).unwrap().chars.clone(); // 2/2
+                state.add_card(PlayerId(0), c, Zone::Battlefield)
+            })
+            .collect();
+        let mut e = Engine::new(state, vec![Box::new(PassiveAgent), Box::new(PassiveAgent)]);
+        assert!(!e.state.computed(wagon).is_creature(), "not a creature before crewing");
+        e.activate_ability(PlayerId(0), wagon, AbilityRef(3)); // Crew 4: taps creatures totaling power ≥ 4
+        e.resolve_top(); // BecomeCreature resolves
+
+        assert!(
+            bears.iter().all(|&b| e.state.object(b).status.tapped),
+            "both 2/2s were tapped to pay Crew 4 (total power 4)"
+        );
+        let cc = e.state.computed(wagon);
+        assert!(cc.is_creature(), "crewed → an artifact creature");
+        assert!(cc.card_types.contains(&CardType::Artifact), "still an artifact");
+        assert_eq!(cc.toughness, Some(4), "keeps its */4 toughness");
+    }
 }
