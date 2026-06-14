@@ -3,12 +3,16 @@
   1. raw engine games/s/core  — random self-play, no NN (the simulator ceiling)
   2. self-play training games/s — DummyVecEnv vs SubprocVecEnv (NN in the loop)
 
-Conclusion (see WORKLOG / the M2c report): the simulator is NOT the bottleneck — NN inference is,
-dominated by the *per-env synchronous opponent* `predict`. `SubprocVecEnv` does not help (its
-per-step IPC of the large Dict obs over pipes costs more than the parallelism it buys, because the
-sim is fast). Hitting the ≥10² games/s/core bar WITH the NN needs **async batched inference** (one
-forward over all envs' pending decisions), which is the natural pairing with M3's resumable step
-API. Until then, in-process `DummyVecEnv` (batched-learner) is the fastest option.
+Conclusion (refined by the #41 batched-inference work — see `bench_infer.py` + `batched_selfplay.py`):
+NN inference is *a* cost but NOT the dominant one in this regime. Two things the isolated-forward
+microbench misses: (1) with `auto_pass`, opponent decisions are *sparse* and the envs *desync*, so
+the effective opponent batch is far below `n_envs` (~9 at n=64); (2) the policy net is tiny, so a
+per-sample CPU forward is already cheap. Measured end-to-end, batching the opponent forward
+(`BatchedSelfPlayVecEnv`) gives ~1.2–1.4× at n=32–64 (scaling with `n_envs` and net size), not the
+~50× the microbench suggests. The *dominant* cost for the current tiny net is the **per-decision
+boundary** — engine step + PyO3 crossing + obs encoding (the no-NN ceiling is ~2.7k env-steps/s).
+`SubprocVecEnv` still loses (Dict-obs IPC > the parallelism, sim is cheap). The batched primitive's
+bigger payoff is bigger nets + tree search, where forwards dominate.
 
     PYTHONPATH=python python python/throughput.py
 """

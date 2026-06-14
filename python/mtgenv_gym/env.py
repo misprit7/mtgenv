@@ -63,6 +63,11 @@ class MtgEnv(_GymEnv):
         self._terminal = True
         self._mask = np.zeros(self.action_dim, dtype=bool)
         self._opp_rng = np.random.default_rng(0)
+        # External-opponent state machine (see the ext_* methods); inert in the standard path.
+        self._where = "terminal"
+        self._truncated = False
+        self._cur_obs = None
+        self._last_learner_obs = None
 
     # ── Gym API ─────────────────────────────────────────────────────────────────────────────
     def reset(self, *, seed=None, options=None):
@@ -88,6 +93,68 @@ class MtgEnv(_GymEnv):
         truncated = (not terminated) and self._decisions >= self.max_decisions
         reward = self._terminal_reward() if terminated else 0.0
         return obs, reward, terminated, truncated, info
+
+    # ── external-opponent driving (BatchedSelfPlayVecEnv, GYM_PLAN §6) ────────────────────────
+    # In this mode the env does NOT resolve opponent decisions itself. It advances to the next
+    # *pause* — a learner decision, an opponent decision, or terminal — and the caller (the batched
+    # self-play pump) supplies the action for whichever seat is to move. Surfacing opponent
+    # decisions instead of answering them inline is what lets opponent inference be batched across
+    # many games into one forward (the per-env synchronous predict is the training bottleneck).
+    # Each pause is one factored sub-step (the same Discrete(action_dim) the learner uses), so the
+    # opponent policy is queried exactly like the learner. The same "advance to a decision, let an
+    # external evaluator answer a batch" shape is what tree search (MCTS leaf eval) will reuse.
+    def ext_reset(self, seed):
+        """Start a fresh game and advance to the first pause. Inspect with ``ext_state()``."""
+        self._opp_rng = np.random.default_rng((int(seed) ^ 0x5DEECE66D) & _U64)
+        self._decisions = 0
+        self._truncated = False
+        self._last_learner_obs = None
+        self._ext_advance(self._game.reset(int(seed) & _U64))
+
+    def _ext_advance(self, step):
+        obs_dict, mask, seat, request, num_legal, terminal = step
+        self._cur_obs = obs_dict
+        self._mask = np.asarray(mask, dtype=bool)
+        capped = self._decisions >= self.max_decisions
+        if terminal or capped:
+            self._terminal = bool(terminal)
+            self._truncated = capped and not terminal
+            self._where = "terminal"
+            return
+        self._where = "learner" if seat == self.agent_seat else "opponent"
+        if self._where == "learner":
+            self._last_learner_obs = obs_dict
+
+    def ext_state(self):
+        """``'learner'`` | ``'opponent'`` | ``'terminal'`` — who (if anyone) must act now."""
+        return self._where
+
+    def ext_obs(self):
+        """Encoded observation for the seat currently to move (learner or opponent)."""
+        return self._to_obs(self._cur_obs)
+
+    def ext_mask(self):
+        """Legal-action mask for the seat currently to move."""
+        return self._mask.copy()
+
+    def ext_apply(self, action):
+        """Apply one factored sub-step for the current actor and advance to the next pause."""
+        self._game.apply(int(action))
+        self._decisions += 1
+        self._ext_advance(self._game.step_to_decision())
+
+    def ext_reward(self):
+        """Terminal reward from the learner's (``agent_seat``) perspective (+1/0/−1)."""
+        return self._terminal_reward()
+
+    def ext_truncated(self):
+        return self._truncated
+
+    def ext_last_learner_obs(self):
+        """The last obs the learner actually saw (a valid-shaped ``terminal_observation``; unused
+        for value bootstrapping on genuine terminations, where done masks it out)."""
+        o = self._last_learner_obs if self._last_learner_obs is not None else self._cur_obs
+        return self._to_obs(o)
 
     # ── opponent skipping + obs assembly ────────────────────────────────────────────────────
     def _advance_to_agent(self, step):
