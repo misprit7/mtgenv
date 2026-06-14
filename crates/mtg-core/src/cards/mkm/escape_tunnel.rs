@@ -280,4 +280,60 @@ mod tests {
             "the can't-be-blocked grant wears off at cleanup"
         );
     }
+
+    /// #60 end-to-end (the REAL activate path, not `resolve_effect`): activate the second ability via
+    /// `activate_ability` so the engine pays the **full cost** — `{T}` *and* **Sacrifice this land** —
+    /// chooses the target through `ChooseTargets`, puts it on the stack, and `resolve_top` resolves it.
+    /// Asserts both halves the resolve-level test couldn't see: (1) the land is **sacrificed** (gone to
+    /// graveyard — the cost actually happened), and (2) the power-2 creature gains `CantBeBlocked`.
+    #[test]
+    fn escape_tunnel_unblockable_via_full_activation() {
+        use crate::agent::{Agent, AbilityRef, DecisionRequest, DecisionResponse, PlayerView};
+        use crate::basics::Zone;
+        use crate::cards::{grp, starter_db};
+        use crate::effects::ability::Qualification;
+        use crate::ids::PlayerId;
+        use crate::priority::Engine;
+        use crate::state::GameState;
+        use std::sync::Arc;
+
+        // Picks the offered target (slot 0, candidate 0) and accepts any confirm.
+        #[derive(Clone)]
+        struct PlayAgent;
+        impl Agent for PlayAgent {
+            fn decide(&mut self, _v: &PlayerView, req: &DecisionRequest) -> DecisionResponse {
+                match req {
+                    DecisionRequest::ChooseTargets { .. } => DecisionResponse::Pairs(vec![(0, 0)]),
+                    DecisionRequest::Confirm { .. } => DecisionResponse::Bool(true),
+                    _ => DecisionResponse::Pass,
+                }
+            }
+        }
+
+        let mut state = GameState::new(2, 1);
+        state.set_card_db(Arc::new(starter_db()));
+        let tunnel = {
+            let c = state.card_db().get(ESCAPE_TUNNEL).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, Zone::Battlefield)
+        };
+        let bears = {
+            let c = state.card_db().get(grp::GRIZZLY_BEARS).unwrap().chars.clone(); // 2/2, power 2 ≤ 2
+            state.add_card(PlayerId(0), c, Zone::Battlefield)
+        };
+        let mut e = Engine::new(state, vec![Box::new(PlayAgent), Box::new(PlayAgent)]);
+        e.activate_ability(PlayerId(0), tunnel, AbilityRef(1)); // pays {T} + Sacrifice this land
+        e.resolve_top(); // the can't-be-blocked grant resolves
+
+        // The cost actually happened: Escape Tunnel was sacrificed off the battlefield…
+        assert!(
+            !e.state.players[0].battlefield.contains(&tunnel),
+            "Escape Tunnel was sacrificed as a cost (no longer on the battlefield)"
+        );
+        assert_eq!(e.state.object(tunnel).zone, Zone::Graveyard);
+        // …and the effect landed: the power-2 creature can't be blocked this turn.
+        assert!(
+            e.state.computed(bears).has_qualification(Qualification::CantBeBlocked),
+            "the targeted power-2 creature can't be blocked this turn"
+        );
+    }
 }
