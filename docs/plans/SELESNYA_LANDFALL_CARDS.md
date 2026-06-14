@@ -131,10 +131,11 @@ Needed and built as specific cards demanded them — not in the original C-plan:
 | Permanent-targeting fix (enumerate all permanents; enforce `HasCardType`/`All`/`Not`/`ControlledBy`) | ✅ `70c483e`+`861f3aa` | earthbend land-targeting end-to-end |
 | `Ability::Warp{cost}` + `CastVariant::Warp` + `Action::WarpExile` + `Object.castable_from_exile` | ✅ `c445d78`+`7cc6f9c` | Mightform warp |
 
-### Upgrade tail — remaining caps (8 partials → fully faithful)
+### Upgrade tail — caps (COMPLETE except G)
 
-Each is a single deferred clause on an already-decked card; flips `fully_implemented:false → true`
-the moment its cap lands (tracked in task #44; exact card IR staged in `WORKLOG.md`).
+All flipped `fully_implemented:false → true` as their cap landed (task #44, done). The **only remaining
+deferred clause in the whole deck is G** — Surrak's inert "can't be countered" (no counterspell in the
+pool), a documented standing gap per the lead. Strikethrough = landed + card flipped.
 
 | Cap | Card | Deferred clause |
 |---|---|---|
