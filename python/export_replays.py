@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import time
 
 import glob
@@ -50,9 +51,11 @@ def record_game(model, deck, step, out_dir, run_name=None, seed=12_345, self_pla
 
 
 def _run_name(model) -> str:
-    """The TensorBoard run folder (e.g. ``MaskablePPO_2``) so replay filenames match TB runs."""
+    """The TensorBoard run folder, minus SB3's ``_N`` suffix — so the replay run tag matches the
+    descriptive name passed as ``tb_log_name`` (e.g. ``demo-selfplay-60k-0614-1432``)."""
     logdir = getattr(getattr(model, "logger", None), "dir", None)
-    return os.path.basename(logdir) if logdir else "run"
+    name = os.path.basename(logdir) if logdir else "run"
+    return re.sub(r"_\d+$", "", name)
 
 
 class ReplayCheckpoint(BaseCallback):
@@ -88,7 +91,13 @@ def main():
     ap.add_argument("--tensorboard", default="/tmp/mtgenv_tb", help="TensorBoard log dir")
     ap.add_argument("--n-envs", type=int, default=8)
     ap.add_argument("--pool-dir", default="/tmp/mtgenv_pool_export")
+    ap.add_argument("--run-name", default=None,
+                    help="descriptive run label (else auto: '<deck>-selfplay-<steps>k-<mmdd-HHMM>')")
     args = ap.parse_args()
+
+    # Descriptive run name → TensorBoard run folder AND the replay run tag (the lobby groups by it).
+    # Pass --run-name to tag what changed between runs (e.g. 'demo-selfplay-deepnet').
+    run_name = args.run_name or f"{args.deck}-selfplay-{args.timesteps // 1000}k-{time.strftime('%m%d-%H%M')}"
 
     # SELF-PLAY: train against a growing pool of frozen selves (not random) — so both the training
     # AND the recorded replays are genuine self-play.
@@ -111,10 +120,10 @@ def main():
     for c in cbs:
         c.verbose = 1
 
-    print(f"deck={args.deck}  timesteps={args.timesteps}  SELF-PLAY  → replays:{REPLAY_DIR}  tb:{args.tensorboard}")
+    print(f"run={run_name}  deck={args.deck}  timesteps={args.timesteps}  SELF-PLAY  → {REPLAY_DIR}")
     t0 = time.time()
-    model.learn(total_timesteps=args.timesteps, callback=cbs, progress_bar=False)
-    print(f"\ndone in {time.time() - t0:.0f}s — TensorBoard run under {args.tensorboard} (MaskablePPO_*)")
+    model.learn(total_timesteps=args.timesteps, callback=cbs, tb_log_name=run_name, progress_bar=False)
+    print(f"\ndone in {time.time() - t0:.0f}s — TensorBoard run '{run_name}' under {args.tensorboard}")
     print("replays: lobby 'AI Training Replays' section (mtg-serve on :8080)")
 
 
