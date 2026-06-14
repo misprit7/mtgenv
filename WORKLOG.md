@@ -5,6 +5,20 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-14
 
+- **gym (#68 done):** tracked_stats — action-rate summary metrics to TensorBoard, encapsulated +
+  extensible. mtg-py `decision_stats.rs` summarizes each finalized engine decision
+  (DecisionRequest=opportunities, DecisionResponse=taken) into a flat record, drained via
+  `PyGame.take_decision_stats()` → `info['decision_stats']`. `python/mtgenv_gym/tracked_stats.py`
+  is a one-`StatDef`-per-stat registry + accumulator + SB3 callback logging `stats/*` per rollout
+  (cast/attack/block/playland rate). Wired through `MtgEnv.step` + `BatchedSelfPlayVecEnv` + both
+  train loops. Verified tfevents carry the curves. Also verified the post-collapse stop stream and
+  kept `full_control=false` for training (71 vs 311 dec/game, ~2.7× more games/s than full control).
+- **gym (#66 done):** Tier-1 obs — tie a decision to its source + candidates. Per-row
+  is_source/is_candidate flags on bf/hand/stack, me/opp player-candidate globals, and a resolved
+  source-card one-hot (`decision_ids`) into both feature extractors. Uses the engine's new
+  `ChooseTargets.source` (6fe1580) so triggered/reflexive abilities resolve their source even before
+  hitting the stack — selesnya ChooseTargets source-id coverage 44%→100% (Earthbender case fixed).
+
 - **engine (#67 done):** Finished the stop-policy collapse end-to-end. After webui migrated
   gre-server off the dead flags (cbae678) + dropped the client-side `priorityAutoPass` narrowing
   (engine is authoritative now), engine deleted `StopConfig.auto_pass/smart_stops/resolve_own_stack`
