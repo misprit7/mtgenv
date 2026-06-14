@@ -5,6 +5,20 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-14
 
+- **engine (#59 — mana-pool payment rework):** **Pay through the real pool (3c35cff + e46fe8d); fixes #56 + #57.**
+  Replaced the source-based auto-tap (each source = 1 mana, tap-to-pay, bonus dumped to the pool afterward)
+  with proper pool-based payment: (1) `pay_cost` pays NON-mana components (TapSelf/Sacrifice/Crew) FIRST and
+  commits them, so a source tapped/sacrificed for its own cost is excluded from the mana sources — **Ba Sing
+  Se's `{2}{G},{T}` now taps itself for `{T}` + 3 OTHER lands, never itself for both (#57)**; `can_pay_cost`
+  mirrors it via `mana::can_pay_excluding`. (2) `auto_pay` taps a sufficient set, produces each tapped source's
+  FULL output (base + Σ Badgermole bonus) into `player.mana_pool`, then spends the cost from the pool — floating
+  mana first; surplus stays FLOATING and `empty_mana_pools` clears it at the end of every step (CR 500.4).
+  Folds in the #56 base+bonus model. (3) Live `GameEvent::ManaPoolChanged` refresh after payment + mana-ability
+  resolution (gated from event-log/replay to avoid churn) so webui shows floating mana mid-resolution (#62).
+  Wire shape unchanged. Acceptance tests: Ba Sing Se taps-self+3-others (2-others unaffordable); floating mana
+  persists across two payments in a step; Badgermole/earthbent afford bonus costs. 215 tests green, 1 ignored
+  (design's #63 graveyard-target-fizzle repro). Design's #60 audit unblocked.
+
 - **engine (#61 — effect ordering fix):** **Flush deferred actions before imperative effects (3487141).**
   `resolve_effect` accumulated deferred whiteboard actions (Destroy/Tap/counters) and committed at the END,
   but Search/AddMana run imperatively during interpret — so Erode's `Sequence[Destroy target, fetch a land]`
