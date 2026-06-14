@@ -1078,7 +1078,17 @@ impl Engine {
     /// starter set uses (mana, `{T}`); other components aren't masked yet and pass through.
     fn can_pay_cost(&self, p: PlayerId, source: ObjId, cost: &Cost) -> bool {
         if let Some(m) = &cost.mana {
-            if !mana::can_pay(&self.state, p, m) {
+            // Exclude sources committed to a non-mana component from the mana check (they'll be
+            // tapped/sacrificed before mana is paid, so they can't also produce it) — #57. `{T}`
+            // commits the source; that's the case that bit Ba Sing Se.
+            let excluded: Vec<ObjId> = cost
+                .components
+                .iter()
+                .any(|c| matches!(c, CostComponent::TapSelf))
+                .then_some(source)
+                .into_iter()
+                .collect();
+            if !mana::can_pay_excluding(&self.state, p, m, &excluded) {
                 return false;
             }
         }
@@ -1220,9 +1230,10 @@ impl Engine {
     /// Pay an ability/cost's components (CR 118). Mana is auto-tapped; the starter set also uses
     /// `{T}`. Components beyond these aren't charged yet (none in the starter pool need them).
     fn pay_cost(&mut self, p: PlayerId, source: ObjId, cost: &Cost) {
-        if let Some(m) = &cost.mana {
-            mana::auto_pay(&mut self.state, p, m);
-        }
+        // Pay NON-mana components FIRST (CR 601.2h — the payer orders cost payment): committing them
+        // first means a source tapped/sacrificed for a `{T}`/Sacrifice cost is already excluded from
+        // the mana sources, so it can't ALSO produce mana for the same cost (Ba Sing Se's `{T}` can't
+        // pay both its own tap AND a `{G}` of its `{2}{G}`). #57/#59.
         for c in &cost.components {
             match c {
                 CostComponent::TapSelf => {
@@ -1240,6 +1251,10 @@ impl Engine {
                 CostComponent::Crew(n) => self.pay_crew(p, source, *n),
                 _ => {}
             }
+        }
+        // Then pay mana from the REMAINING (still-untapped, still-present) sources, through the pool.
+        if let Some(m) = &cost.mana {
+            mana::auto_pay(&mut self.state, p, m);
         }
     }
 
@@ -5270,6 +5285,89 @@ mod expect_tests {
         assert_eq!(run(true), (true, true, 0), "landfall creature gone before fetch → no landfall");
         // A vanilla creature: destroyed + land fetched, no triggers (sanity).
         assert_eq!(run(false), (true, true, 0), "vanilla creature: destroyed, land fetched");
+    }
+
+    #[test]
+    fn ba_sing_se_taps_itself_for_tap_plus_other_lands_for_mana_57() {
+        // #57: a "{2}{G}, {T}: ..." land — its `{T}` taps itself, so its own `{T}: Add {G}` mana
+        // ability can't ALSO pay a `{G}` of the `{2}{G}`. With the pool rework, paying the non-mana
+        // `{T}` first excludes the source from the mana set → the `{2}{G}` comes from 3 OTHER lands.
+        use crate::agent::AbilityRef;
+        use crate::basics::{CardType, Color};
+        use crate::effects::ability::{Ability, Cost, CostComponent, Timing};
+        use crate::effects::value::{PlayerRef, ValueExpr};
+        use crate::effects::Effect;
+        use crate::state::Characteristics;
+        use std::sync::Arc;
+
+        let build = |forests: usize| -> (Engine, ObjId, Vec<ObjId>) {
+            let mut db = cards::starter_db();
+            db.insert(cards::CardDef {
+                chars: Characteristics {
+                    name: "Ba Sing Se (test)".into(),
+                    card_types: vec![CardType::Land],
+                    grp_id: 9990,
+                    ..Default::default()
+                },
+                abilities: vec![
+                    cards::mana_ability(Color::Green), // [0] {T}: Add {G} — makes it a mana source
+                    Ability::Activated {
+                        // [1] {2}{G}, {T}: gain 1 life (stand-in for Earthbend 2)
+                        cost: Cost {
+                            mana: Some(cards::mana_cost(2, &[(Color::Green, 1)])),
+                            components: vec![CostComponent::TapSelf],
+                        },
+                        effect: Effect::GainLife {
+                            who: PlayerRef::Controller,
+                            amount: ValueExpr::Fixed(1),
+                        },
+                        timing: Timing::Instant,
+                        restriction: None,
+                        is_mana: false,
+                    },
+                ],
+                text: String::new(),
+                ..Default::default()
+            });
+            let mut state = GameState::new(2, 1);
+            state.set_card_db(Arc::new(db));
+            let bss = {
+                let c = state.card_db().get(9990).unwrap().chars.clone();
+                state.add_card(PlayerId(0), c, Zone::Battlefield)
+            };
+            let forest_ids: Vec<ObjId> = (0..forests)
+                .map(|_| {
+                    let f = state.card_db().get(grp::FOREST).unwrap().chars.clone();
+                    state.add_card(PlayerId(0), f, Zone::Battlefield)
+                })
+                .collect();
+            let e = Engine::new(state, vec![Box::new(PassAgent), Box::new(PassAgent)]);
+            (e, bss, forest_ids)
+        };
+        let cost_of = |e: &Engine, bss: ObjId| match &e.state.def_of(bss).unwrap().abilities[1] {
+            Ability::Activated { cost, .. } => cost.clone(),
+            _ => unreachable!(),
+        };
+
+        // 3 OTHER lands → the `{2}{G}` is affordable; activating taps Ba Sing Se (for `{T}`) plus
+        // exactly the 3 Forests (for `{2}{G}`), never Ba Sing Se for both.
+        let (mut e3, bss3, forests3) = build(3);
+        assert!(e3.can_pay_cost(PlayerId(0), bss3, &cost_of(&e3, bss3)), "3 other lands afford it");
+        e3.activate_ability(PlayerId(0), bss3, AbilityRef(1));
+        e3.resolve_top();
+        assert!(e3.state.object(bss3).status.tapped, "Ba Sing Se tapped for its own {{T}}");
+        assert_eq!(
+            forests3.iter().filter(|&&id| e3.state.object(id).status.tapped).count(),
+            3,
+            "the {{2}}{{G}} came from all 3 OTHER lands (not Ba Sing Se double-tapped)"
+        );
+
+        // Only 2 OTHER lands → NOT affordable: Ba Sing Se can't pay both its `{T}` and a `{G}`.
+        let (e2, bss2, _) = build(2);
+        assert!(
+            !e2.can_pay_cost(PlayerId(0), bss2, &cost_of(&e2, bss2)),
+            "2 other lands can't pay {{2}}{{G}} once Ba Sing Se is committed to {{T}}"
+        );
     }
 
     #[test]
