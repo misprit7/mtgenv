@@ -189,3 +189,55 @@ and, where it changes play, a behaviour test.
 
 Add a `selesnya_landfall()` deck builder (the 60 above) + register it in `preset_deck()` so
 it's playable in the CLI/web alongside burn/bears.
+
+## #60 — End-to-end per-card audit (real cast → pay → resolve)
+
+**Why.** The `fully_implemented` flags are *builder/inline defaults* (17 `true`, 1 `false`),
+not validated through the real play loop. Every behaviour test to date calls
+`resolve_effect` directly, **bypassing casting + cost payment** — so mana/cost bugs (#56
+Badgermole affordability, #57 Ba Sing Se {T} double-count) and conditional sub-clauses (#58
+Fabled untap) slipped through. #60 drives each card through the *actual* priority path and
+asserts **every** oracle clause against resolved game state, then honestly re-baselines.
+
+**Harness.** Uses the engine's real driving methods (the seam proven by
+`priority.rs::fabled_passage_untaps_via_full_activation`): `e.play_land(p, card)`,
+`e.cast_spell(p, card, variant)` (real mana payment), `e.activate_ability(p, src, AbilityRef)`,
+then `e.resolve_top()` — with scripted test `Agent`s answering targeting / mode / payment
+`DecisionRequest`s. **Blocked** until those four are `pub(crate)` (requested from engine; today
+they're private to `priority.rs`).
+
+**Two passes** (mana legs depend on #59 mana-pool payment rework):
+- **Pass 1** (needs only the 4-method exposure): non-mana legs — land plays, `{T}`/`{T},Sac`
+  and other no-mana abilities, and ETB/landfall/attack triggers driven via `play_land` /
+  `activate_ability` + `resolve_top`. Re-baseline cards fully covered by non-mana legs.
+- **Pass 2** (needs #59): real `cast_spell` mana payment for every creature/spell; mana-cost
+  abilities (Ba Sing Se earthbend `{2}{G}`, Keen-Eyed exile `{1}`); Dyadrine counters = mana
+  spent; verify #56/#57 fixed. Finalize all flags.
+
+**Per-card audit matrix** (status: ☐ pending / ✅ pass / ❌ fail). "Gap" = clause with *no*
+current behaviour test (resolve-level or otherwise) that the audit must add.
+
+| grp | card | play path | clauses to assert end-to-end | mana-blocked (#59) | gap today |
+|----|------|-----------|------------------------------|:--:|-----------|
+| 100 | Llanowar Elves | cast `{G}` → `{T}:Add{G}` | 1/1 Elf Druid; taps for exactly 1 G; summoning-sick gate | cast only | — |
+| 101 | Hushwood Verge | play land → 2 mana abils | enters untapped; `{T}:G` always; `{T}:W` only if control Forest/Plains | no | **W-restriction behaviour** |
+| 102 | Sazh's Chocobo | cast → play a land | base P/T; landfall = +1 `+1/+1`; only *your* lands | cast only | — |
+| 103 | Mossborn Hydra | cast → play a land | Trample; enters w/ 1 `+1/+1`; landfall **doubles** counter count | cast only | — |
+| 104 | Icetill Explorer | cast → play a land | landfall mill 1; +1 land/turn; **play lands from graveyard** | cast only | **both land-permission statics** |
+| 105 | Lumbering Worldwagon | cast → crew → attack | power = #lands (CDA); ETB *or* attack fetch basic tapped; Crew 4 | cast only | — |
+| 106 | Fabled Passage | `{T},Sac` ability | fetch basic tapped; if ≥4 lands → untap it | **no** | — (✅ full-activation tested) |
+| 107 | Escape Tunnel | two `{T},Sac` abilities | fetch basic tapped; **power≤2 target can't be blocked this turn** | no | **unblockable ability** |
+| 108 | Erode | cast sorcery | destroy target creature/pw; **its controller may fetch basic tapped** (order #61) | cast only | **controller-fetch sub-clause** |
+| 109 | Temple Garden | play land | ETB: pay 2 life → untapped **else tapped**; taps G/W | no | **ETB life/tapped behaviour** |
+| 110 | Ba Sing Se | play land → abilities | ETB tapped unless control basic; `{T}:G`; `{2}{G},{T}` earthbend 2 (#57) | earthbend leg | **ETB-tapped + `{T}:G` behaviour** |
+| 111 | Bushwhack | cast sorcery (modal) | mode A fetch basic to **hand** (revealed); mode B fight (your vs their) | cast only | — |
+| 112 | Surrak | cast → opp targets it | can't-be-countered [**deferred, sanctioned**]; Trample; becomes-targeted → draw | cast only | — |
+| 113 | Badgermole Cub | cast → tap for mana | ETB earthbend 1; tap-creature-for-mana → **extra {G}** (#56 affordability) | cast + mana trigger | — |
+| 114 | Earthbender Ascension | cast → play lands | ETB earthbend 2 + fetch basic tapped; landfall quest counter; ≥4 → `+1/+1`+trample on target | cast only | — |
+| 115 | Mightform Harmonizer | cast → play a land | landfall doubles target power (snapshot +X/+0) EOT; Warp `{2}{G}` | cast + warp leg | **Warp alt-cast** |
+| 116 | Dyadrine | **cast (X mana)** → attack | Trample; **enters w/ counters = mana spent**; attack → remove 1 from 2 creatures, draw + 2/2 Robot | **yes (counters=mana)** | counters=mana via real cast |
+| 117 | Keen-Eyed Curator | cast → `{1}` exile | static +4/+4 & trample at ≥4 exiled card types; `{1}:` exile gy card | exile leg | — |
+
+**Honest baseline going in:** all 17 `true` flags are unvalidated through the real path;
+Surrak is correctly `false` (can't-be-countered deferred, no counterspell in pool). Flags will
+be confirmed or demoted **only** by the matrix above turning ✅/❌.
