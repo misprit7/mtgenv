@@ -130,6 +130,10 @@ pub enum Rewrite {
     Redirect,
     /// Enter with N extra counters of a kind (the common ETB replacement, CR 614.1e).
     EntersWithCounters { kind: CounterKind, n: u32 },
+    /// Enter with a **dynamic** number of counters — `n` is evaluated as the object enters, against
+    /// the entering object as the source (CR 614.1e). For "enters with +1/+1 counters equal to the
+    /// mana spent to cast it" (Dyadrine): `n = ValueExpr::ManaSpent`.
+    EntersWithCountersValue { kind: CounterKind, n: ValueExpr },
     /// Enter tapped.
     EntersTapped,
     /// Enter tapped **unless** the condition holds — the "check land" pattern ("enters tapped

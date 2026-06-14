@@ -125,6 +125,11 @@ pub struct Object {
     /// CR 606.3) has been activated from this permanent this turn; reset at the start of each
     /// turn and on any zone change. Blocks a second loyalty activation.
     pub used_once_per_turn: bool,
+    /// The total mana spent to cast this object (CR 601.2f–h, incl. `{X}`), recorded by `cast_spell`
+    /// while it's on the stack and read by an enters-with-counters replacement as it resolves onto
+    /// the battlefield (Dyadrine). Reset to 0 on every zone change (a fresh object, CR 400.7), so a
+    /// permanent put onto the battlefield without being cast reads 0.
+    pub mana_spent: u32,
 }
 
 impl Object {
@@ -489,6 +494,7 @@ impl GameState {
             timestamp,
             attached_to: None,
             used_once_per_turn: false,
+            mana_spent: 0,
         };
         self.objects.insert(id, obj);
         if let Some(v) = self.player_mut(owner).zone_vec_mut(zone) {
@@ -548,6 +554,7 @@ impl GameState {
             o.damage_marked = 0;
             o.dealt_deathtouch = false;
             o.used_once_per_turn = false; // a fresh object identity (CR 400.7)
+            o.mana_spent = 0; // re-recorded only by a fresh cast (CR 400.7)
             if to == Zone::Battlefield {
                 o.controller = to_owner;
                 o.summoning_sick = o.chars.is_creature();

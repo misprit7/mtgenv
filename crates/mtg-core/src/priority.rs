@@ -1330,6 +1330,12 @@ impl Engine {
             x: 0,
         };
         mana::auto_pay(&mut self.state, p, &pay);
+        // Record the total mana spent (incl. {X}) on the spell, for an enters-with-counters-equal-
+        // to-mana-spent replacement to read when it resolves (CR 601.2f–h; Dyadrine).
+        let spent = pay.generic + pay.colored.values().copied().sum::<u32>();
+        if let Some(o) = self.state.objects.get_mut(&card) {
+            o.mana_spent = spent;
+        }
 
         // 601.2i: the spell has been cast.
         self.broadcast(GameEvent::SpellCast {
@@ -3878,6 +3884,66 @@ mod expect_tests {
         };
         assert_eq!(named(forest).as_deref(), Some("Forest"), "the candidate is revealed by name");
         assert!(named(hidden).is_none(), "the rest of the library stays masked");
+    }
+
+    #[test]
+    fn enters_with_counters_equal_to_mana_spent_dyadrine() {
+        use crate::basics::{Color, ManaCost};
+        use crate::effects::ability::{Ability, ActionPattern, Rewrite};
+        use crate::effects::target::CardFilter;
+        use crate::effects::value::ValueExpr;
+        use std::collections::BTreeMap;
+        use std::sync::Arc;
+        // Dyadrine's body: "enters with +1/+1 counters equal to the mana spent to cast it." A 0/0
+        // cast for {2}{G} (3 mana) enters as a 3/3 via EntersWithCountersValue{ ManaSpent }.
+        let mut db = cards::starter_db();
+        db.insert(cards::CardDef {
+            chars: Characteristics {
+                name: "Dyadrine (test)".into(),
+                card_types: vec![CardType::Creature],
+                colors: vec![Color::Green],
+                mana_cost: Some(ManaCost {
+                    generic: 2,
+                    colored: BTreeMap::from([(Color::Green, 1)]),
+                    x: 0,
+                }),
+                power: Some(0),
+                toughness: Some(0),
+                grp_id: 9800,
+                ..Default::default()
+            },
+            abilities: vec![Ability::Replacement {
+                pattern: ActionPattern::WouldEnterBattlefield(CardFilter::ItSelf),
+                rewrite: Rewrite::EntersWithCountersValue {
+                    kind: CounterKind::PlusOnePlusOne,
+                    n: ValueExpr::ManaSpent,
+                },
+            }],
+            text: String::new(),
+            ..Default::default()
+        });
+        let mut state = GameState::new(2, 1);
+        state.set_card_db(Arc::new(db));
+        let card = {
+            let c = state.card_db().get(9800).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, Zone::Hand)
+        };
+        for _ in 0..3 {
+            let f = state.card_db().get(grp::FOREST).unwrap().chars.clone();
+            state.add_card(PlayerId(0), f, Zone::Battlefield); // pays {2}{G}
+        }
+        let mut e = pass_engine(state);
+        e.cast_spell(PlayerId(0), card);
+        e.resolve_top(); // resolves onto the battlefield → ETB enters-with-counters
+        e.run_agenda();
+        assert_eq!(
+            e.state.object(card).counters.get(&CounterKind::PlusOnePlusOne),
+            3,
+            "entered with counters equal to the 3 mana spent"
+        );
+        let cc = e.state.computed(card);
+        assert_eq!(cc.power, Some(3), "0/0 + 3 counters = 3/3");
+        assert_eq!(cc.toughness, Some(3));
     }
 
     #[test]

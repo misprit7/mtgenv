@@ -55,6 +55,11 @@ pub enum ValueExpr {
     /// adds the target's current power to itself. `0` if the target isn't an object on the
     /// battlefield.
     PowerOfTarget(u32),
+    /// The total mana spent to cast the effect's source object (CR 601.2f–h, incl. any `{X}`),
+    /// recorded as it was cast and read when it enters. For "enters with +1/+1 counters equal to
+    /// the mana spent to cast it" (Dyadrine). `0` if the source wasn't cast (token / put onto the
+    /// battlefield).
+    ManaSpent,
 }
 
 impl ValueExpr {

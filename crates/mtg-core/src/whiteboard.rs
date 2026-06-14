@@ -55,6 +55,7 @@ fn describe_rewrite(rw: &Rewrite) -> String {
         Rewrite::AddAmount(n) => format!("add {n}"),
         Rewrite::Redirect => "redirect".to_string(),
         Rewrite::EntersWithCounters { kind, n } => format!("enters with {n} {kind:?}"),
+        Rewrite::EntersWithCountersValue { kind, .. } => format!("enters with N {kind:?}"),
         Rewrite::EntersTapped => "enters tapped".to_string(),
         Rewrite::EntersTappedUnless(_) => "enters tapped unless …".to_string(),
         Rewrite::EntersTappedUnlessPay { life } => format!("enters tapped unless you pay {life} life"),
@@ -622,6 +623,16 @@ impl Engine {
                     },
                 );
             }
+            // Dynamic count: evaluate `n` as the object enters, with the entering object as source
+            // (so `ValueExpr::ManaSpent` reads what was paid to cast it). CR 614.1e.
+            Rewrite::EntersWithCountersValue { kind, n } => {
+                let ctx = ResolutionCtx { source: Some(obj), ..Default::default() };
+                let count = self.eval_value(n, &ctx).max(0) as i32;
+                wb.actions.insert(
+                    ai + 1,
+                    Action::AddCounters { obj, kind: kind.clone(), n: count },
+                );
+            }
             Rewrite::EntersTapped => {
                 // The permanent enters tapped: tap it right after it enters, in the same
                 // commit (before SBAs), so it's tapped as it arrives (CR 614.1c/d).
@@ -964,6 +975,12 @@ impl Engine {
                 Some(Target::Object(id)) => self.state.computed(*id).power.unwrap_or(0) as i64,
                 _ => 0,
             },
+            // The mana spent to cast the source object (recorded at cast, CR 601.2f–h) — Dyadrine.
+            ValueExpr::ManaSpent => ctx
+                .source
+                .and_then(|s| self.state.objects.get(&s))
+                .map(|o| o.mana_spent as i64)
+                .unwrap_or(0),
         }
     }
 
