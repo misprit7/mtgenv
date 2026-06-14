@@ -361,4 +361,78 @@ mod tests {
         assert_eq!(cc.toughness, Some(6), "0/1 base + 5 counters = 6 toughness");
         assert!(cc.has_keyword(crate::effects::ability::Keyword::Trample), "Trample");
     }
+
+    /// #60 end-to-end (REAL attack declaration → trigger): "Whenever you attack, you may remove a
+    /// +1/+1 counter from each of two creatures you control. If you do, draw a card and create a 2/2
+    /// colorless Robot artifact creature token." Driven via `declare_attackers_explicit` (fires the
+    /// YouAttack trigger) → `run_agenda` → `resolve_top`: with two 3/3 (counter-bearing) creatures, the
+    /// reward fires — each drops to 2/2, the controller draws, and a 2/2 Robot token appears.
+    #[test]
+    fn dyadrine_attack_trigger_via_real_combat() {
+        use crate::agent::{Agent, DecisionRequest, DecisionResponse, PlayerView};
+        use crate::cards::{grp, starter_db};
+        use crate::ids::PlayerId;
+        use crate::priority::Engine;
+        use crate::state::GameState;
+        use std::sync::Arc;
+
+        #[derive(Clone)]
+        struct YesAgent;
+        impl Agent for YesAgent {
+            fn decide(&mut self, _v: &PlayerView, req: &DecisionRequest) -> DecisionResponse {
+                match req {
+                    DecisionRequest::Confirm { .. } => DecisionResponse::Bool(true),
+                    DecisionRequest::SelectCards { min, .. } => DecisionResponse::Indices((0..*min).collect()),
+                    _ => DecisionResponse::Pass,
+                }
+            }
+        }
+
+        let mut state = GameState::new(2, 1);
+        state.set_card_db(Arc::new(starter_db()));
+        let dyadrine = {
+            let c = state.card_db().get(DYADRINE_SYNTHESIS_AMALGAM).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, Zone::Battlefield)
+        };
+        let bears: Vec<_> = (0..2)
+            .map(|_| {
+                let c = state.card_db().get(grp::GRIZZLY_BEARS).unwrap().chars.clone(); // 2/2
+                state.add_card(PlayerId(0), c, Zone::Battlefield)
+            })
+            .collect();
+        {
+            let c = state.card_db().get(grp::FOREST).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, Zone::Library); // the card the trigger draws
+        }
+        state.active_player = PlayerId(0);
+        // Each Bears holds a +1/+1 counter (a 3/3) so both are valid "remove a counter" targets.
+        for &b in &bears {
+            state.objects.get_mut(&b).unwrap().counters.counts.insert(CounterKind::PlusOnePlusOne, 1);
+        }
+        let bf_before = 3usize; // dyadrine + 2 bears
+        let mut e = Engine::new(state, vec![Box::new(YesAgent), Box::new(YesAgent)]);
+
+        e.declare_attackers_explicit(&[dyadrine]); // fires "whenever you attack"
+        e.run_agenda();
+        while !e.state.stack.items.is_empty() {
+            e.resolve_top();
+            e.run_agenda();
+        }
+
+        // Each chosen creature lost its +1/+1 counter (3/3 → 2/2).
+        for &b in &bears {
+            assert_eq!(e.state.object(b).counters.get(&CounterKind::PlusOnePlusOne), 0, "a counter removed");
+        }
+        assert_eq!(e.state.players[0].hand.len(), 1, "drew a card off the reward");
+        // A new 2/2 Robot token joined the battlefield.
+        let token = e.state.players[0]
+            .battlefield
+            .iter()
+            .find(|&&o| o != dyadrine && !bears.contains(&o))
+            .copied();
+        let token = token.expect("a Robot token was created");
+        let tc = e.state.computed(token);
+        assert_eq!((tc.power, tc.toughness), (Some(2), Some(2)), "2/2 Robot token");
+        assert_eq!(e.state.players[0].battlefield.len(), bf_before + 1, "exactly one token added");
+    }
 }
