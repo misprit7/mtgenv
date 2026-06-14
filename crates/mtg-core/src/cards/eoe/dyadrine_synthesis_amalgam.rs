@@ -16,11 +16,15 @@
 //!   reset on any zone change (CR 400.7), so Dyadrine cast for {3}{G}{W} (X=3) enters as a 5/6.
 //! - **"Whenever you attack, you may remove a +1/+1 counter from each of two creatures you control. If
 //!   you do, draw a card and create a 2/2 colorless Robot artifact creature token."** — a
-//!   `Triggered{YouAttack}` over `Optional{ Sequence[ ForEach{ select 2 creatures you control with a
-//!   +1/+1 counter, body: PutCounters{Each, -1} }, Draw, CreateToken{Robot} ] }` (cap 0e01d56). It's a
-//!   *resolution-time choice* (no "target") — the `Optional` + `Select(min:2)` gate the reward, so the
-//!   draw + token fire only when you actually remove a counter from each of two creatures (CR 603.7
-//!   reflexive semantics without a separate sub-trigger).
+//!   `Triggered{YouAttack}` over `IfYouDo{ cost: Optional{ ForEach{ select 2 creatures you control
+//!   with a +1/+1 counter, body: PutCounters{Each, -1} } }, reward: Sequence[Draw, CreateToken{Robot}] }`
+//!   (cap 0e01d56; "if you do" gate added #65). It's a *resolution-time choice* (no "target"). The
+//!   reward is withheld unless the cost is **actually performed**: `IfYouDo` only runs the reward when
+//!   its cost reports done, and the `ForEach{min:2}` reports done only when it removes a counter from
+//!   each of *two* creatures — so declining the `Optional`, or controlling fewer than two
+//!   counter-bearing creatures, yields no draw and no token (CR 603.7 reflexive "if you do" without a
+//!   separate sub-trigger). Earlier this was `Optional{ Sequence[ForEach, Draw, CreateToken] }`, whose
+//!   `Sequence` ran the draw + token even when the `ForEach` removed nothing (#65).
 
 use crate::basics::{CardType, Color, CounterKind, Zone};
 use crate::cards::{mana_cost, CardDb, CardDef};
@@ -68,11 +72,18 @@ pub fn register(db: &mut CardDb) {
                 event: EventPattern::YouAttack,
                 condition: None,
                 intervening_if: false,
-                effect: Effect::Optional {
-                    prompt: "Remove a +1/+1 counter from each of two creatures you control?".to_string(),
-                    body: Box::new(Effect::Sequence(vec![
-                        // remove a +1/+1 counter from each of two chosen creatures you control with one
-                        Effect::ForEach {
+                // "you may [remove a +1/+1 counter from each of two creatures you control]. If you do,
+                // [draw a card and create a Robot]." The reward is gated on the cost being *actually
+                // performed* via `IfYouDo`: the `Optional` is the "may", and the `ForEach{min:2}` only
+                // reports done if it removes a counter from each of two creatures — so declining, or
+                // not controlling two counter-bearing creatures, yields no draw and no token (CR
+                // reflexive "if you do"). The chars-only condition system can't see +1/+1 counters,
+                // so this gate must ride the ForEach itself rather than a parallel `CountAtLeast`.
+                effect: Effect::IfYouDo {
+                    cost: Box::new(Effect::Optional {
+                        prompt: "Remove a +1/+1 counter from each of two creatures you control?".to_string(),
+                        // remove a +1/+1 counter from each of two chosen creatures you control
+                        body: Box::new(Effect::ForEach {
                             selector: SelectSpec {
                                 zone: Zone::Battlefield,
                                 filter: CardFilter::All(vec![
@@ -89,8 +100,10 @@ pub fn register(db: &mut CardDb) {
                                 kind: CounterKind::PlusOnePlusOne,
                                 n: ValueExpr::Fixed(-1),
                             }),
-                        },
-                        // "If you do, draw a card and create a 2/2 colorless Robot artifact creature token."
+                        }),
+                    }),
+                    // "If you do, draw a card and create a 2/2 colorless Robot artifact creature token."
+                    reward: Box::new(Effect::Sequence(vec![
                         Effect::Draw { who: PlayerRef::Controller, count: ValueExpr::Fixed(1) },
                         Effect::CreateToken {
                             spec: TokenSpec {
@@ -152,42 +165,44 @@ mod tests {
                     event: YouAttack,
                     condition: None,
                     intervening_if: false,
-                    effect: Optional {
-                        prompt: "Remove a +1/+1 counter from each of two creatures you control?",
-                        body: Sequence(
-                            [
-                                ForEach {
-                                    selector: SelectSpec {
-                                        zone: Battlefield,
-                                        filter: All(
-                                            [
-                                                HasCardType(
-                                                    Creature,
-                                                ),
-                                                ControlledBy(
-                                                    Controller,
-                                                ),
-                                                HasCounter(
-                                                    PlusOnePlusOne,
-                                                ),
-                                            ],
-                                        ),
-                                        chooser: Controller,
-                                        min: Fixed(
-                                            2,
-                                        ),
-                                        max: Fixed(
-                                            2,
-                                        ),
-                                    },
-                                    body: PutCounters {
-                                        what: Each,
-                                        kind: PlusOnePlusOne,
-                                        n: Fixed(
-                                            -1,
-                                        ),
-                                    },
+                    effect: IfYouDo {
+                        cost: Optional {
+                            prompt: "Remove a +1/+1 counter from each of two creatures you control?",
+                            body: ForEach {
+                                selector: SelectSpec {
+                                    zone: Battlefield,
+                                    filter: All(
+                                        [
+                                            HasCardType(
+                                                Creature,
+                                            ),
+                                            ControlledBy(
+                                                Controller,
+                                            ),
+                                            HasCounter(
+                                                PlusOnePlusOne,
+                                            ),
+                                        ],
+                                    ),
+                                    chooser: Controller,
+                                    min: Fixed(
+                                        2,
+                                    ),
+                                    max: Fixed(
+                                        2,
+                                    ),
                                 },
+                                body: PutCounters {
+                                    what: Each,
+                                    kind: PlusOnePlusOne,
+                                    n: Fixed(
+                                        -1,
+                                    ),
+                                },
+                            },
+                        },
+                        reward: Sequence(
+                            [
                                 Draw {
                                     who: Controller,
                                     count: Fixed(
@@ -434,5 +449,78 @@ mod tests {
         let tc = e.state.computed(token);
         assert_eq!((tc.power, tc.toughness), (Some(2), Some(2)), "2/2 Robot token");
         assert_eq!(e.state.players[0].battlefield.len(), bf_before + 1, "exactly one token added");
+    }
+
+    /// #65 regression: the reward is gated on the cost ("if you do"). With only **one** creature
+    /// carrying a +1/+1 counter, "remove a +1/+1 counter from each of *two* creatures you control"
+    /// can't be performed — so even when the controller says **yes** to the optional, NO counter is
+    /// removed, NO card is drawn, and NO Robot token is created. (Before #65 the draw + token fired
+    /// unconditionally because the reward sat in the same `Sequence` as the un-met `ForEach`.)
+    #[test]
+    fn dyadrine_attack_no_reward_when_fewer_than_two_counters() {
+        use crate::agent::{Agent, DecisionRequest, DecisionResponse, PlayerView};
+        use crate::cards::{grp, starter_db};
+        use crate::ids::PlayerId;
+        use crate::priority::Engine;
+        use crate::state::GameState;
+        use std::sync::Arc;
+
+        // Eagerly says "yes" to the optional and picks the first candidates — i.e. the worst case for
+        // the gate: a cooperative controller who *wants* the reward but can't pay for it.
+        #[derive(Clone)]
+        struct YesAgent;
+        impl Agent for YesAgent {
+            fn decide(&mut self, _v: &PlayerView, req: &DecisionRequest) -> DecisionResponse {
+                match req {
+                    DecisionRequest::Confirm { .. } => DecisionResponse::Bool(true),
+                    DecisionRequest::SelectCards { min, .. } => DecisionResponse::Indices((0..*min).collect()),
+                    _ => DecisionResponse::Pass,
+                }
+            }
+        }
+
+        let mut state = GameState::new(2, 1);
+        state.set_card_db(Arc::new(starter_db()));
+        let dyadrine = {
+            let c = state.card_db().get(DYADRINE_SYNTHESIS_AMALGAM).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, Zone::Battlefield)
+        };
+        let bears: Vec<_> = (0..2)
+            .map(|_| {
+                let c = state.card_db().get(grp::GRIZZLY_BEARS).unwrap().chars.clone(); // 2/2
+                state.add_card(PlayerId(0), c, Zone::Battlefield)
+            })
+            .collect();
+        {
+            let c = state.card_db().get(grp::FOREST).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, Zone::Library); // would-be drawn card; must stay put
+        }
+        state.active_player = PlayerId(0);
+        // Only ONE creature has a +1/+1 counter — fewer than the two the cost requires (Dyadrine
+        // itself entered without counters in this hand-built state, so it isn't a candidate either).
+        state.objects.get_mut(&bears[0]).unwrap().counters.counts.insert(CounterKind::PlusOnePlusOne, 1);
+        let bf_before = state.players[0].battlefield.len(); // dyadrine + 2 bears
+        let mut e = Engine::new(state, vec![Box::new(YesAgent), Box::new(YesAgent)]);
+
+        e.declare_attackers_explicit(&[dyadrine]); // fires "whenever you attack"
+        e.run_agenda();
+        while !e.state.stack.items.is_empty() {
+            e.resolve_top();
+            e.run_agenda();
+        }
+
+        // Cost could not be paid → the single counter is untouched (all-or-nothing).
+        assert_eq!(
+            e.state.object(bears[0]).counters.get(&CounterKind::PlusOnePlusOne),
+            1,
+            "the lone counter is NOT removed when two can't be"
+        );
+        // Reward withheld: no draw, no token.
+        assert_eq!(e.state.players[0].hand.len(), 0, "no draw without paying the cost");
+        assert_eq!(
+            e.state.players[0].battlefield.len(),
+            bf_before,
+            "no Robot token without paying the cost"
+        );
     }
 }

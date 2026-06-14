@@ -98,6 +98,11 @@ impl Engine {
     /// The interactive interpreter: handles control-flow + resolution-time-decision nodes
     /// (Sequence/Modal/Search), delegating every pure leaf to [`Engine::materialize`] with the
     /// shared `cursor` (so a multi-target sequence still distributes its locked targets in order).
+    ///
+    /// Returns whether the effect was **actually performed** — used by [`Effect::IfYouDo`] to gate
+    /// a reward on its cost ("you may … If you do, …", CR). Most effects "perform" unconditionally
+    /// (return `true`); the ones that can fail to do so are a declined `Optional`, a `ForEach`/
+    /// `Select` that can't reach its `min`, and `Nothing`.
     fn interpret(
         &mut self,
         effect: &Effect,
@@ -105,20 +110,25 @@ impl Engine {
         sid: StackId,
         wb: &mut Whiteboard,
         cursor: &mut usize,
-    ) {
+    ) -> bool {
         match effect {
             Effect::Sequence(effects) => {
+                // Performed iff every step performed (an empty sequence is vacuously done).
+                let mut all = true;
                 for e in effects {
-                    self.interpret(e, ctx, sid, wb, cursor);
+                    all &= self.interpret(e, ctx, sid, wb, cursor);
                 }
+                all
             }
             // C7: modal — ask which mode(s), then resolve each chosen mode's effect (CR 700.2).
             Effect::Modal { modes, min, max, allow_repeat } => {
+                let mut any = false;
                 for idx in self.choose_modes(ctx, sid, modes, *min, *max, *allow_repeat) {
                     if let Some(m) = modes.get(idx as usize) {
-                        self.interpret(&m.effect, ctx, sid, wb, cursor);
+                        any |= self.interpret(&m.effect, ctx, sid, wb, cursor);
                     }
                 }
+                any
             }
             // C5: search a zone (asks the searcher which card(s)), move the picks to `to`, then
             // shuffle a searched library. Done imperatively (search/shuffle aren't whiteboard
@@ -128,6 +138,7 @@ impl Engine {
             Effect::Search { who, zone, filter, min, max, to, tapped } => {
                 self.flush_pending(wb);
                 self.interpret_search(ctx, *who, *zone, filter, *min, *max, to, *tapped);
+                true
             }
             // C19: add mana to a player's pool (a mana ability resolving, or a ritual). Imperative
             // (mana isn't a whiteboard action); `any_color` asks the player which colour. Flush first
@@ -136,30 +147,54 @@ impl Engine {
                 self.flush_pending(wb);
                 let player = self.eval_player(*who, ctx);
                 self.add_mana(player, mana, ctx);
+                true
             }
             // "You may …" (CR 603.5 / optional effect): ask the controller; run `body` on yes.
+            // Performed iff the controller said yes AND the body itself performed (so a "may" whose
+            // body can't be carried out still reports "not done" to a wrapping `IfYouDo`).
             Effect::Optional { prompt: _, body } => {
                 let controller = ctx.controller.unwrap_or(PlayerId(0));
                 let yes = matches!(
                     self.ask(controller, &DecisionRequest::Confirm { kind: ConfirmKind::MayEffect }),
                     DecisionResponse::Bool(true)
                 );
-                if yes {
-                    self.interpret(body, ctx, sid, wb, cursor);
+                yes && self.interpret(body, ctx, sid, wb, cursor)
+            }
+            // "[do `cost`]. If you do, [`reward`]" (CR "you may … If you do, …"): run the cost, and
+            // run the reward ONLY if the cost was actually performed. Gating ties to the cost's real
+            // execution (a `ForEach` reaching its `min`, an `Optional` accepted), never a separate
+            // state predicate that could disagree (e.g. counter-based filters the condition system
+            // can't see). Returns the cost's performed flag so nested `IfYouDo`s compose.
+            Effect::IfYouDo { cost, reward } => {
+                let did = self.interpret(cost, ctx, sid, wb, cursor);
+                if did {
+                    self.interpret(reward, ctx, sid, wb, cursor);
                 }
+                did
             }
             // "For each [selector] …" (CR): select the objects (asking if it's a choice), then run
             // `body` once per object with it bound as `EffectTarget::Each` (Dyadrine's "remove a
-            // counter from each of two creatures you control").
+            // counter from each of two creatures you control"). Performed iff the selection reached
+            // its `min` — a "from each of two" that can't find two reports "not done".
             Effect::ForEach { selector, body } => {
-                for item in self.select_for_each(selector, ctx) {
+                let min = self.eval_value(&selector.min, ctx).max(0) as usize;
+                let selected = self.select_for_each(selector, ctx);
+                let performed = selected.len() >= min;
+                for item in selected {
                     let prev = self.foreach_current.replace(item);
                     self.interpret(body, ctx, sid, wb, cursor);
                     self.foreach_current = prev;
                 }
+                performed
             }
-            // Pure leaves (and not-yet-interactive nodes) lower without agent interaction.
-            _ => self.materialize(effect, ctx, wb, cursor),
+            // A no-op never counts as "performed" (so it can't satisfy an `IfYouDo` cost).
+            Effect::Nothing => false,
+            // Pure leaves (and not-yet-interactive nodes) lower without agent interaction; a leaf
+            // that lowers is considered performed.
+            _ => {
+                self.materialize(effect, ctx, wb, cursor);
+                true
+            }
         }
     }
 

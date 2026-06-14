@@ -194,6 +194,18 @@ pub enum Effect {
         prompt: String,
         body: Box<Effect>,
     },
+    /// "[do `cost`]. If you do, [`reward`]" — `reward` runs only if `cost` was **actually
+    /// performed**, not merely attempted. This is the engine encoding of MTG's pervasive
+    /// "you may … If you do, …" template: a `cost` that can't be carried out in full (e.g. a
+    /// `ForEach`/`Select` that can't reach its `min`, or a declined `Optional`) reports
+    /// "not done", so the reward is withheld. Gating ties to `cost`'s real execution — never a
+    /// parallel state predicate that could disagree with it. (Dyadrine: cost = "you may remove a
+    /// +1/+1 counter from each of two creatures you control", reward = "draw a card and create a
+    /// Robot".)
+    IfYouDo {
+        cost: Box<Effect>,
+        reward: Box<Effect>,
+    },
     /// Modal: choose `min..=max` of `modes` (CR 700.2).
     Modal {
         modes: Vec<Mode>,
