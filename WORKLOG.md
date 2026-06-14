@@ -5,6 +5,20 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-14
 
+- **engine (#55 — training-hang safety net):** **Loop-guard aborts wedged games to a draw + names the loop
+  (e502ba6); deterministic-greedy termination test (dd6e9b6).** A demo self-play training run froze for hours
+  spinning one CPU core — a single `env.step()` entered an in-engine infinite loop (no `Agent::decide` call, so
+  the Python `max_decisions` cap couldn't catch it). **Part 1 (done):** the two unbounded engine fixpoint loops
+  (`run_agenda` SBA/trigger stabilization + `priority_round` priority passing) now carry a hard iteration ceiling
+  (100k / 1M — no legal game comes close); tripping it aborts that game to a draw and logs the loop + turn/phase/
+  stack. Training can NEVER hang again; a wedge degrades to a logged draw that *self-diagnoses* the exact site.
+  **Part 2 (root cause — not reproduced standalone):** audited every engine loop — combat is all bounded `for`s,
+  `move_object` always clears a dying creature (SBA can't re-collect), priority terminates as resources deplete —
+  and swept ~17.5k games (12k random + 1500 greedy without auto-pass; 4000 greedy/random WITH auto-pass, gym's
+  config) with **zero** trips. So the loop needs gym's exact trained-policy + codec + stop conditions; the live
+  loop-guard log on the next training occurrence is the real repro. Added a `GreedyAgent` (never-pass worst case)
+  termination test. 198 core tests green.
+
 - **design (quality pass — behaviour-test coverage, broadly complete):** **16/18 cards now have a card-module
   resolve-level behaviour test** (exercise the *resolved* effect, expect-snapshot or assert on
   zones/counters/P-T/mana — not just the IR). Added this round: Dyadrine (full attack — YesAgent drives the
