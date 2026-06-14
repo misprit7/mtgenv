@@ -32,6 +32,7 @@ pub mod helpers;
 pub mod misc;
 
 // Per-first-printing-set folders (real card pool).
+pub mod bro;
 pub mod dft;
 pub mod dsk;
 pub mod eld;
@@ -333,6 +334,7 @@ pub fn starter_db() -> CardDb {
     sos::register(&mut db);
     rav::register(&mut db);
     tla::register(&mut db);
+    bro::register(&mut db);
     db
 }
 
@@ -370,12 +372,41 @@ pub fn bears_deck() -> Vec<u32> {
     deck
 }
 
-/// A preset deck by name (`"burn"`, `"bears"`, `"demo"`), case-insensitive. For the harness/CLI.
+/// A 60-card Selesnya Landfall deck of the **implemented** cards only (anything not yet even
+/// partially implemented — Surrak, Earthbender Ascension, Keen-Eyed Curator, Badgermole Cub,
+/// Dyadrine, Mightform Harmonizer — is left out). Green-primary with white for Erode; land-heavy
+/// (it's a landfall deck minus most of its payoffs, which is expected). Preset: `"selesnya"` /
+/// `"landfall"`.
+pub fn selesnya_landfall_deck() -> Vec<u32> {
+    use std::iter::repeat;
+    let mut deck = Vec::new();
+    // Nonbasic lands + dorks + landfall payoffs (the 12 implemented cards, at decklist quantities).
+    deck.extend(repeat(eld::fabled_passage::FABLED_PASSAGE).take(4));
+    deck.extend(repeat(mkm::escape_tunnel::ESCAPE_TUNNEL).take(4));
+    deck.extend(repeat(dsk::hushwood_verge::HUSHWOOD_VERGE).take(4));
+    deck.extend(repeat(tla::ba_sing_se::BA_SING_SE).take(3));
+    deck.extend(repeat(rav::temple_garden::TEMPLE_GARDEN).take(1));
+    deck.extend(repeat(lea::llanowar_elves::LLANOWAR_ELVES).take(4));
+    deck.extend(repeat(fin::sazhs_chocobo::SAZHS_CHOCOBO).take(4));
+    deck.extend(repeat(fdn::mossborn_hydra::MOSSBORN_HYDRA).take(1));
+    deck.extend(repeat(eoe::icetill_explorer::ICETILL_EXPLORER).take(2));
+    deck.extend(repeat(dft::lumbering_worldwagon::LUMBERING_WORLDWAGON).take(1));
+    deck.extend(repeat(sos::erode::ERODE).take(4));
+    deck.extend(repeat(bro::bushwhack::BUSHWHACK).take(2)); // = 34
+    // Fill to 60 with basics (green-primary, enough white to cast Erode).
+    deck.extend(repeat(grp::FOREST).take(18));
+    deck.extend(repeat(grp::PLAINS).take(8));
+    deck
+}
+
+/// A preset deck by name (`"burn"`, `"bears"`, `"demo"`, `"selesnya"`/`"landfall"`),
+/// case-insensitive. For the harness/CLI/web.
 pub fn preset_deck(name: &str) -> Option<Vec<u32>> {
     match name.to_ascii_lowercase().as_str() {
         "burn" => Some(burn_deck()),
         "bears" => Some(bears_deck()),
         "demo" => Some(demo_deck()),
+        "selesnya" | "landfall" => Some(selesnya_landfall_deck()),
         _ => None,
     }
 }
@@ -415,7 +446,7 @@ mod tests {
     #[test]
     fn starter_db_has_expected_cards() {
         let db = starter_db();
-        assert_eq!(db.len(), 43);
+        assert_eq!(db.len(), 44);
         // Forest is "type line only": a Basic Land with subtype Forest. Mana is intrinsic
         // (CR 305.6) — the engine derives {T}: Add {G} from the subtype, so the CardDef carries
         // no explicit mana ability (and `is_mana_source` only sees authored abilities).
@@ -447,5 +478,15 @@ mod tests {
         assert_eq!(bears_deck().len(), 60);
         assert_eq!(preset_deck("BURN").unwrap().len(), 60);
         assert!(preset_deck("nonesuch").is_none());
+        // Selesnya landfall: 60 cards, every one resolves in the DB, both aliases work.
+        let db = starter_db();
+        let selesnya = selesnya_landfall_deck();
+        assert_eq!(selesnya.len(), 60);
+        assert!(
+            selesnya.iter().all(|&g| db.get(g).is_some()),
+            "every Selesnya landfall card resolves in the starter DB"
+        );
+        assert_eq!(preset_deck("selesnya").unwrap().len(), 60);
+        assert_eq!(preset_deck("Landfall").unwrap().len(), 60);
     }
 }
