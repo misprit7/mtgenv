@@ -76,7 +76,9 @@
 
   .stack { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); z-index: 5;
     display: flex; gap: 8px; pointer-events: none; }
-  .stack .card { box-shadow: 0 8px 24px rgba(0,0,0,.5); }
+  /* Container stays click-through (so the gaps don't block the board beneath it), but the cards
+     themselves capture the pointer — otherwise hover-preview + click-to-target a stack spell fail. */
+  .stack .card { box-shadow: 0 8px 24px rgba(0,0,0,.5); pointer-events: auto; }
 
   /* MTGO-style phase/step bar, just above the hand */
   .stepbar { display: flex; gap: 3px; padding: 5px 12px; background: var(--rail);

@@ -5,6 +5,14 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-14
 
+- **webui:** Fixed hover-preview not working for spells/abilities on the stack. The `.stack` overlay
+  is `pointer-events:none` (so its gaps don't block the board beneath it), but that also made
+  `elementFromPoint` — which `refreshPreview` uses to find the hovered `[data-preview]` — hit the
+  board *behind* the stack instead of the stack card. Added `.stack .card { pointer-events:auto }`
+  so the cards capture the pointer while the container stays click-through. Also restores
+  click-to-target a spell on the stack. CSS-only (embedded_client.html + synced style.css);
+  verified via Playwright (hovering a stacked Sazh's Chocobo now shows the full-card preview).
+
 - **design (#60 — END-TO-END PER-CARD AUDIT, COMPLETE):** Rebuilt the card-test harness on the engine's
   real play seam (`cast_spell`/`play_land`/`activate_ability`/`resolve_top` + `run_agenda` +
   `declare_attackers_explicit` + `legal_actions`) and drove **all 18 Selesnya cards** through the actual
