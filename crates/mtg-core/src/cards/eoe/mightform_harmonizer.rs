@@ -16,18 +16,15 @@
 //!   power once), fixed for the turn — it does NOT recompute if the creature's power later changes.
 //!   The pump wears off at cleanup (CR 514.2).
 //!
-//! - **Warp {2}{G} — cast + exile** (C14 pieces 1+2, c445d78) — an `Ability::Warp { cost: {2}{G} }`:
-//!   `legal_priority_actions` offers a sorcery-speed warp cast from hand (even when the normal
-//!   {2}{G}{G} is unaffordable), `cast_spell` pays the warp cost, and on resolution the creature arms a
-//!   `DelayedTriggerEvent::AtBeginningOfNextEndStep` trigger that exiles it (CR 702-warp). This half is
-//!   **atomic and exploit-free** — the cheap cast always carries its exile downside, never a free discount.
+//! - **Warp {2}{G}** (C14, complete — c445d78 + 7cc6f9c) — an `Ability::Warp { cost: {2}{G} }`:
+//!   `legal_priority_actions` offers a sorcery-speed warp cast from hand for {2}{G} (even when the
+//!   normal {2}{G}{G} is unaffordable), `cast_spell` pays it, and on resolution the creature arms a
+//!   `DelayedTriggerEvent::AtBeginningOfNextEndStep` trigger that exiles it via `Action::WarpExile`
+//!   (a dedicated exile that grants recast permission — `Object.castable_from_exile` — so plain exiles
+//!   don't). On a later turn it's offered for recast from exile at its normal {2}{G}{G} (sorcery speed)
+//!   and resolves as a plain creature (no re-warp). CR 702-warp, end to end — atomic/exploit-free.
 //!
-//! INCOMPLETE — TRACKED (`fully_implemented: false`), one minor gap, not approximated:
-//!   - **Warp's recast-from-exile** — "then you may cast it from exile on a later turn." Needs the
-//!     warp-exiled card to be marked castable-from-exile + `legal_priority_actions` to offer it from
-//!     exile (C14 piece 3, pending). Until then a warp-cast Mightform is exiled and stays there — a
-//!     faithful subset (missing upside), NOT a wrong approximation. Flips to fully-implemented when
-//!     piece 3 lands, no other change.
+//! **Fully implemented** — every printed clause faithful, no deferrals.
 
 use crate::basics::Color;
 use crate::cards::helpers::land_you_control;
@@ -78,9 +75,8 @@ pub fn register(db: &mut CardDb) {
         ],
     );
     def.text = "Landfall — Whenever a land you control enters, double the power of target creature you control until end of turn.\nWarp {2}{G} (You may cast this card from your hand for its warp cost. Exile this creature at the beginning of the next end step, then you may cast it from exile on a later turn.)".to_string();
-    // Tracked-incomplete: warp's cast + exile work (C14 1+2); only recast-from-exile (piece 3) is
-    // pending. Flips to fully-implemented when piece 3 lands. See module docs.
-    def.fully_implemented = false;
+    // Fully implemented: landfall double-power (C15) + Warp {2}{G} end-to-end (C14, all 3 pieces).
+    def.fully_implemented = true;
     db.insert(def);
 }
 
@@ -102,10 +98,9 @@ mod tests {
             vec![Subtype::Creature(CreatureType::Insect), Subtype::Creature(CreatureType::Druid)]
         );
         assert_eq!((def.chars.power, def.chars.toughness), (Some(4), Some(4)));
-        // Tracked-incomplete only on warp's recast-from-exile (piece 3); landfall double-power +
-        // warp cast+exile (pieces 1+2) are implemented.
-        assert!(!def.fully_implemented);
-        // Landfall double-power pump (C15) + Warp {2}{G} alt-cast (C14 1+2).
+        // Fully implemented: landfall double-power (C15) + Warp {2}{G} end-to-end (C14, all 3 pieces).
+        assert!(def.fully_implemented);
+        // Landfall double-power pump (C15) + Warp {2}{G} alt-cast (C14).
         expect![[r#"
             [
                 Triggered {
