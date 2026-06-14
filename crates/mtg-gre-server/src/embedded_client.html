@@ -224,6 +224,13 @@
   /* hover full-card preview */
   #preview { position: fixed; display: none; width: 320px; border-radius: 12px; z-index: 100;
     box-shadow: 0 12px 44px rgba(0,0,0,.75); pointer-events: none; }
+  /* Target arrows: a full-viewport SVG overlay drawn from stack cards to their targets. */
+  #arrows { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 60; }
+  /* Auras / equipment stacked behind their host. The wrapper is the row's flow element; the
+     attached cards are absolutely positioned behind, the host sits on top. */
+  .attachwrap { position: relative; flex: 0 0 auto; }
+  .attachwrap .card.attach { position: absolute; top: 0; left: 0; box-shadow: 0 3px 8px rgba(0,0,0,.6);
+    filter: brightness(.9); }
   /* God-view opponent hand strip (replay / spectate). */
   .godhand { border-bottom: 1px solid var(--line); }
   .godhand .hlabel { color: var(--accent2); }
@@ -290,6 +297,7 @@
 </div>
 
 <div class="modal" id="modal"><div class="box"><span class="close" id="modalClose">✕ close</span><h3 id="modalTitle"></h3><div class="grid" id="modalGrid"></div></div></div>
+<svg id="arrows" aria-hidden="true"></svg>
 <img id="preview" alt="" />
 
 <script>
@@ -473,7 +481,7 @@
     const v = o.Visible;
     return { id: v.id, chars: v.chars, tapped: !!(v.status && v.status.tapped),
       sick: v.summoning_sick, dmg: v.damage_marked || 0, counters: v.counters,
-      controller: v.controller, owner: v.owner };
+      controller: v.controller, owner: v.owner, attachments: v.attachments || [] };
   }
   const me = () => view.seat;
   const oppId = () => { const p = view.players.find(p => p.player !== me()); return p ? p.player : null; };
@@ -497,6 +505,7 @@
     renderHand();
     if (cur) renderPrompt();
     refreshPreview(); // re-derive the hover preview against the freshly-rebuilt DOM
+    drawArrows();     // draw stack→target arrows over the rebuilt board
   }
 
   // MTGO-style phase/step bar. `stop` = a priority-granting step you can stop at (StopType vocab).
@@ -590,6 +599,7 @@
 
   function pinfoEl(p, you) {
     const d = el("div", "pinfo" + (view.active_player === p.player ? " active" : ""));
+    d.dataset.pid = p.player; // target-arrow destination for player-targeting spells
     // If this player is a legal target of the current choice, make the whole panel a click target.
     const pIdx = playerOptIdx(p.player);
     const targeted = pIdx >= 0 && multi.has(pIdx);
@@ -656,27 +666,59 @@
     host.innerHTML = "";
     if (pid == null) return;
     const perms = bfOf(pid);
-    const lands = perms.filter(c => c.chars && isLand(c.chars));
-    const nonlands = perms.filter(c => !(c.chars && isLand(c.chars)));
-    const landRow = zoneRow("lands", lands);
-    const creatureRow = zoneRow("", nonlands);
+    // Auras/Equipment attached to a permanent (its `attachments` list) render BEHIND their host,
+    // not as standalone cards — so collect the attached ids and a lookup, and skip them in the rows.
+    const byId = {}; perms.forEach(c => byId[c.id] = c);
+    const attached = new Set();
+    perms.forEach(c => (c.attachments || []).forEach(id => attached.add(id)));
+    const top = perms.filter(c => !attached.has(c.id));
+    const lands = top.filter(c => c.chars && isLand(c.chars));
+    const nonlands = top.filter(c => !(c.chars && isLand(c.chars)));
+    const landRow = zoneRow("lands", lands, byId);
+    const creatureRow = zoneRow("", nonlands, byId);
     // opponent: lands back (top), creatures front (near midline). you: creatures front (top), lands back (bottom).
     if (isOppo) { host.appendChild(landRow); host.appendChild(creatureRow); }
     else { host.appendChild(creatureRow); host.appendChild(landRow); }
   }
 
-  function zoneRow(cls, cards) {
+  function zoneRow(cls, cards, byId) {
     const row = el("div", "row " + cls);
     if (!cards.length) { row.appendChild(el("span", "rowlabel", cls === "lands" ? "lands" : "—")); return row; }
-    cards.forEach(c => row.appendChild(cardEl(c, { interactive: true })));
+    cards.forEach(c => row.appendChild(permEl(c, byId || {})));
     return row;
+  }
+
+  // A battlefield permanent plus any auras/equipment attached to it, stacked slightly offset
+  // behind it (CR 303/301 attachments). Returns just the card when there are no attachments.
+  function permEl(c, byId) {
+    const atts = (c.attachments || []).map(id => byId[id]).filter(Boolean);
+    const card = cardEl(c, { interactive: true });
+    if (!atts.length) return card;
+    const wrap = el("div", "attachwrap");
+    // Attached cards sit behind, each nudged down-right so its corner peeks out; host on top.
+    atts.forEach((a, i) => {
+      const ac = cardEl(a, { interactive: true, attach: true });
+      ac.style.left = ((i + 1) * 13) + "px";
+      ac.style.top = ((i + 1) * 16) + "px";
+      ac.style.zIndex = String(i + 1);
+      wrap.appendChild(ac);
+    });
+    card.style.position = "relative";
+    card.style.zIndex = String(atts.length + 1);
+    wrap.appendChild(card);
+    // Reserve room for the peeking attachments so neighbours don't overlap them.
+    wrap.style.marginRight = (atts.length * 13) + "px";
+    wrap.style.marginBottom = (atts.length * 16) + "px";
+    return wrap;
   }
 
   function renderStack() {
     const s = $("stack");
     s.innerHTML = "";
     (view.stack || []).forEach(it => {
-      s.appendChild(cardEl({ id: it.id, chars: it.chars }, { onStack: true }));
+      const card = cardEl({ id: it.id, chars: it.chars }, { onStack: true });
+      card.dataset.sid = it.id; // target-arrow source (stack id space, distinct from object ids)
+      s.appendChild(card);
     });
   }
 
@@ -709,7 +751,9 @@
     const idx = ctx.interactive ? legalIdx(c.id) : -1;
     const selected = ctx.interactive && multi.has(idx) && idx >= 0;
     const d = el("div", ["card", colorClass(chars), c.tapped ? "tapped" : "", c.sick ? "sick" : "",
-      idx >= 0 ? "legal" : "", selected ? "selected" : "", ctx.hand ? "" : (ctx.onStack ? "" : "")].filter(Boolean).join(" "));
+      idx >= 0 ? "legal" : "", selected ? "selected" : "", ctx.attach ? "attach" : "",
+      ctx.hand ? "" : (ctx.onStack ? "" : "")].filter(Boolean).join(" "));
+    if (c.id != null) d.dataset.oid = c.id; // for target arrows + attachment lookup
 
     const hdr = el("div", "c-hdr");
     hdr.appendChild(el("div", "c-name", chars.name || "—"));
@@ -987,6 +1031,58 @@
   document.addEventListener("mousemove", (e) => { ptrX = e.clientX; ptrY = e.clientY; refreshPreview(); }, true);
   // Cursor leaves the document entirely (e.g. out the top of the window) → drop the preview.
   document.addEventListener("mouseout", (e) => { if (!e.relatedTarget) { ptrX = ptrY = -1; hidePreview(); } });
+
+  // ── stack → target arrows ─────────────────────────────────────────────────
+  const SVGNS = "http://www.w3.org/2000/svg";
+  // The arrowhead marker (defined once; reused by every arrow path).
+  const ARROW_DEFS =
+    '<defs><marker id="arrowhead" markerWidth="9" markerHeight="9" refX="7.5" refY="3" orient="auto">' +
+    '<path d="M0,0 L8,3 L0,6 Z" fill="#ff5a5a"/></marker></defs>';
+  function targetEl(t) {
+    if (t == null) return null;
+    if (t.Player != null) return document.querySelector('[data-pid="' + t.Player + '"]');
+    if (t.Object != null) return document.querySelector('.half [data-oid="' + t.Object + '"], .attachwrap [data-oid="' + t.Object + '"]');
+    if (t.Stack != null) return document.querySelector('[data-sid="' + t.Stack + '"]');
+    return null;
+  }
+  function centerOf(elm) { const r = elm.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }
+  function drawArrows() {
+    const svg = $("arrows");
+    svg.innerHTML = ARROW_DEFS;
+    const stack = (view && view.stack) || [];
+    stack.forEach(st => {
+      const fromEl = document.querySelector('[data-sid="' + st.id + '"]');
+      if (!fromEl) return;
+      const a = centerOf(fromEl);
+      (st.targets || []).forEach(t => {
+        const toEl = targetEl(t);
+        if (!toEl) return;
+        const b = centerOf(toEl);
+        // Quadratic curve bowed perpendicular to the line, so multiple arrows don't overlap.
+        const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+        const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1;
+        const bow = Math.min(60, len * 0.22);
+        const cx = mx - (dy / len) * bow, cy = my + (dx / len) * bow;
+        const path = document.createElementNS(SVGNS, "path");
+        path.setAttribute("d", "M" + a.x + "," + a.y + " Q" + cx + "," + cy + " " + b.x + "," + b.y);
+        path.setAttribute("fill", "none");
+        path.setAttribute("stroke", "#ff5a5a");
+        path.setAttribute("stroke-width", "2.5");
+        path.setAttribute("stroke-linecap", "round");
+        path.setAttribute("opacity", "0.9");
+        path.setAttribute("marker-end", "url(#arrowhead)");
+        svg.appendChild(path);
+        // A small dot at the source so it reads as "from here".
+        const dot = document.createElementNS(SVGNS, "circle");
+        dot.setAttribute("cx", a.x); dot.setAttribute("cy", a.y); dot.setAttribute("r", "3");
+        dot.setAttribute("fill", "#ff5a5a");
+        svg.appendChild(dot);
+      });
+    });
+  }
+  // Reposition arrows when the layout shifts (the board itself re-renders via render()).
+  window.addEventListener("resize", drawArrows);
+  window.addEventListener("scroll", drawArrows, true);
 
   function eventText(ev) {
     const k = Object.keys(ev)[0], v = ev[k];

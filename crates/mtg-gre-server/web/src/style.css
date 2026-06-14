@@ -217,6 +217,13 @@
   /* hover full-card preview */
   #preview { position: fixed; display: none; width: 320px; border-radius: 12px; z-index: 100;
     box-shadow: 0 12px 44px rgba(0,0,0,.75); pointer-events: none; }
+  /* Target arrows: a full-viewport SVG overlay drawn from stack cards to their targets. */
+  #arrows { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 60; }
+  /* Auras / equipment stacked behind their host. The wrapper is the row's flow element; the
+     attached cards are absolutely positioned behind, the host sits on top. */
+  .attachwrap { position: relative; flex: 0 0 auto; }
+  .attachwrap .card.attach { position: absolute; top: 0; left: 0; box-shadow: 0 3px 8px rgba(0,0,0,.6);
+    filter: brightness(.9); }
   /* God-view opponent hand strip (replay / spectate). */
   .godhand { border-bottom: 1px solid var(--line); }
   .godhand .hlabel { color: var(--accent2); }

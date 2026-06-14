@@ -192,7 +192,7 @@ function norm(o: Any): Any {
   const v = o.Visible;
   return { id: v.id, chars: v.chars, tapped: !!(v.status && v.status.tapped),
     sick: v.summoning_sick, dmg: v.damage_marked || 0, counters: v.counters,
-    controller: v.controller, owner: v.owner };
+    controller: v.controller, owner: v.owner, attachments: v.attachments || [] };
 }
 const meSeat = (): number => view.seat;
 const oppId = (): number | null => { const p = view.players.find((p: Any) => p.player !== meSeat()); return p ? p.player : null; };
@@ -214,6 +214,7 @@ function render(): void {
   renderHand();
   if (cur) renderPrompt();
   refreshPreview(); // re-derive the hover preview against the freshly-rebuilt DOM
+  drawArrows();     // draw stack→target arrows over the rebuilt board
 }
 
 // MTGO-style phase/step bar. `stop` = a priority-granting step you can stop at (StopType vocab).
@@ -308,6 +309,7 @@ function stopsSummary(ss: Any): string {
 
 function pinfoEl(p: Any, you: boolean): HTMLElement {
   const d = el("div", "pinfo" + (view.active_player === p.player ? " active" : ""));
+  d.dataset.pid = p.player; // target-arrow destination for player-targeting spells
   // If this player is a legal target of the current choice, make the whole panel a click target.
   const pIdx = playerOptIdx(p.player);
   const targeted = pIdx >= 0 && multi.has(pIdx);
@@ -376,25 +378,56 @@ function renderHalf(elId: string, pid: number | null, isOppo: boolean): void {
   host.innerHTML = "";
   if (pid == null) return;
   const perms = bfOf(pid);
-  const lands = perms.filter((c) => c.chars && isLand(c.chars));
-  const nonlands = perms.filter((c) => !(c.chars && isLand(c.chars)));
-  const landRow = zoneRow("lands", lands);
-  const creatureRow = zoneRow("", nonlands);
+  // Auras/Equipment attached to a permanent render BEHIND their host, not as standalone cards.
+  const byId: Any = {}; perms.forEach((c) => { byId[c.id] = c; });
+  const attached = new Set<number>();
+  perms.forEach((c) => (c.attachments || []).forEach((id: number) => attached.add(id)));
+  const top = perms.filter((c) => !attached.has(c.id));
+  const lands = top.filter((c) => c.chars && isLand(c.chars));
+  const nonlands = top.filter((c) => !(c.chars && isLand(c.chars)));
+  const landRow = zoneRow("lands", lands, byId);
+  const creatureRow = zoneRow("", nonlands, byId);
   if (isOppo) { host.appendChild(landRow); host.appendChild(creatureRow); }
   else { host.appendChild(creatureRow); host.appendChild(landRow); }
 }
 
-function zoneRow(cls: string, cards: Any[]): HTMLElement {
+function zoneRow(cls: string, cards: Any[], byId?: Any): HTMLElement {
   const row = el("div", "row " + cls);
   if (!cards.length) { row.appendChild(el("span", "rowlabel", cls === "lands" ? "lands" : "—")); return row; }
-  cards.forEach((c) => row.appendChild(cardEl(c, { interactive: true })));
+  cards.forEach((c) => row.appendChild(permEl(c, byId || {})));
   return row;
+}
+
+// A battlefield permanent plus any auras/equipment attached to it, stacked slightly offset behind
+// it (CR 303/301 attachments). Returns just the card when there are no attachments.
+function permEl(c: Any, byId: Any): HTMLElement {
+  const atts = (c.attachments || []).map((id: number) => byId[id]).filter(Boolean);
+  const card = cardEl(c, { interactive: true });
+  if (!atts.length) return card;
+  const wrap = el("div", "attachwrap");
+  atts.forEach((a: Any, i: number) => {
+    const ac = cardEl(a, { interactive: true, attach: true });
+    ac.style.left = `${(i + 1) * 13}px`;
+    ac.style.top = `${(i + 1) * 16}px`;
+    ac.style.zIndex = `${i + 1}`;
+    wrap.appendChild(ac);
+  });
+  card.style.position = "relative";
+  card.style.zIndex = `${atts.length + 1}`;
+  wrap.appendChild(card);
+  wrap.style.marginRight = `${atts.length * 13}px`;
+  wrap.style.marginBottom = `${atts.length * 16}px`;
+  return wrap;
 }
 
 function renderStack(): void {
   const s = $("stack");
   s.innerHTML = "";
-  (view.stack || []).forEach((it: Any) => s.appendChild(cardEl({ id: it.id, chars: it.chars }, {})));
+  (view.stack || []).forEach((it: Any) => {
+    const card = cardEl({ id: it.id, chars: it.chars }, {});
+    card.dataset.sid = it.id; // target-arrow source (stack id space, distinct from object ids)
+    s.appendChild(card);
+  });
 }
 
 function renderHand(): void {
@@ -425,7 +458,8 @@ function cardEl(c: Any, ctx: Any): HTMLElement {
   const idx = ctx.interactive ? legalIdx(c.id) : -1;
   const selected = ctx.interactive && idx >= 0 && multi.has(idx);
   const d = el("div", ["card", colorClass(chars), c.tapped ? "tapped" : "", c.sick ? "sick" : "",
-    idx >= 0 ? "legal" : "", selected ? "selected" : ""].filter(Boolean).join(" "));
+    idx >= 0 ? "legal" : "", selected ? "selected" : "", ctx.attach ? "attach" : ""].filter(Boolean).join(" "));
+  if (c.id != null) d.dataset.oid = c.id; // for target arrows + attachment lookup
 
   const hdr = el("div", "c-hdr");
   hdr.appendChild(el("div", "c-name", chars.name || "—"));
@@ -705,6 +739,56 @@ function refreshPreview(): void {
 document.addEventListener("mousemove", (e) => { ptrX = e.clientX; ptrY = e.clientY; refreshPreview(); }, true);
 // Cursor leaves the document entirely (e.g. out the top of the window) → drop the preview.
 document.addEventListener("mouseout", (e) => { if (!(e as MouseEvent).relatedTarget) { ptrX = ptrY = -1; hidePreview(); } });
+
+// ── stack → target arrows ──────────────────────────────────────────────────────
+const SVGNS = "http://www.w3.org/2000/svg";
+const ARROW_DEFS =
+  '<defs><marker id="arrowhead" markerWidth="9" markerHeight="9" refX="7.5" refY="3" orient="auto">' +
+  '<path d="M0,0 L8,3 L0,6 Z" fill="#ff5a5a"/></marker></defs>';
+function targetEl(t: Any): Element | null {
+  if (t == null) return null;
+  if (t.Player != null) return document.querySelector(`[data-pid="${t.Player}"]`);
+  if (t.Object != null) return document.querySelector(`.half [data-oid="${t.Object}"], .attachwrap [data-oid="${t.Object}"]`);
+  if (t.Stack != null) return document.querySelector(`[data-sid="${t.Stack}"]`);
+  return null;
+}
+function centerOf(elm: Element): { x: number; y: number } {
+  const r = elm.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+}
+function drawArrows(): void {
+  const svg = $("arrows");
+  svg.innerHTML = ARROW_DEFS;
+  const stack = (view && view.stack) || [];
+  stack.forEach((st: Any) => {
+    const fromEl = document.querySelector(`[data-sid="${st.id}"]`);
+    if (!fromEl) return;
+    const a = centerOf(fromEl);
+    (st.targets || []).forEach((t: Any) => {
+      const toEl = targetEl(t);
+      if (!toEl) return;
+      const b = centerOf(toEl);
+      const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+      const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1;
+      const bow = Math.min(60, len * 0.22);
+      const cx = mx - (dy / len) * bow, cy = my + (dx / len) * bow;
+      const path = document.createElementNS(SVGNS, "path");
+      path.setAttribute("d", `M${a.x},${a.y} Q${cx},${cy} ${b.x},${b.y}`);
+      path.setAttribute("fill", "none");
+      path.setAttribute("stroke", "#ff5a5a");
+      path.setAttribute("stroke-width", "2.5");
+      path.setAttribute("stroke-linecap", "round");
+      path.setAttribute("opacity", "0.9");
+      path.setAttribute("marker-end", "url(#arrowhead)");
+      svg.appendChild(path);
+      const dot = document.createElementNS(SVGNS, "circle");
+      dot.setAttribute("cx", `${a.x}`); dot.setAttribute("cy", `${a.y}`); dot.setAttribute("r", "3");
+      dot.setAttribute("fill", "#ff5a5a");
+      svg.appendChild(dot);
+    });
+  });
+}
+window.addEventListener("resize", drawArrows);
+window.addEventListener("scroll", drawArrows, true);
 
 function eventText(ev: Any): string | null {
   const k = Object.keys(ev)[0]; const v = ev[k];
