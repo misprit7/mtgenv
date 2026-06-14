@@ -54,6 +54,12 @@
   .midline { height: 0; border-top: 1px dashed rgba(255,255,255,.18); margin: 2px 0; }
   .row { display: flex; gap: 7px; flex-wrap: wrap; align-items: flex-start; min-height: 96px; align-content: flex-start; }
   .row.lands { min-height: 80px; }
+  /* Creature band: two side-by-side groups (don't wrap the groups; each wraps internally). */
+  .row.creatures { flex-wrap: nowrap; gap: 0; }
+  .permgroup { display: flex; gap: 7px; flex-wrap: wrap; align-items: flex-start; align-content: flex-start; }
+  .permgroup.cg { flex: 1 1 auto; min-width: 0; }            /* creatures — grow, wrap internally */
+  .permgroup.og { flex: 0 0 auto; align-self: stretch; max-width: 45%;  /* noncreature artifacts/enchantments — off to the right */
+    margin-left: 10px; padding-left: 12px; border-left: 1px dashed var(--line); }
   .rowlabel { color: var(--muted); font-size: 9px; text-transform: uppercase; letter-spacing: .08em;
     align-self: center; width: 46px; flex: 0 0 46px; text-align: right; padding-right: 4px; opacity: .65; }
 

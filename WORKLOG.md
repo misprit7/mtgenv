@@ -5,6 +5,12 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **webui:** Battlefield layout — permanents are now bucketed creatures-first: anything that **is a
+  creature** (incl. artifact/enchantment creatures and creature-lands) goes in the creature band;
+  remaining noncreature artifacts/enchantments/walkers render in a divided group **off to the right**
+  of the creatures; lands keep their own back row. New `isCreature` helper + `creatureBand()` +
+  `.permgroup` CSS, mirrored across `embedded_client.html`/`main.ts`/`style.css`. Also regenerated
+  `card-art.json` (+Keen-Eyed Curator, now deck-listed → 35 entries; startup warning clean).
 - **design:** **🎉 SELESNYA DECK COMPLETE — 18/18 distinct cards = the real mtggoldfish 60.** Authored
   the last card, **Keen-Eyed Curator** (`cards/blb/keen_eyed_curator.rs`, id 117, commit df2abae), as
   **`fully_implemented: true`** against C17 (e002d7a + b18c6f6): `{1}: Exile target card from a graveyard`

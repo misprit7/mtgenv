@@ -203,6 +203,7 @@ const meSeat = (): number => view.seat;
 const oppId = (): number | null => { const p = view.players.find((p: Any) => p.player !== meSeat()); return p ? p.player : null; };
 function bfOf(pid: number): Any[] { return view.battlefield.map(norm).filter((c: Any) => c.controller === pid); }
 function isLand(chars: Any): boolean { return (chars.card_types || chars.cardTypes || []).includes("Land"); }
+function isCreature(chars: Any): boolean { return (chars.card_types || chars.cardTypes || []).includes("Creature"); }
 function pub(pid: number | null): Any { return view.players.find((p: Any) => p.player === pid) || {}; }
 function legalIdx(id: number): number { return cur ? (cur.prompt.option_objs || cur.prompt.optionObjs || []).indexOf(id) : -1; }
 
@@ -397,10 +398,16 @@ function renderHalf(elId: string, pid: number | null, isOppo: boolean): void {
   const attached = new Set<number>();
   perms.forEach((c) => (c.attachments || []).forEach((id: number) => attached.add(id)));
   const top = perms.filter((c) => !attached.has(c.id));
-  const lands = top.filter((c) => c.chars && isLand(c.chars));
-  const nonlands = top.filter((c) => !(c.chars && isLand(c.chars)));
+  // Three buckets. Creatures take priority over every other type: an artifact/enchantment/land that
+  // is ALSO a creature goes with the creatures (it attacks/blocks). Unknown (no chars, e.g.
+  // face-down) defaults to the creature row too. Remaining noncreature permanents split into lands
+  // (their own back row) and "others" — noncreature artifacts/enchantments/planeswalkers, which
+  // render off to the RIGHT of the creatures in the same band.
+  const creatures = top.filter((c) => !c.chars || isCreature(c.chars));
+  const lands = top.filter((c) => c.chars && !isCreature(c.chars) && isLand(c.chars));
+  const others = top.filter((c) => c.chars && !isCreature(c.chars) && !isLand(c.chars));
   const landRow = zoneRow("lands", lands, byId);
-  const creatureRow = zoneRow("", nonlands, byId);
+  const creatureRow = creatureBand(creatures, others, byId);
   if (isOppo) { host.appendChild(landRow); host.appendChild(creatureRow); }
   else { host.appendChild(creatureRow); host.appendChild(landRow); }
 }
@@ -409,6 +416,23 @@ function zoneRow(cls: string, cards: Any[], byId?: Any): HTMLElement {
   const row = el("div", "row " + cls);
   if (!cards.length) { row.appendChild(el("span", "rowlabel", cls === "lands" ? "lands" : "—")); return row; }
   cards.forEach((c) => row.appendChild(permEl(c, byId || {})));
+  return row;
+}
+
+// The creature band: creatures fill from the left; noncreature artifacts/enchantments/walkers sit in
+// a separate group off to the right (divider + right-aligned), so combat permanents stay visually
+// distinct from static/utility ones.
+function creatureBand(creatures: Any[], others: Any[], byId?: Any): HTMLElement {
+  const row = el("div", "row creatures");
+  if (!creatures.length && !others.length) { row.appendChild(el("span", "rowlabel", "—")); return row; }
+  const cg = el("div", "permgroup cg");
+  creatures.forEach((c) => cg.appendChild(permEl(c, byId || {})));
+  row.appendChild(cg);
+  if (others.length) {
+    const og = el("div", "permgroup og");
+    others.forEach((c) => og.appendChild(permEl(c, byId || {})));
+    row.appendChild(og);
+  }
   return row;
 }
 

@@ -61,6 +61,12 @@
   .midline { height: 0; border-top: 1px dashed rgba(255,255,255,.18); margin: 2px 0; }
   .row { display: flex; gap: 7px; flex-wrap: wrap; align-items: flex-start; min-height: 96px; align-content: flex-start; }
   .row.lands { min-height: 80px; }
+  /* Creature band: two side-by-side groups (don't wrap the groups; each wraps internally). */
+  .row.creatures { flex-wrap: nowrap; gap: 0; }
+  .permgroup { display: flex; gap: 7px; flex-wrap: wrap; align-items: flex-start; align-content: flex-start; }
+  .permgroup.cg { flex: 1 1 auto; min-width: 0; }            /* creatures — grow, wrap internally */
+  .permgroup.og { flex: 0 0 auto; align-self: stretch; max-width: 45%;  /* noncreature artifacts/enchantments — off to the right */
+    margin-left: 10px; padding-left: 12px; border-left: 1px dashed var(--line); }
   .rowlabel { color: var(--muted); font-size: 9px; text-transform: uppercase; letter-spacing: .08em;
     align-self: center; width: 46px; flex: 0 0 46px; text-align: right; padding-right: 4px; opacity: .65; }
 
@@ -505,6 +511,7 @@
   const oppId = () => { const p = view.players.find(p => p.player !== me()); return p ? p.player : null; };
   function bfOf(pid) { return view.battlefield.map(norm).filter(c => c.controller === pid); }
   function isLand(chars) { return (chars.card_types || chars.cardTypes || []).includes("Land"); }
+  function isCreature(chars) { return (chars.card_types || chars.cardTypes || []).includes("Creature"); }
   function pub(pid) { return view.players.find(p => p.player === pid) || {}; }
 
   // option_objs lookup → option index for a clicked card (or -1)
@@ -699,10 +706,16 @@
     const attached = new Set();
     perms.forEach(c => (c.attachments || []).forEach(id => attached.add(id)));
     const top = perms.filter(c => !attached.has(c.id));
-    const lands = top.filter(c => c.chars && isLand(c.chars));
-    const nonlands = top.filter(c => !(c.chars && isLand(c.chars)));
+    // Three buckets. Creatures take priority over every other type: an artifact/enchantment/land
+    // that is ALSO a creature goes with the creatures (it attacks/blocks). Unknown (no chars,
+    // e.g. face-down) defaults to the creature row too. Remaining noncreature permanents split into
+    // lands (their own back row) and "others" — noncreature artifacts/enchantments/planeswalkers,
+    // which render off to the RIGHT of the creatures in the same band.
+    const creatures = top.filter(c => !c.chars || isCreature(c.chars));
+    const lands = top.filter(c => c.chars && !isCreature(c.chars) && isLand(c.chars));
+    const others = top.filter(c => c.chars && !isCreature(c.chars) && !isLand(c.chars));
     const landRow = zoneRow("lands", lands, byId);
-    const creatureRow = zoneRow("", nonlands, byId);
+    const creatureRow = creatureBand(creatures, others, byId);
     // opponent: lands back (top), creatures front (near midline). you: creatures front (top), lands back (bottom).
     if (isOppo) { host.appendChild(landRow); host.appendChild(creatureRow); }
     else { host.appendChild(creatureRow); host.appendChild(landRow); }
@@ -712,6 +725,23 @@
     const row = el("div", "row " + cls);
     if (!cards.length) { row.appendChild(el("span", "rowlabel", cls === "lands" ? "lands" : "—")); return row; }
     cards.forEach(c => row.appendChild(permEl(c, byId || {})));
+    return row;
+  }
+
+  // The creature band: creatures fill from the left; noncreature artifacts/enchantments/walkers sit
+  // in a separate group off to the right (divider + right-aligned), so combat permanents stay
+  // visually distinct from static/utility ones.
+  function creatureBand(creatures, others, byId) {
+    const row = el("div", "row creatures");
+    if (!creatures.length && !others.length) { row.appendChild(el("span", "rowlabel", "—")); return row; }
+    const cg = el("div", "permgroup cg");
+    creatures.forEach(c => cg.appendChild(permEl(c, byId || {})));
+    row.appendChild(cg);
+    if (others.length) {
+      const og = el("div", "permgroup og");
+      others.forEach(c => og.appendChild(permEl(c, byId || {})));
+      row.appendChild(og);
+    }
     return row;
   }
 
