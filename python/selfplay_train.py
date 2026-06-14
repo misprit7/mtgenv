@@ -105,6 +105,50 @@ class SelfPlayEval(BaseCallback):
         return True
 
 
+class LadderEval(BaseCallback):
+    """%-trained checkpoint ladder: win-rate of the *current* policy vs its OWN frozen snapshots at
+    fixed training-fraction milestones (10/25/50/75% of the budget). Unlike vs-random (which
+    saturates fast), this is a non-saturating, self-relative progress curve — a still-improving
+    policy keeps beating its earlier selves. Each milestone reads **NaN** until that fraction of
+    training is reached (expected/handled, shown as a gap in TB), then logs `ladder/winrate_vs_NNpct`.
+    """
+
+    def __init__(self, deck, total_timesteps, eval_freq, n_envs, save_dir,
+                 milestones=(0.10, 0.25, 0.50, 0.75), n_games=40, verbose=0):
+        super().__init__(verbose)
+        self.deck = deck
+        self.total = max(int(total_timesteps), 1)
+        self.every = max(eval_freq // n_envs, 1)
+        self.save_dir = save_dir
+        self.milestones = milestones
+        self.n_games = n_games
+        self._snap = {}  # pct -> ModelOpponent frozen at that milestone
+
+    def _on_training_start(self) -> None:
+        os.makedirs(self.save_dir, exist_ok=True)
+
+    def _maybe_snapshot(self):
+        for m in self.milestones:
+            pct = int(round(m * 100))
+            if pct not in self._snap and self.num_timesteps >= m * self.total:
+                path = os.path.join(self.save_dir, f"ladder_{pct:02d}")
+                self.model.save(path)  # freeze the policy AS IT IS at this training fraction
+                self._snap[pct] = ModelOpponent(path + ".zip")
+
+    def _on_step(self) -> bool:
+        self._maybe_snapshot()
+        if self.n_calls % self.every == 0:
+            for m in self.milestones:
+                pct = int(round(m * 100))
+                wr = (
+                    play_winrate(self.model, self.deck, self._snap[pct], self.n_games, 7_000_000 + pct)
+                    if pct in self._snap
+                    else float("nan")  # not reached yet → NaN (a gap in TB, not an error)
+                )
+                self.logger.record(f"ladder/winrate_vs_{pct:02d}pct", wr)
+        return True
+
+
 def _clean(*paths):
     for p in paths:
         for f in glob.glob(p):
