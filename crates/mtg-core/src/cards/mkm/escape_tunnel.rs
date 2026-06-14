@@ -228,4 +228,56 @@ mod tests {
         );
         expect![["library=0 battlefield=1 fetched_tapped=Some(true)"]].assert_eq(&render);
     }
+
+    /// Behaviour: resolving the *actual* second ability (`abilities[1]`, not a hand-built effect)
+    /// against a power-2 creature grants `CantBeBlocked` until end of turn, and it wears off at
+    /// cleanup (CR 509.1b / 514.2). Pins the card's real `GrantQualification{ Target(PowerAtMost(2)) }`
+    /// IR — the engine's `combat::cant_be_blocked_until_eot_escape_tunnel` only exercises a synthetic
+    /// `ChosenIndex` effect, so this is the card-side guard that the ability is wired correctly.
+    #[test]
+    fn escape_tunnel_makes_a_small_creature_unblockable_until_eot() {
+        use crate::agent::RandomAgent;
+        use crate::basics::{Target, Zone};
+        use crate::cards::{build_game, grp};
+        use crate::effects::ability::Qualification;
+        use crate::effects::action::{ResolutionCtx, WbReason};
+        use crate::ids::{PlayerId, StackId};
+        use crate::priority::Engine;
+
+        let mut state = build_game(1, &[&[], &[]]);
+        // Grizzly Bears is a vanilla 2/2 — power 2 ≤ 2, a legal target for the ability.
+        let bears_chars = state.card_db().get(grp::GRIZZLY_BEARS).unwrap().chars.clone();
+        let bears = state.add_card(PlayerId(0), bears_chars, Zone::Battlefield);
+        // The card's REAL second ability effect (the can't-be-blocked grant).
+        let grant = match &state.card_db().get(ESCAPE_TUNNEL).unwrap().abilities[1] {
+            Ability::Activated { effect, .. } => effect.clone(),
+            o => panic!("expected the grant Activated, got {o:?}"),
+        };
+        let mut e = Engine::new(
+            state,
+            vec![Box::new(RandomAgent::new(0)), Box::new(RandomAgent::new(1))],
+        );
+        assert!(
+            !e.state.computed(bears).has_qualification(Qualification::CantBeBlocked),
+            "no qualification before the ability resolves"
+        );
+        e.resolve_effect(
+            &grant,
+            &ResolutionCtx {
+                controller: Some(PlayerId(0)),
+                chosen_targets: vec![Target::Object(bears)],
+                ..Default::default()
+            },
+            WbReason::Resolve(StackId(0)),
+        );
+        assert!(
+            e.state.computed(bears).has_qualification(Qualification::CantBeBlocked),
+            "after resolving abilities[1], the power-2 creature can't be blocked this turn"
+        );
+        e.state.end_of_turn_continuous_cleanup();
+        assert!(
+            !e.state.computed(bears).has_qualification(Qualification::CantBeBlocked),
+            "the can't-be-blocked grant wears off at cleanup"
+        );
+    }
 }

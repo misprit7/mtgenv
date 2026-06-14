@@ -143,4 +143,71 @@ mod tests {
         assert!(!e.state.players[1].battlefield.contains(&victim), "destroyed (off the battlefield)");
         assert!(e.state.players[1].graveyard.contains(&victim), "in its owner's graveyard");
     }
+
+    /// Behaviour: the "its controller may search …" rider benefits the **destroyed permanent's
+    /// controller** (`ControllerOfTarget(0)` = the opponent P1), not the caster (P0). With a basic in
+    /// P1's library and P1 choosing to take it, the basic enters **P1's** battlefield **tapped**, the
+    /// victim is in P1's graveyard, and **P0 gains nothing**. Pins that the rider's `who` is the
+    /// opponent — the subtle clause the destroy-only test couldn't see (empty library, min 0).
+    #[test]
+    fn erode_controller_fetches_a_basic_tapped_for_the_opponent() {
+        use crate::agent::{Agent, DecisionRequest, DecisionResponse, PlayerView};
+        use crate::basics::{Target, Zone};
+        use crate::cards::{build_game, grp};
+        use crate::effects::action::{ResolutionCtx, WbReason};
+        use crate::ids::{PlayerId, StackId};
+        use crate::priority::Engine;
+
+        // Takes any offered "may" fetch (the opponent here opts in).
+        #[derive(Clone)]
+        struct TakeItAgent;
+        impl Agent for TakeItAgent {
+            fn decide(&mut self, _v: &PlayerView, req: &DecisionRequest) -> DecisionResponse {
+                match req {
+                    DecisionRequest::Confirm { .. } => DecisionResponse::Bool(true),
+                    DecisionRequest::SelectCards { from, min, max, .. } => {
+                        let n = (*min).max(1).min(*max).min(from.len() as u32);
+                        DecisionResponse::Indices((0..n).collect())
+                    }
+                    _ => DecisionResponse::Pass,
+                }
+            }
+        }
+
+        // P1 (the opponent) has a Forest to fetch; P0 (the caster) has nothing.
+        let mut state = build_game(1, &[&[], &[grp::FOREST]]);
+        let bears_chars = state.card_db().get(grp::GRIZZLY_BEARS).unwrap().chars.clone();
+        let victim = state.add_card(PlayerId(1), bears_chars, Zone::Battlefield); // opponent's creature
+        let erode = state.card_db().get(ERODE).unwrap().spell_effect().unwrap().clone();
+        let mut e = Engine::new(state, vec![Box::new(TakeItAgent), Box::new(TakeItAgent)]);
+        e.resolve_effect(
+            &erode,
+            &ResolutionCtx {
+                controller: Some(PlayerId(0)), // P0 casts Erode
+                chosen_targets: vec![Target::Object(victim)],
+                // The real cast path snapshots each target's controller at resolution start (so
+                // `ControllerOfTarget(0)` survives the Destroy). A direct `resolve_effect` must
+                // supply it; without it `ControllerOfTarget` would wrongly fall back to the caster.
+                target_controllers: vec![Some(PlayerId(1))],
+                ..Default::default()
+            },
+            WbReason::Resolve(StackId(0)),
+        );
+        // The opponent's library is empty (the Forest was fetched) and now sits on P1's battlefield…
+        assert!(e.state.players[1].graveyard.contains(&victim), "victim destroyed → P1 graveyard");
+        let fetched: Vec<_> = e.state.players[1]
+            .battlefield
+            .iter()
+            .filter(|&&o| e.state.objects.get(&o).map(|x| x.chars.grp_id) == Some(grp::FOREST))
+            .copied()
+            .collect();
+        assert_eq!(fetched.len(), 1, "exactly one basic fetched onto P1's battlefield");
+        assert!(
+            e.state.objects.get(&fetched[0]).unwrap().status.tapped,
+            "the fetched basic enters tapped"
+        );
+        assert!(e.state.players[1].library.is_empty(), "P1's library emptied by the fetch");
+        // The caster (P0) gains nothing from the opponent's rider.
+        assert!(e.state.players[0].battlefield.is_empty(), "P0 (caster) gets no land");
+    }
 }
