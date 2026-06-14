@@ -5,6 +5,24 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **engine:** **C12 earthbend fully landed — two new reusable subsystems + the full mechanic**
+  (3 green commits). (A) `3d4b636` **floating continuous-effect subsystem** (CR 611): a
+  `chars::ContinuousEffect` registry in `GameState` for resolution-granted statics (fixed affected
+  set + `StaticContribution`s + `Duration`), folded into the layer system alongside printed statics
+  via a `Filter`/`Fixed` scope; `add_continuous_effect`/`expire_continuous_effects`. The reusable
+  home for until-EOT pumps + animations. (B) `db81497` **`Effect::Earthbend{target,n}` +
+  `Action::GrantContinuous`**: animates the target land to a 0/0 haste land-creature + N +1/+1
+  counters. (C) `21171dc` **delayed triggered abilities** (CR 603.7): `GameState.delayed_triggers`
+  armed via `Action::RegisterDelayedTrigger`, fired+consumed on the watched object's death/exile,
+  put on the stack as `StackObjectKind::DelayedAbility{actions}` (concrete serializable Actions, no
+  `Effect` tree) → Earthbend's "when it dies or is exiled, return it tapped". `Action` gained `Eq`
+  (additive). Tests: synthetic land-animation + expiry (chars), Earthbend resolve → 2/2 land
+  creature (priority), and end-to-end Earthbend 0 → 0/0 dies to SBA → returns tapped as a PLAIN land
+  (animation correctly does NOT follow the new object). 157 core tests green. **Unblocks:** design's
+  **Ba Sing Se** flips to `fully_implemented: true` with no card change; the return-tapped gap on
+  **Badgermole Cub** + **Earthbender Ascension** is closed (they stay incomplete only on their other
+  unbuilt mechanics — reflexive mana trigger / quest-counter chain). Reusable for future caps:
+  grant-keyword-until-EOT (Ascension's trample) + PumpPT-until-EOT can now use the same registry.
 - **design:** **Surrak, Elusive Hunter authored (13th card) + pending-cap IR staged.** (1) Surrak
   (`cards/tdm/surrak_elusive_hunter.rs`, id 112, `{2}{G}` Legendary Human Warrior 4/3, commit
   fc24c83): **trample works today** (printed `Keyword`); `fully_implemented:false` with two tracked

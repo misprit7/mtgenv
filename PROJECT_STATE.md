@@ -50,6 +50,15 @@ MTGA client.
 
 ## Current state
 
+- **engine: C12 earthbend landed → two new reusable continuous/triggered subsystems.** The layer
+  system now folds in **resolution-granted continuous effects** (`chars::ContinuousEffect` floating
+  in `GameState`, the home for until-EOT pumps + animations) alongside printed statics, and the
+  engine supports **delayed triggered abilities** (CR 603.7, `GameState.delayed_triggers` →
+  `StackObjectKind::DelayedAbility` carrying concrete Actions). Earthbend (`Effect::Earthbend`)
+  uses both: animate a target land to a 0/0 haste land-creature + N counters, with "when it dies or
+  is exiled, return it tapped". Ba Sing Se is now fully implementable with no card change; the
+  earthbend gap on Badgermole Cub + Earthbender Ascension is closed (those stay incomplete only on
+  their other unbuilt mechanics). Card pool ~14 across tdm/tla; 157 mtg-core tests green.
 - **Phase: parallel build kicked off** via a tmux agent team (`mtgenv`, lead + 4 teammates).
   Active workstreams (shared task board): **engine** scaffolding the Cargo workspace +
   headless `mtg-core` (#1); **decompile** recovering the GRE schema **and transport** in
