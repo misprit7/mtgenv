@@ -219,4 +219,64 @@ mod tests {
         assert!(!e.state.players[1].graveyard.contains(&victim), "left the graveyard");
         assert!(e.state.players[1].exile.contains(&victim), "now in its owner's exile");
     }
+
+    /// #60 end-to-end (the REAL activate path): activate "{1}: Exile target card from a graveyard" via
+    /// `activate_ability` — the engine chooses the target through `ChooseTargets`, **auto-pays `{1}`**
+    /// (taps a land), and `resolve_top` resolves it. Asserts the cost happened (land tapped), the card
+    /// moved graveyard → exile, and it's **linked to the curator** via `exiled_with` (the link that
+    /// feeds the "4+ card types among cards exiled with this creature" static buff).
+    ///
+    /// CURRENTLY FAILS — engine bug **#63**: `target_legal` only treats a `Battlefield` object as a
+    /// still-legal target, so `resolve_top`'s `targets_still_legal` guard wrongly fizzles a graveyard
+    /// target and the ability no-ops. The card-side resolve-level test (`keen_eyed_exiles_a_graveyard_card`)
+    /// passes only because it bypasses that guard. Un-ignore when #63 lands.
+    #[ignore = "blocked on engine #63: target_legal fizzles non-battlefield (graveyard) targets at resolve_top"]
+    #[test]
+    fn keen_eyed_exile_via_full_activation() {
+        use crate::agent::{AbilityRef, Agent, DecisionRequest, DecisionResponse, PlayerView};
+        use crate::basics::Zone;
+        use crate::cards::{grp, starter_db};
+        use crate::ids::PlayerId;
+        use crate::priority::Engine;
+        use crate::state::GameState;
+        use std::sync::Arc;
+
+        #[derive(Clone)]
+        struct PlayAgent;
+        impl Agent for PlayAgent {
+            fn decide(&mut self, _v: &PlayerView, req: &DecisionRequest) -> DecisionResponse {
+                match req {
+                    DecisionRequest::ChooseTargets { .. } => DecisionResponse::Pairs(vec![(0, 0)]),
+                    _ => DecisionResponse::Pass,
+                }
+            }
+        }
+
+        let mut state = GameState::new(2, 1);
+        state.set_card_db(Arc::new(starter_db()));
+        let curator = {
+            let c = state.card_db().get(KEEN_EYED_CURATOR).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, Zone::Battlefield)
+        };
+        let land = {
+            let c = state.card_db().get(grp::FOREST).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, Zone::Battlefield) // pays {1}
+        };
+        let victim = {
+            let c = state.card_db().get(grp::GRIZZLY_BEARS).unwrap().chars.clone();
+            state.add_card(PlayerId(1), c, Zone::Graveyard)
+        };
+        let mut e = Engine::new(state, vec![Box::new(PlayAgent), Box::new(PlayAgent)]);
+        e.activate_ability(PlayerId(0), curator, AbilityRef(0)); // {1}, target the graveyard card
+        e.resolve_top();
+
+        assert!(e.state.object(land).status.tapped, "a land was tapped to pay {{1}}");
+        assert!(!e.state.players[1].graveyard.contains(&victim), "left the graveyard");
+        assert!(e.state.players[1].exile.contains(&victim), "now in its owner's exile");
+        assert_eq!(
+            e.state.object(victim).exiled_with,
+            Some(curator),
+            "the exiled card is linked to the curator (drives the +4/+4 & trample static)"
+        );
+    }
 }
