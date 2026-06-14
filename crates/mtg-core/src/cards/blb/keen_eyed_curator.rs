@@ -226,11 +226,10 @@ mod tests {
     /// moved graveyard → exile, and it's **linked to the curator** via `exiled_with` (the link that
     /// feeds the "4+ card types among cards exiled with this creature" static buff).
     ///
-    /// CURRENTLY FAILS — engine bug **#64**: `target_legal` only treats a `Battlefield` object as a
-    /// still-legal target, so `resolve_top`'s `targets_still_legal` guard wrongly fizzles a graveyard
-    /// target and the ability no-ops. The card-side resolve-level test (`keen_eyed_exiles_a_graveyard_card`)
-    /// passes only because it bypasses that guard. Un-ignore when #64 lands.
-    #[ignore = "blocked on engine #64: target_legal fizzles non-battlefield (graveyard) targets at resolve_top"]
+    /// Drives the REAL activate→pay→resolve_top path (not the resolve-level shortcut). This used to
+    /// fizzle on engine bug **#64** — `resolve_top`'s `targets_still_legal` only treated a
+    /// `Battlefield` object as legal, wrongly countering a graveyard target — now FIXED: the re-check
+    /// is spec-aware (a `CardInZone` target is legal while it's still in that zone).
     #[test]
     fn keen_eyed_exile_via_full_activation() {
         use crate::agent::{AbilityRef, Agent, DecisionRequest, DecisionResponse, PlayerView};

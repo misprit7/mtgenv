@@ -1716,12 +1716,41 @@ impl Engine {
             .is_some_and(|o| o.chars.subtypes.contains(&Subtype::Enchantment(EnchantmentType::Aura)))
     }
 
-    /// CR 608.2b: a spell/ability resolves unless *every* target is illegal. (Returns true if
-    /// it has no targets.)
-    fn targets_still_legal(&self, targets: &[Target]) -> bool {
-        targets.is_empty() || targets.iter().any(|t| self.target_legal(t))
+    /// CR 608.2b: a spell/ability resolves unless *every* target is illegal. Each target is
+    /// re-checked against the zone its `TargetSpec` requires (`specs[i]`), so a graveyard target
+    /// (Keen-Eyed exile) or a stack target (Surrak) isn't wrongly fizzled by a battlefield-only
+    /// check (#63). `specs` is collected in the same order the targets were chosen; a missing spec
+    /// falls back to the spec-less existence check. (Returns true if there are no targets.)
+    fn targets_still_legal(&self, targets: &[Target], specs: &[TargetSpec]) -> bool {
+        if targets.is_empty() {
+            return true;
+        }
+        targets.iter().enumerate().any(|(i, t)| match specs.get(i) {
+            Some(spec) => self.target_legal_for(t, spec),
+            None => self.target_legal(t),
+        })
     }
 
+    /// A chosen target re-checked against the zone its spec requires (CR 608.2b) — the #63 fix.
+    /// A `CardInZone` target must still be in that public zone; a `StackObject` target still on the
+    /// stack; everything else (creature/permanent/any) still on the battlefield (so a battlefield
+    /// target that died — moved to the graveyard — correctly becomes illegal).
+    fn target_legal_for(&self, t: &Target, spec: &TargetSpec) -> bool {
+        match t {
+            Target::Player(p) => {
+                self.state.players.get(p.0 as usize).is_some_and(|pl| !pl.has_lost)
+            }
+            Target::Stack(sid) => self.state.stack.items.iter().any(|s| s.id == *sid),
+            Target::Object(o) => self.state.objects.get(o).is_some_and(|obj| match &spec.kind {
+                TargetKind::CardInZone { zone, .. } => obj.zone == *zone,
+                TargetKind::StackObject(_) => obj.zone == Zone::Stack,
+                _ => obj.zone == Zone::Battlefield,
+            }),
+        }
+    }
+
+    /// The spec-less fallback: whether `t` still exists on the battlefield / as a live player. Used
+    /// only when a caller has no `TargetSpec` to hand; spec-aware callers use [`target_legal_for`].
     fn target_legal(&self, t: &Target) -> bool {
         match t {
             Target::Player(p) => self
@@ -1768,7 +1797,7 @@ impl Engine {
                 if is_perm {
                     // An Aura spell whose target became illegal doesn't resolve — it's put into
                     // its owner's graveyard (CR 608.3b / 702.3 — no enters-attached).
-                    if self.is_aura(id) && !self.targets_still_legal(&obj.targets) {
+                    if self.is_aura(id) && !self.targets_still_legal(&obj.targets, &[]) {
                         self.state.move_object(id, Zone::Graveyard, owner);
                         self.broadcast(GameEvent::ObjectMoved { obj: id, to: Zone::Graveyard });
                         return;
@@ -1818,7 +1847,7 @@ impl Engine {
                     // then put it into its owner's graveyard (608.2n).
                     let effect = self.state.def_of(id).and_then(|d| d.spell_effect().cloned());
                     if let Some(effect) = effect {
-                        if self.targets_still_legal(&obj.targets) {
+                        if self.targets_still_legal(&obj.targets, &target_specs_for(&effect, &obj.modes)) {
                             let ctx = ResolutionCtx {
                                 controller: Some(obj.controller),
                                 source: Some(id),
@@ -1851,7 +1880,7 @@ impl Engine {
                     })
                 });
                 if let (Some(effect), Some(src)) = (effect, obj.source) {
-                    if self.targets_still_legal(&obj.targets) {
+                    if self.targets_still_legal(&obj.targets, &target_specs_for(&effect, &obj.modes)) {
                         let ctx = ResolutionCtx {
                             controller: Some(obj.controller),
                             source: Some(src),
@@ -1874,7 +1903,7 @@ impl Engine {
                 let node = self.reflexive_node(source, ability_index);
                 let then = node.as_ref().and_then(|n| reflexive_reward(&self.state, n, source)).cloned();
                 if let Some(then) = then {
-                    if self.targets_still_legal(&obj.targets) {
+                    if self.targets_still_legal(&obj.targets, &target_specs_for(&then, &[])) {
                         let ctx = ResolutionCtx {
                             controller: Some(obj.controller),
                             source: Some(source),
@@ -2610,6 +2639,25 @@ pub(crate) fn collect_target_specs(effect: &Effect) -> Vec<TargetSpec> {
     let mut out = Vec::new();
     collect_specs_into(effect, &mut out);
     out
+}
+
+/// The `TargetSpec`s an effect's targets were chosen against, in the SAME order they were collected
+/// at cast/activation — so they align 1:1 with a stack object's `targets` for the resolution-time
+/// re-check (CR 608.2b, #63). For a modal effect this is the specs of the CHOSEN modes only (a
+/// non-chosen mode contributes no targets); otherwise the whole effect's specs.
+pub(crate) fn target_specs_for(effect: &Effect, chosen_modes: &[u32]) -> Vec<TargetSpec> {
+    match effect {
+        Effect::Modal { modes, .. } => {
+            let mut out = Vec::new();
+            for &m in chosen_modes {
+                if let Some(mode) = modes.get(m as usize) {
+                    collect_specs_into(&mode.effect, &mut out);
+                }
+            }
+            out
+        }
+        e => collect_target_specs(e),
+    }
 }
 
 fn collect_specs_into(effect: &Effect, out: &mut Vec<TargetSpec>) {
