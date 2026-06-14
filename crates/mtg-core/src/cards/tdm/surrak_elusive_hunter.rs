@@ -10,6 +10,11 @@
 //! IMPLEMENTED:
 //! - **Trample** (CR 702.19) — a printed `Keyword`, read by combat-damage assignment today.
 //! - 4/3 P/T, Legendary supertype, Human Warrior subtypes (printed characteristics).
+//! - **"Whenever a creature you control becomes the target of a spell or ability an opponent
+//!   controls, draw a card"** (the battlefield-creature half) — a `Triggered{ BecomesTargeted{
+//!   filter: creature you control, by_opponent: true } }` → `Draw 1` (C16). Fires once per matching
+//!   creature that becomes a target (CR 603.2e), so an opponent's spell hitting two of your creatures
+//!   draws two.
 //!
 //! INCOMPLETE — TRACKED (`fully_implemented: false`), two genuine capability gaps, NOT approximated:
 //!   1. **"This spell can't be countered."** Modeled faithfully as the CR-correct static ability
@@ -20,18 +25,20 @@
 //!      subsystem in the pool. The IR declares the intent; the engine grows to interpret it. Flagged
 //!      to engine (capability: stack-zone static gathering + a counter check that respects the
 //!      qualification).
-//!   2. **"Whenever a creature you control / a creature spell you control becomes the target of a
-//!      spell or ability an opponent controls, draw a card."** Needs the **becomes-targeted** event
-//!      pattern (engine cap **C16**) — a trigger keyed on an object/stack-object *becoming a target*,
-//!      scoped to opponent-controlled sources. Left unbuilt until C16 lands; authoring the trigger
-//!      then is a one-liner against the existing `Effect::Draw`. Not approximated.
+//!   2. The **"creature SPELL you control"** half of the draw trigger — when an opponent targets your
+//!      creature *spell on the stack* (not a permanent). The C16 event fires only for permanents
+//!      (`Target::Object`); the stack-object case (`Target::Stack`) is a deferred capability. So the
+//!      authored trigger is faithful for the common battlefield half and merely **under-triggers** the
+//!      rarer stack half — an honest missing upside, never a wrong fire. Tracked until `Target::Stack`
+//!      targeting exists.
 
-use crate::basics::{Color, Zone};
+use crate::basics::{CardType, Color, Zone};
 use crate::cards::{creature, mana_cost, CardDb};
-use crate::effects::ability::{Ability, Keyword, Qualification, StaticContribution};
+use crate::effects::ability::{Ability, EventPattern, Keyword, Qualification, StaticContribution};
 use crate::effects::condition::Duration;
 use crate::effects::target::{CardFilter, SelectSpec};
 use crate::effects::value::{PlayerRef, ValueExpr};
+use crate::effects::Effect;
 use crate::subtypes::{CreatureType, Supertype};
 
 /// grp id (per-set ids live near their cards).
@@ -55,6 +62,25 @@ fn cant_be_countered() -> Ability {
     }
 }
 
+/// "Whenever a creature you control … becomes the target of a spell or ability an opponent controls,
+/// draw a card." (the battlefield-creature half — C16). Fires once per matching creature targeted by
+/// an opponent-controlled source (CR 603.2e); the "creature spell you control" half awaits
+/// `Target::Stack` targeting (tracked in the module docs).
+fn becomes_targeted_draw() -> Ability {
+    Ability::Triggered {
+        event: EventPattern::BecomesTargeted {
+            filter: CardFilter::All(vec![
+                CardFilter::HasCardType(CardType::Creature),
+                CardFilter::ControlledBy(PlayerRef::Controller),
+            ]),
+            by_opponent: true,
+        },
+        condition: None,
+        intervening_if: false,
+        effect: Effect::Draw { who: PlayerRef::Controller, count: ValueExpr::Fixed(1) },
+    }
+}
+
 pub fn register(db: &mut CardDb) {
     let mut def = creature(
         SURRAK_ELUSIVE_HUNTER,
@@ -64,13 +90,14 @@ pub fn register(db: &mut CardDb) {
         mana_cost(2, &[(Color::Green, 1)]),
         4,
         3,
-        vec![cant_be_countered()],
+        vec![cant_be_countered(), becomes_targeted_draw()],
     );
     def.chars.supertypes = vec![Supertype::Legendary];
     def.chars.keywords = vec![Keyword::Trample];
     def.text = "This spell can't be countered.\nTrample\nWhenever a creature you control or a creature spell you control becomes the target of a spell or ability an opponent controls, draw a card.".to_string();
     // Tracked-incomplete: "can't be countered" is inert (no stack-static gathering / no counter
-    // subsystem), and the becomes-targeted draw trigger needs engine cap C16. See module docs.
+    // subsystem), and the draw trigger covers only the battlefield-creature half — the "creature
+    // spell you control" half awaits Target::Stack targeting. See module docs.
     def.fully_implemented = false;
     db.insert(def);
 }
@@ -91,10 +118,10 @@ mod tests {
         assert_eq!(def.chars.keywords, vec![Keyword::Trample]); // trample works today
         assert_eq!(def.chars.power, Some(4));
         assert_eq!(def.chars.toughness, Some(3));
-        // Tracked-incomplete: can't-be-countered is inert + becomes-targeted trigger needs C16.
+        // Tracked-incomplete: can't-be-countered is inert + the draw trigger covers only the
+        // battlefield-creature half (stack-creature-spell half awaits Target::Stack).
         assert!(!def.fully_implemented);
-        // Only the can't-be-countered static is materialized; the becomes-targeted trigger is
-        // deliberately absent until C16 (no silent approximation).
+        // The can't-be-countered static + the becomes-targeted draw trigger (battlefield half, C16).
         expect![[r#"
             [
                 Static {
@@ -113,6 +140,29 @@ mod tests {
                         ),
                     },
                     duration: WhileSourcePresent,
+                },
+                Triggered {
+                    event: BecomesTargeted {
+                        filter: All(
+                            [
+                                HasCardType(
+                                    Creature,
+                                ),
+                                ControlledBy(
+                                    Controller,
+                                ),
+                            ],
+                        ),
+                        by_opponent: true,
+                    },
+                    condition: None,
+                    intervening_if: false,
+                    effect: Draw {
+                        who: Controller,
+                        count: Fixed(
+                            1,
+                        ),
+                    },
                 },
             ]"#]]
         .assert_eq(&format!("{:#?}", def.abilities));
