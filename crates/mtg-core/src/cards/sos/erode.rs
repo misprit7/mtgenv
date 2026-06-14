@@ -112,4 +112,35 @@ mod tests {
                 ],
             )"#]].assert_eq(&format!("{:#?}", def.spell_effect().unwrap()));
     }
+
+    /// Behaviour: resolving Erode destroys the targeted creature (moves it to its owner's graveyard).
+    /// The trailing "its controller may fetch a basic" is a no-op here (empty library, min 0).
+    #[test]
+    fn erode_destroys_the_target() {
+        use crate::agent::RandomAgent;
+        use crate::basics::{Target, Zone};
+        use crate::cards::{build_game, grp};
+        use crate::effects::action::{ResolutionCtx, WbReason};
+        use crate::ids::{PlayerId, StackId};
+        use crate::priority::Engine;
+        let mut state = build_game(1, &[&[], &[]]);
+        let bears_chars = state.card_db().get(grp::GRIZZLY_BEARS).unwrap().chars.clone();
+        let victim = state.add_card(PlayerId(1), bears_chars, Zone::Battlefield); // opponent's creature
+        let erode = state.card_db().get(ERODE).unwrap().spell_effect().unwrap().clone();
+        let mut e = Engine::new(
+            state,
+            vec![Box::new(RandomAgent::new(0)), Box::new(RandomAgent::new(1))],
+        );
+        e.resolve_effect(
+            &erode,
+            &ResolutionCtx {
+                controller: Some(PlayerId(0)),
+                chosen_targets: vec![Target::Object(victim)],
+                ..Default::default()
+            },
+            WbReason::Resolve(StackId(0)),
+        );
+        assert!(!e.state.players[1].battlefield.contains(&victim), "destroyed (off the battlefield)");
+        assert!(e.state.players[1].graveyard.contains(&victim), "in its owner's graveyard");
+    }
 }
