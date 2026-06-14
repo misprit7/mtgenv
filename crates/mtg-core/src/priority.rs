@@ -753,8 +753,9 @@ impl Engine {
         let ap = self.state.active_player;
         // (1) Discard to maximum hand size (CR 514.1).
         self.discard_to_hand_size(ap);
-        // (2) Remove all marked damage; end "until end of turn"/"this turn" effects (514.2).
-        // (No such effects exist yet in milestone 2.)
+        // (2) Remove all marked damage; end "until end of turn"/"this turn" effects (514.2),
+        // simultaneously: floating continuous effects (e.g. a +X/+0 pump) and marked damage.
+        self.state.end_of_turn_continuous_cleanup();
         for o in self.state.objects.values_mut() {
             if o.zone == Zone::Battlefield {
                 o.damage_marked = 0;
@@ -2038,6 +2039,10 @@ fn collect_specs_into(effect: &Effect, out: &mut Vec<TargetSpec>) {
         }
         | Effect::Attach {
             to: EffectTarget::Target(spec),
+            ..
+        }
+        | Effect::PumpPT {
+            what: EffectTarget::Target(spec),
             ..
         } => out.push(spec.clone()),
         // A fight declares two targets (CR 701.12) — each `Target(spec)` is a chosen target.
@@ -3484,6 +3489,44 @@ mod expect_tests {
         assert!(!cc.is_creature(), "it returns as a PLAIN land — the animation did not follow");
         assert!(cc.card_types.contains(&CardType::Land), "still a land");
         assert!(e.state.continuous_effects.is_empty(), "the floating animation effect was swept");
+    }
+
+    #[test]
+    fn pump_doubles_power_until_end_of_turn_c15() {
+        use crate::basics::Target;
+        use crate::effects::action::{ResolutionCtx, WbReason};
+        use crate::effects::condition::Duration;
+        use crate::effects::value::ValueExpr;
+        use crate::effects::{Effect, EffectTarget};
+        // "Double target creature's power until end of turn" (Mightform): a 2/2 → 4/2, then wears
+        // off at cleanup. PumpPT{ power: PowerOfTarget(0), toughness: 0, UntilEndOfTurn } lowers to
+        // a floating ModifyPT continuous effect snapshotting the target's power (CR 608.2h / 611).
+        let mut state = cards::build_game(1, &[&[], &[]]);
+        let bears = put(&mut state, PlayerId(0), grp::GRIZZLY_BEARS, Zone::Battlefield); // 2/2
+        let mut e = pass_engine(state);
+        assert_eq!(e.state.computed(bears).power, Some(2));
+        e.resolve_effect(
+            &Effect::PumpPT {
+                what: EffectTarget::ChosenIndex(0),
+                power: ValueExpr::PowerOfTarget(0),
+                toughness: ValueExpr::Fixed(0),
+                duration: Duration::UntilEndOfTurn,
+            },
+            &ResolutionCtx {
+                controller: Some(PlayerId(0)),
+                chosen_targets: vec![Target::Object(bears)],
+                ..Default::default()
+            },
+            WbReason::Resolve(crate::ids::StackId(0)),
+        );
+        assert_eq!(e.state.computed(bears).power, Some(4), "power doubled (2 + its own snapshot 2)");
+        assert_eq!(e.state.computed(bears).toughness, Some(2), "toughness unchanged");
+        assert_eq!(e.state.continuous_effects.len(), 1, "one until-EOT pump is floating");
+
+        // Cleanup (CR 514.2) ends "until end of turn" effects → back to 2/2.
+        e.state.end_of_turn_continuous_cleanup();
+        assert_eq!(e.state.computed(bears).power, Some(2), "the pump wore off at cleanup");
+        assert!(e.state.continuous_effects.is_empty());
     }
 
     #[test]

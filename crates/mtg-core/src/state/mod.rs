@@ -436,6 +436,18 @@ impl GameState {
         id
     }
 
+    /// End "until end of turn" / "this turn" continuous effects at cleanup (CR 514.2) — e.g. a
+    /// +X/+0 pump wearing off. Marks the layer cache dirty if any were removed.
+    pub(crate) fn end_of_turn_continuous_cleanup(&mut self) {
+        use crate::effects::condition::Duration;
+        let before = self.continuous_effects.len();
+        self.continuous_effects
+            .retain(|ce| !matches!(ce.duration, Duration::UntilEndOfTurn | Duration::ThisTurn));
+        if self.continuous_effects.len() != before {
+            self.mark_chars_dirty();
+        }
+    }
+
     /// Drop floating continuous effects that no longer apply to anything: an effect all of whose
     /// affected objects have left the battlefield is moot (CR 611.2c/400.7 — the object it was
     /// pinned to is a different object now), so it's garbage-collected to keep the list bounded.

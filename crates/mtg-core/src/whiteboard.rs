@@ -420,6 +420,29 @@ impl Engine {
                     });
                 }
             }
+            // C15: pump a creature's P/T for a duration (CR 611) — "gets +X/+Y until end of turn".
+            // A P/T change is inherently continuous, so it lowers to a floating ModifyPT effect
+            // over the target. `power`/`toughness` are snapshotted now (e.g. PowerOfTarget for
+            // "double its power"); the layer system applies them in 7c.
+            Effect::PumpPT { what, power, toughness, duration } => {
+                if let Some(Target::Object(obj)) = self.resolve_target(what, ctx, cursor) {
+                    let p = self.eval_value(power, ctx) as i32;
+                    let t = self.eval_value(toughness, ctx) as i32;
+                    if p != 0 || t != 0 {
+                        let controller = ctx.controller.unwrap_or(PlayerId(0));
+                        wb.push(Action::GrantContinuous {
+                            source: ctx.source,
+                            controller,
+                            affected: vec![obj],
+                            contributions: vec![StaticContribution::ModifyPT {
+                                power: p,
+                                toughness: t,
+                            }],
+                            duration: *duration,
+                        });
+                    }
+                }
+            }
             // C6: create N copies of a token (CR 111).
             Effect::CreateToken { spec, count, controller } => {
                 let count = self.eval_value(count, ctx).max(0) as u32;
@@ -936,6 +959,11 @@ impl Engine {
                 .and_then(|s| self.state.objects.get(&s))
                 .map(|o| o.counters.get(kind) as i64)
                 .unwrap_or(0),
+            // C15: the computed power of the Nth chosen target, read once at resolution (608.2h).
+            ValueExpr::PowerOfTarget(n) => match ctx.chosen_targets.get(*n as usize) {
+                Some(Target::Object(id)) => self.state.computed(*id).power.unwrap_or(0) as i64,
+                _ => 0,
+            },
         }
     }
 

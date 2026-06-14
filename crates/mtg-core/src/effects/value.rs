@@ -50,6 +50,11 @@ pub enum ValueExpr {
     /// resolution time, or the object being computed in a layer-7a CDA (`SetBasePTValue`). Used
     /// for "P/T = the number of +1/+1 counters on it" and "double the counters on this" effects.
     CountersOnSelf(CounterKind),
+    /// The **computed power** of the Nth chosen target, snapshotted at resolution (CR 608.2h). For
+    /// "double its power" (Mightform): `PumpPT{ power: PowerOfTarget(0), toughness: Fixed(0) }`
+    /// adds the target's current power to itself. `0` if the target isn't an object on the
+    /// battlefield.
+    PowerOfTarget(u32),
 }
 
 impl ValueExpr {
