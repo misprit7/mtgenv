@@ -7,9 +7,9 @@
 //! That keeps every card module a leaf node — no card-to-card tangle as the pool grows.
 
 use crate::basics::{CardType, Zone, ZoneDest, ZonePos};
-use crate::effects::target::{CardFilter, SelectSpec};
+use crate::effects::target::{CardFilter, SelectSpec, TargetKind, TargetSpec};
 use crate::effects::value::{PlayerRef, ValueExpr};
-use crate::effects::Effect;
+use crate::effects::{Effect, EffectTarget};
 use crate::subtypes::Supertype;
 
 /// "a land you control" — the landfall event filter (CR 603.2: a land entering under your
@@ -101,6 +101,24 @@ pub(crate) fn sacrifice_self() -> SelectSpec {
 /// Tunnel) and Lumbering Worldwagon. `min: 0` allows a failed/declined find; the engine shuffles after.
 pub(crate) fn fetch_basic_tapped() -> Effect {
     fetch_basic_tapped_by(PlayerRef::Controller)
+}
+
+/// "Earthbend N" (CR 611 animation + counters) — the chosen **target land you control** becomes a
+/// 0/0 creature with haste that's still a land, gets `n` +1/+1 counters, and (engine-side) gains the
+/// "when it dies or is exiled, return it tapped" delayed trigger. Shared by every earthbender
+/// (Badgermole Cub's ETB earthbend 1, Earthbender Ascension's ETB earthbend 2, Ba Sing Se's
+/// activated earthbend 2). The target is always "target land you control" — even on ETB triggers
+/// (the engine enumerates it at 601.2c/603.3d via `collect_specs_into`).
+pub(crate) fn earthbend(n: i64) -> Effect {
+    Effect::Earthbend {
+        target: EffectTarget::Target(TargetSpec {
+            kind: TargetKind::Permanent(land_you_control()),
+            min: 1,
+            max: 1,
+            distinct: true,
+        }),
+        n: ValueExpr::Fixed(n),
+    }
 }
 
 /// As [`fetch_basic_tapped`] but searched by `who` — e.g. Erode, where the *destroyed* permanent's

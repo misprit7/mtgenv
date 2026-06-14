@@ -10,15 +10,21 @@
 //!   replacement → `EntersTappedUnless(CountAtLeast{basic land ≥ 1})` (C11).
 //! - `{T}: Add {G}` — a real IR mana ability (C19; it has no basic land type, so the mana is NOT
 //!   intrinsic and needs the explicit ability).
+//! - "{2}{G}, {T}: Earthbend 2. Activate only as a sorcery." — an `Ability::Activated`
+//!   ({2}{G} mana + `TapSelf`, `Timing::Sorcery`) over `Effect::Earthbend{target: land you control,
+//!   n: 2}` (C12). The land becomes a 0/0 haste land-creature with two +1/+1 counters.
 //!
-//! INCOMPLETE — TRACKED: "{2}{G}, {T}: Earthbend 2" needs the **earthbend** subsystem (C12 — a land
-//! becomes a 0/0 haste creature that's still a land, gets +1/+1 counters, and on death/exile
-//! returns tapped). The ability is omitted entirely rather than approximated. Flagged to engine.
+//! INCOMPLETE — TRACKED (one clause, pending an imminent engine commit): the earthbend interpreter
+//! does not yet register the companion "when it dies or is exiled, return it tapped" delayed trigger
+//! (CR 603.7) — engine's earthbend **commit C**. The card IR is complete and faithful; only that
+//! engine-internal materialization step is pending, after which this card flips to
+//! `fully_implemented: true` with **no card change**. Until then an earthbent land that dies stays
+//! dead instead of returning tapped — the one observable gap, tracked (not approximated).
 
 use crate::basics::{CardType, Color, Zone};
-use crate::cards::helpers::basic_land_filter;
-use crate::cards::{mana_ability, CardDb, CardDef};
-use crate::effects::ability::{Ability, ActionPattern, Rewrite};
+use crate::cards::helpers::{basic_land_filter, earthbend};
+use crate::cards::{mana_ability, mana_cost, CardDb, CardDef};
+use crate::effects::ability::{Ability, ActionPattern, Cost, CostComponent, Rewrite, Timing};
 use crate::effects::condition::Condition;
 use crate::effects::target::CardFilter;
 use crate::effects::value::{PlayerRef, ValueExpr};
@@ -49,6 +55,17 @@ pub fn register(db: &mut CardDb) {
                     n: ValueExpr::Fixed(1),
                 }),
             },
+            // "{2}{G}, {T}: Earthbend 2. Activate only as a sorcery."
+            Ability::Activated {
+                cost: Cost {
+                    mana: Some(mana_cost(2, &[(Color::Green, 1)])),
+                    components: vec![CostComponent::TapSelf],
+                },
+                effect: earthbend(2),
+                timing: Timing::Sorcery,
+                restriction: None,
+                is_mana: false,
+            },
         ],
         text: "This land enters tapped unless you control a basic land.\n{T}: Add {G}.\n{2}{G}, {T}: Earthbend 2. Activate only as a sorcery.".to_string(),
         fully_implemented: false,
@@ -67,7 +84,9 @@ mod tests {
         let def = db.get(BA_SING_SE).unwrap();
         assert_eq!(def.chars.card_types, vec![CardType::Land]);
         assert!(def.is_mana_source()); // explicit {T}: Add {G} IR ability
-        assert!(!def.fully_implemented); // earthbend ability deferred (C12)
+        // Earthbend ability authored (C12); still false only because earthbend's return-tapped
+        // delayed trigger is pending engine commit C — flips to true with no card change then.
+        assert!(!def.fully_implemented);
         expect![[r#"
             [
                 Activated {
@@ -120,6 +139,49 @@ mod tests {
                             ),
                         },
                     ),
+                },
+                Activated {
+                    cost: Cost {
+                        mana: Some(
+                            ManaCost {
+                                generic: 2,
+                                colored: {
+                                    Green: 1,
+                                },
+                                x: 0,
+                            },
+                        ),
+                        components: [
+                            TapSelf,
+                        ],
+                    },
+                    effect: Earthbend {
+                        target: Target(
+                            TargetSpec {
+                                kind: Permanent(
+                                    All(
+                                        [
+                                            HasCardType(
+                                                Land,
+                                            ),
+                                            ControlledBy(
+                                                Controller,
+                                            ),
+                                        ],
+                                    ),
+                                ),
+                                min: 1,
+                                max: 1,
+                                distinct: true,
+                            },
+                        ),
+                        n: Fixed(
+                            2,
+                        ),
+                    },
+                    timing: Sorcery,
+                    restriction: None,
+                    is_mana: false,
                 },
             ]"#]].assert_eq(&format!("{:#?}", def.abilities));
     }
