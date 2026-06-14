@@ -35,6 +35,7 @@ pub mod misc;
 // Per-first-printing-set folders (real card pool).
 pub mod aer;
 pub mod ala;
+pub mod blb;
 pub mod bro;
 pub mod dft;
 pub mod dsk;
@@ -358,6 +359,7 @@ pub fn starter_db() -> CardDb {
     tla::register(&mut db);
     bro::register(&mut db);
     tdm::register(&mut db);
+    blb::register(&mut db);
     // Per-set folders for the prototype/starter pool (moved out of `misc`).
     aer::register(&mut db);
     ala::register(&mut db);
@@ -416,12 +418,11 @@ pub fn bears_deck() -> Vec<u32> {
     deck
 }
 
-/// A 60-card Selesnya Landfall deck converging on the real mtggoldfish list — every card that is at
-/// least *partially* implemented is included at its mtggoldfish quantity, with basic lands padding
-/// the rest to 60. As cards cross from unimplemented → implemented they join here and the basics
-/// shrink; when all 18 are in, this *is* the mtggoldfish 60 and the padding disappears. Only one card
-/// is still omitted (cap-blocked): Keen-Eyed Curator (its single copy is the only remaining basic
-/// padding). Green-primary with white for Erode. Preset: `"selesnya"` / `"landfall"`.
+/// The **real** mtggoldfish "Standard Selesnya Landfall" 60 — all 18 distinct nonbasic cards at their
+/// decklist quantities + 7 Forest + 2 Plains. Every card is now implemented (most fully; a few as
+/// faithful tracked-partials — Mightform's warp, Dyadrine's attack ability, Surrak's stack-spell half),
+/// so the basic-land padding that previously stood in for unimplemented cards is gone. Preset:
+/// `"selesnya"` / `"landfall"`.
 pub fn selesnya_landfall_deck() -> Vec<u32> {
     use std::iter::repeat;
     let mut deck = Vec::new();
@@ -443,10 +444,10 @@ pub fn selesnya_landfall_deck() -> Vec<u32> {
     deck.extend(repeat(tla::badgermole_cub::BADGERMOLE_CUB).take(4));
     deck.extend(repeat(tla::earthbender_ascension::EARTHBENDER_ASCENSION).take(4));
     deck.extend(repeat(eoe::mightform_harmonizer::MIGHTFORM_HARMONIZER).take(4));
-    deck.extend(repeat(eoe::dyadrine_synthesis_amalgam::DYADRINE_SYNTHESIS_AMALGAM).take(2)); // = 50
-    // Fill to 60 with basics (green-primary, enough white to cast {W} Erode). Real list is 7F/2P;
-    // the +1 Forest pads for the one still-omitted green copy (Keen-Eyed Curator, {G}{G}).
-    deck.extend(repeat(grp::FOREST).take(8));
+    deck.extend(repeat(eoe::dyadrine_synthesis_amalgam::DYADRINE_SYNTHESIS_AMALGAM).take(2));
+    deck.extend(repeat(blb::keen_eyed_curator::KEEN_EYED_CURATOR).take(1)); // = 51 (all 18 distinct)
+    // The real mtggoldfish basics — no padding left, every nonbasic is implemented.
+    deck.extend(repeat(grp::FOREST).take(7));
     deck.extend(repeat(grp::PLAINS).take(2));
     deck
 }
@@ -498,7 +499,7 @@ mod tests {
     #[test]
     fn starter_db_has_expected_cards() {
         let db = starter_db();
-        assert_eq!(db.len(), 49);
+        assert_eq!(db.len(), 50);
         // Forest is "type line only": a Basic Land with subtype Forest. Mana is intrinsic
         // (CR 305.6) — the engine derives {T}: Add {G} from the subtype, so the CardDef carries
         // no explicit mana ability (and `is_mana_source` only sees authored abilities).
