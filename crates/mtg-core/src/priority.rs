@@ -81,20 +81,19 @@ pub struct Outcome {
 /// Modeled on the recovered MTGA `SettingsMessage` (../mtga-re/docs/priority_stops.md).
 #[derive(Debug, Clone)]
 pub struct StopConfig {
-    /// Arena-profile auto-pass on (a human/UI session) vs paper-CR every-window prompting
-    /// (default, deterministic for differential-testing / RL replay). When off, every priority
-    /// window prompts and the rest of the fields are inert.
-    pub auto_pass: bool,
-    /// "Full control": stop at every priority window (overrides everything else).
+    /// **The** stop knob: stop at every priority window (full control ON) vs the fixed elision
+    /// rule (OFF — auto-pass unless you have a meaningful, non-mana action at a marked stop or with
+    /// an opponent's object on the stack). See [`Engine::should_auto_pass`]. The former separate
+    /// `auto_pass`/`smart_stops`/`resolve_own_stack` knobs are collapsed into this one.
     pub full_control: bool,
-    /// SmartStops (MTGA default ON): stop at any step where the seat has a legal play (so it
-    /// never auto-passes past a chance to act). When OFF, the seat auto-passes through
-    /// "unimportant" steps even with an action available.
+    /// Behavior-dead (display/transport only). Was: Arena auto-pass vs paper-CR every-window —
+    /// now folded into `full_control`. Kept so existing readers compile; remove with the
+    /// gre-server stop plumbing.
+    pub auto_pass: bool,
+    /// Behavior-dead (display/transport only). Was: SmartStops — now folded into the fixed rule.
     pub smart_stops: bool,
-    /// `stackAutoPassOption == ResolveMyStackEffects` (MTGA default ON): while the seat's OWN
-    /// object is on top of the stack, auto-pass so it resolves — don't re-prompt the seat to
-    /// respond to its own spell/ability. OFF lets the seat respond to itself (like full
-    /// control, but only over the stack).
+    /// Behavior-dead (display/transport only). Was: resolve-own-stack — now folded into the fixed
+    /// rule (your own object on the stack always auto-passes so it resolves).
     pub resolve_own_stack: bool,
     /// Per-step override of the Arena default, keyed by `(step, own_turn)` so the two sides of a
     /// step are independent (e.g. stop on *my* draw but not the opponent's). `own_turn` =
@@ -111,10 +110,13 @@ pub struct StopConfig {
 impl Default for StopConfig {
     fn default() -> Self {
         StopConfig {
-            auto_pass: false,        // paper-CR by default; a UI session turns it on
-            full_control: false,
-            smart_stops: true,       // MTGA default (smartStopsSetting = Enable)
-            resolve_own_stack: true, // MTGA default (stackAutoPassOption = ResolveMyStackEffects)
+            // Headless/replay/tests default to full control = prompt every priority window
+            // (deterministic; matches the old paper-CR default). UI/gym seats turn it OFF for the
+            // fixed elision rule (web sets `full_control` directly; the gym via `set_arena_auto_pass`).
+            full_control: true,
+            auto_pass: false,        // behavior-dead (display only)
+            smart_stops: true,       // behavior-dead (display only)
+            resolve_own_stack: true, // behavior-dead (display only)
             overrides: std::collections::BTreeMap::new(),
             manual_mana: false,      // agent/replay seats auto-pay; a UI session turns it on
         }
@@ -259,29 +261,35 @@ impl Engine {
         }
     }
 
-    // ── Arena-profile auto-pass / stops (MTGA-style; AGENT_INTERFACE §8.1 elision) ───────────
+    // ── Stop policy (one knob: full control vs the fixed rule; MTGA-style elision) ───────────
 
-    /// Enable/disable the Arena-profile auto-pass policy for *every* seat. Off (default) =
-    /// paper-CR: every priority window prompts (deterministic for differential-testing / RL
-    /// replay). On = a seat is prompted only at its stops + meaningful (non-priority) decisions.
-    /// (The flag is per-seat in [`StopConfig`]; a UI can also flip a single seat's via its
-    /// [`Engine::stops_handle`].)
+    /// Enable/disable the Arena auto-pass profile for *every* seat — now just the inverse of full
+    /// control: `on` ⇒ the fixed elision rule (full control OFF), `off` ⇒ prompt every window (full
+    /// control ON). Kept as a back-compat entry point (the gym + CLI call it); the separate
+    /// `auto_pass`/`smart_stops`/`resolve_own_stack` knobs were collapsed into `full_control`
+    /// (see [`Engine::should_auto_pass`]). Slated for removal once callers move to `set_full_control`.
     pub fn set_arena_auto_pass(&mut self, on: bool) {
         for cfg in &self.stops {
-            cfg.lock().unwrap().auto_pass = on;
+            let mut c = cfg.lock().unwrap();
+            c.full_control = !on; // THE behavior knob: auto-pass profile on ⇔ not full control
+            c.auto_pass = on; // kept in sync for display / view gating (otherwise behavior-dead)
         }
     }
-    /// "Full control" for a seat: stop at every priority window (overrides auto-pass).
+    /// "Full control" for a seat: stop at every priority window. This is now THE stop knob — off =
+    /// the fixed elision rule (auto-pass unless you have a meaningful action at a marked stop or an
+    /// opponent's object is on the stack). See [`Engine::should_auto_pass`].
     pub fn set_full_control(&mut self, p: PlayerId, on: bool) {
         self.stops[p.0 as usize].lock().unwrap().full_control = on;
     }
-    /// SmartStops for a seat (MTGA default ON): stop wherever the seat has a legal play. When
-    /// OFF, the seat auto-passes through unimportant steps even with an action.
+    /// Behavior-dead (display/transport only): the SmartStops knob folded into the single
+    /// full-control rule and no longer affects [`Engine::should_auto_pass`]. Kept so existing
+    /// callers compile; remove with the rest of the gre-server stop plumbing.
     pub fn set_smart_stops(&mut self, p: PlayerId, on: bool) {
         self.stops[p.0 as usize].lock().unwrap().smart_stops = on;
     }
-    /// `stackAutoPassOption` for a seat: ON (default) = auto-pass your own stack objects so
-    /// they resolve; OFF = re-prompt you to respond to your own spell.
+    /// Behavior-dead (display/transport only): resolve-own-stack folded into the single
+    /// full-control rule and no longer affects [`Engine::should_auto_pass`]. Kept so existing
+    /// callers compile; remove with the rest of the gre-server stop plumbing.
     pub fn set_resolve_own_stack(&mut self, p: PlayerId, on: bool) {
         self.stops[p.0 as usize].lock().unwrap().resolve_own_stack = on;
     }
@@ -341,40 +349,31 @@ impl Engine {
             .stops_at(p, step, self.state.active_player)
     }
 
-    /// The Arena-profile decision: should `p`'s current priority window be auto-passed
-    /// (elided) instead of prompting the agent? Forced/choice decisions never reach here —
-    /// only the priority `Pass`/act window. Never auto-passes a stop or under full control;
-    /// with auto-pass off, always prompts (returns false).
-    fn should_auto_pass(&self, p: PlayerId, has_action: bool) -> bool {
+    /// The single stop policy — **one knob: full control vs not** (the former separate
+    /// `auto_pass`/`smart_stops`/`resolve_own_stack` are collapsed away; they no longer affect
+    /// behavior). Should `p`'s current priority window be auto-passed (elided) instead of prompting?
+    ///
+    /// - **Full control** → never auto-pass: stop at every priority window.
+    /// - **Otherwise** → the fixed rule: auto-pass *unless* `p` has a meaningful (non-mana) action
+    ///   AND either an opponent's object is on top of the stack (a window to respond) or it's a
+    ///   marked-stop step on an empty stack. `has_meaningful` excludes mana abilities (#36) — being
+    ///   able to tap a land is never itself a reason to stop.
+    ///
+    /// This is exactly the rule the web client used to apply on top of the engine; it now lives in
+    /// the engine (CR-correct masking is the engine's job). Headless/replay/tests default to full
+    /// control (prompt every window — deterministic), so their streams are unchanged.
+    fn should_auto_pass(&self, p: PlayerId, has_meaningful: bool) -> bool {
         let cfg = self.stops[p.0 as usize].lock().unwrap();
-        if !cfg.auto_pass {
-            return false;
-        }
         if cfg.full_control {
-            return false; // stop at every window
+            return false; // stop at every priority window
         }
-        // Stack-resolution policy (stackAutoPassOption). While something is on the stack the
-        // window is about responding, not the step's stop.
-        if let Some(top) = self.state.stack.top() {
-            if top.controller == p && cfg.resolve_own_stack {
-                return true; // ResolveMyStackEffects: let my own object resolve
-            }
-            // Opponent's object on top (or resolve-own-stack off): prompt to respond iff I can
-            // act and SmartStops is on; otherwise auto-pass.
-            return !(has_action && cfg.smart_stops);
+        if !has_meaningful {
+            return true; // nothing but mana taps (or nothing at all) → auto-pass
         }
-        // Stack empty → the step-based stop set.
-        let step = self.state.phase;
-        if cfg.stops_at(p, step, self.state.active_player) {
-            return false; // a stop → prompt
-        }
-        if !has_action {
-            return true; // nothing to do → auto-pass
-        }
-        // Has an action, not a stop. SmartStops (MTGA default) prompts wherever you can act; with
-        // SmartStops OFF, "stop only at my explicit stops" — auto-pass EVERY non-stop empty-stack
-        // window regardless of a castable action (per the recovered MTGA behavior / webui).
-        !cfg.smart_stops
+        let opp_on_top = self.state.stack.top().is_some_and(|t| t.controller != p);
+        let marked_step_stop =
+            self.state.stack.is_empty() && cfg.stops_at(p, self.state.phase, self.state.active_player);
+        !(opp_on_top || marked_step_stop)
     }
 
     /// Enable recording of broadcast events into [`Engine::event_log`] (for tracing/tests).
@@ -3631,77 +3630,63 @@ mod expect_tests {
     }
 
     #[test]
-    fn auto_pass_policy_follows_arena_rules() {
-        // Direct unit tests of the policy (should_auto_pass), P0 active.
+    fn stop_policy_is_full_control_or_the_fixed_rule() {
+        // The single stop knob (full control vs the fixed elision rule). Full control OFF (the
+        // auto-pass profile on): stop ONLY when the seat has a meaningful (non-mana) action AND it's
+        // a marked-stop step (empty stack) or an opponent's object is on the stack. Full control ON:
+        // stop at every window. (The former separate SmartStops / resolve-own-stack knobs are gone.)
         let state = cards::build_game(1, &[&[], &[]]);
         let mut e = Engine::new(state, vec![Box::new(PassAgent), Box::new(PassAgent)]);
-        e.set_arena_auto_pass(true);
+        e.set_arena_auto_pass(true); // full control OFF → the fixed rule
         e.state.active_player = PlayerId(0);
-        let (p0, p1) = (PlayerId(0), PlayerId(1));
-
+        let p0 = PlayerId(0);
         let set_phase = |e: &mut Engine, ph| e.state.phase = ph;
 
-        // Own main phases are persistent default stops — prompt even with no action.
+        // Marked stop (own main) WITH a meaningful action → stop; with nothing to do → auto-pass.
         set_phase(&mut e, Phase::PrecombatMain);
-        assert!(!e.should_auto_pass(p0, false), "own MP1 is a stop");
+        assert!(!e.should_auto_pass(p0, true), "own MP1 with a play → stop");
+        assert!(e.should_auto_pass(p0, false), "own MP1 with nothing to do → auto-pass");
         set_phase(&mut e, Phase::PostcombatMain);
-        assert!(!e.should_auto_pass(p0, false), "own MP2 is a stop");
+        assert!(!e.should_auto_pass(p0, true), "own MP2 with a play → stop");
 
-        // No action at a non-stop step ⇒ auto-pass.
+        // Non-stop steps auto-pass even WITH an action — the old "stop wherever you can act" is gone.
         set_phase(&mut e, Phase::Upkeep);
-        assert!(e.should_auto_pass(p0, false), "no action ⇒ auto-pass upkeep");
-        // SmartStops (default ON): a legal play at ANY non-stop step ⇒ prompt (even upkeep).
-        assert!(!e.should_auto_pass(p0, true), "SmartStops prompts where you can act");
+        assert!(e.should_auto_pass(p0, true), "upkeep is not a stop → auto-pass even with a play");
         set_phase(&mut e, Phase::CombatDamage);
-        assert!(!e.should_auto_pass(p0, true), "SmartStops prompts in combat damage too");
-
-        // Declare-attackers/blockers are NOT persistent default stops (forced TBAs); with no
-        // action they auto-pass.
+        assert!(e.should_auto_pass(p0, true), "combat damage is not a stop → auto-pass");
         set_phase(&mut e, Phase::DeclareAttackers);
-        assert!(e.should_auto_pass(p0, false), "declare-attackers not a default priority stop");
-        set_phase(&mut e, Phase::DeclareBlockers);
-        assert!(e.should_auto_pass(p1, false), "declare-blockers not a default priority stop");
+        assert!(e.should_auto_pass(p0, false), "declare-attackers is not a priority stop");
 
-        // SmartStops OFF means "only my explicit stops": auto-pass EVERY non-stop empty-stack
-        // window even with an action — including combat damage.
-        e.set_smart_stops(p0, false);
-        set_phase(&mut e, Phase::Upkeep);
-        assert!(e.should_auto_pass(p0, true), "SmartStops off: pass upkeep with an action");
-        set_phase(&mut e, Phase::CombatDamage);
-        assert!(e.should_auto_pass(p0, true), "SmartStops off: pass combat damage with an action");
-        // …but an actual stop (own main phase) still prompts.
-        set_phase(&mut e, Phase::PrecombatMain);
-        assert!(!e.should_auto_pass(p0, true), "SmartStops off: own MP1 is still a stop");
-        e.set_smart_stops(p0, true);
-
-        // A manual stop forces a prompt at an otherwise-elided step.
+        // A manual stop makes an otherwise-elided step stop — when you have an action there.
         e.set_stop(p0, Phase::Upkeep, Some(true));
         set_phase(&mut e, Phase::Upkeep);
-        assert!(!e.should_auto_pass(p0, false), "manual upkeep stop");
+        assert!(!e.should_auto_pass(p0, true), "manual upkeep stop (with a play)");
 
-        // Full control stops everywhere.
-        e.set_full_control(p1, true);
+        // Full control stops everywhere, action or not.
+        e.set_arena_auto_pass(false); // full control ON for every seat
         set_phase(&mut e, Phase::End);
-        assert!(!e.should_auto_pass(p1, false), "full control stops at the end step");
-
-        // With the policy off (paper-CR), nothing is ever auto-passed.
-        e.set_arena_auto_pass(false);
-        assert!(!e.should_auto_pass(p0, false));
+        assert!(!e.should_auto_pass(p0, false), "full control stops at the end step with nothing to do");
+        set_phase(&mut e, Phase::Upkeep);
+        assert!(!e.should_auto_pass(p0, false), "full control stops at every window");
     }
 
     #[test]
-    fn auto_pass_elides_minor_steps_over_a_turn() {
-        // End-to-end: P0 has no actions all turn; with the Arena profile on, P0 is prompted
-        // only at its default stops (MP1, declare-attackers, MP2), never at upkeep/draw/etc.
+    fn fixed_rule_elides_minor_steps_but_stops_at_mains() {
+        // End-to-end: with full control off, P0 (holding a land it can play in its main phases) is
+        // prompted at its marked stops MP1/MP2 — a meaningful action is available there — but
+        // auto-passed through every minor step (the land isn't playable at upkeep/draw/combat, so
+        // there's no meaningful action and nothing to stop for).
         let prompted = Rc::new(RefCell::new(Vec::new()));
-        let state = cards::build_game(1, &[&[], &[]]); // empty libraries
+        let mut state = cards::build_game(1, &[&[], &[]]); // empty libraries
+        let forest = state.card_db().get(crate::cards::grp::FOREST).unwrap().chars.clone();
+        state.add_card(PlayerId(0), forest, Zone::Hand); // a main-phase play (the spy never plays it)
         let agents: Vec<Box<dyn Agent>> = vec![
             Box::new(PrioritySpy { prompted: Rc::clone(&prompted) }),
             Box::new(PassAgent),
         ];
         let mut e = Engine::new(state, agents);
-        e.skip_opening_deal(); // empty hands; no draw on turn 1 (P0 on the play)
-        e.set_arena_auto_pass(true);
+        e.skip_opening_deal(); // no draw on turn 1 (P0 on the play); hand = the seeded Forest
+        e.set_arena_auto_pass(true); // full control OFF → the fixed rule
         e.start_game();
         e.take_turn(); // P0's whole turn
 
@@ -3714,10 +3699,10 @@ mod expect_tests {
             Phase::EndCombat,
             Phase::End,
         ] {
-            assert!(!seen.contains(&elided), "{elided:?} should be auto-passed");
+            assert!(!seen.contains(&elided), "{elided:?} should be auto-passed (no play there)");
         }
-        assert!(seen.contains(&Phase::PrecombatMain), "stop at own MP1");
-        assert!(seen.contains(&Phase::PostcombatMain), "stop at own MP2");
+        assert!(seen.contains(&Phase::PrecombatMain), "stop at own MP1 (a land to play)");
+        assert!(seen.contains(&Phase::PostcombatMain), "stop at own MP2 (the land still in hand)");
 
         // Full control prompts at the minor steps too.
         let prompted2 = Rc::new(RefCell::new(Vec::new()));
@@ -3764,16 +3749,16 @@ mod expect_tests {
     }
 
     #[test]
-    fn stack_auto_pass_resolves_your_own_objects() {
-        // stackAutoPassOption = ResolveMyStackEffects (MTGA default): while your own object is
-        // on top of the stack you auto-pass (let it resolve, don't respond to yourself); the
-        // opponent is still prompted to respond when they can act.
+    fn your_own_object_on_the_stack_auto_passes() {
+        // The fixed rule folds in the old resolve-own-stack behavior: while your own object is on
+        // top of the stack you auto-pass (let it resolve, don't respond to yourself); an opponent is
+        // still prompted to respond when they can act.
         use crate::stack::{StackObject, StackObjectKind};
         let state = cards::build_game(1, &[&[], &[]]);
         let mut e = Engine::new(state, vec![Box::new(PassAgent), Box::new(PassAgent)]);
-        e.set_arena_auto_pass(true);
+        e.set_arena_auto_pass(true); // full control OFF → the fixed rule
         e.state.active_player = PlayerId(0);
-        e.state.phase = Phase::PrecombatMain; // a stop step — but the stack policy overrides
+        e.state.phase = Phase::PrecombatMain; // a marked stop — but your own object on top overrides
         let sid = e.state.mint_stack();
         e.state.stack.push(StackObject {
             id: sid,
@@ -3785,14 +3770,12 @@ mod expect_tests {
             modes: Vec::new(),
         });
 
-        // P0's own object on top → auto-pass (even in MP1, even with an action available).
-        assert!(e.should_auto_pass(PlayerId(0), true), "ResolveMyStackEffects auto-passes own object");
+        // P0's own object on top → auto-pass (even in MP1, even with an action available): a
+        // non-empty stack with no OPPONENT object on top is never a stop.
+        assert!(e.should_auto_pass(PlayerId(0), true), "auto-pass while your own object resolves");
         // The opponent is prompted to respond iff they can act.
         assert!(!e.should_auto_pass(PlayerId(1), true), "opponent prompted to respond (has play)");
         assert!(e.should_auto_pass(PlayerId(1), false), "opponent auto-passes with no response");
-        // resolve_own_stack OFF ⇒ P0 may respond to its own object.
-        e.set_resolve_own_stack(PlayerId(0), false);
-        assert!(!e.should_auto_pass(PlayerId(0), true), "respond-to-self when resolve_own_stack off");
         // Full control stops over the stack regardless.
         e.set_full_control(PlayerId(1), true);
         assert!(!e.should_auto_pass(PlayerId(1), false), "full control stops over the stack");
