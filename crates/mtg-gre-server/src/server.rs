@@ -69,7 +69,9 @@ pub fn app() -> Router {
             get(crate::lobby::game_detail).delete(crate::lobby::delete_game),
         )
         .route("/api/replays", get(list_replays))
-        .route("/api/replays/:id", get(get_replay));
+        .route("/api/replays/:id", get(get_replay))
+        .route("/api/decks", get(list_decks))
+        .route("/api/decks/:name", get(get_deck));
     if dist.join("index.html").exists() {
         // Built Vite front end available — serve its /assets/* (and any stray path) via ServeDir.
         router = router.fallback_service(ServeDir::new(dist).fallback(get(embedded)));
@@ -186,6 +188,105 @@ async fn get_replay(
             ([(axum::http::header::CONTENT_TYPE, "application/json")], text).into_response()
         }
         Err(_) => (axum::http::StatusCode::NOT_FOUND, "no such replay").into_response(),
+    }
+}
+
+// ── deck viewer: serve the playable presets' contents from the card DB ──────────────────────────
+
+/// One card entry in a deck (count + the card's display characteristics, incl. the partial-card
+/// flag so the lobby viewer can render the ⚠ badge). Built from `CardDef`, not a game state.
+#[derive(serde::Serialize)]
+struct DeckCard {
+    count: u32,
+    grp_id: u32,
+    name: String,
+    mana_cost: Option<mtg_core::basics::ManaCost>,
+    mana_value: u32,
+    colors: Vec<mtg_core::basics::Color>,
+    card_types: Vec<String>,
+    subtypes: Vec<String>,
+    supertypes: Vec<String>,
+    power: Option<i32>,
+    toughness: Option<i32>,
+    rules_text: String,
+    fully_implemented: bool,
+}
+
+#[derive(serde::Serialize)]
+struct DeckSummary { name: String, total: u32, partial: u32 }
+
+#[derive(serde::Serialize)]
+struct DeckDetail { name: String, total: u32, partial: u32, cards: Vec<DeckCard> }
+
+/// Resolve a deck name to (total, partial-count, grouped+sorted card list) using `resolve_deck`
+/// (the picker's deck names) and the engine's `starter_db` for each card's characteristics.
+fn build_deck(name: &str) -> Option<(u32, u32, Vec<DeckCard>)> {
+    use std::collections::BTreeMap;
+    let ids = driver::resolve_deck(name)?;
+    let db = mtg_core::cards::starter_db();
+    let mut counts: BTreeMap<u32, u32> = BTreeMap::new();
+    for &g in &ids {
+        *counts.entry(g).or_default() += 1;
+    }
+    let mut partial = 0u32;
+    let mut cards: Vec<DeckCard> = counts
+        .iter()
+        .filter_map(|(&g, &count)| {
+            let def = db.get(g)?;
+            let c = &def.chars;
+            if !def.fully_implemented {
+                partial += count;
+            }
+            let mana_value = c
+                .mana_cost
+                .as_ref()
+                .map(|m| m.generic + m.colored.values().sum::<u32>())
+                .unwrap_or(0);
+            Some(DeckCard {
+                count,
+                grp_id: g,
+                name: c.name.clone(),
+                mana_cost: c.mana_cost.clone(),
+                mana_value,
+                colors: c.colors.clone(),
+                card_types: c.card_types.iter().map(|t| t.as_str().to_string()).collect(),
+                subtypes: c.subtypes.iter().map(|s| s.to_string()).collect(),
+                supertypes: c.supertypes.iter().map(|s| s.to_string()).collect(),
+                power: c.power,
+                toughness: c.toughness,
+                rules_text: def.text.clone(),
+                fully_implemented: def.fully_implemented,
+            })
+        })
+        .collect();
+    // Nonland first by mana value then name; lands last (the usual deck-view order).
+    cards.sort_by(|a, b| {
+        let is_land = |c: &DeckCard| c.card_types.iter().any(|t| t == "Land");
+        is_land(a)
+            .cmp(&is_land(b))
+            .then(a.mana_value.cmp(&b.mana_value))
+            .then_with(|| a.name.cmp(&b.name))
+    });
+    let total = counts.values().sum();
+    Some((total, partial, cards))
+}
+
+/// `GET /api/decks` — the playable presets the picker offers, with card/partial counts.
+async fn list_decks() -> impl IntoResponse {
+    let decks: Vec<DeckSummary> = driver::DECK_NAMES
+        .iter()
+        .filter_map(|&n| build_deck(n).map(|(total, partial, _)| DeckSummary { name: n.to_string(), total, partial }))
+        .collect();
+    axum::Json(decks)
+}
+
+/// `GET /api/decks/:name` — a deck's full grouped card list for the lobby deck viewer.
+async fn get_deck(axum::extract::Path(name): axum::extract::Path<String>) -> axum::response::Response {
+    match build_deck(&name) {
+        Some((total, partial, cards)) => {
+            axum::Json(DeckDetail { name, total, partial, cards }).into_response()
+        }
+        None => (axum::http::StatusCode::NOT_FOUND, "no such deck").into_response(),
     }
 }
 
