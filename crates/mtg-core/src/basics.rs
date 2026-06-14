@@ -207,10 +207,89 @@ pub enum CounterKind {
     Named(String),
 }
 
-/// A multiset of counters on an object or player (`kind → count`).
+impl std::fmt::Display for CounterKind {
+    /// A canonical, round-trippable string for this counter kind — used as a **map key** when a
+    /// `CounterBag` serializes (JSON map keys must be strings; the derived enum repr produces a
+    /// non-string for `Keyword`/`Named`, which `serde_json` rejects). Built-ins keep their Rust
+    /// variant name, which is **exactly the key the derived unit-variant repr already produced** —
+    /// so the existing wire format (and the web client's `CTR_LABEL` lookup) is unchanged; only the
+    /// previously-crashing `Named`/`Keyword` cases gain a string form. `Named` is the bare name (so
+    /// a "quest" counter shows as `quest`, not a prefixed token); `Keyword` is `kw:`-tagged so it
+    /// round-trips back to the right variant. See [`CounterBag`].
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CounterKind::PlusOnePlusOne => write!(f, "PlusOnePlusOne"),
+            CounterKind::MinusOneMinusOne => write!(f, "MinusOneMinusOne"),
+            CounterKind::Loyalty => write!(f, "Loyalty"),
+            CounterKind::Poison => write!(f, "Poison"),
+            CounterKind::Charge => write!(f, "Charge"),
+            CounterKind::Shield => write!(f, "Shield"),
+            CounterKind::Stun => write!(f, "Stun"),
+            CounterKind::Finality => write!(f, "Finality"),
+            CounterKind::Defense => write!(f, "Defense"),
+            CounterKind::Keyword(s) => write!(f, "kw:{s}"),
+            CounterKind::Named(s) => write!(f, "{s}"),
+        }
+    }
+}
+
+impl std::str::FromStr for CounterKind {
+    type Err = std::convert::Infallible; // total: an unrecognised string parses to `Named`.
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
+            "PlusOnePlusOne" => CounterKind::PlusOnePlusOne,
+            "MinusOneMinusOne" => CounterKind::MinusOneMinusOne,
+            "Loyalty" => CounterKind::Loyalty,
+            "Poison" => CounterKind::Poison,
+            "Charge" => CounterKind::Charge,
+            "Shield" => CounterKind::Shield,
+            "Stun" => CounterKind::Stun,
+            "Finality" => CounterKind::Finality,
+            "Defense" => CounterKind::Defense,
+            // A `kw:`-tagged token is a keyword counter; anything else is a free-form `Named` counter
+            // (the inverse of `Display`). An unrecognised string can't fail — it's just a `Named`.
+            other => match other.strip_prefix("kw:") {
+                Some(k) => CounterKind::Keyword(k.to_string()),
+                None => CounterKind::Named(other.to_string()),
+            },
+        })
+    }
+}
+
+/// A multiset of counters on an object or player (`kind → count`). The `counts` map serializes with
+/// **string keys** (each `CounterKind`'s canonical [`Display`]) so a JSON object is valid — the
+/// derived enum repr produces non-string keys for `Keyword`/`Named`, which `serde_json` rejects
+/// (this broke Replay/GodView export for quest-counter cards).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CounterBag {
+    #[serde(with = "counter_map_serde")]
     pub counts: BTreeMap<CounterKind, u32>,
+}
+
+/// serde adapter: a `BTreeMap<CounterKind, u32>` as a string-keyed JSON object (CR — see [`CounterBag`]).
+mod counter_map_serde {
+    use super::CounterKind;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use std::collections::BTreeMap;
+
+    pub fn serialize<S: Serializer>(
+        map: &BTreeMap<CounterKind, u32>,
+        s: S,
+    ) -> Result<S::Ok, S::Error> {
+        let as_strings: BTreeMap<String, u32> =
+            map.iter().map(|(k, v)| (k.to_string(), *v)).collect();
+        as_strings.serialize(s)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        d: D,
+    ) -> Result<BTreeMap<CounterKind, u32>, D::Error> {
+        let as_strings = BTreeMap::<String, u32>::deserialize(d)?;
+        Ok(as_strings
+            .into_iter()
+            .map(|(k, v)| (k.parse::<CounterKind>().unwrap(), v))
+            .collect())
+    }
 }
 
 impl CounterBag {

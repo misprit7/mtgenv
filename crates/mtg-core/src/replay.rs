@@ -140,4 +140,62 @@ mod tests {
         assert!(m.result.is_none(), "no result until finished");
         assert_eq!(m.created_at, 0, "clock stamped from outside");
     }
+
+    #[test]
+    fn replay_with_counters_round_trips_through_json() {
+        // Regression for the Selesnya-replay crash: a `CounterBag` is a `BTreeMap` keyed by
+        // `CounterKind`, and `serde_json` panics ("key must be a string") on the non-string keys the
+        // derived enum repr produces for `Keyword`/`Named` counters (e.g. a quest counter). A
+        // permanent carrying counters appears in every replay frame's `GodView.battlefield`, so this
+        // broke webui lobby replays AND gym training-replay export. The fix keys the map by each
+        // `CounterKind`'s canonical `Display` string.
+        use crate::basics::{CardType, CounterKind, Zone};
+        use crate::state::view::god_view;
+        use crate::state::{Characteristics, GameState};
+
+        let mut state = GameState::new(2, 1);
+        let bear = state.add_card(
+            PlayerId(0),
+            Characteristics {
+                name: "Counter Bear".into(),
+                card_types: vec![CardType::Creature],
+                power: Some(2),
+                toughness: Some(2),
+                ..Default::default()
+            },
+            Zone::Battlefield,
+        );
+        // A built-in (unit-variant) counter AND a data-carrying `Named` counter — the latter is the
+        // one `serde_json` rejected as a non-string map key before the string-keyed adapter.
+        {
+            let o = state.objects.get_mut(&bear).unwrap();
+            o.counters.counts.insert(CounterKind::PlusOnePlusOne, 3);
+            o.counters.counts.insert(CounterKind::Named("quest".into()), 1);
+        }
+
+        let replay = Replay {
+            meta: ReplayMeta::new(2, ReplaySource::Human),
+            frames: vec![ReplayFrame {
+                state: god_view(&state),
+                label: "P0 has a counter-bearing bear".into(),
+            }],
+        };
+
+        // Before the fix this PANICKED; now it is clean JSON that round-trips.
+        let json = serde_json::to_string(&replay).expect("a replay with counters must serialize");
+        let back: Replay = serde_json::from_str(&json).expect("and deserialize");
+
+        let counters = match &back.frames[0].state.battlefield[0] {
+            ObjView::Visible { counters, .. } => counters,
+            other => panic!("expected a Visible permanent, got {other:?}"),
+        };
+        // The wire format keys the counter map by each kind's canonical string (a valid JSON object):
+        // built-ins keep their variant-name key (unchanged from the old repr; the web client's
+        // CTR_LABEL still maps it), and the `Named` quest counter is the bare name.
+        expect_test::expect![[r#"{"counts":{"PlusOnePlusOne":3,"quest":1}}"#]]
+            .assert_eq(&serde_json::to_string(counters).unwrap());
+        // And the typed values survive the round-trip unchanged.
+        assert_eq!(counters.get(&CounterKind::PlusOnePlusOne), 3);
+        assert_eq!(counters.get(&CounterKind::Named("quest".into())), 1);
+    }
 }
