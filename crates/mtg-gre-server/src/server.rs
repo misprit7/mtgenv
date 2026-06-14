@@ -124,10 +124,29 @@ pub(crate) fn save_replay(id: u64, replay: &mtg_core::replay::Replay) {
     }
 }
 
+/// Cheaply extract just the `meta` object from a replay file **without parsing its (multi-MB)
+/// `frames`**: a replay is `{"meta":{…small…},"frames":[…huge…]}`, so we read only the first chunk
+/// (meta is the first key and tiny) and deserialize the single `meta` value, stopping at its end.
+/// O(chunk) per file regardless of replay size — listing stays fast as replays accumulate.
+fn read_meta_prefix(path: &std::path::Path) -> Option<serde_json::Value> {
+    use std::io::Read;
+    let mut f = std::fs::File::open(path).ok()?;
+    let mut buf = vec![0u8; 64 * 1024];
+    let n = f.read(&mut buf).ok()?;
+    let text = String::from_utf8_lossy(&buf[..n]);
+    let key = text.find("\"meta\":")?;
+    let after = &text[key + "\"meta\":".len()..];
+    // Parse only the first JSON value (the meta object); trailing `,"frames":…` is ignored.
+    serde_json::Deserializer::from_str(after)
+        .into_iter::<serde_json::Value>()
+        .next()?
+        .ok()
+}
+
 /// `GET /api/replays` — list saved replays' metadata for the lobby. Replays are opaque JSON files
 /// (`data/replays/*.json`, the engine's serialized `Replay`); we surface each file's `meta` fields
-/// flattened, plus an `id` (filename stem) and `frames` count — without shipping every frame. A
-/// missing/empty store → `[]`, so the lobby degrades cleanly before any replay exists.
+/// flattened, plus an `id` (filename stem). Only the small `meta` prefix of each file is read (never
+/// the frames), so listing is fast even with many large replays. Missing store → `[]`.
 async fn list_replays() -> impl IntoResponse {
     let mut out: Vec<serde_json::Value> = Vec::new();
     if let Ok(entries) = std::fs::read_dir(replay_dir()) {
@@ -136,23 +155,15 @@ async fn list_replays() -> impl IntoResponse {
             if path.extension().and_then(|s| s.to_str()) != Some("json") {
                 continue;
             }
-            let (Some(stem), Ok(text)) = (
-                path.file_stem().and_then(|s| s.to_str()),
-                std::fs::read_to_string(&path),
-            ) else {
+            let (Some(stem), Some(serde_json::Value::Object(meta))) =
+                (path.file_stem().and_then(|s| s.to_str()), read_meta_prefix(&path))
+            else {
                 continue;
             };
-            let Ok(val) = serde_json::from_str::<serde_json::Value>(&text) else {
-                continue;
-            };
-            let frames = val.get("frames").and_then(|f| f.as_array()).map_or(0, |a| a.len());
             let mut item = serde_json::Map::new();
             item.insert("id".into(), serde_json::Value::String(stem.to_string()));
-            item.insert("frames".into(), serde_json::Value::from(frames));
-            if let Some(serde_json::Value::Object(meta)) = val.get("meta").cloned() {
-                for (k, v) in meta {
-                    item.entry(k).or_insert(v);
-                }
+            for (k, v) in meta {
+                item.entry(k).or_insert(v);
             }
             out.push(serde_json::Value::Object(item));
         }
