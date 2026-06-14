@@ -5,6 +5,10 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **design (upgrade tail #44):** **Mightform → `fully_implemented: true`** (7794d2a) — C14 warp piece 3
+  (recast-from-exile, 7cc6f9c) completes the card; no IR change, just the flag + docs. Mightform joins
+  Keen-Eyed as a fully-faithful "hard" card. **First ⚠ partial flipped to complete in the upgrade tail.**
+  169 tests green.
 - **engine:** **C14 warp COMPLETE (`7cc6f9c`) — piece 3 recast-from-exile.** `Action::WarpExile` (a
   dedicated exile granting recast permission, distinct from plain `Exile`) sets
   `Object.castable_from_exile`; `legal_priority_actions` scans exile and offers a sorcery-speed
