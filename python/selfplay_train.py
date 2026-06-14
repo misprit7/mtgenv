@@ -116,7 +116,7 @@ def _clean(*paths):
 
 def train_selfplay(deck="demo", timesteps=120_000, n_envs=8, pool_dir=DEFAULT_POOL,
                    tensorboard_log=None, seed=0, pool_every=8000, eval_every=8000, subproc=False,
-                   verbose=0):
+                   shaping_coef=0.0, verbose=0):
     os.makedirs(pool_dir, exist_ok=True)
     ref_path = os.path.join(os.path.dirname(pool_dir.rstrip("/")) or ".", "mtgenv_ref_initial.zip")
     _clean(os.path.join(pool_dir, "*.zip"), ref_path)  # fresh league each run
@@ -143,6 +143,10 @@ def train_selfplay(deck="demo", timesteps=120_000, n_envs=8, pool_dir=DEFAULT_PO
         PoolCheckpoint(pool_dir, pool_every, n_envs, max_pool=12, verbose=verbose),
         SelfPlayEval(deck, ref_path, eval_every, n_envs, verbose=verbose),
     ]
+    if shaping_coef > 0:
+        from mtgenv_gym.batched_selfplay import ShapingAnneal
+
+        callbacks.append(ShapingAnneal(timesteps, coef0=shaping_coef, anneal_frac=0.6))
     model.learn(total_timesteps=timesteps, callback=callbacks, progress_bar=False)
     return model, ref_path
 

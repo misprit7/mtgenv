@@ -22,12 +22,18 @@ import glob
 import os
 
 import numpy as np
+from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.vec_env.base_vec_env import VecEnv
 
 from .env import MtgEnv
 from .inference import BatchedPolicy
 
 _U64 = (1 << 64) - 1
+
+# Obs `globals` indices used by the potential function (must track obs.rs::encode_globals): the
+# per-seat block is [life, poison, hand, library, graveyard, exile, battlefield, mana×6], me first.
+_G_MY_LIFE, _G_MY_HAND, _G_MY_BF = 16, 18, 22
+_G_OPP_LIFE, _G_OPP_HAND, _G_OPP_BF = 29, 31, 35
 
 
 class _PooledBatchedOpponent:
@@ -102,7 +108,7 @@ class BatchedSelfPlayVecEnv(VecEnv):
     """N self-play `MtgEnv` games stepped in lockstep, opponent inference batched across games."""
 
     def __init__(self, deck, pool_dir, num_envs, p_random=0.2, seed=0, max_decisions=200_000,
-                 device="cpu"):
+                 device="cpu", shaping_coef=0.0, gamma=0.999):
         self.deck = deck
         self.envs = [
             MtgEnv(deck=deck, opponent="external", max_decisions=max_decisions)
@@ -114,6 +120,13 @@ class BatchedSelfPlayVecEnv(VecEnv):
         self._masks = np.zeros((num_envs, self.action_dim), dtype=bool)
         self._actions = np.zeros(num_envs, dtype=np.int64)
         self._seed = (int(seed) * 2862933555777941757 + 3037000493) & _U64
+        # Potential-based reward shaping (GYM_PLAN §5): F = γΦ(s') − Φ(s) added to the sparse ±1.
+        # `shaping_coef` scales it and is annealed to 0 by `ShapingAnneal` so the final policy
+        # optimizes only the true terminal reward (PBRS is policy-invariant; the anneal is belt-and-
+        # suspenders + removes any Φ-approximation artifacts late in training).
+        self.shaping_coef = float(shaping_coef)
+        self.gamma = float(gamma)
+        self._prev_phi = np.zeros(num_envs, dtype=np.float32)
 
     # ── seeding ───────────────────────────────────────────────────────────────────────────────
     def _next_seed(self):
@@ -158,6 +171,36 @@ class BatchedSelfPlayVecEnv(VecEnv):
             self._masks[i] = env.ext_mask()
         return {k: np.stack([r[k] for r in rows]) for k in rows[0]}
 
+    @staticmethod
+    def _phi_batch(obs):
+        """Potential Φ(s) per env (shape ``(N,)``), from the learner's perspective, bounded in
+        ~[−1, 1]: a small tanh-squashed mix of life, board-power, and card-count differentials.
+        Each ``tanh`` keeps any one term from dominating; weights sum to 1. (Magician's caution:
+        a life-only baseline is weak — board + cards matter — but Φ is only a learning crutch.)"""
+        g = obs["globals"]                                            # (N, G)
+        dlife = g[:, _G_MY_LIFE] - g[:, _G_OPP_LIFE]
+        dcards = (g[:, _G_MY_HAND] + g[:, _G_MY_BF]) - (g[:, _G_OPP_HAND] + g[:, _G_OPP_BF])
+        bf = obs["bf_feat"]                                           # (N, MAX_PERM, F_PERM)
+        present = bf[:, :, 0] > 0.5
+        mine = present & (bf[:, :, 1] > 0.5)
+        dpower = (bf[:, :, 2] * mine).sum(1) - (bf[:, :, 2] * (present & ~mine)).sum(1)
+        phi = (0.5 * np.tanh(dlife / 10.0)
+               + 0.3 * np.tanh(dpower / 6.0)
+               + 0.2 * np.tanh(dcards / 4.0))
+        return phi.astype(np.float32)
+
+    def _apply_shaping(self, obs, rewards, dones):
+        """Add F = γΦ(s') − Φ(s) to ``rewards`` (Φ(terminal)≜0). On a done env, ``obs`` already holds
+        the *reset* episode's first learner state, so its Φ becomes the next step's baseline and the
+        terminal transition uses only −Φ(s) (no leakage across the episode boundary)."""
+        if self.shaping_coef == 0.0:
+            self._prev_phi = self._phi_batch(obs)  # keep baseline fresh so toggling on is clean
+            return rewards
+        phi_next = self._phi_batch(obs)
+        f = np.where(dones, -self._prev_phi, self.gamma * phi_next - self._prev_phi)
+        self._prev_phi = phi_next
+        return rewards + self.shaping_coef * f.astype(np.float32)
+
     # ── VecEnv API ──────────────────────────────────────────────────────────────────────────────
     def reset(self):
         for i, env in enumerate(self.envs):
@@ -166,7 +209,9 @@ class BatchedSelfPlayVecEnv(VecEnv):
         dummy_r = np.zeros(self.num_envs, dtype=np.float32)
         dummy_d = np.zeros(self.num_envs, dtype=bool)
         self._pump(dummy_r, dummy_d, [{} for _ in range(self.num_envs)], record_terminals=False)
-        return self._collect_obs()
+        obs = self._collect_obs()
+        self._prev_phi = self._phi_batch(obs)  # episode-start baseline; no shaping reward on reset
+        return obs
 
     def step_async(self, actions):
         self._actions = np.asarray(actions, dtype=np.int64).reshape(-1)
@@ -178,7 +223,9 @@ class BatchedSelfPlayVecEnv(VecEnv):
         for i, env in enumerate(self.envs):
             env.ext_apply(int(self._actions[i]))
         self._pump(rewards, dones, infos, record_terminals=True)
-        return self._collect_obs(), rewards, dones, infos
+        obs = self._collect_obs()
+        rewards = self._apply_shaping(obs, rewards, dones)
+        return obs, rewards, dones, infos
 
     def close(self):
         for env in self.envs:
@@ -208,3 +255,37 @@ class BatchedSelfPlayVecEnv(VecEnv):
         if isinstance(indices, int):
             return [indices]
         return list(indices)
+
+
+class ShapingAnneal(BaseCallback):
+    """Linearly anneal the vec env's potential-based shaping coefficient from ``coef0`` to 0 over the
+    first ``anneal_frac`` of training (GYM_PLAN §5). After that the policy trains on the pure ±1
+    terminal reward. Locates the ``BatchedSelfPlayVecEnv`` under any ``VecEnvWrapper`` layers."""
+
+    def __init__(self, total_timesteps, coef0=0.5, anneal_frac=0.6, verbose=0):
+        super().__init__(verbose)
+        self.total = max(int(total_timesteps), 1)
+        self.coef0 = float(coef0)
+        self.anneal_frac = max(float(anneal_frac), 1e-6)
+
+    def _base_env(self):
+        env = self.training_env
+        while hasattr(env, "venv"):
+            env = env.venv
+        return env
+
+    def _coef(self):
+        frac = self.num_timesteps / (self.total * self.anneal_frac)
+        return self.coef0 * max(0.0, 1.0 - frac)
+
+    def _on_training_start(self) -> None:
+        env = self._base_env()
+        if hasattr(env, "shaping_coef"):
+            env.shaping_coef = self.coef0
+
+    def _on_step(self) -> bool:
+        env = self._base_env()
+        if hasattr(env, "shaping_coef"):
+            env.shaping_coef = self._coef()
+            self.logger.record("train/shaping_coef", env.shaping_coef)
+        return True

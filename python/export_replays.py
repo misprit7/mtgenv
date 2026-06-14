@@ -92,6 +92,9 @@ def main():
     ap.add_argument("--pool-dir", default="/tmp/mtgenv_pool_export")
     ap.add_argument("--run-name", default=None,
                     help="descriptive run label (else auto: '<deck>-selfplay-<steps>k-<mmdd-HHMM>')")
+    ap.add_argument("--shaping-coef", type=float, default=0.5,
+                    help="initial potential-based shaping coef (annealed to 0 over 60%% of training; "
+                         "0 disables — GYM_PLAN §5)")
     args = ap.parse_args()
 
     # Descriptive run name → TensorBoard run folder AND the replay run tag (the lobby groups by it).
@@ -123,6 +126,10 @@ def main():
         # sits at ~0 by symmetry, and vs-random plateaus once the policy beats a weak baseline.
         SelfPlayEval(args.deck, ref_path, max(args.record_every // 2, 4000), args.n_envs, n_games=40),
     ]
+    if args.shaping_coef > 0:
+        from mtgenv_gym.batched_selfplay import ShapingAnneal
+
+        cbs.append(ShapingAnneal(args.timesteps, coef0=args.shaping_coef, anneal_frac=0.6))
     for c in cbs:
         c.verbose = 1
 

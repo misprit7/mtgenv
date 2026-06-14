@@ -88,6 +88,55 @@ def test_batched_selfplay_is_legal_and_terminates():
     ve.close()
 
 
+def test_potential_shaping_is_bounded_pbrs():
+    """Potential-based shaping (GYM_PLAN §5): Φ signs/bounds are sane, `coef=0` is an exact no-op,
+    and with `coef>0` the per-step shaping is small + bounded while terminal stays ±1. No model
+    needed (empty pool ⇒ random opponents)."""
+    from mtgenv_gym.batched_selfplay import BatchedSelfPlayVecEnv as Bz
+
+    G = 67
+
+    def mk(my_life, opp_life, my_pow=0.0, opp_pow=0.0):
+        g = np.zeros((1, G), np.float32)
+        g[:, 16], g[:, 29] = my_life, opp_life
+        bf = np.zeros((1, 32, 41), np.float32)
+        bf[:, 0, 0], bf[:, 0, 1], bf[:, 0, 2] = 1, 1, my_pow   # my creature
+        bf[:, 1, 0], bf[:, 1, 1], bf[:, 1, 2] = 1, 0, opp_pow  # opp creature
+        return {"globals": g, "bf_feat": bf}
+
+    phi = Bz._phi_batch
+    assert abs(phi(mk(20, 20))[0]) < 1e-6           # symmetric → 0
+    assert phi(mk(20, 5))[0] > 0 and phi(mk(5, 20))[0] < 0
+    assert phi(mk(20, 20, my_pow=6))[0] > 0          # board lead → positive
+    assert abs(phi(mk(9999, 0, my_pow=99))[0]) <= 1.0  # bounded
+
+    pool = "/tmp/mtgenv_pool_test_shape"
+    os.makedirs(pool, exist_ok=True)
+    for f in glob.glob(pool + "/*.zip"):
+        os.remove(f)
+
+    def run(coef):
+        ve = BatchedSelfPlayVecEnv("demo", pool, 8, p_random=1.0, seed=2, shaping_coef=coef)
+        ve.reset()
+        rng = np.random.default_rng(0)
+        rs, ts = [], []
+        for _ in range(300):
+            m = ve._masks
+            ve.step_async([int(rng.choice(np.flatnonzero(m[i]))) for i in range(8)])
+            _o, r, d, _i = ve.step_wait()
+            rs.append(r.copy())
+            ts.append(d.copy())
+        ve.close()
+        return np.array(rs), np.array(ts)
+
+    r0, t0 = run(0.0)
+    r5, t5 = run(0.5)
+    assert np.allclose(r0[~t0], 0.0), "coef=0 ⇒ no shaping (pure terminal)"
+    assert np.abs(r5[~t5]).max() > 0, "coef>0 ⇒ intermediate shaping signal"
+    assert np.abs(r5[~t5]).max() < 1.0, "shaping stays smaller than the ±1 terminal"
+    assert set(np.round(r5[t5]).tolist()) <= {-1.0, 0.0, 1.0}, "terminal reward still ±1"
+
+
 def test_maskable_ppo_trains_over_batched_vecenv():
     pool = "/tmp/mtgenv_pool_test_bsp_train"
     os.makedirs(pool, exist_ok=True)
