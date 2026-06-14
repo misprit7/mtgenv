@@ -24,6 +24,12 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
     Earthbend 2` activated (Timing::Sorcery) on. All three held `fully_implemented:false` only for the
     earthbend **return-tapped** delayed trigger (engine commit C, imminent) — flip to true with no card change
     when C lands. 156 core tests green.
+  - **selesnya preset folded** (cards/mod.rs): added the 3 now-implemented cards at mtggoldfish quantities —
+    Surrak ×2, Badgermole Cub ×4, Earthbender Ascension ×4 (34→44 nonbasics); basics rebalanced 18F/8P → 10F/6P
+    to stay at 60 (green-primary, {W} Erode still castable). Still omitted (cap-blocked): Keen-Eyed Curator,
+    Dyadrine, Mightform. **STANDING RULE** (lead, no need to re-ask): whenever a landfall card crosses
+    unimplemented→at-least-partial, fold it into `selesnya_landfall_deck()` at its mtggoldfish qty and rebalance
+    basics; when all 18 are in, the preset = the real 60 and the basic padding is gone.
   - **Mightform Harmonizer** (eoe, `{2}{G}{G}` 4/4): Landfall→**double target creature's power until EOT**
     needs **C15** (double-power continuous); **Warp {2}{G}** needs **C14** (alt-cast + exile-EOT + recast).
   - **Dyadrine, Synthesis Amalgam** (`{X}{G}{W}` Legendary Artifact Creature 0/1): trample ✓; enters-with-
