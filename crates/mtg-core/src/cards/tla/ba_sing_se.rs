@@ -251,4 +251,43 @@ mod tests {
         );
         assert_eq!(e.state.players[0].mana_pool.amounts.get(&Color::Green), Some(&1));
     }
+
+    /// #60 end-to-end (the REAL play-land path): "This land enters tapped unless you control a basic
+    /// land." Playing Ba Sing Se via `play_land` fires its `EntersTappedUnless(CountAtLeast{basic ≥ 1})`
+    /// replacement at commit. With a basic (Forest) already in play → enters **untapped**; with no basic
+    /// (Ba Sing Se isn't basic, so it doesn't count itself) → enters **tapped**. No prior coverage.
+    #[test]
+    fn ba_sing_se_enters_tapped_unless_you_control_a_basic() {
+        use crate::agent::RandomAgent;
+        use crate::basics::Zone;
+        use crate::cards::{grp, starter_db};
+        use crate::ids::PlayerId;
+        use crate::priority::Engine;
+        use crate::state::GameState;
+        use std::sync::Arc;
+
+        // Returns whether Ba Sing Se entered tapped, given whether a basic is already in play.
+        let run = |has_basic: bool| -> bool {
+            let mut state = GameState::new(2, 1);
+            state.set_card_db(Arc::new(starter_db()));
+            if has_basic {
+                let f = state.card_db().get(grp::FOREST).unwrap().chars.clone();
+                state.add_card(PlayerId(0), f, Zone::Battlefield);
+            }
+            let bss = {
+                let c = state.card_db().get(BA_SING_SE).unwrap().chars.clone();
+                state.add_card(PlayerId(0), c, Zone::Hand)
+            };
+            let mut e = Engine::new(
+                state,
+                vec![Box::new(RandomAgent::new(0)), Box::new(RandomAgent::new(1))],
+            );
+            e.play_land(PlayerId(0), bss);
+            assert_eq!(e.state.object(bss).zone, Zone::Battlefield, "the land entered play");
+            e.state.object(bss).status.tapped
+        };
+
+        assert!(!run(true), "with a basic in play → enters untapped");
+        assert!(run(false), "with no basic in play → enters tapped");
+    }
 }
