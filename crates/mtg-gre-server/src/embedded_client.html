@@ -108,6 +108,10 @@
   .promptbox .hint { color: var(--muted); font-size: 11px; margin: 6px 0; }
   .promptbox .slotgroup { margin: 4px 0 8px; padding-left: 8px; border-left: 2px solid var(--line); }
   .promptbox .slothdr { font-weight: 700; font-size: 12px; color: var(--accent); margin: 4px 0; }
+  .opt.optcard { display: flex; align-items: center; gap: 8px; text-align: left; }
+  .opt.optcard .optart { width: 38px; height: 27px; border-radius: 3px; flex: 0 0 auto;
+    background: #0c120f center/cover no-repeat; border: 1px solid rgba(0,0,0,.4); }
+  .opt.optcard .optname { font-weight: 700; }
   button.opt { text-align: left; background: var(--panel); color: var(--ink); border: 1px solid var(--line);
     border-radius: 8px; padding: 7px 9px; cursor: pointer; font: inherit; }
   button.opt:hover { border-color: var(--accent); }
@@ -764,12 +768,29 @@
       keywords: [], grp_id: src.grp_id };
   }
   function findVisibleChars(id) {
-    const zones = [view.battlefield, view.me && view.me.hand];
+    const me = view.me || {};
+    const zones = [view.battlefield, me.hand, me.revealed_to_me, me.known_library];
     (view.players || []).forEach(p => zones.push(p.graveyard, p.exile_public || p.exilePublic, p._hand, p._library));
     for (const z of zones) {
       for (const o of (z || [])) if (o && o.Visible && o.Visible.id === id) return o.Visible.chars;
     }
     return null;
+  }
+  // An option button. When the option refers to a real card (resolvable in the view — incl. Search
+  // candidates now revealed in me.revealed_to_me), show its art thumbnail + name as a card tile.
+  function optButton(i, label, objId) {
+    const chars = objId != null ? findVisibleChars(objId) : null;
+    const grp = chars && chars.grp_id;
+    const b = el("button", "opt" + (multi.has(i) ? " sel" : "") + (grp ? " optcard" : ""));
+    if (grp) {
+      const info = artMap[grp];
+      if (info && info.art) { const t = el("div", "optart"); t.style.backgroundImage = "url('" + info.art + "')"; b.appendChild(t); }
+      b.appendChild(el("span", "optname", chars.name || label));
+    } else {
+      b.textContent = label;
+    }
+    b.onclick = () => onOptionToggle(i);
+    return b;
   }
 
   function renderHand() {
@@ -977,9 +998,7 @@
         let boardN = 0;
         for (let i = slot.start; i < slot.start + slot.len; i++) {
           if (objs[i] != null && document.querySelector('[data-oid="' + objs[i] + '"]')) { boardN++; continue; }
-          const b = el("button", "opt" + (multi.has(i) ? " sel" : ""), p.options[i]);
-          b.onclick = () => onOptionToggle(i);
-          sopts.appendChild(b);
+          sopts.appendChild(optButton(i, p.options[i], objs[i]));
         }
         sec.appendChild(sopts);
         if (boardN) sec.appendChild(hint("→ click the highlighted card(s) on the board"));
@@ -1007,9 +1026,7 @@
     p.options.forEach((label, i) => {
       const onBoard = objs[i] != null && document.querySelector('[data-oid="' + objs[i] + '"]');
       if (onBoard) { boardCount++; return; }
-      const b = el("button", "opt" + (multi.has(i) ? " sel" : ""), label);
-      b.onclick = () => onOptionToggle(i);
-      opts.appendChild(b);
+      opts.appendChild(optButton(i, label, objs[i]));
     });
     root.appendChild(opts);
     if (boardCount) root.appendChild(hint("→ click the highlighted cards / players on the board" + (p.mode === "selectMany" ? " to select" : "") + "."));

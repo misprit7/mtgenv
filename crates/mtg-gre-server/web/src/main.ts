@@ -463,12 +463,29 @@ function stackChars(it: Any): Any {
     keywords: [], grp_id: src.grp_id };
 }
 function findVisibleChars(id: number): Any {
-  const zones: Any[] = [view.battlefield, view.me && view.me.hand];
+  const me = view.me || {};
+  const zones: Any[] = [view.battlefield, me.hand, me.revealed_to_me, me.known_library];
   (view.players || []).forEach((p: Any) => zones.push(p.graveyard, p.exile_public || p.exilePublic, p._hand, p._library));
   for (const z of zones) {
     for (const o of (z || [])) if (o && o.Visible && o.Visible.id === id) return o.Visible.chars;
   }
   return null;
+}
+// An option button. When the option refers to a real card (resolvable in the view — incl. Search
+// candidates now revealed in me.revealed_to_me), show its art thumbnail + name as a card tile.
+function optButton(i: number, label: string, objId: Any): HTMLElement {
+  const chars = objId != null ? findVisibleChars(objId) : null;
+  const grp = chars && chars.grp_id;
+  const b = el("button", "opt" + (multi.has(i) ? " sel" : "") + (grp ? " optcard" : "")) as HTMLButtonElement;
+  if (grp) {
+    const info = artMap[grp];
+    if (info && info.art) { const t = el("div", "optart"); t.style.backgroundImage = `url('${info.art}')`; b.appendChild(t); }
+    b.appendChild(el("span", "optname", chars.name || label));
+  } else {
+    b.textContent = label;
+  }
+  b.onclick = () => onOptionToggle(i);
+  return b;
 }
 
 function renderHand(): void {
@@ -673,9 +690,7 @@ function renderPrompt(): void {
       let boardN = 0;
       for (let i = slot.start; i < slot.start + slot.len; i++) {
         if (objs[i] != null && document.querySelector(`[data-oid="${objs[i]}"]`)) { boardN++; continue; }
-        const b = el("button", "opt" + (multi.has(i) ? " sel" : ""), p.options[i]) as HTMLButtonElement;
-        b.onclick = () => onOptionToggle(i);
-        sopts.appendChild(b);
+        sopts.appendChild(optButton(i, p.options[i], objs[i]));
       }
       sec.appendChild(sopts);
       if (boardN) sec.appendChild(el("div", "hint", "→ click the highlighted card(s) on the board"));
@@ -702,9 +717,7 @@ function renderPrompt(): void {
   p.options.forEach((label: string, i: number) => {
     const onBoard = objs[i] != null && document.querySelector(`[data-oid="${objs[i]}"]`);
     if (onBoard) { boardCount++; return; }
-    const b = el("button", "opt" + (multi.has(i) ? " sel" : ""), label) as HTMLButtonElement;
-    b.onclick = () => onOptionToggle(i);
-    opts.appendChild(b);
+    opts.appendChild(optButton(i, label, objs[i]));
   });
   root.appendChild(opts);
   if (boardCount) root.appendChild(el("div", "hint",
