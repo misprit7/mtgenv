@@ -210,4 +210,77 @@ mod tests {
         // The caster (P0) gains nothing from the opponent's rider.
         assert!(e.state.players[0].battlefield.is_empty(), "P0 (caster) gets no land");
     }
+
+    /// #60 end-to-end (the REAL cast path): cast Erode from hand via `cast_spell` — the engine pays its
+    /// `{W}` from a Plains, asks the caster to choose the target through `ChooseTargets`, and (unlike
+    /// the resolve-level test) **auto-snapshots the target's controller**, so when `resolve_top`
+    /// resolves the spell the destroyed creature's controller (the opponent) is correctly offered the
+    /// "may search a basic" rider. Asserts: Plains tapped for mana, victim destroyed, opponent fetched
+    /// a basic tapped, caster got nothing.
+    #[test]
+    fn erode_cast_path_destroys_and_opponent_fetches() {
+        use crate::agent::{Agent, DecisionRequest, DecisionResponse, PlayerView};
+        use crate::basics::Zone;
+        use crate::cards::{grp, starter_db};
+        use crate::ids::PlayerId;
+        use crate::priority::Engine;
+        use crate::state::GameState;
+        use crate::agent::CastVariant;
+        use std::sync::Arc;
+
+        // Caster: pick the only target. Opponent: take the offered basic. Both accept confirms.
+        #[derive(Clone)]
+        struct PlayAgent;
+        impl Agent for PlayAgent {
+            fn decide(&mut self, _v: &PlayerView, req: &DecisionRequest) -> DecisionResponse {
+                match req {
+                    DecisionRequest::ChooseTargets { .. } => DecisionResponse::Pairs(vec![(0, 0)]),
+                    DecisionRequest::Confirm { .. } => DecisionResponse::Bool(true),
+                    DecisionRequest::SelectCards { from, min, max, .. } => {
+                        let n = (*min).max(1).min(*max).min(from.len() as u32);
+                        DecisionResponse::Indices((0..n).collect())
+                    }
+                    _ => DecisionResponse::Pass,
+                }
+            }
+        }
+
+        let mut state = GameState::new(2, 1);
+        state.set_card_db(Arc::new(starter_db()));
+        let erode = {
+            let c = state.card_db().get(ERODE).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, Zone::Hand)
+        };
+        let plains = {
+            let c = state.card_db().get(grp::PLAINS).unwrap().chars.clone(); // intrinsic {W}
+            state.add_card(PlayerId(0), c, Zone::Battlefield)
+        };
+        let victim = {
+            let c = state.card_db().get(grp::GRIZZLY_BEARS).unwrap().chars.clone();
+            state.add_card(PlayerId(1), c, Zone::Battlefield)
+        };
+        {
+            // P1's library = one Forest for the rider to fetch.
+            let c = state.card_db().get(grp::FOREST).unwrap().chars.clone();
+            state.add_card(PlayerId(1), c, Zone::Library);
+        }
+        let mut e = Engine::new(state, vec![Box::new(PlayAgent), Box::new(PlayAgent)]);
+        e.cast_spell(PlayerId(0), erode, CastVariant::Normal); // pays {W} from the Plains, targets the victim
+        e.resolve_top(); // destroy + opponent's rider fetch
+
+        assert!(e.state.object(plains).status.tapped, "the Plains was tapped to pay {{W}}");
+        assert!(e.state.players[1].graveyard.contains(&victim), "victim destroyed → P1 graveyard");
+        let p1_lands: Vec<_> = e.state.players[1]
+            .battlefield
+            .iter()
+            .filter(|&&o| e.state.object(o).chars.grp_id == grp::FOREST)
+            .copied()
+            .collect();
+        assert_eq!(p1_lands.len(), 1, "the opponent fetched exactly one basic");
+        assert!(e.state.object(p1_lands[0]).status.tapped, "the fetched basic enters tapped");
+        assert!(
+            e.state.players[0].battlefield.iter().all(|&o| o == plains),
+            "the caster gained no land from the opponent's rider"
+        );
+    }
 }
