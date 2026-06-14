@@ -5,6 +5,15 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **engine:** **Dyadrine body cap — enters-with-counters = mana spent (`a2e2b13`).** New
+  `Rewrite::EntersWithCountersValue{kind, n: ValueExpr}` (dynamic ETB-counter count, evaluated
+  against the entering object) + `ValueExpr::ManaSpent` (total mana paid incl. {X}, recorded on
+  `Object.mana_spent` by cast_spell, reset on any zone change) — **additive**, leaves the fixed
+  `EntersWithCounters{u32}` (Mossborn) untouched. So Dyadrine's body = `Replacement{
+  WouldEnterBattlefield(ItSelf), EntersWithCountersValue{ PlusOnePlusOne, ManaSpent } }`; a 0/0 cast
+  for {2}{G} enters as a 3/3 (test). With trample + the YouAttack firing (4613d51), Dyadrine ships as
+  a faithful partial → +2 to the deck (its "remove 2 counters → draw + Robot token" attack ability
+  stays deferred). 163 tests green. Next: C17 (Keen-Eyed Curator) then C14 warp.
 - **design:** **Remaining-cap queue pinned for engine (Dyadrine c2/c3, C17, C14).** With 17/18 authored,
   engine is blocked on IR; staged the full pull-ready queue. Verified against the engine's actual
   resolution code (whiteboard.rs): `Effect::PutCounters` resolves a **single** `Target::Object` (no
