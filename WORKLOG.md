@@ -5,6 +5,32 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **design:** **Surrak, Elusive Hunter authored (13th card) + pending-cap IR staged.** (1) Surrak
+  (`cards/tdm/surrak_elusive_hunter.rs`, id 112, `{2}{G}` Legendary Human Warrior 4/3, commit
+  fc24c83): **trample works today** (printed `Keyword`); `fully_implemented:false` with two tracked
+  gaps — **"can't be countered"** modeled CR-correctly as a `Qualification(CantBeCountered)` static on
+  `ItSelf`/`Zone::Stack` but **inert** (gather_statics walks only the battlefield + nothing reads the
+  marker + no counter subsystem in the pool), and the **becomes-targeted draw trigger** needs cap C16.
+  No silent approximation: the unbuildable clauses are absent or inert + flagged. 153 core tests green.
+  (2) **Pending-cap card IR staged** (Scryfall-verified oracle text → agreed IR shape, so authoring is
+  mechanical when each cap lands):
+  - **earthbend (C12, imminent)** — corrected: earthbend **always targets** "target land you control"
+    (even ETB forms). `Effect::Earthbend{target: Target(land you control), n: ValueExpr}`.
+    *Badgermole Cub* (tla, `{1}{G}` 2/2): ETB earthbend 1 (✓ once C12) + "whenever you tap a creature
+    for mana, add {G}" (reflexive-mana-trigger subsystem → tracked-incomplete). *Earthbender Ascension*
+    (tla, `{2}{G}` Ench): `Sequence[earthbend 2, fetch_basic_tapped]` ETB (✓) + a landfall→quest-counter
+    →reflexive "when you do" intervening-if(≥4)→+1/+1 + trample-until-EOT chain (multi-subsystem →
+    tracked-incomplete). *Ba Sing Se* (already authored): flip its deferred activated earthbend on.
+  - **Mightform Harmonizer** (eoe, `{2}{G}{G}` 4/4): Landfall→**double target creature's power until EOT**
+    needs **C15** (double-power continuous); **Warp {2}{G}** needs **C14** (alt-cast + exile-EOT + recast).
+  - **Dyadrine, Synthesis Amalgam** (`{X}{G}{W}` Legendary Artifact Creature 0/1): trample ✓; enters-with-
+    counters = mana-spent-to-cast (needs mana-spent value); **YouAttack** trigger → optional remove +1/+1
+    from each of two creatures → reflexive draw + 2/2 Robot token (needs YouAttack event + multi-target
+    counter removal). Tracked-incomplete pending those caps.
+  - **Keen-Eyed Curator** (blb, `{G}{G}` 3/3): **fully blocked** — conditional static keyed on "card types
+    among cards exiled with this" (exile-association + count-distinct-types, C17) + `{1}: Exile target card
+    from a graveyard` (Effect::Exile uninterpreted + CardInZone targeting skipped).
+
 - **webui:** **Lobby deck viewer + replay-naming/ordering polish + stop-policy tech-debt note.**
   (1) **Deck viewer:** new "Decks" tab in the lobby with a card grid per picker preset (art thumb,
   mana symbols, type line, P/T, ×count, ⚠ partial badge, oracle-text tooltip + full-card hover
