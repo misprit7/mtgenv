@@ -2,13 +2,18 @@
 //! then commit, emitting `GameEvent`s. The heart of the whiteboard model
 //! (WHITEBOARD_MODEL.md §2.1).
 //!
-//! Milestone 3 is the **minimal effect runtime**: an interpreter over design's `Effect` IR
-//! that *materializes* a `Whiteboard` of `Action`s and *commits* them. The
-//! replacement/prevention rewrite pass (CR 614/615/616) between materialize and commit is
-//! deferred to milestone 4 — committing today applies the actions directly.
+//! The effect runtime: an interpreter over design's `Effect` IR that *materializes* a
+//! `Whiteboard` of `Action`s, runs the **replacement/prevention rewrite pass** (CR 614/615/616,
+//! `rewrite` — a fixpoint over both self and global replacements), then *commits* the survivors,
+//! emitting a `GameEvent` per applied action.
 //!
-//! Interpreted effects (the starter set's needs): `DealDamage`, `Draw`, `GainLife`,
-//! `LoseLife`, `Sequence`. Other IR nodes are a graceful no-op until their cards arrive.
+//! Resolution splits across two methods: [`Engine::interpret`] handles the interactive /
+//! control-flow nodes (`Sequence`, `Optional`, `IfYouDo`, `Modal`, `ForEach`, `Search`,
+//! `AddMana`) — asking the controller for resolution-time choices and returning whether the
+//! effect actually *performed* (so `IfYouDo` can gate a reward on its cost) — while
+//! [`Engine::materialize`] lowers the pure leaves (`DealDamage`, `Draw`, `Destroy`, `PutCounters`,
+//! `CreateToken`, `Conditional`, …) into `Action`s. IR nodes with no card using them yet are a
+//! graceful no-op rather than a panic.
 
 use crate::agent::{
     ActionRef, ConfirmKind, DecisionRequest, DecisionResponse, GameEvent, ModeOption,
