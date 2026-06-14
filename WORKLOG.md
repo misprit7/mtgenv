@@ -3,6 +3,14 @@
 Short, dated entries for future-agent consumption. Newest first. One line or a few bullets
 per unit of meaningful progress. Keep it terse — detail lives in `docs/` and git history.
 
+## 2026-06-14
+
+- **design (#44):** **Escape Tunnel → `fully_implemented: true`** (5a55600) — cap E landed (engine
+  7dd18a9: `Qualification::CantBeBlocked` + `CardFilter::PowerAtMost(n)` + `Effect::GrantQualification`),
+  so authored its 2nd ability: `Activated{ {T}+Sac, GrantQualification{ Target(Creature(PowerAtMost(2))),
+  CantBeBlocked, UntilEndOfTurn } }`. **14/18 fully faithful; 4 partials left** (Dyadrine/B, Surrak/F+G,
+  Icetill/C18, Lumbering/C13). 174 tests green. Ledger + trackers updated.
+
 ## 2026-06-13
 
 - **design (#44):** **Fabled Passage → `fully_implemented: true`** (968036e) — cap D landed (engine
