@@ -126,99 +126,27 @@ fn mana_spec_colors(mana: &ManaSpec) -> Vec<Color> {
     v
 }
 
-/// Greedily select which sources to use to pay `cost`: coloured pips first (each from a
-/// source that can produce that colour), then the generic component from any remaining
-/// source. Returns the chosen sources' indices into `sources`, or `None` if unpayable.
-fn select_payment(sources: &[(ObjId, Vec<Color>)], cost: &ManaCost) -> Option<Vec<usize>> {
-    let mut used = vec![false; sources.len()];
-    // Coloured requirements (CR 202.1): each pip needs a matching-colour source.
-    for (color, need) in &cost.colored {
-        let mut got = 0;
-        for (i, (_, colors)) in sources.iter().enumerate() {
-            if got == *need {
-                break;
-            }
-            if !used[i] && colors.contains(color) {
-                used[i] = true;
-                got += 1;
-            }
-        }
-        if got < *need {
-            return None;
-        }
-    }
-    // Generic: any remaining source (CR 202.1, generic can be paid with any mana).
-    let mut generic_left = cost.generic;
-    for (i, u) in used.iter_mut().enumerate() {
-        let _ = i;
-        if generic_left == 0 {
-            break;
-        }
-        if !*u {
-            *u = true;
-            generic_left -= 1;
-        }
-    }
-    if generic_left > 0 {
-        return None;
-    }
-    Some(
-        used.iter()
-            .enumerate()
-            .filter_map(|(i, &u)| if u { Some(i) } else { None })
-            .collect(),
-    )
+/// One unit of mana `p` could produce, with the permanent that yields it. `bonus == false` is a
+/// source's own `{T}` mana (1 of `colors`); `bonus == true` is an *additional* fixed-colour mana a
+/// `TapCreatureForMana` ability (e.g. Badgermole Cub) grants **per creature tapped** (CR 605.1b) —
+/// real only when its (creature) `source` is actually tapped. Modelling the bonus as first-class
+/// units is what lets affordability + payment count it (#56): otherwise a creature mana-source looks
+/// like 1 mana when tapping it really yields 1 + the bonus.
+struct ManaUnit {
+    source: ObjId,
+    colors: Vec<Color>,
+    bonus: bool,
 }
 
-/// Whether `p` can pay `cost` from currently-untapped mana sources (CR 118.3).
-pub fn can_pay(state: &GameState, p: PlayerId, cost: &ManaCost) -> bool {
-    let sources = mana_sources(state, p);
-    select_payment(&sources, cost).is_some()
-}
-
-/// The total mana `p` could produce right now (one per untapped mana source). A loose upper
-/// bound used to bound the `{X}` choice (CR 107.3 — colour constraints aren't modeled here).
-pub fn available_mana(state: &GameState, p: PlayerId) -> u32 {
-    mana_sources(state, p).len() as u32
-}
-
-/// Pay `cost` by tapping a sufficient set of `p`'s mana sources (CR 605.3a / 601.2g-h).
-/// Returns false (tapping nothing) if the cost can't be paid. `{0}` is always payable
-/// (CR 118.3a).
-pub fn auto_pay(state: &mut GameState, p: PlayerId, cost: &ManaCost) -> bool {
-    let sources = mana_sources(state, p);
-    let chosen = match select_payment(&sources, cost) {
-        Some(c) => c,
-        None => return false,
-    };
-    let tapped: Vec<ObjId> = chosen.iter().map(|&i| sources[i].0).collect();
-    for &id in &tapped {
-        if let Some(o) = state.objects.get_mut(&id) {
-            o.status.tapped = true;
-        }
-    }
-    fire_tap_creature_for_mana(state, p, &tapped);
-    true
-}
-
-/// Fire any "whenever you tap a creature for mana, add …" no-stack triggered mana abilities
-/// (CR 605.1b) — once per creature among the just-tapped `tapped` sources (an animated land that's
-/// a land-creature counts). The produced mana goes straight into `p`'s pool (mana abilities don't
-/// use the stack). Card-agnostic: reads `Triggered{ TapCreatureForMana, AddMana{..} }` abilities.
-fn fire_tap_creature_for_mana(state: &mut GameState, p: PlayerId, tapped: &[ObjId]) {
-    let creature_taps = tapped.iter().filter(|&&id| state.computed(id).is_creature()).count() as u32;
-    if creature_taps == 0 {
-        return;
-    }
+/// The colours every `TapCreatureForMana` (Badgermole-type) ability on `p`'s battlefield grants per
+/// creature tapped — a multiset (two such abilities each adding `{G}` ⇒ `[G, G]`, i.e. +2 `{G}` per
+/// creature tap). Card-agnostic: reads `Triggered{ TapCreatureForMana, AddMana{..} }` abilities.
+fn tap_bonus_colors(state: &GameState, p: PlayerId) -> Vec<Color> {
     let db = state.card_db();
-    let battlefield = state.player(p).battlefield.clone();
     let mut bonus: Vec<Color> = Vec::new();
-    for id in battlefield {
-        let grp = match state.objects.get(&id) {
-            Some(o) => o.chars.grp_id,
-            None => continue,
-        };
-        let Some(def) = db.get(grp) else { continue };
+    for &id in &state.player(p).battlefield {
+        let Some(o) = state.objects.get(&id) else { continue };
+        let Some(def) = db.get(o.chars.grp_id) else { continue };
         for ab in &def.abilities {
             if let Ability::Triggered {
                 event: EventPattern::TapCreatureForMana,
@@ -230,9 +158,123 @@ fn fire_tap_creature_for_mana(state: &mut GameState, p: PlayerId, tapped: &[ObjI
             }
         }
     }
-    for c in bonus {
-        *state.player_mut(p).mana_pool.amounts.entry(c).or_insert(0) += creature_taps;
+    bonus
+}
+
+/// All mana units `p` could currently produce: each untapped source's base mana, PLUS — for every
+/// creature source — the `TapCreatureForMana` bonus (one unit per bonus colour). Base units come
+/// first so payment prefers real sources and only taps a creature for its bonus when it's needed.
+fn mana_units(state: &GameState, p: PlayerId) -> Vec<ManaUnit> {
+    let sources = mana_sources(state, p);
+    let bonus_colors = tap_bonus_colors(state, p);
+    let mut units: Vec<ManaUnit> = sources
+        .iter()
+        .map(|(id, colors)| ManaUnit { source: *id, colors: colors.clone(), bonus: false })
+        .collect();
+    if !bonus_colors.is_empty() {
+        for (id, _) in &sources {
+            if state.computed(*id).is_creature() {
+                for c in &bonus_colors {
+                    units.push(ManaUnit { source: *id, colors: vec![*c], bonus: true });
+                }
+            }
+        }
     }
+    units
+}
+
+/// Greedily select which mana units pay `cost`: coloured pips first (each from a unit that can
+/// produce that colour), then the generic component from any remaining unit. Returns the chosen
+/// unit indices, or `None` if unpayable. Each unit is 1 mana; a creature's base + bonus units are
+/// distinct, so a creature mana-source can cover more than one pip (the #56 fix).
+fn select_payment(units: &[ManaUnit], cost: &ManaCost) -> Option<Vec<usize>> {
+    let mut used = vec![false; units.len()];
+    // Coloured requirements (CR 202.1): each pip needs a matching-colour unit.
+    for (color, need) in &cost.colored {
+        let mut got = 0;
+        for (i, u) in units.iter().enumerate() {
+            if got == *need {
+                break;
+            }
+            if !used[i] && u.colors.contains(color) {
+                used[i] = true;
+                got += 1;
+            }
+        }
+        if got < *need {
+            return None;
+        }
+    }
+    // Generic: any remaining unit (CR 202.1, generic can be paid with any mana).
+    let mut generic_left = cost.generic;
+    for u in used.iter_mut() {
+        if generic_left == 0 {
+            break;
+        }
+        if !*u {
+            *u = true;
+            generic_left -= 1;
+        }
+    }
+    if generic_left > 0 {
+        return None;
+    }
+    Some(used.iter().enumerate().filter_map(|(i, &u)| if u { Some(i) } else { None }).collect())
+}
+
+/// Whether `p` can pay `cost` from currently-untapped mana sources (CR 118.3), counting any
+/// TapCreatureForMana bonus a creature source would yield.
+pub fn can_pay(state: &GameState, p: PlayerId, cost: &ManaCost) -> bool {
+    select_payment(&mana_units(state, p), cost).is_some()
+}
+
+/// The total mana `p` could produce right now — every untapped source's base mana plus each
+/// creature's TapCreatureForMana bonus. A loose upper bound used to bound the `{X}` choice
+/// (CR 107.3 — colour constraints aren't modeled here).
+pub fn available_mana(state: &GameState, p: PlayerId) -> u32 {
+    mana_units(state, p).len() as u32
+}
+
+/// Pay `cost` by tapping a sufficient set of `p`'s mana sources (CR 605.3a / 601.2g-h), counting
+/// the TapCreatureForMana bonus (CR 605.1b). Returns false (tapping nothing) if the cost can't be
+/// paid. `{0}` is always payable (CR 118.3a). Bonus mana not consumed by the cost floats in the pool.
+pub fn auto_pay(state: &mut GameState, p: PlayerId, cost: &ManaCost) -> bool {
+    let units = mana_units(state, p);
+    let chosen = match select_payment(&units, cost) {
+        Some(c) => c,
+        None => return false,
+    };
+    // Tap each distinct real permanent behind a chosen unit (a creature whose base AND bonus are
+    // both used is still tapped once).
+    let tapped: std::collections::BTreeSet<ObjId> = chosen.iter().map(|&i| units[i].source).collect();
+    for &id in &tapped {
+        if let Some(o) = state.objects.get_mut(&id) {
+            o.status.tapped = true;
+        }
+    }
+    // The TapCreatureForMana bonus (CR 605.1b): each creature tapped produces the full per-tap bonus;
+    // the bonus units actually spent on the cost are netted out, so only the genuine surplus floats
+    // into the pool (mana abilities don't use the stack; the pool empties at end of step).
+    let bonus_colors = tap_bonus_colors(state, p);
+    if !bonus_colors.is_empty() {
+        let creature_taps =
+            tapped.iter().filter(|&&id| state.computed(id).is_creature()).count() as i64;
+        let mut surplus: std::collections::BTreeMap<Color, i64> = std::collections::BTreeMap::new();
+        for c in &bonus_colors {
+            *surplus.entry(*c).or_insert(0) += creature_taps;
+        }
+        for &i in &chosen {
+            if units[i].bonus {
+                *surplus.entry(units[i].colors[0]).or_insert(0) -= 1;
+            }
+        }
+        for (c, n) in surplus {
+            if n > 0 {
+                *state.player_mut(p).mana_pool.amounts.entry(c).or_insert(0) += n as u32;
+            }
+        }
+    }
+    true
 }
 
 #[cfg(test)]
@@ -331,6 +373,123 @@ mod tests {
             1,
             "Badgermole added a bonus {{G}} to the pool"
         );
+    }
+
+    #[test]
+    fn badgermole_bonus_counts_toward_affordability_and_payment() {
+        // #56: a creature mana-source yields its base mana PLUS the Badgermole TapCreatureForMana
+        // bonus, so affordability + payment must count it. Before the fix, costs needing the bonus
+        // were wrongly blocked (each source counted as 1 mana; the bonus was added to the pool only
+        // AFTER selection and never used to pay).
+        use crate::basics::CardType;
+        use crate::effects::ability::{Ability, EventPattern};
+        use crate::effects::value::{PlayerRef, ValueExpr};
+        use crate::state::Characteristics;
+
+        fn badgermole_db() -> cards::CardDb {
+            let mut db = cards::starter_db();
+            db.insert(cards::CardDef {
+                chars: Characteristics {
+                    name: "Mana Dork".into(),
+                    card_types: vec![CardType::Creature],
+                    power: Some(1),
+                    toughness: Some(1),
+                    grp_id: 9970,
+                    ..Default::default()
+                },
+                abilities: vec![cards::mana_ability(Color::Green)], // {T}: Add {G}
+                text: String::new(),
+                ..Default::default()
+            });
+            db.insert(cards::CardDef {
+                chars: Characteristics {
+                    name: "Badgermole".into(),
+                    card_types: vec![CardType::Creature],
+                    power: Some(2),
+                    toughness: Some(2),
+                    grp_id: 9971,
+                    ..Default::default()
+                },
+                abilities: vec![Ability::Triggered {
+                    event: EventPattern::TapCreatureForMana,
+                    condition: None,
+                    intervening_if: false,
+                    effect: Effect::AddMana {
+                        who: PlayerRef::Controller,
+                        mana: ManaSpec {
+                            produces: vec![(Color::Green, ValueExpr::Fixed(1))],
+                            any_color: None,
+                        },
+                    },
+                }],
+                text: String::new(),
+                ..Default::default()
+            });
+            // A Land Creature — Forest (an "earthbent" land): taps for {G} from its subtype AND is a
+            // creature, so tapping it triggers the bonus.
+            db.insert(cards::CardDef {
+                chars: Characteristics {
+                    name: "Earthbent Forest".into(),
+                    card_types: vec![CardType::Land, CardType::Creature],
+                    subtypes: vec![LandType::Forest.into()],
+                    power: Some(0),
+                    toughness: Some(3),
+                    grp_id: 9972,
+                    ..Default::default()
+                },
+                abilities: Vec::new(),
+                text: String::new(),
+                ..Default::default()
+            });
+            db
+        }
+
+        let add = |state: &mut GameState, grp: u32| -> ObjId {
+            let c = state.card_db().get(grp).unwrap().chars.clone();
+            let id = state.add_card(PlayerId(0), c, Zone::Battlefield);
+            state.objects.get_mut(&id).unwrap().summoning_sick = false; // may tap for mana
+            id
+        };
+
+        // Case 1: dork ({G}, creature) + Forest ({G}). Two real sources = 2 mana — NOT enough for
+        // {2}{G} (3). Adding Badgermole makes the dork's tap also yield a bonus {G} → 3 → affordable.
+        let mut state = GameState::new(2, 1);
+        state.set_card_db(Arc::new(badgermole_db()));
+        let dork = add(&mut state, 9970);
+        add(&mut state, grp::FOREST);
+        assert!(
+            !can_pay(&state, PlayerId(0), &cost(2, &[(Color::Green, 1)])),
+            "2 plain sources can't pay {{2}}{{G}}"
+        );
+        add(&mut state, 9971); // Badgermole
+        assert!(
+            can_pay(&state, PlayerId(0), &cost(2, &[(Color::Green, 1)])),
+            "the Badgermole bonus makes {{2}}{{G}} affordable"
+        );
+        assert!(auto_pay(&mut state, PlayerId(0), &cost(2, &[(Color::Green, 1)])));
+        assert!(state.object(dork).status.tapped, "the dork tapped (its bonus was needed)");
+        assert_eq!(
+            state.player(PlayerId(0)).mana_pool.amounts.get(&Color::Green).copied().unwrap_or(0),
+            0,
+            "the bonus was fully spent on the cost → no phantom float"
+        );
+
+        // Case 2: dork + earthbent Forest (BOTH creatures) + Badgermole → 2 base + 2 bonus = 4 mana,
+        // enough for {2}{G}{G}; two real sources alone (2 mana) could not.
+        let mut s2 = GameState::new(2, 1);
+        s2.set_card_db(Arc::new(badgermole_db()));
+        add(&mut s2, 9970); // dork
+        add(&mut s2, 9972); // earthbent Forest (land creature)
+        assert!(
+            !can_pay(&s2, PlayerId(0), &cost(2, &[(Color::Green, 2)])),
+            "two sources alone can't pay {{2}}{{G}}{{G}}"
+        );
+        add(&mut s2, 9971); // Badgermole
+        assert!(
+            can_pay(&s2, PlayerId(0), &cost(2, &[(Color::Green, 2)])),
+            "two creature sources each get a bonus {{G}} → {{2}}{{G}}{{G}} affordable"
+        );
+        assert!(auto_pay(&mut s2, PlayerId(0), &cost(2, &[(Color::Green, 2)])));
     }
 
     #[test]
