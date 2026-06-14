@@ -167,10 +167,13 @@ pub fn engine_with_stops(
         let mut c = handle.lock().unwrap();
         c.auto_pass = stops.auto_pass;
         c.full_control = stops.full_control;
-        // The engine surfaces a SUPERSET of stop windows (smart_stops on = marked-phases + any
-        // window where you have a play + opp-respond) and the web client filters it down to the
-        // actual rule client-side (stop iff [marked phase OR opp spell on top] AND you have a usable
-        // spell/non-mana ability). So we force smart on here regardless of the carrier.
+        // TECH-DEBT (backlog, spec'd to engine): the web stop policy currently lives CLIENT-side as
+        // a filter (`priorityAutoPass`) over the engine's surfaced SUPERSET — we force smart_stops
+        // on (marked-phases + any window with a play + opp-respond) and the client narrows it to the
+        // real rule (stop iff [marked phase OR opp spell on top] AND you have a usable non-mana
+        // action). This DIVERGES from the "stops policy lives in the engine" law; engine will
+        // canonicalize `should_auto_pass` to the exact rule + drop these flags, then this force and
+        // the client filter both go away. Until then, force smart on regardless of the carrier.
         c.smart_stops = true;
         c.resolve_own_stack = stops.resolve_own_stack;
         // Seed the per-`(step, own_turn)` stop overrides (default set + any URL overrides). The user
