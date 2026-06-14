@@ -75,8 +75,8 @@ cards/
 > **Status (2026-06-14):** the push is **delivered** — all 18 distinct cards authored and the
 > `selesnya`/`landfall` preset (`cards::selesnya_landfall_deck`) **is the real mtggoldfish 60**
 > (51 nonbasics + 7 Forest / 2 Plains, no padding). It plays end-to-end (validated: `mtg-cli
-> selesnya selesnya` across seeds, clean finishes, zero panics). **10/18 cards are fully faithful;
-> 8 ship as honest tracked-partials** — each with exactly one deferred clause, gated on a
+> selesnya selesnya` across seeds, clean finishes, zero panics). **11/18 cards are fully faithful;
+> 7 ship as honest tracked-partials** — each with exactly one deferred clause, gated on a
 > still-unbuilt cap (see the upgrade-tail table). **No card is husked or approximated.**
 >
 > This is the authoritative capability index (the original C-plan, reconciled to reality):
@@ -119,7 +119,8 @@ Needed and built as specific cards demanded them — not in the original C-plan:
 | `ValueExpr::PowerOfTarget` (resolution snapshot) | ✅ `557b6b5` | Mightform double-power |
 | `Rewrite::EntersWithCountersValue` + `ValueExpr::ManaSpent` | ✅ `a2e2b13` | Dyadrine (enters with counters = mana spent) |
 | Attack-trigger firing (`EventPattern::SelfAttacks` / `YouAttack`) | ✅ `4613d51` | Dyadrine attack (deferred c3); Lumbering "or attacks" |
-| `Effect::Conditional` interp + `Effect::GrantKeyword` + `CounterKind::Named` | ✅ `d8484d2` | Earthbender quest-chain (pending A); any intervening-if / grant-keyword-EOT |
+| `Effect::Conditional` interp + `Effect::GrantKeyword` + `CounterKind::Named` | ✅ `d8484d2` | Earthbender quest-chain; any intervening-if / grant-keyword-EOT |
+| **Reflexive "when you do" sub-trigger** (`StackObjectKind::ReflexiveAbility`; targeted `Conditional.then` deferred — target chosen at 603.3d only if the if holds, CR 603.7c) | ✅ `2e13694` | Earthbender Ascension ✓; the "if you do" front for Dyadrine c3 |
 | `Effect::Exile` interp + `TargetKind::CardInZone{Graveyard}` | ✅ `e002d7a` | Keen-Eyed exile ability |
 | `Ability::ConditionalStatic` + `ValueExpr::DistinctCardTypesAmongExiledWith` + exile-association (`Object.exiled_with`) | ✅ `b18c6f6` | Keen-Eyed conditional +4/+4 & trample |
 | Permanent-targeting fix (enumerate all permanents; enforce `HasCardType`/`All`/`Not`/`ControlledBy`) | ✅ `70c483e`+`861f3aa` | earthbend land-targeting end-to-end |
@@ -132,8 +133,8 @@ the moment its cap lands (tracked in task #44; exact card IR staged in `WORKLOG.
 
 | Cap | Card | Deferred clause |
 |---|---|---|
-| **A** reflexive sub-trigger (CR 603.7c — target chosen *only when* the intervening-if is met) | Earthbender Ascension (also front of Dyadrine) | landfall → quest counter → when-you-do(≥4) → +1/+1 + trample |
-| **B** distinct two-target counter removal | Dyadrine, Synthesis Amalgam | attack → remove a +1/+1 from *each of two* creatures → draw + Robot |
+| ~~**A** reflexive sub-trigger~~ ✅ **DONE** `2e13694` | ~~Earthbender Ascension~~ ✓ flipped `e6b9050` | landfall → quest → when-you-do(≥4) → +1/+1 + trample |
+| **B** distinct two-target counter removal (cap A already landed) | Dyadrine, Synthesis Amalgam | attack → remove a +1/+1 from *each of two* creatures → draw + Robot |
 | **C13** Crew (CR 702.122) | Lumbering Worldwagon | Crew 4 |
 | **D** searched-permanent reference + `Effect::Untap` (Conditional + `CountAtLeast` already built) | Fabled Passage | "if you control 4+ lands, untap that land" |
 | **E** `Qualification::CantBeBlocked` + power≤2 target filter + grant-qualification-for-a-duration | Escape Tunnel | "{T},Sac: target power≤2 creature can't be blocked this turn" |

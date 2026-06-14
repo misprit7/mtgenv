@@ -5,6 +5,12 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **design (#44):** **Earthbender Ascension → `fully_implemented: true`** (e6b9050) — cap A reflexive
+  sub-trigger landed (engine 2e13694), so authored the full landfall quest-chain: `Triggered{ landfall,
+  Sequence[ PutCounters{self, Named("quest"), 1}, Conditional{ ValueAtLeast(CountersOnSelf(quest), 4),
+  then: [ +1/+1 on target creature you control, GrantKeyword(Trample, UntilEndOfTurn) ] } ] }`. The
+  targeted reward is a reflexive sub-trigger (CR 603.7c) — target chosen only at ≥4, counter always lands.
+  **11/18 fully faithful; 7 partials left.** 171 tests green. Ledger updated.
 - **design (#44):** **FULL remaining-partial-cap queue staged** (so engine grinds the tail back-to-back; I
   flip each ⚠→✓ as its cap commits). **8 cards still `fully_implemented: false`; 10/18 already fully faithful.**
   (Correction: the capability-ledger reconciliation caught **Icetill Explorer** as an 8th partial — it uses the
