@@ -101,6 +101,11 @@ pub struct StopConfig {
     /// `seat == active_player`. `Some(true)` = always stop here, `Some(false)` = never, absent =
     /// the Arena default.
     overrides: std::collections::BTreeMap<(Phase, bool), bool>,
+    /// Manual mana (a human/UI session): when ON, the engine offers `ActivateMana` actions at
+    /// priority so the seat can tap specific sources for mana (CR 605.3a) — e.g. to control which
+    /// lands fund a spell. Default OFF: headless/agent seats auto-pay, so mana abilities never enter
+    /// their action space, and these actions never count toward a SmartStop (see `priority_round`).
+    pub manual_mana: bool,
 }
 
 impl Default for StopConfig {
@@ -111,6 +116,7 @@ impl Default for StopConfig {
             smart_stops: true,       // MTGA default (smartStopsSetting = Enable)
             resolve_own_stack: true, // MTGA default (stackAutoPassOption = ResolveMyStackEffects)
             overrides: std::collections::BTreeMap::new(),
+            manual_mana: false,      // agent/replay seats auto-pay; a UI session turns it on
         }
     }
 }
@@ -278,6 +284,12 @@ impl Engine {
     /// they resolve; OFF = re-prompt you to respond to your own spell.
     pub fn set_resolve_own_stack(&mut self, p: PlayerId, on: bool) {
         self.stops[p.0 as usize].lock().unwrap().resolve_own_stack = on;
+    }
+    /// Manual mana for a seat (a human/UI session): ON = offer `ActivateMana` actions at priority so
+    /// the seat can tap specific sources for mana (CR 605.3a). Default OFF keeps agent/replay seats
+    /// on auto-pay (mana abilities stay out of their action space). See [`StopConfig::manual_mana`].
+    pub fn set_manual_mana(&mut self, p: PlayerId, on: bool) {
+        self.stops[p.0 as usize].lock().unwrap().manual_mana = on;
     }
     /// Apply a named MTGA [`AutoPassOption`] to a seat (a convenience over the flags).
     pub fn set_auto_pass_option(&mut self, p: PlayerId, opt: AutoPassOption) {
@@ -891,9 +903,15 @@ impl Engine {
             self.state.priority_player = Some(p);
 
             let actions = self.legal_priority_actions(p);
+            // Mana abilities (CR 605) never warrant a SmartStop on their own — you can always tap a
+            // land, so counting them would force a prompt every step. Key the auto-pass decision off
+            // the *meaningful* (non-mana) actions; the mana actions still ride along in the prompt
+            // when the seat IS stopped, so a human can tap specific sources before paying (#36).
+            let has_meaningful =
+                actions.iter().any(|a| !matches!(a, PlayableAction::ActivateMana { .. }));
             // Arena-profile auto-pass (AGENT_INTERFACE §8.1): elide this window (treat as a
             // pass without prompting the agent) when the policy says so. Off ⇒ always prompt.
-            let response = if self.should_auto_pass(p, !actions.is_empty()) {
+            let response = if self.should_auto_pass(p, has_meaningful) {
                 DecisionResponse::Pass
             } else {
                 let req = DecisionRequest::Priority {
@@ -1073,6 +1091,29 @@ impl Engine {
                 }
             }
         }
+
+        // Manual mana abilities (CR 605.3a). Offered ONLY to a seat with manual mana on (a UI
+        // session): one `ActivateMana` per untapped usable source, so a human can tap specific
+        // lands to control which sources fund a spell. Headless/agent seats leave this off and
+        // auto-pay, so these never enter the agent's action space. They also don't warrant a
+        // SmartStop on their own (`priority_round` keys the stop decision off non-mana actions).
+        if self.stops[p.0 as usize].lock().unwrap().manual_mana {
+            for (source, _colors) in mana::usable_mana_sources(s, p) {
+                // The source's authored `{T}: Add …` ability index, if any; else a sentinel for
+                // intrinsic basic-land-type mana (CR 305.6, no authored ability). Execution
+                // recomputes colours from the source, so this is only a label hint.
+                let ability = s
+                    .def_of(source)
+                    .and_then(|d| {
+                        d.abilities
+                            .iter()
+                            .position(|ab| matches!(ab, Ability::Activated { is_mana: true, .. }))
+                    })
+                    .map(|i| AbilityRef(i as u32))
+                    .unwrap_or(AbilityRef(u32::MAX));
+                actions.push(PlayableAction::ActivateMana { source, ability });
+            }
+        }
         actions
     }
 
@@ -1169,8 +1210,45 @@ impl Engine {
             PlayableAction::Activate { source, ability } => {
                 self.activate_ability(p, *source, *ability)
             }
-            // ActivateMana / Special: separate paths (mana abilities don't use the stack).
-            _ => {}
+            // Mana abilities resolve immediately without the stack (CR 605.3b).
+            PlayableAction::ActivateMana { source, .. } => self.activate_mana_ability(p, *source),
+            // Special actions (CR 116) — none routed through here yet.
+            PlayableAction::Special { .. } => {}
+        }
+    }
+
+    /// Manually activate a mana ability (CR 605.3 — no stack): tap `source` for one mana, asking the
+    /// controller which colour when it can produce more than one. The mana floats into the pool
+    /// (CR 106.4, emptied at end of step). The seat retains priority (it acted), so it can tap
+    /// several sources in a row before paying a cost — letting a human choose which lands fund a
+    /// spell (#36). A no-op if `source` isn't a current usable mana source for `p`.
+    fn activate_mana_ability(&mut self, p: PlayerId, source: ObjId) {
+        let colors = match mana::usable_mana_sources(&self.state, p)
+            .into_iter()
+            .find(|(id, _)| *id == source)
+        {
+            Some((_, cs)) => cs,
+            None => return,
+        };
+        let color = if colors.len() == 1 {
+            colors[0]
+        } else {
+            // Multi-colour source (a dual / any-colour): ask which colour to make (CR 605.3a).
+            let resp = self.ask(
+                p,
+                &DecisionRequest::ChooseColor { allowed: colors.clone(), min: 1, max: 1 },
+            );
+            match resp {
+                DecisionResponse::Indices(v) => {
+                    v.first().and_then(|&i| colors.get(i as usize)).copied().unwrap_or(colors[0])
+                }
+                DecisionResponse::Index(i) => colors.get(i as usize).copied().unwrap_or(colors[0]),
+                _ => colors[0],
+            }
+        };
+        if mana::produce_mana(&mut self.state, p, source, color) {
+            // Live-view refresh so the client shows the mana entering the pool (#62).
+            self.broadcast(GameEvent::ManaPoolChanged { player: p });
         }
     }
 
@@ -6453,6 +6531,84 @@ mod expect_tests {
         state2.phase = Phase::PrecombatMain;
         state2.player_mut(PlayerId(0)).lands_played_this_turn = 1;
         assert!(pass_engine(state2).legal_priority_actions(PlayerId(0)).is_empty());
+    }
+
+    /// #36: manual mana. A seat with `manual_mana` ON is offered an `ActivateMana` per untapped
+    /// source so a human can tap SPECIFIC lands; the floated mana is then spent by a later cast,
+    /// so no OTHER source is auto-tapped (source control). A default (agent/replay) seat never sees
+    /// these — mana abilities stay out of the action space and it auto-pays.
+    #[test]
+    fn manual_mana_lets_a_seat_tap_chosen_sources_then_cast_from_float() {
+        use crate::basics::Color;
+        use crate::cards::{grp, starter_db};
+        use std::sync::Arc;
+
+        let mut state = GameState::new(2, 1);
+        state.set_card_db(Arc::new(starter_db()));
+        // P0 in precombat main: three Forests on the battlefield + a Grizzly Bears ({1}{G}) in hand.
+        let forests: Vec<ObjId> = (0..3)
+            .map(|_| {
+                let c = state.card_db().get(grp::FOREST).unwrap().chars.clone();
+                state.add_card(PlayerId(0), c, Zone::Battlefield)
+            })
+            .collect();
+        let bears = {
+            let c = state.card_db().get(grp::GRIZZLY_BEARS).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, Zone::Hand)
+        };
+        state.phase = Phase::PrecombatMain;
+        state.active_player = PlayerId(0);
+        let mut engine = pass_engine(state);
+
+        // Default seat (agent/replay): NO mana abilities in the action space — just the cast.
+        let off = engine.legal_priority_actions(PlayerId(0));
+        assert!(
+            !off.iter().any(|a| matches!(a, PlayableAction::ActivateMana { .. })),
+            "manual mana OFF (default) keeps ActivateMana out of the action space: {off:?}"
+        );
+        assert!(
+            off.iter().any(|a| matches!(a, PlayableAction::Cast { .. })),
+            "the {{1}}{{G}} spell is castable"
+        );
+
+        // Turn on manual mana (a UI session): one ActivateMana per untapped Forest, in order.
+        engine.set_manual_mana(PlayerId(0), true);
+        let on = engine.legal_priority_actions(PlayerId(0));
+        let mana_sources: Vec<ObjId> = on
+            .iter()
+            .filter_map(|a| match a {
+                PlayableAction::ActivateMana { source, .. } => Some(*source),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(mana_sources, forests, "one ActivateMana per untapped Forest");
+
+        // Tap the FIRST and THIRD Forests for mana (the player's chosen sources), leaving the middle.
+        for &src in &[forests[0], forests[2]] {
+            engine.perform_priority_action(
+                PlayerId(0),
+                &PlayableAction::ActivateMana { source: src, ability: AbilityRef(u32::MAX) },
+            );
+        }
+        let green = |e: &Engine| {
+            e.state.player(PlayerId(0)).mana_pool.amounts.get(&Color::Green).copied().unwrap_or(0)
+        };
+        assert_eq!(green(&engine), 2, "the two chosen Forests floated {{G}}{{G}}");
+        assert!(
+            engine.state.object(forests[0]).status.tapped
+                && engine.state.object(forests[2]).status.tapped,
+            "the chosen Forests are tapped"
+        );
+        assert!(!engine.state.object(forests[1]).status.tapped, "the un-chosen Forest is untouched");
+
+        // Cast the {1}{G} spell: paid from the FLOATING mana (CR 106.4), so the middle Forest is
+        // NOT auto-tapped — the human controlled which sources funded the spell.
+        engine.cast_spell(PlayerId(0), bears, CastVariant::Normal);
+        assert_eq!(green(&engine), 0, "the floated {{G}}{{G}} paid the {{1}}{{G}} cost");
+        assert!(
+            !engine.state.object(forests[1]).status.tapped,
+            "casting consumed the floated mana — the un-chosen Forest stayed untapped (source control)"
+        );
     }
 
     #[test]

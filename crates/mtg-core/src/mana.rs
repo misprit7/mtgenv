@@ -255,6 +255,46 @@ pub fn available_mana(state: &GameState, p: PlayerId) -> u32 {
     payment_units(state, p, &[]).len() as u32
 }
 
+/// The untapped mana sources `p` controls right now, each paired with the colours it can tap for —
+/// the set a UI session enumerates as manual `ActivateMana` actions at priority (CR 605.3a). Same
+/// sources the auto-payer draws from (tapped + summoning-sick sources already filtered out); pure
+/// floating pool mana is NOT included (it isn't produced by a tap).
+pub fn usable_mana_sources(state: &GameState, p: PlayerId) -> Vec<(ObjId, Vec<Color>)> {
+    mana_sources(state, p)
+}
+
+/// Manually activate `source`'s mana ability for one mana of `color` (CR 605.3 — a mana ability, no
+/// stack): tap it, add `color` to `p`'s pool, plus any `TapCreatureForMana` bonus when `source` is a
+/// creature (Badgermole, CR 605.1b). Returns false (changing nothing) if `source` isn't a current
+/// untapped usable mana source of `p` able to produce `color`. The caller floats this in the pool
+/// (CR 106.4) and spends it on the next cost — letting a human pick which sources fund a spell (#36).
+pub fn produce_mana(state: &mut GameState, p: PlayerId, source: ObjId, color: Color) -> bool {
+    use std::collections::BTreeMap;
+    // Validate against the live source set so a stale/illegal request is a no-op (the engine only
+    // ever offers legal sources, but this keeps the primitive safe in isolation).
+    match usable_mana_sources(state, p).into_iter().find(|(id, _)| *id == source) {
+        Some((_, cs)) if cs.contains(&color) => {}
+        _ => return false,
+    }
+    if let Some(o) = state.objects.get_mut(&source) {
+        o.status.tapped = true;
+    }
+    let mut additions: BTreeMap<Color, u32> = BTreeMap::new();
+    *additions.entry(color).or_insert(0) += 1;
+    // Tapping a creature for mana fires every TapCreatureForMana bonus (CR 605.1b), exactly as the
+    // auto-payer does — so manual taps and auto-pay agree on the Badgermole-style bonus.
+    let bonus_colors = tap_bonus_colors(state, p);
+    if !bonus_colors.is_empty() && state.computed(source).is_creature() {
+        for c in &bonus_colors {
+            *additions.entry(*c).or_insert(0) += 1;
+        }
+    }
+    for (c, n) in additions {
+        *state.player_mut(p).mana_pool.amounts.entry(c).or_insert(0) += n;
+    }
+    true
+}
+
 /// Pay `cost` through the real mana pool (CR 605/106/118): tap a sufficient set of sources, produce
 /// each tapped source's FULL output into `p`'s pool (base + TapCreatureForMana bonus), then deduct
 /// the cost from the pool — spending floating mana first. Surplus stays FLOATING (CR 106.4, emptied
