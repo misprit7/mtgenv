@@ -290,4 +290,64 @@ mod tests {
         assert!(!run(true), "with a basic in play → enters untapped");
         assert!(run(false), "with no basic in play → enters tapped");
     }
+
+    /// #60 end-to-end (the REAL activate path, post-#57/#59 mana rework): activate
+    /// "{2}{G}, {T}: Earthbend 2" via `activate_ability`. The `{T}` taps **Ba Sing Se itself** (cost,
+    /// CR 118.3) so it can't ALSO pay a `{G}` (the #57 double-count bug) — paying `{2}{G}` therefore
+    /// needs **3 *other* lands**. With exactly 3 Forests + Ba Sing Se, activation succeeds and the
+    /// chosen "target land you control" is earthbent into a 2/2 haste land-creature. If #57 had
+    /// regressed (Ba Sing Se's `{T}` mis-counted as a `{G}`), 3 lands would not suffice / mispay.
+    #[test]
+    fn ba_sing_se_earthbend_via_full_activation_pays_2g_plus_tap() {
+        use crate::agent::{AbilityRef, Agent, DecisionRequest, DecisionResponse, PlayerView};
+        use crate::basics::{CardType, Zone};
+        use crate::cards::{grp, starter_db};
+        use crate::effects::ability::Keyword;
+        use crate::ids::PlayerId;
+        use crate::priority::Engine;
+        use crate::state::GameState;
+        use std::sync::Arc;
+
+        #[derive(Clone)]
+        struct PlayAgent;
+        impl Agent for PlayAgent {
+            fn decide(&mut self, _v: &PlayerView, req: &DecisionRequest) -> DecisionResponse {
+                match req {
+                    DecisionRequest::ChooseTargets { .. } => DecisionResponse::Pairs(vec![(0, 0)]),
+                    _ => DecisionResponse::Pass,
+                }
+            }
+        }
+
+        let mut state = GameState::new(2, 1);
+        state.set_card_db(Arc::new(starter_db()));
+        let bss = {
+            let c = state.card_db().get(BA_SING_SE).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, Zone::Battlefield)
+        };
+        // Exactly 3 OTHER lands to pay {2}{G} (Ba Sing Se's {T} pays the tap cost, not mana — #57).
+        for _ in 0..3 {
+            let c = state.card_db().get(grp::FOREST).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, Zone::Battlefield);
+        }
+        let mut e = Engine::new(state, vec![Box::new(PlayAgent), Box::new(PlayAgent)]);
+        e.activate_ability(PlayerId(0), bss, AbilityRef(2)); // {2}{G},{T}: Earthbend 2 (target a land)
+        e.resolve_top();
+
+        assert!(e.state.object(bss).status.tapped, "Ba Sing Se tapped for its {{T}} cost");
+        // Exactly one land you control was earthbent into a 2/2 haste land-creature.
+        let animated: Vec<_> = e.state.players[0]
+            .battlefield
+            .iter()
+            .copied()
+            .filter(|&o| {
+                let cc = e.state.computed(o);
+                cc.is_creature() && cc.card_types.contains(&CardType::Land)
+            })
+            .collect();
+        assert_eq!(animated.len(), 1, "exactly one land became a creature (earthbend 2)");
+        let cc = e.state.computed(animated[0]);
+        assert_eq!((cc.power, cc.toughness), (Some(2), Some(2)), "0/0 + two +1/+1 counters = 2/2");
+        assert!(cc.has_keyword(Keyword::Haste), "earthbent land has haste");
+    }
 }
