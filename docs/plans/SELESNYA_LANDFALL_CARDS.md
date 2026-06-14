@@ -75,9 +75,11 @@ cards/
 > **Status (2026-06-14):** the push is **delivered** — all 18 distinct cards authored and the
 > `selesnya`/`landfall` preset (`cards::selesnya_landfall_deck`) **is the real mtggoldfish 60**
 > (51 nonbasics + 7 Forest / 2 Plains, no padding). It plays end-to-end (validated: `mtg-cli
-> selesnya selesnya` across seeds, clean finishes, zero panics). **16/18 cards are fully faithful;
-> 2 ship as honest tracked-partials** — each with exactly one deferred clause, gated on a
-> still-unbuilt cap (see the upgrade-tail table). **No card is husked or approximated.**
+> selesnya selesnya` across seeds, clean finishes, zero panics). **🎉 Upgrade tail COMPLETE — 17/18
+> cards are fully faithful; the deck is 18/18 fully-faithful *minus only Surrak's inert "can't be
+> countered"*** (the single remaining deferred clause, kept as a documented standing gap per the lead
+> — there is no counterspell in the pool, so it has nothing to act on). Every substantial clause on
+> every card is implemented. **No card is husked or approximated.**
 >
 > This is the authoritative capability index (the original C-plan, reconciled to reality):
 > ✅ built · ⏳ deferred. Commit refs given for the recent/subsystem caps.
@@ -99,7 +101,7 @@ cards/
 | C13 | **Crew** (CR 702.122) — `CostComponent::Crew(n)` + `Effect::BecomeCreature{what,duration}` | ✅ `80d9ab3` | Lumbering Worldwagon ✓ |
 | C14 | **Warp** (alt cast + exile-at-end-step + recast-from-exile) | ✅ `c445d78`+`7cc6f9c` | Mightform Harmonizer ✓ |
 | C15 | `Effect::PumpPT` + double-power snapshot (`ValueExpr::PowerOfTarget`) | ✅ `557b6b5` | Mightform ✓ |
-| C16 | becomes-targeted trigger (`EventPattern::BecomesTargeted{filter,by_opponent}`) | ✅ `8d006fd` (battlefield half) | Surrak (⏳ stack half = cap F) |
+| C16 | becomes-targeted trigger (`EventPattern::BecomesTargeted{filter,by_opponent}`) | ✅ `8d006fd` + `d3ee9e9` (battlefield + stack halves) | Surrak — trigger fully works; only can't-be-countered/G deferred |
 | C17 | Exile-from-graveyard + count-card-types buff | ✅ `e002d7a`+`b18c6f6` | Keen-Eyed Curator ✓ |
 | C18 | **Static land-play permissions** — `StaticContribution::ExtraLandPlays(n)` + `PlayLandsFrom(Zone)` | ✅ `3ca7fef` | Icetill Explorer ✓ |
 | C19 | Mana production via real IR mana abilities (CR 605) | ✅ | Hushwood Verge ✓, Llanowar ✓, Ba Sing Se ✓ |
@@ -137,12 +139,12 @@ the moment its cap lands (tracked in task #44; exact card IR staged in `WORKLOG.
 | Cap | Card | Deferred clause |
 |---|---|---|
 | ~~**A** reflexive sub-trigger~~ ✅ **DONE** `2e13694` | ~~Earthbender Ascension~~ ✓ flipped `e6b9050` | landfall → quest → when-you-do(≥4) → +1/+1 + trample |
-| **B** distinct two-target counter removal (cap A already landed) | Dyadrine, Synthesis Amalgam | attack → remove a +1/+1 from *each of two* creatures → draw + Robot |
+| ~~**B** `Effect::Optional` + `Effect::ForEach` + `EffectTarget::Each`~~ ✅ **DONE** `0e01d56` | ~~Dyadrine, Synthesis Amalgam~~ ✓ flipped `575bb2a` | attack → remove a +1/+1 from *each of two* creatures → draw + Robot |
 | ~~**C13** Crew (CR 702.122)~~ ✅ **DONE** `80d9ab3` | ~~Lumbering Worldwagon~~ ✓ flipped `86742c3` | Crew 4 |
 | ~~**D** searched-permanent reference + `Effect::Tap{tap:false}`~~ ✅ **DONE** `bcff1cd` | ~~Fabled Passage~~ ✓ flipped `968036e` | "if you control 4+ lands, untap that land" |
 | ~~**E** `Qualification::CantBeBlocked` + power≤2 filter + grant-qual-for-duration~~ ✅ **DONE** `7dd18a9` | ~~Escape Tunnel~~ ✓ flipped `5a55600` | "{T},Sac: target power≤2 creature can't be blocked this turn" |
-| **F** `Target::Stack` in `BecomesTargeted` | Surrak, Elusive Hunter | "or a creature spell you control" trigger half |
-| **G** stack-zone static gathering + a counter subsystem (LOW value — no counterspell in pool) | Surrak, Elusive Hunter | "This spell can't be countered" (inert today) |
+| ~~**F** `Target::Stack` in `BecomesTargeted`~~ ✅ **DONE** `d3ee9e9` (no card change — same filter matches creature spells on the stack) | Surrak, Elusive Hunter | "or a creature spell you control" trigger half |
+| **G** stack-zone static gathering + a counter subsystem | Surrak, Elusive Hunter | "This spell can't be countered" — **the lone remaining gap; deferred per lead** (inert: no counterspell in the pool) |
 | ~~**C18** static land-play permissions~~ ✅ **DONE** `3ca7fef` | ~~Icetill Explorer~~ ✓ flipped `7350a74` | "play an additional land" + "play lands from your graveyard" |
 | ~~**H** "tapped a creature for mana" event + reflexive mana trigger~~ ✅ **DONE** `23242f2` | ~~Badgermole Cub~~ ✓ flipped `c2ef012` | "whenever you tap a creature for mana, add {G}" |
 

@@ -5,7 +5,15 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-14
 
-- **webui:** Verified the engine's variant-cost cast labels (`71375ef`) live on the wire — the warp
+- **design (#44 — 🎉 DECK COMPLETE):** **Dyadrine flipped + Surrak stack-half → 18/18-minus-Surrak's-countered.**
+  (1) **Dyadrine → `fully_implemented: true`** (575bb2a) against cap 0e01d56: `Triggered{ YouAttack, Optional{
+  Sequence[ ForEach{ select 2 creatures you control w/ a +1/+1 counter, body: PutCounters{Each, -1} }, Draw,
+  CreateToken{2/2 Robot} ] } }` — non-targeting choice (Optional+Select(min:2) gates the reward, no Conditional
+  needed). (2) **Surrak's creature-spell-on-stack trigger half** now works via engine d3ee9e9 (`BecomesTargeted`
+  fires for stack objects) — **no card change**, the existing filter matches creature spells on the stack;
+  docs updated (e9c7390). **Result: 17/18 cards `fully_implemented:true`; the deck is 18/18 fully-faithful
+  except Surrak's lone inert can't-be-countered** (deferred per lead — no counterspell in the pool). 182 tests
+  green. Ledger + PROJECT_STATE updated to the final state.
   option now reads `Warp Mightform Harmonizer {2}{G}` (cheaper warp cost) instead of `[Warp]`, shown
   in the cast-variant menu; consistent with the rest of the UI (option labels are plain text, no
   mana-symbol SVGs). Fixed my now-stale `fully_implemented_flag_reaches_the_wire_for_a_real_partial_card`
