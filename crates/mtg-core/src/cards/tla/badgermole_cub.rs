@@ -7,22 +7,22 @@
 //!   the battlefield tapped.)
 //!   Whenever you tap a creature for mana, add an additional {G}.
 //!
-//! IMPLEMENTED:
+//! **Fully implemented** — both abilities faithful:
 //! - "When this creature enters, **earthbend 1**" — a `Triggered{SelfEnters}` over
 //!   `Effect::Earthbend{target: target land you control, n: 1}` (C12, fully landed incl. the
 //!   "dies/exiled → return tapped" delayed trigger). The targeted land becomes a 0/0 haste
 //!   land-creature with one +1/+1 counter.
-//!
-//! INCOMPLETE — TRACKED (`fully_implemented: false`), one gap, not approximated:
-//!   - **"Whenever you tap a creature for mana, add an additional {G}."** A *reflexive mana
-//!     trigger* (CR 605 / a trigger on the "tap a creature for mana" event that itself adds mana) —
-//!     an unbuilt subsystem (no `EventPattern` for "tapped a creature for mana", and mana-adding
-//!     triggers are a special no-stack case). Omitted entirely until that cap lands. Flagged to engine.
+//! - "Whenever you tap a creature for mana, add an additional {G}." — a `Triggered{TapCreatureForMana}`
+//!   (cap 23242f2; CR 605.1b, fires per creature tapped for mana) over `Effect::AddMana{Controller, {G}}`,
+//!   a no-stack triggered mana ability. So tapping any creature for mana yields an extra green.
 
 use crate::basics::Color;
 use crate::cards::helpers::earthbend;
 use crate::cards::{creature, mana_cost, CardDb};
 use crate::effects::ability::{Ability, EventPattern};
+use crate::effects::target::ManaSpec;
+use crate::effects::value::{PlayerRef, ValueExpr};
+use crate::effects::Effect;
 use crate::subtypes::CreatureType;
 
 /// grp id (per-set ids live near their cards).
@@ -45,12 +45,24 @@ pub fn register(db: &mut CardDb) {
                 intervening_if: false,
                 effect: earthbend(1),
             },
+            // "Whenever you tap a creature for mana, add an additional {G}." (no-stack mana trigger).
+            Ability::Triggered {
+                event: EventPattern::TapCreatureForMana,
+                condition: None,
+                intervening_if: false,
+                effect: Effect::AddMana {
+                    who: PlayerRef::Controller,
+                    mana: ManaSpec {
+                        produces: vec![(Color::Green, ValueExpr::Fixed(1))],
+                        any_color: None,
+                    },
+                },
+            },
         ],
     );
     def.text = "When this creature enters, earthbend 1. (Target land you control becomes a 0/0 creature with haste that's still a land. Put a +1/+1 counter on it. When it dies or is exiled, return it to the battlefield tapped.)\nWhenever you tap a creature for mana, add an additional {G}.".to_string();
-    // Tracked-incomplete: only the reflexive "tap a creature for mana → add {G}" trigger is unbuilt
-    // (earthbend, incl. return-tapped, fully landed in C12). See module docs.
-    def.fully_implemented = false;
+    // Fully implemented: ETB earthbend 1 (C12) + the reflexive "tap a creature for mana → add {G}"
+    // trigger (cap 23242f2). See module docs.
     db.insert(def);
 }
 
@@ -72,10 +84,9 @@ mod tests {
             vec![Subtype::Creature(CreatureType::Badger), Subtype::Creature(CreatureType::Mole)]
         );
         assert_eq!((def.chars.power, def.chars.toughness), (Some(2), Some(2)));
-        // Tracked-incomplete: only the reflexive "tap a creature for mana" trigger is unbuilt.
-        assert!(!def.fully_implemented);
-        // Only the ETB earthbend trigger is materialized; the reflexive mana trigger is deliberately
-        // absent (no silent approximation). Earthbend targets "a land you control".
+        // Fully implemented: ETB earthbend 1 + the reflexive "tap a creature for mana → add {G}" trigger.
+        assert!(def.fully_implemented);
+        // ETB earthbend trigger (targets "a land you control") + the TapCreatureForMana → add {G} trigger.
         expect![[r#"
             [
                 Triggered {
@@ -105,6 +116,25 @@ mod tests {
                         n: Fixed(
                             1,
                         ),
+                    },
+                },
+                Triggered {
+                    event: TapCreatureForMana,
+                    condition: None,
+                    intervening_if: false,
+                    effect: AddMana {
+                        who: Controller,
+                        mana: ManaSpec {
+                            produces: [
+                                (
+                                    Green,
+                                    Fixed(
+                                        1,
+                                    ),
+                                ),
+                            ],
+                            any_color: None,
+                        },
                     },
                 },
             ]"#]]
