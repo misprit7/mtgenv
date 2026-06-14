@@ -1060,6 +1060,8 @@ impl Engine {
             kind: StackObjectKind::Ability { index: idx as u32 },
             targets: Vec::new(),
             x: None,
+            // Modal activated abilities would choose modes here (602.2b); none in the pool yet.
+            modes: Vec::new(),
         });
         let specs = collect_target_specs(&effect);
         if !specs.is_empty() {
@@ -1212,7 +1214,34 @@ impl Engine {
             None => return,
         };
         let effect = self.state.def_of(card).and_then(|d| d.spell_effect().cloned());
-        let mut specs = effect.as_ref().map(collect_target_specs).unwrap_or_default();
+
+        // 601.2a: the card becomes a spell on top of the stack.
+        let sid = self.state.mint_stack();
+        self.move_to_stack(card, p);
+
+        // 601.2b: a modal spell chooses its modes BEFORE targets — the mode determines which
+        // targets exist (CR 700.2 / 601.2c). Non-modal spells choose no modes.
+        let chosen_modes = match &effect {
+            Some(Effect::Modal { modes, min, max, allow_repeat }) => {
+                let ctx = ResolutionCtx { controller: Some(p), ..Default::default() };
+                self.choose_modes(&ctx, sid, modes, *min, *max, *allow_repeat)
+            }
+            _ => Vec::new(),
+        };
+        // 601.2c targets: declared by the CHOSEN modes only (modal), else the whole effect.
+        let mut specs = match &effect {
+            Some(Effect::Modal { modes, .. }) => {
+                let mut out = Vec::new();
+                for &m in &chosen_modes {
+                    if let Some(mode) = modes.get(m as usize) {
+                        collect_specs_into(&mode.effect, &mut out);
+                    }
+                }
+                out
+            }
+            Some(e) => collect_target_specs(e),
+            None => Vec::new(),
+        };
         // An Aura spell targets the permanent it will enchant (CR 601.2c / 303.4f); it has no
         // spell ability, so the target is structural. First pass: Auras enchant a creature
         // (matches the starter set's "Enchant creature"); a general enchant restriction is future.
@@ -1225,9 +1254,6 @@ impl Engine {
             });
         }
 
-        // 601.2a: the card becomes a spell on top of the stack.
-        let sid = self.state.mint_stack();
-        self.move_to_stack(card, p);
         // C10 / 601.2b: choose X if the cost has `{X}` (bounded by affordable mana).
         let chosen_x = if cost.x > 0 {
             let avail = mana::available_mana(&self.state, p);
@@ -1259,6 +1285,7 @@ impl Engine {
             kind: StackObjectKind::Spell(card),
             targets: Vec::new(),
             x: if cost.x > 0 { Some(chosen_x) } else { None },
+            modes: chosen_modes,
         });
 
         // 601.2c: choose targets (locked now).
@@ -1484,7 +1511,7 @@ impl Engine {
                                 x: obj.x,
                                 target_controllers: self.snapshot_target_controllers(&obj.targets),
                                 chosen_targets: obj.targets.clone(),
-                                chosen_modes: Vec::new(),
+                                chosen_modes: obj.modes.clone(),
                             };
                             self.resolve_effect(&effect, &ctx, WbReason::Resolve(obj.id));
                         }
@@ -1853,6 +1880,7 @@ impl Engine {
                 kind: StackObjectKind::Ability { index },
                 targets: Vec::new(),
                 x: None,
+                modes: Vec::new(),
             });
         }
     }
@@ -1895,6 +1923,7 @@ impl Engine {
                         kind: StackObjectKind::Ability { index },
                         targets: Vec::new(),
                         x: None,
+                        modes: Vec::new(),
                     });
                 }
             }
@@ -1963,6 +1992,14 @@ fn collect_specs_into(effect: &Effect, out: &mut Vec<TargetSpec>) {
             to: EffectTarget::Target(spec),
             ..
         } => out.push(spec.clone()),
+        // A fight declares two targets (CR 701.12) — each `Target(spec)` is a chosen target.
+        Effect::Fight { a, b } => {
+            for t in [a, b] {
+                if let EffectTarget::Target(spec) = t {
+                    out.push(spec.clone());
+                }
+            }
+        }
         Effect::Sequence(effects) => {
             for e in effects {
                 collect_specs_into(e, out);
@@ -2317,6 +2354,7 @@ mod tests {
             kind: StackObjectKind::Spell(card),
             targets: vec![],
             x: None,
+            modes: Vec::new(),
         });
         assert_eq!(StackId(1), sid);
         engine.resolve_top();
@@ -2793,6 +2831,7 @@ mod expect_tests {
             kind: StackObjectKind::Ability { index: 0 },
             targets: vec![],
             x: None,
+            modes: Vec::new(),
         });
 
         // P0's own object on top → auto-pass (even in MP1, even with an action available).
@@ -3172,6 +3211,78 @@ mod expect_tests {
         );
         assert_eq!(e.state.player(PlayerId(0)).life, 23, "chose 'gain 3 life'");
         assert_eq!(e.state.player(PlayerId(0)).library.len(), 1, "did not draw (the other mode)");
+    }
+
+    #[test]
+    fn cast_modal_chooses_mode_then_targets_only_that_mode() {
+        // Bushwhack-shaped: a modal spell whose fight mode targets two creatures and whose other
+        // mode has none. Casting it chooses the mode at 601.2b, then collects targets for ONLY
+        // that mode at 601.2c (the new `Fight` arm in `collect_specs_into`), and resolution runs
+        // only the chosen mode using the cast-locked modes/targets.
+        use crate::basics::CardType;
+        use crate::effects::target::{CardFilter, TargetKind, TargetSpec};
+        use crate::effects::value::{PlayerRef, ValueExpr};
+        use crate::effects::{Effect, EffectTarget, Mode};
+        use crate::state::Characteristics;
+        use std::sync::Arc;
+
+        let twotwo = |name: &str| Characteristics {
+            name: name.into(),
+            card_types: vec![CardType::Creature],
+            power: Some(2),
+            toughness: Some(2),
+            ..Default::default()
+        };
+        let tspec = |f: CardFilter| TargetSpec { kind: TargetKind::Creature(f), min: 1, max: 1, distinct: true };
+        let modal = Effect::Modal {
+            modes: vec![
+                Mode {
+                    label: "Fight".into(),
+                    effect: Effect::Fight {
+                        a: EffectTarget::Target(tspec(CardFilter::ControlledBy(PlayerRef::Controller))),
+                        b: EffectTarget::Target(tspec(CardFilter::Not(Box::new(
+                            CardFilter::ControlledBy(PlayerRef::Controller),
+                        )))),
+                    },
+                },
+                Mode {
+                    label: "Gain 3 life".into(),
+                    effect: Effect::GainLife { who: PlayerRef::Controller, amount: ValueExpr::Fixed(3) },
+                },
+            ],
+            min: 1,
+            max: 1,
+            allow_repeat: false,
+        };
+        let mut db = cards::starter_db();
+        db.insert(cards::CardDef {
+            chars: Characteristics {
+                name: "Test Bushwhack".into(),
+                card_types: vec![CardType::Sorcery],
+                mana_cost: Some(cards::mana_cost(0, &[])),
+                grp_id: 9300,
+                ..Default::default()
+            },
+            abilities: vec![Ability::Spell { effect: modal }],
+            ..Default::default()
+        });
+        let mut state = GameState::new(2, 1);
+        state.set_card_db(Arc::new(db));
+        let mine = state.add_card(PlayerId(0), twotwo("Mine"), Zone::Battlefield);
+        let theirs = state.add_card(PlayerId(1), twotwo("Theirs"), Zone::Battlefield);
+        let chars = state.card_db().get(9300).unwrap().chars.clone();
+        let spell = state.add_card(PlayerId(0), chars, Zone::Hand);
+
+        // Cast choosing mode 0 (Fight). ModeAgent answers ChooseModes; targets fall back to the
+        // first legal candidate per slot (my creature vs their creature).
+        let mut e = Engine::new(state, vec![Box::new(ModeAgent(0)), Box::new(PassAgent)]);
+        e.cast_spell(PlayerId(0), spell);
+        e.resolve_top();
+
+        // The fight (and only the fight) ran: both 2/2s dealt 2 to each other.
+        assert_eq!(e.state.object(mine).damage_marked, 2, "my creature took fight damage");
+        assert_eq!(e.state.object(theirs).damage_marked, 2, "their creature took fight damage");
+        assert_eq!(e.state.player(PlayerId(0)).life, 20, "the other mode (gain life) did NOT run");
     }
 
     #[test]

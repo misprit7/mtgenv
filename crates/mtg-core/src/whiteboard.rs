@@ -221,7 +221,7 @@ impl Engine {
 
     /// Ask the controller to choose `min..=max` of a modal spell/ability's modes (CR 700.2),
     /// returning the chosen mode indices (clamped to the legal set / filled to `min`).
-    fn choose_modes(
+    pub(crate) fn choose_modes(
         &mut self,
         ctx: &ResolutionCtx,
         sid: StackId,
@@ -230,6 +230,11 @@ impl Engine {
         max: u32,
         allow_repeat: bool,
     ) -> Vec<u32> {
+        // Modes already chosen at cast/activation (CR 601.2b / 700.2) — use those, don't re-ask.
+        // (Targets were collected for exactly these modes; re-asking could desync them.)
+        if !ctx.chosen_modes.is_empty() {
+            return ctx.chosen_modes.iter().copied().filter(|&i| (i as usize) < modes.len()).collect();
+        }
         let controller = ctx.controller.unwrap_or(PlayerId(0));
         let options: Vec<ModeOption> =
             modes.iter().map(|m| ModeOption { label: m.label.clone() }).collect();

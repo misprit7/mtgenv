@@ -38,6 +38,10 @@ pub struct StackObject {
     /// The value chosen for X at cast/activation (CR 601.2b) when the cost had `{X}`, carried to
     /// resolution so the effect's `ValueExpr::X` reads it. `None` when there is no X.
     pub x: Option<u32>,
+    /// The mode indices chosen for a modal spell/ability at cast/activation (CR 700.2 / 601.2b),
+    /// carried to resolution so it runs only those modes (targets were collected only for them).
+    /// Empty for non-modal objects.
+    pub modes: Vec<u32>,
 }
 
 /// The stack (CR 405). LIFO: the top is the **last** element; new objects push on top, and
@@ -83,6 +87,7 @@ mod tests {
             kind: StackObjectKind::Ability { index: 0 },
             targets: vec![],
             x: None,
+            modes: Vec::new(),
         });
         s.push(StackObject {
             id: StackId(2),
@@ -91,6 +96,7 @@ mod tests {
             kind: StackObjectKind::Ability { index: 0 },
             targets: vec![],
             x: None,
+            modes: Vec::new(),
         });
         assert_eq!(s.len(), 2);
         // Last-in (id 2) resolves first.
