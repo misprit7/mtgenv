@@ -85,6 +85,11 @@ pub enum EventPattern {
     SelfAttacks,
     /// This creature blocks or becomes blocked (CR 509.1i).
     SelfBlocks,
+    /// A permanent matching `filter` (relative to the watcher's controller) becomes the target of a
+    /// spell or ability (CR 603.2/603.3d, fired when targets are locked). `by_opponent` restricts to
+    /// targeting sources controlled by an opponent of the watcher (Surrak: "a creature you control
+    /// becomes the target of a spell or ability an opponent controls").
+    BecomesTargeted { filter: CardFilter, by_opponent: bool },
 }
 
 /// What an `Action` pattern matches, for the replacement/prevention rewrite pass (CR 614/615).

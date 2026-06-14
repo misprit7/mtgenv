@@ -446,6 +446,9 @@ impl Engine {
             GameEvent::ValueChosen { player, label, value } => {
                 format!("P{} {label} = {value}", player.0)
             }
+            GameEvent::Targeted { object, by } => {
+                format!("{} targeted by P{}", name(*object), by.0)
+            }
             GameEvent::GameEnded { winner } => match winner {
                 Some(w) => format!("Game over — P{} wins", w.0),
                 None => "Game over — draw".to_string(),
@@ -1081,9 +1084,12 @@ impl Engine {
             };
             let resp = self.ask(p, &req);
             let chosen = parse_targets(&slots, &resp);
+            let targeted = object_ids_of(&chosen);
             if let Some(obj) = self.state.stack.items.iter_mut().find(|s| s.id == sid) {
                 obj.targets = chosen;
             }
+            // CR 603.2: each targeted object becomes the target of this activated ability.
+            self.fire_targeted(&targeted, p);
         }
         self.pay_cost(p, source, &cost);
         // Mark the once-per-turn limit (CR 606.3) as used on this permanent.
@@ -1306,9 +1312,12 @@ impl Engine {
             };
             let resp = self.ask(p, &req);
             let chosen = parse_targets(&slots, &resp);
+            let targeted = object_ids_of(&chosen);
             if let Some(obj) = self.state.stack.items.iter_mut().find(|s| s.id == sid) {
                 obj.targets = chosen;
             }
+            // CR 603.2: each targeted object "becomes the target" of this spell, controlled by `p`.
+            self.fire_targeted(&targeted, p);
         }
 
         // 601.2f–h: pay the total cost (auto-tap lands), with {X} settled to `chosen_x`.
@@ -1719,7 +1728,11 @@ impl Engine {
                 t.targets = parse_targets(&slots, &resp);
             }
         }
+        let targeted = object_ids_of(&t.targets);
+        let by = t.controller;
         self.state.stack.push(t);
+        // CR 603.2: each targeted object becomes the target of this triggered ability.
+        self.fire_targeted(&targeted, by);
     }
 
     /// Drain triggers waiting to go on the stack, APNAP-ordered (CR 603.3b): the active
@@ -1907,7 +1920,19 @@ impl Engine {
             GameEvent::ObjectMoved { obj, to: Zone::Exile } => {
                 self.fire_delayed_triggers(*obj);
             }
+            // "Whenever [filter] becomes the target of a spell/ability …" (CR 603.2). C16.
+            GameEvent::Targeted { object, by } => {
+                self.queue_watching_targeted_triggers(*object, *by);
+            }
             _ => {}
+        }
+    }
+
+    /// Broadcast a `Targeted` event for each object that became a target (CR 603.2), controlled by
+    /// `by` — drives "becomes the target of a spell or ability" triggers.
+    fn fire_targeted(&mut self, objects: &[ObjId], by: PlayerId) {
+        for &object in objects {
+            self.broadcast(GameEvent::Targeted { object, by });
         }
     }
 
@@ -2013,6 +2038,55 @@ impl Engine {
         }
     }
 
+    /// Queue every battlefield permanent's `BecomesTargeted` trigger that matches `object` having
+    /// just become the target of a spell/ability controlled by `by` (CR 603.2). The `filter` is
+    /// evaluated relative to the WATCHER's controller ("a creature you control"); `by_opponent`
+    /// requires the targeting source to be controlled by an opponent of the watcher (C16, Surrak).
+    fn queue_watching_targeted_triggers(&mut self, object: ObjId, by: PlayerId) {
+        let watchers: Vec<ObjId> = self
+            .state
+            .players
+            .iter()
+            .flat_map(|p| p.battlefield.iter().copied())
+            .collect();
+        for watcher in watchers {
+            let wctrl = self.state.object(watcher).controller;
+            let candidates: Vec<(u32, CardFilter, bool)> = match self.state.def_of(watcher) {
+                Some(def) => def
+                    .abilities
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, a)| match a {
+                        Ability::Triggered {
+                            event: EventPattern::BecomesTargeted { filter, by_opponent },
+                            ..
+                        } => Some((i as u32, filter.clone(), *by_opponent)),
+                        _ => None,
+                    })
+                    .collect(),
+                None => continue,
+            };
+            for (index, filter, by_opponent) in candidates {
+                // The targeting source must be an opponent of the watcher (2-player: `by != wctrl`).
+                if by_opponent && by == wctrl {
+                    continue;
+                }
+                if self.enter_filter_matches(object, &filter, wctrl) {
+                    let id = self.state.mint_stack();
+                    self.state.pending_triggers.push(StackObject {
+                        id,
+                        controller: wctrl,
+                        source: Some(watcher),
+                        kind: StackObjectKind::Ability { index },
+                        targets: Vec::new(),
+                        x: None,
+                        modes: Vec::new(),
+                    });
+                }
+            }
+        }
+    }
+
     /// Whether the just-entered object matches a `PermanentEnters` filter, with `ControlledBy`
     /// resolved against the watching permanent's controller (`watcher_controller`).
     fn enter_filter_matches(&self, obj: ObjId, filter: &CardFilter, watcher_controller: PlayerId) -> bool {
@@ -2096,6 +2170,17 @@ fn collect_specs_into(effect: &Effect, out: &mut Vec<TargetSpec>) {
         }
         _ => {}
     }
+}
+
+/// The object ids among a set of chosen `Target`s (dropping player/stack targets).
+fn object_ids_of(targets: &[Target]) -> Vec<ObjId> {
+    targets
+        .iter()
+        .filter_map(|t| match t {
+            Target::Object(id) => Some(*id),
+            _ => None,
+        })
+        .collect()
 }
 
 /// The object ids a `DecisionRequest` names as choices/recipients — so the deciding seat's view can
@@ -3589,6 +3674,68 @@ mod expect_tests {
         e.state.end_of_turn_continuous_cleanup();
         assert_eq!(e.state.computed(bears).power, Some(2), "the pump wore off at cleanup");
         assert!(e.state.continuous_effects.is_empty());
+    }
+
+    #[test]
+    fn becomes_targeted_by_an_opponent_draws_c16() {
+        use crate::effects::ability::{Ability, EventPattern};
+        use crate::effects::target::CardFilter;
+        use crate::effects::value::{PlayerRef, ValueExpr};
+        use crate::effects::Effect;
+        use std::sync::Arc;
+        // Surrak-style C16: "Whenever a creature you control becomes the target of a spell or
+        // ability an opponent controls, draw a card." Watcher P0; an opponent (P1) targeting P0's
+        // creature draws, but P0 targeting its own creature does not (the by_opponent guard).
+        let mut db = cards::starter_db();
+        db.insert(cards::CardDef {
+            chars: Characteristics {
+                name: "Surrak (test)".into(),
+                card_types: vec![CardType::Creature],
+                power: Some(4),
+                toughness: Some(3),
+                grp_id: 9600,
+                ..Default::default()
+            },
+            abilities: vec![Ability::Triggered {
+                event: EventPattern::BecomesTargeted {
+                    filter: CardFilter::All(vec![
+                        CardFilter::HasCardType(CardType::Creature),
+                        CardFilter::ControlledBy(PlayerRef::Controller),
+                    ]),
+                    by_opponent: true,
+                },
+                condition: None,
+                intervening_if: false,
+                effect: Effect::Draw { who: PlayerRef::Controller, count: ValueExpr::Fixed(1) },
+            }],
+            text: String::new(),
+            ..Default::default()
+        });
+        let mut state = GameState::new(2, 1);
+        state.set_card_db(Arc::new(db));
+        let surrak_chars = state.card_db().get(9600).unwrap().chars.clone();
+        state.add_card(PlayerId(0), surrak_chars, Zone::Battlefield); // the watcher
+        let bears_chars = state.card_db().get(grp::GRIZZLY_BEARS).unwrap().chars.clone();
+        let bears = state.add_card(PlayerId(0), bears_chars, Zone::Battlefield);
+        let lib_chars = state.card_db().get(grp::FOREST).unwrap().chars.clone();
+        state.add_card(PlayerId(0), lib_chars, Zone::Library); // a card to draw
+
+        let mut e = pass_engine(state);
+        // P0 targeting its OWN creature: no trigger (the source isn't an opponent).
+        e.broadcast(GameEvent::Targeted { object: bears, by: PlayerId(0) });
+        assert!(e.state.pending_triggers.is_empty(), "targeting your own creature doesn't trigger");
+
+        // An opponent (P1) targets P0's creature: triggers, and P0 draws.
+        let before = e.state.player(PlayerId(0)).hand.len();
+        e.broadcast(GameEvent::Targeted { object: bears, by: PlayerId(1) });
+        assert_eq!(e.state.pending_triggers.len(), 1, "an opponent targeting your creature triggers");
+        e.run_agenda(); // put the trigger on the stack
+        e.resolve_top(); // resolve the draw
+        assert_eq!(
+            e.state.player(PlayerId(0)).hand.len(),
+            before + 1,
+            "you draw a card off the opponent targeting your creature"
+        );
     }
 
     #[test]

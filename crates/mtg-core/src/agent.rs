@@ -637,6 +637,9 @@ pub enum GameEvent {
     PermanentDied { obj: ObjId },
     Revealed { to: PlayerId, objects: Vec<ObjId> },
     ValueChosen { player: PlayerId, label: String, value: i64 },
+    /// `object` became the target of a spell or ability controlled by `by` (CR 603.2/601.2c) —
+    /// fired as targets are locked. Drives "becomes the target of …" triggers.
+    Targeted { object: ObjId, by: PlayerId },
     GameEnded { winner: Option<PlayerId> },
 }
 
