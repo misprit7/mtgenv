@@ -4,12 +4,18 @@
 //! It reads only `PlayerView`, so hidden-information masking is inherited, not re-done (a leak is
 //! structurally impossible — the encoder never sees `GameState`). Output is a [`Obs`] of:
 //! - `globals` — turn, phase one-hot, active/priority flags, per-seat life/zone-counts/mana, stack
-//!   depth, a decision-kind one-hot, and a couple of request scalars;
+//!   depth, a decision-kind one-hot, a couple of request scalars, and two player-candidate flags
+//!   (is each player a legal target of the *current* decision);
 //! - `bf_feat`/`bf_ids` — one row per battlefield object (computed P/T, types/colors/keywords,
-//!   status, counters, combat role) + its `grp_id` (the card-embedding id, separated out for an
-//!   embedding lookup in the policy's features extractor);
-//! - `hand_feat`/`hand_ids` — own hand rows (+ a castable flag);
-//! - `stack_feat`/`stack_ids` — stack rows.
+//!   status, counters, combat role, **+ two decision flags: is this object the source / a legal
+//!   candidate of the current decision**) + its `grp_id` (the card-embedding id, separated out for
+//!   an embedding lookup in the policy's features extractor);
+//! - `hand_feat`/`hand_ids` — own hand rows (+ a castable flag + the same two decision flags);
+//! - `stack_feat`/`stack_ids` — stack rows (+ the same two decision flags);
+//! - `decision_ids` — the resolved *source card* `grp_id` driving the current decision (Tier 1):
+//!   for a spell mid-cast it's the spell's id; for an ability it follows the ability back to its
+//!   source permanent (whose stack row is otherwise identity-less). 0 when there's no source.
+//!   Python one-hots it through the same deck-local card index as the entity tables.
 //!
 //! Row ordering and table sizes come from [`crate::layout`] so an action slot points at the same
 //! row the policy saw. Everything here is data-only (no PyO3) so it unit-tests in pure Rust.
@@ -41,18 +47,22 @@ const PHASES: [Phase; 12] = [
 /// Number of `DecisionRequest` variants (the decision one-hot width).
 pub const NUM_REQUESTS: usize = 21;
 
+/// The two per-row decision flags every entity table carries (Tier 1): `is_decision_source`,
+/// `is_decision_candidate` for the *current* decision.
+pub const DECISION_FLAGS: usize = 2;
 /// Per-battlefield-row feature width (excludes `grp_id`, which rides in `bf_ids`).
-pub const F_PERM: usize = 9 + N_CARD_TYPES + N_COLORS + N_KEYWORDS + 4;
+pub const F_PERM: usize = 9 + N_CARD_TYPES + N_COLORS + N_KEYWORDS + 4 + DECISION_FLAGS;
 /// Per-hand-row feature width.
-pub const F_HAND: usize = 3 + N_CARD_TYPES + N_COLORS;
+pub const F_HAND: usize = 3 + N_CARD_TYPES + N_COLORS + DECISION_FLAGS;
 /// Per-stack-row feature width.
-pub const F_STACK: usize = 3 + N_CARD_TYPES + N_COLORS;
+pub const F_STACK: usize = 3 + N_CARD_TYPES + N_COLORS + DECISION_FLAGS;
 
 /// Per-seat global scalar block: life, poison, hand, library, graveyard, exile, battlefield,
 /// mana(WUBRGC).
 const SEAT_BLOCK: usize = 7 + 6;
-/// Global vector width.
-pub const G: usize = 1 + 12 + 3 + SEAT_BLOCK + SEAT_BLOCK + 1 + NUM_REQUESTS + 3;
+/// Global vector width. Trailing `+ 2` = decision player-candidate flags (is me / is opp a legal
+/// target of the current decision).
+pub const G: usize = 1 + 12 + 3 + SEAT_BLOCK + SEAT_BLOCK + 1 + NUM_REQUESTS + 3 + 2;
 
 /// The structured observation. Flat `Vec`s (Python reshapes per [`spec`]); `*_ids` are the
 /// per-row `grp_id`s (0 = empty row) for the policy's embedding table.
@@ -65,6 +75,8 @@ pub struct Obs {
     pub hand_ids: Vec<i64>,
     pub stack_feat: Vec<f32>,
     pub stack_ids: Vec<i64>,
+    /// The resolved source-card `grp_id` of the current decision (0 = none) — see module docs.
+    pub decision_ids: Vec<i64>,
 }
 
 /// `(name, rows, cols, is_int)` for each obs array — Python builds the `gym.spaces.Dict` from this
@@ -78,18 +90,22 @@ pub fn spec() -> Vec<(&'static str, usize, usize, bool)> {
         ("hand_ids", 1, MAX_HAND, true),
         ("stack_feat", MAX_STACK, F_STACK, false),
         ("stack_ids", 1, MAX_STACK, true),
+        // Source-card identity of the current decision (Tier 1) — one row, one grp_id; Python maps
+        // it to a one-hot through the same deck-local card index as `*_ids`.
+        ("decision_ids", 1, 1, true),
     ]
 }
 
 /// Encode `view` + the current request (and its legal-option count) into the structured [`Obs`].
 pub fn encode(view: &PlayerView, req: &DecisionRequest, num_legal: usize) -> Obs {
+    let di = decision_info(view, req);
     Obs {
-        globals: encode_globals(view, req, num_legal),
-        bf_feat: encode_battlefield(view),
+        globals: encode_globals(view, req, num_legal, &di),
+        bf_feat: encode_battlefield(view, &di),
         bf_ids: ids(&view.battlefield, MAX_PERM),
-        hand_feat: encode_hand(view, req),
+        hand_feat: encode_hand(view, req, &di),
         hand_ids: ids(&view.me.hand, MAX_HAND),
-        stack_feat: encode_stack(view),
+        stack_feat: encode_stack(view, &di),
         stack_ids: view
             .stack
             .iter()
@@ -98,7 +114,144 @@ pub fn encode(view: &PlayerView, req: &DecisionRequest, num_legal: usize) -> Obs
             .chain(std::iter::repeat(0))
             .take(MAX_STACK)
             .collect(),
+        decision_ids: vec![di.src_grp],
     }
+}
+
+/// Which objects/players the *current* decision is **for** (its source) and **over** (its legal
+/// candidates) — the Tier-1 signal that ties a decision to the spell/ability that raised it. All of
+/// this is already present in the `DecisionRequest` + `PlayerView`; the encoder just surfaces it so
+/// the policy needn't infer "the source is whatever's on top of the stack".
+#[derive(Default)]
+struct DecisionInfo {
+    /// Object ids (battlefield/hand rows) that are the SOURCE of the current decision.
+    src_objs: BTreeSet<ObjId>,
+    /// The stack object that is the source (a spell/ability mid-resolution, by `StackId`).
+    src_stack: Option<mtg_core::ids::StackId>,
+    /// Resolved source CARD identity (`grp_id`): a spell's own id, else an ability followed back to
+    /// its source permanent's id; 0 when the decision has no identifiable source.
+    src_grp: i64,
+    /// Object ids that are legal CANDIDATES of the current decision (targets / selectable cards).
+    cand_objs: BTreeSet<ObjId>,
+    /// Stack ids that are legal candidates (targeting a spell/ability on the stack — #47).
+    cand_stack: BTreeSet<mtg_core::ids::StackId>,
+    /// Whether each player is a legal candidate/target right now.
+    cand_me: bool,
+    cand_opp: bool,
+}
+
+fn add_target(di: &mut DecisionInfo, me: mtg_core::ids::PlayerId, t: &mtg_core::basics::Target) {
+    use mtg_core::basics::Target;
+    match t {
+        Target::Object(id) => {
+            di.cand_objs.insert(*id);
+        }
+        Target::Stack(sid) => {
+            di.cand_stack.insert(*sid);
+        }
+        Target::Player(p) => {
+            if *p == me {
+                di.cand_me = true;
+            } else {
+                di.cand_opp = true;
+            }
+        }
+    }
+}
+
+/// The `grp_id` of a visible object found on the battlefield or in our hand (for resolving an
+/// ability's source permanent to a card identity).
+fn grp_of_obj(view: &PlayerView, id: ObjId) -> Option<i64> {
+    view.battlefield
+        .iter()
+        .chain(view.me.hand.iter())
+        .find_map(|o| match o {
+            ObjView::Visible { id: oid, chars, .. } if *oid == id => Some(chars.grp_id as i64),
+            _ => None,
+        })
+}
+
+fn decision_info(view: &PlayerView, req: &DecisionRequest) -> DecisionInfo {
+    use DecisionRequest as Q;
+    let me = view.seat;
+    let mut di = DecisionInfo::default();
+
+    // ── source: the in-progress cast/activation a sub-decision belongs to ──────────────────────
+    // We locate the source by matching `for_action`'s StackId against the stack. This resolves a
+    // SPELL mid-cast (on the stack at 601.2c) and an ACTIVATED ability (pushed before its targets),
+    // but NOT a TRIGGERED/reflexive ability: the engine chooses its targets *before* pushing it onto
+    // the stack (priority.rs `place_trigger`), so it isn't in `view.stack` yet and its source can't
+    // be recovered here. Closing that needs the engine to carry `source` in the request itself —
+    // tracked as the Tier-1 engine follow-up; this code will prefer that field once it exists.
+    let for_action = match req {
+        Q::ChooseTargets { for_action, .. }
+        | Q::ChooseModes { for_action, .. }
+        | Q::CastingTimeOptions { for_action, .. } => Some(for_action.0),
+        _ => None,
+    };
+    if let Some(sid) = for_action {
+        di.src_stack = Some(sid);
+        if let Some(s) = view.stack.iter().find(|s| s.id == sid) {
+            if s.chars.grp_id != 0 {
+                di.src_grp = s.chars.grp_id as i64; // a spell carries its own card identity
+            }
+            if let Some(src) = s.source {
+                di.src_objs.insert(src); // an ability's source permanent (its stack row is blank)
+                if di.src_grp == 0 {
+                    if let Some(g) = grp_of_obj(view, src) {
+                        di.src_grp = g;
+                    }
+                }
+            }
+        }
+    }
+    if let Q::AssignCombatDamage { source, .. } = req {
+        di.src_objs.insert(*source);
+        if let Some(g) = grp_of_obj(view, *source) {
+            di.src_grp = g;
+        }
+    }
+
+    // ── candidates: the objects/players this decision chooses among ────────────────────────────
+    match req {
+        Q::ChooseTargets { slots, .. } => {
+            for slot in slots {
+                for t in &slot.legal {
+                    add_target(&mut di, me, t);
+                }
+            }
+        }
+        Q::Distribute { among, .. } => {
+            for t in among {
+                add_target(&mut di, me, t);
+            }
+        }
+        Q::AssignCombatDamage { recipients, .. } => {
+            for r in recipients {
+                add_target(&mut di, me, &r.recipient);
+            }
+        }
+        Q::SelectCards { from, .. } => {
+            di.cand_objs.extend(from.iter().copied());
+        }
+        Q::SelectFromGroups { groups, .. } => {
+            for g in groups {
+                di.cand_objs.extend(g.options.iter().copied());
+            }
+        }
+        Q::DeclareAttackers { eligible } => {
+            di.cand_objs.extend(eligible.iter().map(|a| a.creature));
+        }
+        Q::DeclareBlockers { eligible, attackers } => {
+            di.cand_objs.extend(eligible.iter().map(|b| b.creature));
+            di.cand_objs.extend(attackers.iter().copied());
+        }
+        Q::OrderObjects { items, .. } => {
+            di.cand_objs.extend(items.iter().copied());
+        }
+        _ => {}
+    }
+    di
 }
 
 fn ids(objs: &[ObjView], max: usize) -> Vec<i64> {
@@ -117,7 +270,12 @@ fn grp_of(o: &ObjView) -> i64 {
     }
 }
 
-fn encode_globals(view: &PlayerView, req: &DecisionRequest, num_legal: usize) -> Vec<f32> {
+fn encode_globals(
+    view: &PlayerView,
+    req: &DecisionRequest,
+    num_legal: usize,
+    di: &DecisionInfo,
+) -> Vec<f32> {
     let mut o = Vec::with_capacity(G);
     o.push(view.turn as f32);
     for ph in PHASES {
@@ -143,6 +301,10 @@ fn encode_globals(view: &PlayerView, req: &DecisionRequest, num_legal: usize) ->
     o.push(num_legal as f32);
     o.push(lo);
     o.push(hi);
+
+    // Decision player-candidate flags: is each player a legal target of the current decision.
+    o.push(di.cand_me as u8 as f32);
+    o.push(di.cand_opp as u8 as f32);
 
     debug_assert_eq!(o.len(), G);
     o
@@ -185,7 +347,7 @@ fn controller_of(o: &ObjView) -> Option<mtg_core::ids::PlayerId> {
     }
 }
 
-fn encode_battlefield(view: &PlayerView) -> Vec<f32> {
+fn encode_battlefield(view: &PlayerView, di: &DecisionInfo) -> Vec<f32> {
     let me = view.seat;
     let (attacking, blocking) = combat_sets(view);
     let mut out = Vec::with_capacity(MAX_PERM * F_PERM);
@@ -218,6 +380,8 @@ fn encode_battlefield(view: &PlayerView) -> Vec<f32> {
                 out.push(attachments.len() as f32);
                 out.push(attacking.contains(id) as u8 as f32);
                 out.push(blocking.contains(id) as u8 as f32);
+                out.push(di.src_objs.contains(id) as u8 as f32); // source of current decision
+                out.push(di.cand_objs.contains(id) as u8 as f32); // legal candidate of it
             }
             ObjView::Hidden { .. } => {
                 // Hidden permanent (e.g. a face-down): present but featureless.
@@ -230,7 +394,7 @@ fn encode_battlefield(view: &PlayerView) -> Vec<f32> {
     out
 }
 
-fn encode_hand(view: &PlayerView, req: &DecisionRequest) -> Vec<f32> {
+fn encode_hand(view: &PlayerView, req: &DecisionRequest, di: &DecisionInfo) -> Vec<f32> {
     let castable = castable_set(req);
     let mut out = Vec::with_capacity(MAX_HAND * F_HAND);
     for o in view.me.hand.iter().take(MAX_HAND) {
@@ -240,6 +404,8 @@ fn encode_hand(view: &PlayerView, req: &DecisionRequest) -> Vec<f32> {
             out.push(castable.contains(id) as u8 as f32);
             push_types(&mut out, chars);
             push_colors(&mut out, chars);
+            out.push(di.src_objs.contains(id) as u8 as f32); // source of current decision
+            out.push(di.cand_objs.contains(id) as u8 as f32); // legal candidate (e.g. discard/reveal)
         } else {
             out.push(1.0);
             out.extend(std::iter::repeat(0.0).take(F_HAND - 1));
@@ -249,7 +415,7 @@ fn encode_hand(view: &PlayerView, req: &DecisionRequest) -> Vec<f32> {
     out
 }
 
-fn encode_stack(view: &PlayerView) -> Vec<f32> {
+fn encode_stack(view: &PlayerView, di: &DecisionInfo) -> Vec<f32> {
     let me = view.seat;
     let mut out = Vec::with_capacity(MAX_STACK * F_STACK);
     for s in view.stack.iter().take(MAX_STACK) {
@@ -258,6 +424,8 @@ fn encode_stack(view: &PlayerView) -> Vec<f32> {
         out.push(s.chars.mana_value as f32);
         push_types(&mut out, &s.chars);
         push_colors(&mut out, &s.chars);
+        out.push((di.src_stack == Some(s.id)) as u8 as f32); // the spell/ability being decided
+        out.push(di.cand_stack.contains(&s.id) as u8 as f32); // a stack object being targeted (#47)
     }
     out.extend(std::iter::repeat(0.0).take((MAX_STACK - view.stack.len().min(MAX_STACK)) * F_STACK));
     out
@@ -418,9 +586,66 @@ mod tests {
             assert!(rows * cols > 0);
         }
         // F_PERM / F_HAND / F_STACK pinned so a vocab edit that desyncs obs↔codec is caught.
-        assert_eq!(F_PERM, 41);
-        assert_eq!(F_HAND, 16);
-        assert_eq!(F_STACK, 16);
-        assert_eq!(G, 67);
+        // (Each grew by DECISION_FLAGS=2 for the Tier-1 source/candidate per-row flags.)
+        assert_eq!(F_PERM, 43);
+        assert_eq!(F_HAND, 18);
+        assert_eq!(F_STACK, 18);
+        assert_eq!(G, 69);
+    }
+
+    /// Tier 1: a `ChooseTargets` raised by a spell mid-cast surfaces (a) the spell's card identity
+    /// in `decision_ids`, (b) the source stack row flagged, and (c) the legal candidates flagged on
+    /// the rows they live on (a battlefield creature + the opponent as a player-candidate).
+    #[test]
+    fn decision_surfaces_source_and_candidates() {
+        use mtg_core::agent::{
+            ActionRef, CharacteristicsView, StackObjView, TargetSlot,
+        };
+        use mtg_core::basics::{Status, Target};
+        use mtg_core::ids::{ObjId, StackId};
+
+        let creature = ObjId(10); // a battlefield creature that is a legal target
+        let spell_card = ObjId(20); // the Erode-like spell, now on the stack
+        let mut v = view();
+        v.battlefield = vec![ObjView::Visible {
+            id: creature,
+            chars: CharacteristicsView { grp_id: 700, power: Some(2), toughness: Some(2), ..Default::default() },
+            controller: PlayerId(1), // an opponent's creature
+            owner: PlayerId(1),
+            zone: mtg_core::basics::Zone::Battlefield,
+            status: Status::default(),
+            counters: CounterBag::default(),
+            damage_marked: 0,
+            attachments: vec![],
+            summoning_sick: false,
+        }];
+        v.stack = vec![StackObjView {
+            id: StackId(1),
+            controller: PlayerId(0),
+            source: Some(spell_card),
+            chars: CharacteristicsView { grp_id: 555, ..Default::default() }, // a spell → carries its id
+            targets: vec![],
+        }];
+        let req = DecisionRequest::ChooseTargets {
+            for_action: ActionRef(StackId(1)),
+            slots: vec![TargetSlot {
+                description: String::new(),
+                legal: vec![Target::Object(creature), Target::Player(PlayerId(1))],
+                min: 1,
+                max: 1,
+            }],
+        };
+
+        let o = encode(&v, &req, 2);
+        // (a) source card identity = the spell's grp_id.
+        assert_eq!(o.decision_ids, vec![555], "decision_ids carries the source spell's grp_id");
+        // (b) the stack row (row 0) is flagged is_src (the last-but-one feature of F_STACK).
+        assert_eq!(o.stack_feat[F_STACK - 2], 1.0, "source spell's stack row flagged is_src");
+        // (c) the creature row (row 0) is flagged is_cand (the last feature of F_PERM).
+        assert_eq!(o.bf_feat[F_PERM - 1], 1.0, "legal-target creature flagged is_cand");
+        assert_eq!(o.bf_feat[F_PERM - 2], 0.0, "the opponent's creature is not the source");
+        // and the opponent is a player-candidate (last global), self is not (second-last).
+        assert_eq!(o.globals[G - 1], 1.0, "opponent is a legal player target");
+        assert_eq!(o.globals[G - 2], 0.0, "self is not a legal target here");
     }
 }

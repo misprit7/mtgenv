@@ -50,8 +50,16 @@ class EntityExtractor(BaseFeaturesExtractor):
             self.tables.append(name)
 
         g = observation_space["globals"].shape[0]
+        # Tier-1 source-card identity of the *current* decision (a deck-local one-hot built env-side
+        # from `decision_ids`). Fed straight to the head so the policy reads "which card raised this
+        # decision" directly — robust even for the mean-pool, where a single flagged entity row's
+        # identity would otherwise be diluted by pooling.
+        self.decision_dim = (
+            observation_space["decision_cardid"].shape[-1]
+            if "decision_cardid" in observation_space.spaces else 0
+        )
         self.head = nn.Sequential(
-            nn.Linear(g + hidden * len(self.tables), features_dim), nn.ReLU()
+            nn.Linear(g + hidden * len(self.tables) + self.decision_dim, features_dim), nn.ReLU()
         )
 
     def forward(self, obs):
@@ -70,7 +78,10 @@ class EntityExtractor(BaseFeaturesExtractor):
             count = present.sum(dim=1).clamp(min=1.0)        # (B, 1)
             pooled.append(summed / count)
         g = obs["globals"]                                   # (B, G)
-        return self.head(torch.cat([g, *pooled], dim=-1))
+        out = [g, *pooled]
+        if self.decision_dim:
+            out.append(obs["decision_cardid"].reshape(g.shape[0], -1))  # (B, V) source-card one-hot
+        return self.head(torch.cat(out, dim=-1))
 
 
 class AttnEntityExtractor(BaseFeaturesExtractor):
@@ -113,7 +124,12 @@ class AttnEntityExtractor(BaseFeaturesExtractor):
         self.pool = nn.MultiheadAttention(d_model, nhead, batch_first=True, dropout=0.0)
         self.pool_norm = nn.LayerNorm(d_model)
         g = observation_space["globals"].shape[0]
-        self.head = nn.Sequential(nn.Linear(g + d_model, features_dim), nn.ReLU())
+        # Tier-1 source-card identity of the current decision (deck-local one-hot) — see EntityExtractor.
+        self.decision_dim = (
+            observation_space["decision_cardid"].shape[-1]
+            if "decision_cardid" in observation_space.spaces else 0
+        )
+        self.head = nn.Sequential(nn.Linear(g + d_model + self.decision_dim, features_dim), nn.ReLU())
 
     def forward(self, obs):
         B = obs["globals"].shape[0]
@@ -135,4 +151,7 @@ class AttnEntityExtractor(BaseFeaturesExtractor):
         q = self.query.expand(B, -1, -1)
         pooled, _ = self.pool(q, enc, enc, key_padding_mask=pad)  # attention pool → (B, 1, d)
         pooled = self.pool_norm(pooled.squeeze(1))                # stabilize before the head
-        return self.head(torch.cat([obs["globals"], pooled], dim=-1))
+        out = [obs["globals"], pooled]
+        if self.decision_dim:
+            out.append(obs["decision_cardid"].reshape(B, -1))     # (B, V) source-card one-hot
+        return self.head(torch.cat(out, dim=-1))

@@ -308,6 +308,7 @@ fn obs_to_py(py: Python<'_>, o: &obs::Obs) -> PyObject {
     d.set_item("hand_ids", &o.hand_ids).unwrap();
     d.set_item("stack_feat", &o.stack_feat).unwrap();
     d.set_item("stack_ids", &o.stack_ids).unwrap();
+    d.set_item("decision_ids", &o.decision_ids).unwrap();
     d.into_any().unbind()
 }
 
