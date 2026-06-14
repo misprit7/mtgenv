@@ -174,6 +174,13 @@ pub enum StaticContribution {
     Qualification(Qualification),
     /// A generic cost reduction (CR 118.7) — reduces generic mana by N.
     CostReductionGeneric(u32),
+    /// The controller may play N additional lands each turn (CR 305.2/505.5b) — Exploration / Azusa
+    /// / Icetill Explorer. A player-level permission (read by the land-play legality, not painted
+    /// on objects); `affects` scopes it to the controller.
+    ExtraLandPlays(u32),
+    /// The controller may play lands from `zone` (not just hand) — e.g. Crucible / Icetill's "play
+    /// lands from your graveyard." A player-level permission read by the land-play legality.
+    PlayLandsFrom(crate::basics::Zone),
 }
 
 /// Evergreen keyword abilities (CR 702) — the starter set. Grows with the card pool.

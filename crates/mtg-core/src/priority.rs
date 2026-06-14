@@ -17,7 +17,9 @@ use crate::agent::{
 };
 use crate::basics::{CardType, CounterKind, ManaCost, Phase, Target, Zone, ZonePos};
 use crate::subtypes::{EnchantmentType, Subtype};
-use crate::effects::ability::{Ability, Cost, CostComponent, EventPattern, Keyword, Restriction, Timing};
+use crate::effects::ability::{
+    Ability, Cost, CostComponent, EventPattern, Keyword, Restriction, StaticContribution, Timing,
+};
 use crate::effects::action::{Action, MoveCause, ResolutionCtx, Whiteboard, WbReason};
 use crate::effects::target::{CardFilter, SelectSpec, TargetKind, TargetSpec};
 use crate::effects::value::{PlayerRef, ValueExpr};
@@ -922,11 +924,26 @@ impl Engine {
         let s = &self.state;
         let sorcery_speed = p == s.active_player && is_main_phase(s.phase) && s.stack.is_empty();
 
-        // Play a land (CR 116.2a / 505.6b: one per turn, main phase, empty stack, your turn).
-        if sorcery_speed && s.player(p).lands_played_this_turn < 1 {
+        // Play a land (CR 116.2a / 505.6b): up to 1 + extra-land-play permissions per turn, from
+        // your hand (and any other zone a `PlayLandsFrom` permission opens, e.g. graveyard).
+        if sorcery_speed && s.player(p).lands_played_this_turn < 1 + self.extra_land_plays(p) {
             for &card in &s.player(p).hand {
                 if s.object(card).chars.is_land() {
                     actions.push(PlayableAction::PlayLand { card });
+                }
+            }
+            for zone in [Zone::Graveyard, Zone::Exile] {
+                if self.can_play_lands_from(p, zone) {
+                    let cards: Vec<ObjId> = s
+                        .player(p)
+                        .zone_ids(zone)
+                        .iter()
+                        .copied()
+                        .filter(|&card| s.object(card).chars.is_land())
+                        .collect();
+                    for card in cards {
+                        actions.push(PlayableAction::PlayLand { card });
+                    }
                 }
             }
         }
@@ -1078,6 +1095,39 @@ impl Engine {
             }
         }
         true
+    }
+
+    /// Extra land plays `p` is granted by `StaticContribution::ExtraLandPlays` permissions on the
+    /// permanents they control (Exploration / Azusa / Icetill) — beyond the base one (CR 505.5b).
+    fn extra_land_plays(&self, p: PlayerId) -> u32 {
+        self.player_static_permissions(p)
+            .filter_map(|c| match c {
+                StaticContribution::ExtraLandPlays(n) => Some(*n),
+                _ => None,
+            })
+            .sum()
+    }
+
+    /// Whether `p` may play lands from `zone` (a `PlayLandsFrom` permission, e.g. Crucible / Icetill
+    /// "play lands from your graveyard").
+    fn can_play_lands_from(&self, p: PlayerId, zone: Zone) -> bool {
+        self.player_static_permissions(p)
+            .any(|c| matches!(c, StaticContribution::PlayLandsFrom(z) if *z == zone))
+    }
+
+    /// Every `StaticContribution` from the printed `Ability::Static`s of permanents `p` controls —
+    /// for the player-level permissions (land plays) read directly here, not painted on objects.
+    fn player_static_permissions(&self, p: PlayerId) -> impl Iterator<Item = &StaticContribution> {
+        self.state.player(p).battlefield.iter().flat_map(move |&id| {
+            self.state
+                .def_of(id)
+                .into_iter()
+                .flat_map(|def| def.abilities.iter())
+                .filter_map(|ab| match ab {
+                    Ability::Static { contribution, .. } => Some(contribution),
+                    _ => None,
+                })
+        })
     }
 
     fn perform_priority_action(&mut self, p: PlayerId, action: &PlayableAction) {
@@ -4401,6 +4451,72 @@ mod expect_tests {
         let (power_at2, prompts_at2) = run(1);
         assert_eq!(power_at2, 2, "< 4 → no +1/+1");
         assert_eq!(prompts_at2, 0, "and crucially NO target prompt on a sub-4 landfall");
+    }
+
+    #[test]
+    fn extra_land_plays_and_play_lands_from_graveyard_c18() {
+        use crate::effects::ability::{Ability, StaticContribution};
+        use crate::effects::condition::Duration;
+        use crate::effects::target::{CardFilter, SelectSpec};
+        use crate::effects::value::{PlayerRef, ValueExpr};
+        use std::sync::Arc;
+        // Icetill Explorer: "you may play an additional land each turn" + "play lands from your
+        // graveyard" — two player-level static permissions (C18) read by the land-play legality.
+        let perm = |c: StaticContribution| Ability::Static {
+            contribution: c,
+            affects: SelectSpec {
+                zone: Zone::Battlefield,
+                filter: CardFilter::ControlledBy(PlayerRef::Controller),
+                chooser: PlayerRef::Controller,
+                min: ValueExpr::Fixed(0),
+                max: ValueExpr::Fixed(0),
+            },
+            duration: Duration::WhileSourcePresent,
+        };
+        let mut db = cards::starter_db();
+        db.insert(cards::CardDef {
+            chars: Characteristics {
+                name: "Icetill (test)".into(),
+                card_types: vec![CardType::Creature],
+                power: Some(2),
+                toughness: Some(4),
+                grp_id: 9955,
+                ..Default::default()
+            },
+            abilities: vec![
+                perm(StaticContribution::ExtraLandPlays(1)),
+                perm(StaticContribution::PlayLandsFrom(Zone::Graveyard)),
+            ],
+            text: String::new(),
+            ..Default::default()
+        });
+        let mut state = GameState::new(2, 1);
+        state.set_card_db(Arc::new(db));
+        {
+            let c = state.card_db().get(9955).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, Zone::Battlefield);
+        }
+        for zone in [Zone::Hand, Zone::Graveyard] {
+            let c = state.card_db().get(grp::FOREST).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, zone);
+        }
+        let mut e = pass_engine(state);
+        e.state.phase = Phase::PrecombatMain;
+
+        let land_plays = |e: &Engine| {
+            e.legal_priority_actions(PlayerId(0))
+                .iter()
+                .filter(|a| matches!(a, PlayableAction::PlayLand { .. }))
+                .count()
+        };
+        // Both the hand land AND the graveyard land are playable (play-from-graveyard permission).
+        assert_eq!(land_plays(&e), 2, "hand + graveyard lands are playable");
+        // After one land this turn, still playable — the extra-land permission allows a 2nd.
+        e.state.player_mut(PlayerId(0)).lands_played_this_turn = 1;
+        assert_eq!(land_plays(&e), 2, "a second land drop is still allowed");
+        // After two, the (1 base + 1 extra) limit is reached.
+        e.state.player_mut(PlayerId(0)).lands_played_this_turn = 2;
+        assert_eq!(land_plays(&e), 0, "the land-play limit is reached");
     }
 
     #[test]

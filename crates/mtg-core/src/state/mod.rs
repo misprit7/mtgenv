@@ -203,6 +203,18 @@ impl Player {
         }
     }
 
+    /// The `ObjId`s in one of this player's zones (empty for `Stack`/`Command`).
+    pub fn zone_ids(&self, zone: Zone) -> &[ObjId] {
+        match zone {
+            Zone::Library => &self.library,
+            Zone::Hand => &self.hand,
+            Zone::Battlefield => &self.battlefield,
+            Zone::Graveyard => &self.graveyard,
+            Zone::Exile => &self.exile,
+            Zone::Stack | Zone::Command => &[],
+        }
+    }
+
     /// The owned `ObjId` vector for a per-player zone (everything except `Stack`/`Command`).
     fn zone_vec_mut(&mut self, zone: Zone) -> Option<&mut Vec<ObjId>> {
         match zone {
