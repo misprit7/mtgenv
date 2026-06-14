@@ -255,6 +255,12 @@ pub enum DecisionRequest {
     /// pre-filtered legal candidate list. GRE: `SelectTargetsReq` → `SubmitTargetsResp`.
     ChooseTargets {
         for_action: ActionRef,
+        /// The object whose ability/spell is choosing targets — the cast spell, the activated
+        /// ability's permanent, or the triggering/reflexive permanent. `None` only when there's no
+        /// associated object. Lets a view tie a target decision to its source (e.g. the obs encoder
+        /// recovering the source `grp_id`) without the object being on the stack yet — triggers
+        /// choose targets *before* they're pushed (CR 603.3d).
+        source: Option<ObjId>,
         slots: Vec<TargetSlot>,
     },
 
@@ -932,6 +938,7 @@ mod tests {
         let mut agent = RandomAgent::new(3);
         let req = DecisionRequest::ChooseTargets {
             for_action: ActionRef(StackId(0)),
+            source: None,
             slots: vec![TargetSlot {
                 description: "target creature".into(),
                 legal: vec![Target::Object(ObjId(10)), Target::Object(ObjId(11))],
@@ -1063,6 +1070,7 @@ mod wire_snapshots {
     fn choose_targets_request_wire_shape() {
         let req = DecisionRequest::ChooseTargets {
             for_action: ActionRef(StackId(3)),
+            source: None,
             slots: vec![TargetSlot {
                 description: "target creature".into(),
                 legal: vec![Target::Object(ObjId(20)), Target::Player(PlayerId(1))],
@@ -1074,6 +1082,7 @@ mod wire_snapshots {
             {
               "ChooseTargets": {
                 "for_action": 3,
+                "source": null,
                 "slots": [
                   {
                     "description": "target creature",

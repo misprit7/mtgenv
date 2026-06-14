@@ -1286,6 +1286,7 @@ impl Engine {
                 .collect();
             let req = DecisionRequest::ChooseTargets {
                 for_action: ActionRef(sid),
+                source: Some(source),
                 slots: slots.clone(),
             };
             let resp = self.ask(p, &req);
@@ -1606,6 +1607,7 @@ impl Engine {
                 .collect();
             let req = DecisionRequest::ChooseTargets {
                 for_action: ActionRef(sid),
+                source: Some(card),
                 slots: slots.clone(),
             };
             let resp = self.ask(p, &req);
@@ -2233,6 +2235,7 @@ impl Engine {
                 }
                 let req = DecisionRequest::ChooseTargets {
                     for_action: ActionRef(t.id),
+                    source: t.source, // the triggering / reflexive permanent (not yet on the stack)
                     slots: slots.clone(),
                 };
                 let resp = self.ask(t.controller, &req);
