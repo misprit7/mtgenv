@@ -150,4 +150,38 @@ mod tests {
                 allow_repeat: false,
             }"#]].assert_eq(&format!("{:#?}", def.spell_effect().unwrap()));
     }
+
+    /// Behaviour: choosing the fight mode (mode 1) makes your creature and an opponent's creature deal
+    /// damage equal to their power to each other — two 2/2s each end with 2 marked damage (mutually lethal).
+    #[test]
+    fn bushwhack_fight_mode_deals_mutual_damage() {
+        use crate::agent::RandomAgent;
+        use crate::basics::{Target, Zone};
+        use crate::cards::{build_game, grp};
+        use crate::effects::action::{ResolutionCtx, WbReason};
+        use crate::ids::{PlayerId, StackId};
+        use crate::priority::Engine;
+        let mut state = build_game(1, &[&[], &[]]);
+        let bears_chars = state.card_db().get(grp::GRIZZLY_BEARS).unwrap().chars.clone();
+        let mine = state.add_card(PlayerId(0), bears_chars.clone(), Zone::Battlefield); // my 2/2
+        let theirs = state.add_card(PlayerId(1), bears_chars, Zone::Battlefield); // their 2/2
+        let bushwhack = state.card_db().get(BUSHWHACK).unwrap().spell_effect().unwrap().clone();
+        let mut e = Engine::new(
+            state,
+            vec![Box::new(RandomAgent::new(0)), Box::new(RandomAgent::new(1))],
+        );
+        // Mode 1 = "Target creature you control fights target creature you don't control."
+        e.resolve_effect(
+            &bushwhack,
+            &ResolutionCtx {
+                controller: Some(PlayerId(0)),
+                chosen_modes: vec![1],
+                chosen_targets: vec![Target::Object(mine), Target::Object(theirs)],
+                ..Default::default()
+            },
+            WbReason::Resolve(StackId(0)),
+        );
+        assert_eq!(e.state.objects.get(&mine).unwrap().damage_marked, 2, "mine took 2 from theirs");
+        assert_eq!(e.state.objects.get(&theirs).unwrap().damage_marked, 2, "theirs took 2 from mine");
+    }
 }
