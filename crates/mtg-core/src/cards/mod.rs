@@ -416,15 +416,17 @@ pub fn bears_deck() -> Vec<u32> {
     deck
 }
 
-/// A 60-card Selesnya Landfall deck of the **implemented** cards only (anything not yet even
-/// partially implemented — Surrak, Earthbender Ascension, Keen-Eyed Curator, Badgermole Cub,
-/// Dyadrine, Mightform Harmonizer — is left out). Green-primary with white for Erode; land-heavy
-/// (it's a landfall deck minus most of its payoffs, which is expected). Preset: `"selesnya"` /
-/// `"landfall"`.
+/// A 60-card Selesnya Landfall deck converging on the real mtggoldfish list — every card that is at
+/// least *partially* implemented is included at its mtggoldfish quantity, with basic lands padding
+/// the rest to 60. As cards cross from unimplemented → implemented they join here and the basics
+/// shrink; when all 18 are in, this *is* the mtggoldfish 60 and the padding disappears. Still
+/// omitted (cap-blocked): Keen-Eyed Curator, Dyadrine, Mightform Harmonizer. Green-primary with
+/// white for Erode. Preset: `"selesnya"` / `"landfall"`.
 pub fn selesnya_landfall_deck() -> Vec<u32> {
     use std::iter::repeat;
     let mut deck = Vec::new();
-    // Nonbasic lands + dorks + landfall payoffs (the 12 implemented cards, at decklist quantities).
+    // Nonbasic lands + dorks + landfall payoffs + earthbenders (the implemented cards, at mtggoldfish
+    // quantities).
     deck.extend(repeat(eld::fabled_passage::FABLED_PASSAGE).take(4));
     deck.extend(repeat(mkm::escape_tunnel::ESCAPE_TUNNEL).take(4));
     deck.extend(repeat(dsk::hushwood_verge::HUSHWOOD_VERGE).take(4));
@@ -436,10 +438,13 @@ pub fn selesnya_landfall_deck() -> Vec<u32> {
     deck.extend(repeat(eoe::icetill_explorer::ICETILL_EXPLORER).take(2));
     deck.extend(repeat(dft::lumbering_worldwagon::LUMBERING_WORLDWAGON).take(1));
     deck.extend(repeat(sos::erode::ERODE).take(4));
-    deck.extend(repeat(bro::bushwhack::BUSHWHACK).take(2)); // = 34
-    // Fill to 60 with basics (green-primary, enough white to cast Erode).
-    deck.extend(repeat(grp::FOREST).take(18));
-    deck.extend(repeat(grp::PLAINS).take(8));
+    deck.extend(repeat(bro::bushwhack::BUSHWHACK).take(2));
+    deck.extend(repeat(tdm::surrak_elusive_hunter::SURRAK_ELUSIVE_HUNTER).take(2));
+    deck.extend(repeat(tla::badgermole_cub::BADGERMOLE_CUB).take(4));
+    deck.extend(repeat(tla::earthbender_ascension::EARTHBENDER_ASCENSION).take(4)); // = 44
+    // Fill to 60 with basics (green-primary, enough white to cast {W} Erode).
+    deck.extend(repeat(grp::FOREST).take(10));
+    deck.extend(repeat(grp::PLAINS).take(6));
     deck
 }
 
