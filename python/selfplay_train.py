@@ -1,0 +1,146 @@
+"""Self-play training (GYM_PLAN §8.2): train a MaskablePPO policy against a growing pool of frozen
+copies of itself (a self-play league), on the demo deck (mirror). Logs win-rate vs random and vs
+the initial (random-init) checkpoint to TensorBoard — "stable self-play improvement" is the M2 exit
+signal (the policy keeps beating its past selves while staying strong vs random).
+
+    PYTHONPATH=python python python/selfplay_train.py --timesteps 120000 --tensorboard /tmp/mtgenv_tb
+    tensorboard --logdir /tmp/mtgenv_tb
+
+``train_selfplay`` is importable so the learning-sanity test can run a short version.
+"""
+
+from __future__ import annotations
+
+import argparse
+import glob
+import os
+
+from sb3_contrib import MaskablePPO
+from sb3_contrib.common.wrappers import ActionMasker
+from stable_baselines3.common.callbacks import BaseCallback
+from stable_baselines3.common.vec_env import DummyVecEnv
+
+from mtgenv_gym import MtgEnv
+from mtgenv_gym.league import ModelOpponent, OpponentPool, PoolCheckpoint
+from mtgenv_gym.policy import EntityExtractor
+
+DEFAULT_POOL = "/tmp/mtgenv_pool"
+
+
+def _mask_fn(env):
+    return env.action_masks()
+
+
+def play_winrate(model, deck, opponent, n_games, seed0):
+    """Greedy win-rate of ``model`` (seat 0) vs ``opponent`` over ``n_games``."""
+    env = MtgEnv(deck=deck, opponent=opponent)
+    wins = 0
+    for i in range(n_games):
+        obs, info = env.reset(seed=seed0 + i)
+        done = False
+        reward = 0.0
+        while not done:
+            action, _ = model.predict(obs, action_masks=info["action_mask"], deterministic=True)
+            obs, reward, term, trunc, info = env.step(int(action))
+            done = term or trunc
+        wins += 1 if reward > 0 else 0
+    return wins / n_games
+
+
+class SelfPlayEval(BaseCallback):
+    """Periodically log win-rate vs random and vs the initial (random-init) checkpoint."""
+
+    def __init__(self, deck, ref_path, eval_freq, n_envs, n_games=40, verbose=0):
+        super().__init__(verbose)
+        self.deck = deck
+        self.ref_path = ref_path
+        self.every = max(eval_freq // n_envs, 1)
+        self.n_games = n_games
+        self._ref = None
+
+    def _on_step(self) -> bool:
+        if self.n_calls % self.every == 0:
+            wr_rand = play_winrate(self.model, self.deck, "random", self.n_games, 5_000_000)
+            if self._ref is None and os.path.exists(self.ref_path):
+                self._ref = ModelOpponent(self.ref_path)
+            wr_init = (
+                play_winrate(self.model, self.deck, self._ref, self.n_games, 6_000_000)
+                if self._ref is not None
+                else float("nan")
+            )
+            self.logger.record("selfplay/winrate_vs_random", wr_rand)
+            self.logger.record("selfplay/winrate_vs_initial", wr_init)
+            if self.verbose:
+                print(f"  [{self.num_timesteps}] vs_random={wr_rand:.2f} vs_initial={wr_init:.2f}")
+        return True
+
+
+def _clean(*paths):
+    for p in paths:
+        for f in glob.glob(p):
+            try:
+                os.remove(f)
+            except OSError:
+                pass
+
+
+def train_selfplay(deck="demo", timesteps=120_000, n_envs=8, pool_dir=DEFAULT_POOL,
+                   tensorboard_log=None, seed=0, pool_every=8000, eval_every=8000, verbose=0):
+    os.makedirs(pool_dir, exist_ok=True)
+    ref_path = os.path.join(os.path.dirname(pool_dir.rstrip("/")) or ".", "mtgenv_ref_initial.zip")
+    _clean(os.path.join(pool_dir, "*.zip"), ref_path)  # fresh league each run
+
+    def make(i):
+        def thunk():
+            env = MtgEnv(deck=deck, opponent=OpponentPool(pool_dir, rng_seed=seed * 100 + i))
+            return ActionMasker(env, _mask_fn)
+
+        return thunk
+
+    venv = DummyVecEnv([make(i) for i in range(n_envs)])
+    model = MaskablePPO(
+        "MultiInputPolicy",
+        venv,
+        policy_kwargs=dict(features_extractor_class=EntityExtractor),
+        n_steps=256,
+        batch_size=256,
+        gamma=0.999,
+        ent_coef=0.01,
+        seed=seed,
+        tensorboard_log=tensorboard_log,
+        verbose=verbose,
+    )
+
+    # Seed the pool + the eval reference with the initial (random-init) policy.
+    model.save(ref_path[:-4])
+    model.save(os.path.join(pool_dir, "ckpt_000000000"))
+
+    callbacks = [
+        PoolCheckpoint(pool_dir, pool_every, n_envs, max_pool=12, verbose=verbose),
+        SelfPlayEval(deck, ref_path, eval_every, n_envs, verbose=verbose),
+    ]
+    model.learn(total_timesteps=timesteps, callback=callbacks, progress_bar=False)
+    return model, ref_path
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--deck", default="demo", choices=["lands", "demo", "burn_vs_bears"])
+    ap.add_argument("--timesteps", type=int, default=120_000)
+    ap.add_argument("--n-envs", type=int, default=8)
+    ap.add_argument("--pool-dir", default=DEFAULT_POOL)
+    ap.add_argument("--tensorboard", default=None)
+    args = ap.parse_args()
+
+    model, ref = train_selfplay(
+        deck=args.deck, timesteps=args.timesteps, n_envs=args.n_envs, pool_dir=args.pool_dir,
+        tensorboard_log=args.tensorboard, verbose=1,
+    )
+    wr_rand = play_winrate(model, args.deck, "random", 200, 9_000_000)
+    wr_init = play_winrate(model, args.deck, ModelOpponent(ref), 200, 9_500_000)
+    print(f"\nfinal: win-rate vs random {wr_rand:.3f} | vs initial self {wr_init:.3f}")
+    print(f"pool: {len(glob.glob(os.path.join(args.pool_dir, 'ckpt_*.zip')))} checkpoints")
+
+
+if __name__ == "__main__":
+    main()
