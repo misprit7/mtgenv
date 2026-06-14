@@ -5,6 +5,23 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **engine:** **C15 double-power + #43 search-reveal + C16 becomes-targeted** (3 more green commits
+  after the earthbend push). (1) `557b6b5` **C15**: materialized `Effect::PumpPT` (was a no-op) as a
+  floating `ModifyPT` continuous effect over its target for the given `Duration`, reusing the
+  earthbend continuous-effect registry; added `ValueExpr::PowerOfTarget(n)` (snapshot the Nth
+  target's computed power at resolution, CR 608.2h) so Mightform's "double its power until EOT" =
+  `PumpPT{ power: PowerOfTarget(0), toughness: Fixed(0), UntilEndOfTurn }`; `Duration::UntilEndOfTurn`
+  ends at cleanup (CR 514.2, `end_of_turn_continuous_cleanup`). Also gives generic +X/+Y-until-EOT.
+  (2) `651867f` **#43**: `ask()` now reveals to the deciding seat the chars of any object its
+  `DecisionRequest` references but the view didn't describe — chiefly Search/`SelectCards`
+  candidates drawn from the hidden library (fetch lands / Bushwhack / Erode), added to
+  `me.revealed_to_me` as `Visible` ObjViews (rest of the library stays masked); also covers
+  SelectFromGroups/ArrangeCards/OrderObjects/ChooseTargets/Distribute object refs. Fixes the `#id`
+  render. (3) `8d006fd` **C16**: `EventPattern::BecomesTargeted{filter, by_opponent}` +
+  `GameEvent::Targeted` — fired per targeted object at the 3 target-lock sites (cast/activate/
+  trigger), routed to a `queue_watching_targeted_triggers` watcher-match scoped to opponent sources.
+  Surrak's draw trigger is now authorable (permanent half; the creature-spell-on-stack half deferred,
+  `Target::Stack`). 161 mtg-core tests green, workspace + clippy clean throughout.
 - **engine:** **C12 earthbend fully landed — two new reusable subsystems + the full mechanic**
   (3 green commits). (A) `3d4b636` **floating continuous-effect subsystem** (CR 611): a
   `chars::ContinuousEffect` registry in `GameState` for resolution-granted statics (fixed affected

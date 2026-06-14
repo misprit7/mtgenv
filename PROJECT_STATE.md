@@ -50,6 +50,15 @@ MTGA client.
 
 ## Current state
 
+- **engine: C15 (double-power) + C16 (becomes-targeted) landed + #43 (search-reveal).** `PumpPT` is
+  now materialized as a floating `ModifyPT` continuous effect + `ValueExpr::PowerOfTarget` snapshot +
+  until-EOT cleanup expiry (Mightform's double-power; also generic +X/+Y-until-EOT). C16 adds
+  `EventPattern::BecomesTargeted{filter, by_opponent}` + `GameEvent::Targeted`, fired at the 3
+  target-lock sites → Surrak's "opponent targets your creature ⇒ draw" trigger (permanent half;
+  creature-spell-on-stack half deferred). #43: Search/`SelectCards` candidates from the hidden
+  library now reveal to the searcher in their view (fetch lands / Bushwhack / Erode render real
+  names). 161 mtg-core tests green. Remaining caps: C14 warp (Mightform), Dyadrine (YouAttack +
+  reflexive + quest counters), Keen-Eyed Curator (exile-types), + Surrak's inert can't-be-countered.
 - **engine: C12 earthbend landed → two new reusable continuous/triggered subsystems.** The layer
   system now folds in **resolution-granted continuous effects** (`chars::ContinuousEffect` floating
   in `GameState`, the home for until-EOT pumps + animations) alongside printed statics, and the
