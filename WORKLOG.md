@@ -5,6 +5,24 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-14
 
+- **gym obs — card-identity one-hot (#50).** Audit first: `grp_id` identity WAS present + effective
+  (policy embeds `grp_id % 4096`), just in the `*_ids` field (not the feat arrays the user inspected)
+  and hashed. Added an explicit **deck-determined one-hot** per card row: categories = union of both
+  decks' unique `grp_id`s (`PyGame.card_vocab()`, new Rust accessor) + 8 token-reserve + 1 unknown;
+  built env-side (encoder stays card-agnostic), fed alongside the kept embedding. demo dim=14,
+  selesnya=29. +unit tests.
+- **gym benchmark — %-trained ladder (#51).** `LadderEval`: current policy vs its own frozen
+  snapshots at 10/25/50/75% of budget → `ladder/winrate_vs_NNpct` (non-saturating, self-relative;
+  NaN until each fraction reached). Verified on a 12k run.
+- **codec infinite-loop fix.** Selesnya self-play hung — a `ChooseTargets`/`SelectCards` slot with
+  `min≥1` but no satisfiable candidate spun forever (COMMIT only advanced when `len≥min`). Fix:
+  COMMIT finalizes best-effort. +2 regression tests. (Root trigger flagged: task #49.)
+- **M4 (#46) — Selesnya landfall pool.** Wired `Deck::Selesnya`; capped env `max_decisions=3000`
+  (was 200k) so landfall/lifegain stalls truncate to a draw. **Learns well**: vs_random→0.97,
+  vs_initial→0.97 (better than demo's ~0.70). Replay-serde blocker fixed engine-side (#48).
+- **reward shaping defaulted** (A/B +0.12/stabler, #45) — `--shaping-coef` default 0.5, annealed.
+- **overnight runs launched:** `demo-cardid-2M` + `selesnya-cardid-2M` (sequential, new obs +
+  shaping + ladder + self-play eval).
 - **webui:** End-to-end QA of the god-view replay viewer (Playwright, live :8080). **Demo replay:**
   lobby lists the finished game with a ▶ Replay button → `/play?replay=<id>`; god-view shows both
   hands face-up + library order (click "Lib" pile → "P# library (top first)" modal, order matches
