@@ -14,10 +14,12 @@ use crate::agent::{
     ActionRef, ConfirmKind, DecisionRequest, DecisionResponse, GameEvent, ModeOption,
     ReplacementOption, SelectReason,
 };
-use crate::basics::{CardType, Color, CounterKind, DamageKind, Target, Zone, ZoneDest};
+use crate::basics::{CardType, Color, CounterKind, DamageKind, Target, Zone, ZoneDest, ZonePos};
 use crate::effects::ability::{Ability, ActionPattern, Keyword, Rewrite, StaticContribution};
 use crate::effects::condition::Duration;
-use crate::effects::action::{Action, ResolutionCtx, Whiteboard, WbReason};
+use crate::effects::action::{
+    Action, DelayedTriggerEvent, MoveCause, ResolutionCtx, Whiteboard, WbReason,
+};
 use crate::effects::target::{CardFilter, ManaSpec, TokenSpec};
 use crate::effects::value::{PlayerRef, ValueExpr};
 use crate::effects::{Effect, EffectTarget, Mode};
@@ -399,6 +401,23 @@ impl Engine {
                             n: n as i32,
                         });
                     }
+                    // The delayed clause (CR 603.7): "when it dies or is exiled, return it to the
+                    // battlefield tapped." Concrete actions — move it back, then tap it.
+                    wb.push(Action::RegisterDelayedTrigger {
+                        watching: land,
+                        event: DelayedTriggerEvent::DiesOrExiled,
+                        controller,
+                        source: ctx.source,
+                        actions: vec![
+                            Action::MoveZone {
+                                obj: land,
+                                to: Zone::Battlefield,
+                                pos: ZonePos::Any,
+                                cause: MoveCause::Returned,
+                            },
+                            Action::TapUntap { obj: land, tap: true },
+                        ],
+                    });
                 }
             }
             // C6: create N copies of a token (CR 111).
@@ -741,6 +760,12 @@ impl Engine {
                 // it in; `add_continuous_effect` marks the chars cache dirty.
                 self.state
                     .add_continuous_effect(source, controller, affected, contributions, duration);
+            }
+            Action::RegisterDelayedTrigger { watching, event, controller, source, actions } => {
+                // Arm a delayed triggered ability (CR 603.7); the engine fires it when `watching`
+                // leaves the battlefield matching `event`.
+                self.state
+                    .register_delayed_trigger(watching, event, controller, source, actions);
             }
             // Remaining Action variants are not produced by the milestone-3 interpreter.
             _ => {}

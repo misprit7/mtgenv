@@ -92,6 +92,10 @@ fn stack_view(state: &GameState, s: &StackObject) -> StackObjView {
             name: "Ability".to_string(),
             ..Default::default()
         },
+        StackObjectKind::DelayedAbility { .. } => CharacteristicsView {
+            name: "Delayed ability".to_string(),
+            ..Default::default()
+        },
     };
     StackObjView {
         id: s.id,

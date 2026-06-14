@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 /// A single intended mutation to game state. Atomic and card-agnostic. Grows with the IR
 /// vocabulary (WHITEBOARD_MODEL.md §5: "start medium, split when a card forces it").
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Action {
     Destroy {
         obj: ObjId,
@@ -84,6 +84,25 @@ pub enum Action {
         contributions: Vec<super::ability::StaticContribution>,
         duration: super::condition::Duration,
     },
+    /// Arm a delayed triggered ability (CR 603.7): "when [watching] [event], do [actions]". When
+    /// the event later occurs the engine puts the delayed ability on the stack carrying `actions`
+    /// (concrete, serializable, card-agnostic — no `Effect` tree). One-shot. Earthbend uses this
+    /// for "when this dies or is exiled, return it to the battlefield tapped".
+    RegisterDelayedTrigger {
+        watching: ObjId,
+        event: DelayedTriggerEvent,
+        controller: PlayerId,
+        source: Option<ObjId>,
+        actions: Vec<Action>,
+    },
+}
+
+/// The event a delayed triggered ability (CR 603.7) waits for. A starter vocabulary; grows with
+/// the card pool.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum DelayedTriggerEvent {
+    /// The watched permanent leaves the battlefield by dying (→ graveyard) or being exiled.
+    DiesOrExiled,
 }
 
 /// Why an object is changing zones — distinguishes destruction/sacrifice/bounce/etc. so the

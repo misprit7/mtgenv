@@ -10,6 +10,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::basics::Target;
+use crate::effects::action::Action;
 use crate::ids::{ObjId, PlayerId, StackId};
 
 /// What a stack object *is* (CR 113.1c, 112.1): a spell (a card/copy on the stack) or an
@@ -22,6 +23,9 @@ pub enum StackObjectKind {
     /// source object (`StackObject::source`) it is — into that object's `CardDef.abilities`,
     /// looked up by `grp_id` (which persists across zones, so a dies-trigger still resolves).
     Ability { index: u32 },
+    /// A delayed triggered ability (CR 603.7) that fired — it has no printed `CardDef` ability to
+    /// index, so it carries its own concrete [`Action`]s (e.g. Earthbend's "return it tapped").
+    DelayedAbility { actions: Vec<Action> },
 }
 
 /// One object on the stack (CR 405.1).

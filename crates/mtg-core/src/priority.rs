@@ -1549,6 +1549,21 @@ impl Engine {
                     }
                 }
             }
+            StackObjectKind::DelayedAbility { ref actions } => {
+                // A fired delayed triggered ability (CR 603.7): commit its concrete actions
+                // directly (no `Effect` tree / no targets). E.g. Earthbend's return-it-tapped.
+                let actions = actions.clone();
+                let ctx = ResolutionCtx {
+                    controller: Some(obj.controller),
+                    source: obj.source,
+                    ..Default::default()
+                };
+                let mut wb = Whiteboard::new(WbReason::Resolve(obj.id), ctx);
+                for a in actions {
+                    wb.push(a);
+                }
+                self.commit(wb);
+            }
         }
     }
 
@@ -1850,8 +1865,41 @@ impl Engine {
             }
             GameEvent::PermanentDied { obj } => {
                 self.queue_self_triggers(*obj, EventPattern::SelfDies);
+                // Delayed "when this dies …" abilities (CR 603.7) fire on death.
+                self.fire_delayed_triggers(*obj);
+            }
+            // Delayed "when this … is exiled" abilities fire when the watched object reaches exile.
+            GameEvent::ObjectMoved { obj, to: Zone::Exile } => {
+                self.fire_delayed_triggers(*obj);
             }
             _ => {}
+        }
+    }
+
+    /// Fire (and consume, CR 603.7b) every armed delayed triggered ability watching `obj` whose
+    /// event matches its leaving the battlefield. Each fired ability is queued onto the stack
+    /// carrying its concrete actions; it then resolves through the normal agenda like any trigger.
+    fn fire_delayed_triggers(&mut self, obj: ObjId) {
+        let mut fired = Vec::new();
+        self.state.delayed_triggers.retain(|dt| {
+            let matches = dt.watching == obj
+                && matches!(dt.event, crate::effects::action::DelayedTriggerEvent::DiesOrExiled);
+            if matches {
+                fired.push(dt.clone());
+            }
+            !matches
+        });
+        for dt in fired {
+            let id = self.state.mint_stack();
+            self.state.pending_triggers.push(StackObject {
+                id,
+                controller: dt.controller,
+                source: dt.source,
+                kind: StackObjectKind::DelayedAbility { actions: dt.actions },
+                targets: Vec::new(),
+                x: None,
+                modes: Vec::new(),
+            });
         }
     }
 
@@ -3394,6 +3442,48 @@ mod expect_tests {
             )),
             "a 2/2 land creature is not destroyed"
         );
+    }
+
+    #[test]
+    fn earthbend_dies_trigger_returns_the_land_tapped_c12() {
+        use crate::basics::{CardType, Target};
+        use crate::effects::action::{ResolutionCtx, WbReason};
+        use crate::effects::value::ValueExpr;
+        use crate::effects::{Effect, EffectTarget};
+        // Earthbend 0 on a Forest → a 0/0 land creature, which the SBA kills (CR 704.5f). Its
+        // delayed clause (CR 603.7) then returns it to the battlefield tapped — as a PLAIN land,
+        // since the animation was pinned to the object that left (it must not follow the return).
+        let mut state = cards::build_game(1, &[&[], &[]]);
+        let forest = put(&mut state, PlayerId(0), grp::FOREST, Zone::Battlefield);
+        let mut e = pass_engine(state);
+        e.resolve_effect(
+            &Effect::Earthbend { target: EffectTarget::ChosenIndex(0), n: ValueExpr::Fixed(0) },
+            &ResolutionCtx {
+                controller: Some(PlayerId(0)),
+                source: Some(forest),
+                chosen_targets: vec![Target::Object(forest)],
+                ..Default::default()
+            },
+            WbReason::Resolve(crate::ids::StackId(0)),
+        );
+        assert_eq!(e.state.delayed_triggers.len(), 1, "the return-tapped trigger is armed");
+        assert!(e.state.computed(forest).is_creature(), "it's a 0/0 land creature");
+
+        // The agenda kills the 0/0 (SBA), fires & consumes the delayed trigger, and stages it.
+        e.run_agenda();
+        assert!(e.state.delayed_triggers.is_empty(), "the dies trigger fired (consumed)");
+        assert_eq!(e.state.object(forest).zone, Zone::Graveyard, "the 0/0 went to the graveyard");
+        assert_eq!(e.state.stack.len(), 1, "the return-tapped delayed ability is on the stack");
+
+        // Resolve the delayed ability → the land returns tapped.
+        e.resolve_top();
+        e.run_agenda();
+        assert_eq!(e.state.object(forest).zone, Zone::Battlefield, "returned to the battlefield");
+        assert!(e.state.object(forest).status.tapped, "and entered tapped");
+        let cc = e.state.computed(forest);
+        assert!(!cc.is_creature(), "it returns as a PLAIN land — the animation did not follow");
+        assert!(cc.card_types.contains(&CardType::Land), "still a land");
+        assert!(e.state.continuous_effects.is_empty(), "the floating animation effect was swept");
     }
 
     #[test]

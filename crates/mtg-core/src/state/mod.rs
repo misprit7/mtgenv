@@ -17,6 +17,7 @@ use std::sync::Arc;
 use crate::basics::{CardType, Color, CounterBag, CounterKind, ManaCost, ManaPool, Phase, Status, Zone};
 use crate::cards::{CardDb, CardDef};
 use crate::effects::ability::Keyword;
+use crate::effects::action::{Action, DelayedTriggerEvent};
 use crate::combat::CombatState;
 use crate::ids::{ObjId, PlayerId, Timestamp};
 use crate::rng::Rng;
@@ -199,6 +200,23 @@ impl Player {
     }
 }
 
+/// An armed delayed triggered ability (CR 603.7) waiting on its watched object. Carries the
+/// concrete [`Action`]s to run when it resolves (not an `Effect` tree), so it stays serializable
+/// and card-agnostic — the engine never matches on card identity to fire it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DelayedTrigger {
+    pub id: u64,
+    /// The object whose leaving the battlefield arms this trigger.
+    pub watching: ObjId,
+    pub event: DelayedTriggerEvent,
+    /// Who controls the delayed ability (puts it on the stack, CR 603.7d).
+    pub controller: PlayerId,
+    /// The object that created it (for LKI / the ability's source).
+    pub source: Option<ObjId>,
+    /// What to do when it resolves — e.g. "return [watching] to the battlefield tapped".
+    pub actions: Vec<Action>,
+}
+
 /// The whole game (CR 100s). Cheaply cloneable & serializable for snapshots/replay.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GameState {
@@ -221,6 +239,9 @@ pub struct GameState {
     /// "until end of turn" pumps, animations (Earthbend), etc. Folded into the layer system
     /// (`chars::compute`) alongside printed statics. Real game state (serialized for snapshot/replay).
     pub continuous_effects: Vec<crate::chars::ContinuousEffect>,
+    /// Armed delayed triggered abilities (CR 603.7): "when [watching] dies/is exiled, do …". The
+    /// engine fires (and consumes) one when its watched object leaves the battlefield. Real state.
+    pub delayed_triggers: Vec<DelayedTrigger>,
     pub game_over: bool,
     pub winner: Option<PlayerId>,
     /// Why the game ended (the loss reason of the first player to lose), or `None` while the
@@ -236,6 +257,7 @@ pub struct GameState {
     next_stack: u64,
     next_timestamp: u64,
     next_effect_id: u64,
+    next_delayed_id: u64,
     /// Layer-system cache (CR 613): computed characteristics per battlefield object, rebuilt
     /// on the dirty signal. Derived data — not serialized; recomputed on demand after load.
     #[serde(skip)]
@@ -265,6 +287,7 @@ impl GameState {
             pending_triggers: Vec::new(),
             combat: None,
             continuous_effects: Vec::new(),
+            delayed_triggers: Vec::new(),
             game_over: false,
             winner: None,
             end_reason: None,
@@ -274,6 +297,7 @@ impl GameState {
             next_stack: 1,
             next_timestamp: 1,
             next_effect_id: 1,
+            next_delayed_id: 1,
             chars_cache: BTreeMap::new(),
             chars_dirty: true,
         }
@@ -386,6 +410,29 @@ impl GameState {
             start_turn,
         });
         self.mark_chars_dirty();
+        id
+    }
+
+    /// Arm a delayed triggered ability (CR 603.7). Returns its id. The engine fires and consumes
+    /// it when `watching` leaves the battlefield matching `event`. See [`DelayedTrigger`].
+    pub(crate) fn register_delayed_trigger(
+        &mut self,
+        watching: ObjId,
+        event: DelayedTriggerEvent,
+        controller: PlayerId,
+        source: Option<ObjId>,
+        actions: Vec<Action>,
+    ) -> u64 {
+        let id = self.next_delayed_id;
+        self.next_delayed_id += 1;
+        self.delayed_triggers.push(DelayedTrigger {
+            id,
+            watching,
+            event,
+            controller,
+            source,
+            actions,
+        });
         id
     }
 
