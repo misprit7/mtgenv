@@ -5,6 +5,20 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **webui:** **Board visualizations + floating mana (user).** (1) **Stack→target arrows:** spells/
+  abilities on the stack draw curved red SVG arrows (full-viewport overlay) from the stack card to
+  each target (creature card / player panel), from the already-populated `StackObjView.targets`;
+  cards carry `data-oid`/`data-sid`, players `data-pid`. Live in play/replay/spectate. (2)
+  **Attachments behind host:** auras/equipment render stacked slightly offset BEHIND their host
+  creature (not standalone), reading `ObjView.attachments` — engine populated it (fa808f9); verified
+  on real data (a King Cheetah + attached obj 57 renders behind the host). (3) **Floating mana:** each
+  player panel shows unspent `mana_pool` mana as Scryfall symbols under the life total. Commits
+  a294feb (arrows+attach), 3ddd2ee (floating mana). **Pending engine (#36):** manual mana-ability
+  activation — engine skips `is_mana` abilities at priority + auto-taps; spec'd offering
+  `ActivateMana` + pay-from-pool-first + keep auto-tap default/no-new-stops (my options.rs already
+  renders ActivateMana). **Perf:** also fixed `/api/replays` 3-7s→4ms (read only the `meta` prefix,
+  not the full multi-MB files) so the gym's AI-training replays list instantly (commit cc1ae39).
+
 - **engine:** **View: populate `ObjView.attachments`** (fa808f9, webui request) — `visible()` now fills
   each battlefield object's `attachments` with the ids of objects whose `attached_to` points at it
   (battlefield order, stable), instead of a hardcoded empty Vec; flows through `view_for` + `god_view`
