@@ -5,6 +5,16 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **engine:** **Targeting hardening (`861f3aa`)** — `target_matches_filter` now fails CLOSED: an
+  unhandled `CardFilter` predicate rejects rather than passing through `_ => true` (the gap class
+  that let a creature match "land you control"). All pool predicates handled; 165 green.
+- **engine:** **C17 piece 1 (`e002d7a`)** — interpret `Effect::Exile` (was a no-op) → `Action::Exile`
+  moves the target to its owner's exile + broadcasts ObjectMoved (delayed exile triggers fire); and
+  `target_candidates` now enumerates `TargetKind::CardInZone{zone, filter}` (was unhandled). So
+  Keen-Eyed Curator's `{1}: Exile target card from a graveyard` mechanics work; reusable for any
+  exile/graveyard-target effect. Test: a graveyard card is a legal candidate and gets exiled.
+  Remaining C17 (exile-association + source-aware conditional static + distinct-card-types value)
+  proposed to design — pieces 2+3 build once shapes confirmed.
 - **webui:** Lobby Games + AI Training Replays lists now show **most-recent first** (games desc by
   id; runs desc by latest checkpoint time, steps still ascending within a run) and both panels have
   a **capped height (340px) with a scrollbar** so long lists don't push the page down.
