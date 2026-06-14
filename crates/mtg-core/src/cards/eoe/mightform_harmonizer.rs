@@ -257,4 +257,54 @@ mod tests {
         e.state.end_of_turn_continuous_cleanup();
         assert_eq!(e.state.computed(bears).power, Some(2), "the double-power wears off at end of turn");
     }
+
+    /// #60 end-to-end (REAL warp alt-cast): "Warp {2}{G} — you may cast this from your hand for its
+    /// warp cost. Exile this creature at the beginning of the next end step…". Cast Mightform via
+    /// `cast_spell(_, CastVariant::Warp)` (auto-pays `{2}{G}`) → `resolve_top`: it enters the
+    /// battlefield as a creature AND a "exile at the next end step" delayed trigger is **armed**
+    /// (the end-step firing itself is covered by the engine's warp turn test).
+    #[test]
+    fn mightform_warp_alt_cast_arms_end_step_exile() {
+        use crate::agent::{Agent, CastVariant, DecisionRequest, DecisionResponse, PlayerView};
+        use crate::basics::{CardType, Zone};
+        use crate::cards::{grp, starter_db};
+        use crate::ids::PlayerId;
+        use crate::priority::Engine;
+        use crate::state::GameState;
+        use std::sync::Arc;
+
+        #[derive(Clone)]
+        struct PassiveAgent;
+        impl Agent for PassiveAgent {
+            fn decide(&mut self, _v: &PlayerView, _req: &DecisionRequest) -> DecisionResponse {
+                DecisionResponse::Pass
+            }
+        }
+
+        let mut state = GameState::new(2, 1);
+        state.set_card_db(Arc::new(starter_db()));
+        let mightform = {
+            let c = state.card_db().get(MIGHTFORM_HARMONIZER).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, Zone::Hand)
+        };
+        for _ in 0..3 {
+            let c = state.card_db().get(grp::FOREST).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, Zone::Battlefield); // pays the {2}{G} warp cost
+        }
+        let mut e = Engine::new(state, vec![Box::new(PassiveAgent), Box::new(PassiveAgent)]);
+
+        e.cast_spell(PlayerId(0), mightform, CastVariant::Warp);
+        e.resolve_top(); // enters the battlefield (warp-cast)
+
+        assert_eq!(e.state.object(mightform).zone, Zone::Battlefield, "warp-cast onto the battlefield");
+        assert!(
+            e.state.computed(mightform).card_types.contains(&CardType::Creature),
+            "it's a creature"
+        );
+        // The "exile at the next end step" delayed trigger is armed on this object.
+        assert!(
+            e.state.delayed_triggers.iter().any(|dt| dt.source == Some(mightform)),
+            "a warp 'exile at next end step' delayed trigger is armed"
+        );
+    }
 }
