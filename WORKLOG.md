@@ -5,6 +5,11 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **design (upgrade tail #44):** **Mightform's Warp {2}{G} authored** (3a3dbed) against C14 pieces 1+2 —
+  added `Ability::Warp { cost: mana_cost(2, &[(Green,1)]) }`: sorcery-speed cast from hand for {2}{G}
+  (offered even when normal {2}{G}{G} is unaffordable), then exile at the next end step. Atomic/exploit-free
+  (cheap cast always carries the exile). Stays `fully_implemented: false` only for recast-from-exile (piece 3,
+  pending) — flips to true with no other change when it lands. 169 tests green.
 - **engine:** **C14 warp pieces 1+2 (`c445d78`)** — alt-cost casting + exile-at-next-end-step.
   `Ability::Warp{cost}` + `CastVariant::Warp`: legal_priority_actions offers the warp cast (sorcery
   speed, even when the normal cost is unaffordable — the discount is the point); cast_spell pays the
