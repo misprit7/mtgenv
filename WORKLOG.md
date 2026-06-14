@@ -5,6 +5,17 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **design:** **Mightform Harmonizer (C15) + Surrak's draw trigger (C16) authored — 17/18 cards.**
+  (1) *Mightform Harmonizer* (eoe, faebf93): landfall→double-power snapshot
+  `PumpPT{ what: Target(creature you control), power: PowerOfTarget(0), toughness: Fixed(0),
+  UntilEndOfTurn }`; `fully_implemented:false` only on warp (C14). Folded ×4 into the selesnya preset
+  (standing rule) → 48 nonbasics, basics 9F/3P. (2) *Surrak* becomes-targeted draw trigger (3097fc4):
+  `Triggered{ BecomesTargeted{ filter: creature you control, by_opponent: true }, Draw 1 }` — the
+  **battlefield-creature half**; the "creature SPELL you control" half is deferred (`Target::Stack`
+  targeting unbuilt) → honest under-trigger, Surrak stays `false` (that half + can't-be-countered
+  inert). Caught + corrected engine's C16 plan (it had "whenever *this* becomes the target"; real
+  oracle is the broader creature-you-control set across BF+stack). 161 mtg-core tests green. Remaining
+  out of the preset: Dyadrine + Keen-Eyed Curator (cap-blocked: YouAttack/mana-spent-counters, C17/exile).
 - **engine:** **C15 double-power + #43 search-reveal + C16 becomes-targeted** (3 more green commits
   after the earthbend push). (1) `557b6b5` **C15**: materialized `Effect::PumpPT` (was a no-op) as a
   floating `ModifyPT` continuous effect over its target for the given `Duration`, reusing the
