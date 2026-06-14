@@ -34,10 +34,12 @@ pub mod misc;
 // Per-first-printing-set folders (real card pool).
 pub mod dft;
 pub mod dsk;
+pub mod eld;
 pub mod eoe;
 pub mod fdn;
 pub mod fin;
 pub mod lea;
+pub mod mkm;
 
 /// Oracle/printing ids (the `grp_id` linking an object to its [`CardDef`]). Per-set card ids move
 /// near their cards in the `<setcode>/` folders; the prototype/starter ids stay here.
@@ -323,6 +325,8 @@ pub fn starter_db() -> CardDb {
     fdn::register(&mut db);
     eoe::register(&mut db);
     dft::register(&mut db);
+    eld::register(&mut db);
+    mkm::register(&mut db);
     db
 }
 
@@ -405,7 +409,7 @@ mod tests {
     #[test]
     fn starter_db_has_expected_cards() {
         let db = starter_db();
-        assert_eq!(db.len(), 38);
+        assert_eq!(db.len(), 40);
         // Forest is "type line only": a Basic Land with subtype Forest. Mana is intrinsic
         // (CR 305.6) — the engine derives {T}: Add {G} from the subtype, so the CardDef carries
         // no explicit mana ability (and `is_mana_source` only sees authored abilities).

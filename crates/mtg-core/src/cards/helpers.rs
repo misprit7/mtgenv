@@ -6,9 +6,10 @@
 //! `CardDef`/`Ability` builders like `creature`/`mana_ability`, in the parent `crate::cards`).
 //! That keeps every card module a leaf node — no card-to-card tangle as the pool grows.
 
-use crate::basics::{CardType, Zone};
+use crate::basics::{CardType, Zone, ZoneDest, ZonePos};
 use crate::effects::target::{CardFilter, SelectSpec};
 use crate::effects::value::{PlayerRef, ValueExpr};
+use crate::effects::Effect;
 use crate::subtypes::Supertype;
 
 /// "a land you control" — the landfall event filter (CR 603.2: a land entering under your
@@ -80,5 +81,32 @@ pub(crate) fn itself() -> SelectSpec {
         chooser: PlayerRef::Controller,
         min: ValueExpr::Fixed(0),
         max: ValueExpr::Fixed(0),
+    }
+}
+
+/// `SelectSpec` for "sacrifice this" — exactly one object, the source itself (`ItSelf`). Used as a
+/// `CostComponent::Sacrifice` payload, e.g. fetch lands' `{T}, Sacrifice this:`.
+pub(crate) fn sacrifice_self() -> SelectSpec {
+    SelectSpec {
+        zone: Zone::Battlefield,
+        filter: CardFilter::ItSelf,
+        chooser: PlayerRef::Controller,
+        min: ValueExpr::Fixed(1),
+        max: ValueExpr::Fixed(1),
+    }
+}
+
+/// "Search your library for a basic land card, put it onto the battlefield tapped, then shuffle"
+/// (C5) — the fetch shared by fetch lands (Fabled Passage, Escape Tunnel) and Lumbering Worldwagon.
+/// `min: 0` allows a failed/declined find; the engine shuffles after.
+pub(crate) fn fetch_basic_tapped() -> Effect {
+    Effect::Search {
+        who: PlayerRef::Controller,
+        zone: Zone::Library,
+        filter: basic_land_filter(),
+        min: 0,
+        max: 1,
+        to: ZoneDest { zone: Zone::Battlefield, pos: ZonePos::Any },
+        tapped: true,
     }
 }

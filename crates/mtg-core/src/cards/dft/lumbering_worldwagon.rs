@@ -19,12 +19,12 @@
 //!     moot and the *attacks* trigger can't fire — but the IR above is faithful, not approximated.
 //!   Flagged to engine/lead.
 
-use crate::basics::{CardType, Color, Zone, ZoneDest, ZonePos};
-use crate::cards::helpers::{basic_land_filter, itself, lands_you_control};
+use crate::basics::{CardType, Color};
+use crate::cards::helpers::{fetch_basic_tapped, itself, lands_you_control};
 use crate::cards::{mana_cost, CardDb, CardDef};
 use crate::effects::ability::{Ability, EventPattern, StaticContribution};
 use crate::effects::condition::Duration;
-use crate::effects::value::{PlayerRef, ValueExpr};
+use crate::effects::value::ValueExpr;
 use crate::effects::Effect;
 use crate::state::Characteristics;
 use crate::subtypes::ArtifactType;
@@ -37,15 +37,7 @@ pub const LUMBERING_WORLDWAGON: u32 = 105;
 fn may_fetch_basic_tapped() -> Effect {
     Effect::Optional {
         prompt: "Search your library for a basic land card to put onto the battlefield tapped?".to_string(),
-        body: Box::new(Effect::Search {
-            who: PlayerRef::Controller,
-            zone: Zone::Library,
-            filter: basic_land_filter(),
-            min: 0,
-            max: 1,
-            to: ZoneDest { zone: Zone::Battlefield, pos: ZonePos::Any },
-            tapped: true,
-        }),
+        body: Box::new(fetch_basic_tapped()),
     }
 }
 
