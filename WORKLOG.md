@@ -5,6 +5,15 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-06-13
 
+- **engine:** **C11–C18 cap: `CostComponent::Sacrifice` as an activation cost** (0451182) — pivoted to
+  #21 and landed design's #1 gap. `can_pay_cost`/`pay_cost` (which only paid TapSelf/Loyalty) now
+  resolve chooser-controlled battlefield permanents matching the spec filter (source-aware: `ItSelf`
+  = the cost's source, so `{T}, Sacrifice this:` works) and sacrifice `spec.min` to the graveyard,
+  asking `SelectCards` only on a genuine choice. Instant-speed activated abilities on lands already
+  worked (`legal_priority_actions` enumerates them for any battlefield permanent, `Timing::Instant`),
+  so this **fully unblocks the fetch lands** (Fabled Passage / Escape Tunnel) — design to author. Test
+  covers Sacrifice-this. 111 mtg-core tests green. (Tracked-deferred per design: Fabled's "untap that
+  land" = searched-permanent handle; Escape's "can't be blocked" = CantBeBlocked qualification.)
 - **engine:** **Replay live frame sink** (9ec1fbf) — `Engine::set_replay_sink(Box<dyn FnMut(&ReplayFrame)>)`
   streams each god-view frame to the caller the instant it's captured (in `push_replay_frame`, on the
   game thread), unblocking webui's live god-view spectator (their `observe` only saw a masked
