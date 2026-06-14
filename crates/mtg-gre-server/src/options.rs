@@ -109,11 +109,20 @@ pub struct Selection {
 // ── Labeling helpers (look names up out of the information-filtered view) ────────────────────
 
 fn all_objs(view: &PlayerView) -> impl Iterator<Item = &ObjView> {
-    view.me.hand.iter().chain(view.battlefield.iter()).chain(
-        view.players
-            .iter()
-            .flat_map(|p| p.graveyard.iter().chain(p.exile_public.iter())),
-    )
+    // Includes the seat's revealed/known-library cards so a Search's candidates resolve to real
+    // names (Erode/Bushwhack/Worldwagon fetch a basic). Those fields are empty until the engine
+    // populates them when a SelectCards-from-a-hidden-zone decision is pending (forward-compat).
+    view.me
+        .hand
+        .iter()
+        .chain(view.me.revealed_to_me.iter())
+        .chain(view.me.known_library.iter())
+        .chain(view.battlefield.iter())
+        .chain(
+            view.players
+                .iter()
+                .flat_map(|p| p.graveyard.iter().chain(p.exile_public.iter())),
+        )
 }
 
 /// A human-readable name for an object id, as far as this seat may perceive it.

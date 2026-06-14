@@ -661,10 +661,14 @@ function renderPrompt(): void {
     return;
   }
 
+  // Render a button for every option EXCEPT those whose object is actually on the board (those are
+  // clicked on the card). An option whose object isn't on the board — e.g. a library card offered by
+  // a Search (Erode/Bushwhack/Worldwagon) — still needs a button, else there's no way to pick it.
   const opts = el("div", "opts");
   let boardCount = 0;
   p.options.forEach((label: string, i: number) => {
-    if (objs[i] != null) { boardCount++; return; }
+    const onBoard = objs[i] != null && document.querySelector(`[data-oid="${objs[i]}"]`);
+    if (onBoard) { boardCount++; return; }
     const b = el("button", "opt" + (multi.has(i) ? " sel" : ""), label) as HTMLButtonElement;
     b.onclick = () => onOptionToggle(i);
     opts.appendChild(b);
@@ -754,6 +758,12 @@ function nameOf(id: number): string {
   return "#" + id;
 }
 function stackName(sid: number): string { for (const s of (view.stack || [])) if (s.id === sid) return s.chars.name; return "spell #" + sid; }
+// " → target1, target2" for a stack object's targets (for the log), or "" if none.
+function stackTgtSuffix(sid: number): string {
+  const s = (view.stack || []).find((x: Any) => x.id === sid);
+  const ts = (s && s.targets) || [];
+  return ts.length ? " → " + ts.map(tgtName).join(", ") : "";
+}
 function tgtName(t: Any): string {
   if (t == null) return "?";
   if (t.Player != null) return "P" + t.Player;
@@ -848,7 +858,7 @@ function eventText(ev: Any): string | null {
     case "DrewCards": return `P${v.player} draws ${v.count}`;
     case "LifeChanged": return `P${v.player} life ${v.delta >= 0 ? "+" : ""}${v.delta} → ${v.new_total}`;
     case "DamageDealt": return `⚔ ${nameOf(v.source)} deals ${v.amount} to ${tgtName(v.target)}`;
-    case "SpellCast": return `P${v.controller} casts ${stackName(v.spell)}`;
+    case "SpellCast": return `P${v.controller} casts ${stackName(v.spell)}${stackTgtSuffix(v.spell)}`;
     case "ObjectMoved": return `${nameOf(v.obj)} → ${v.to}`;
     case "PermanentDied": return `💀 ${nameOf(v.obj)} dies`;
     case "ValueChosen": return `P${v.player} ${v.label} = ${v.value}`;
