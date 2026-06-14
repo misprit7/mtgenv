@@ -89,6 +89,9 @@ pub enum EventPattern {
     YouAttack,
     /// This creature blocks or becomes blocked (CR 509.1i).
     SelfBlocks,
+    /// You tap a creature for mana (CR 605.1b) — drives "whenever you tap a creature for mana, add
+    /// …" no-stack triggered mana abilities (Badgermole Cub). Fires per creature tapped for mana.
+    TapCreatureForMana,
     /// A permanent matching `filter` (relative to the watcher's controller) becomes the target of a
     /// spell or ability (CR 603.2/603.3d, fired when targets are locked). `by_opponent` restricts to
     /// targeting sources controlled by an opponent of the watcher (Surrak: "a creature you control

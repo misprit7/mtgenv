@@ -10,7 +10,7 @@
 
 use crate::basics::{Color, ManaCost};
 use crate::conditions;
-use crate::effects::ability::{Ability, Keyword, Restriction};
+use crate::effects::ability::{Ability, EventPattern, Keyword, Restriction};
 use crate::effects::target::ManaSpec;
 use crate::effects::Effect;
 use crate::ids::{ObjId, PlayerId};
@@ -191,13 +191,48 @@ pub fn auto_pay(state: &mut GameState, p: PlayerId, cost: &ManaCost) -> bool {
         Some(c) => c,
         None => return false,
     };
-    for i in chosen {
-        let id = sources[i].0;
+    let tapped: Vec<ObjId> = chosen.iter().map(|&i| sources[i].0).collect();
+    for &id in &tapped {
         if let Some(o) = state.objects.get_mut(&id) {
             o.status.tapped = true;
         }
     }
+    fire_tap_creature_for_mana(state, p, &tapped);
     true
+}
+
+/// Fire any "whenever you tap a creature for mana, add …" no-stack triggered mana abilities
+/// (CR 605.1b) — once per creature among the just-tapped `tapped` sources (an animated land that's
+/// a land-creature counts). The produced mana goes straight into `p`'s pool (mana abilities don't
+/// use the stack). Card-agnostic: reads `Triggered{ TapCreatureForMana, AddMana{..} }` abilities.
+fn fire_tap_creature_for_mana(state: &mut GameState, p: PlayerId, tapped: &[ObjId]) {
+    let creature_taps = tapped.iter().filter(|&&id| state.computed(id).is_creature()).count() as u32;
+    if creature_taps == 0 {
+        return;
+    }
+    let db = state.card_db();
+    let battlefield = state.player(p).battlefield.clone();
+    let mut bonus: Vec<Color> = Vec::new();
+    for id in battlefield {
+        let grp = match state.objects.get(&id) {
+            Some(o) => o.chars.grp_id,
+            None => continue,
+        };
+        let Some(def) = db.get(grp) else { continue };
+        for ab in &def.abilities {
+            if let Ability::Triggered {
+                event: EventPattern::TapCreatureForMana,
+                effect: Effect::AddMana { mana, .. },
+                ..
+            } = ab
+            {
+                bonus.extend(mana_spec_colors(mana));
+            }
+        }
+    }
+    for c in bonus {
+        *state.player_mut(p).mana_pool.amounts.entry(c).or_insert(0) += creature_taps;
+    }
 }
 
 #[cfg(test)]
@@ -229,6 +264,73 @@ mod tests {
             state.add_card(PlayerId(0), c, Zone::Battlefield);
         }
         state
+    }
+
+    #[test]
+    fn tap_creature_for_mana_triggers_bonus_mana_badgermole() {
+        use crate::effects::ability::{Ability, EventPattern};
+        use crate::effects::value::{PlayerRef, ValueExpr};
+        use crate::state::Characteristics;
+        // Badgermole Cub: "Whenever you tap a creature for mana, add an additional {G}." A no-stack
+        // mana trigger (CR 605.1b): tapping a creature mana source adds a bonus {G} to the pool.
+        let mut db = cards::starter_db();
+        db.insert(cards::CardDef {
+            chars: Characteristics {
+                name: "Dork (test)".into(),
+                card_types: vec![crate::basics::CardType::Creature],
+                power: Some(1),
+                toughness: Some(1),
+                grp_id: 9970,
+                ..Default::default()
+            },
+            abilities: vec![cards::mana_ability(Color::Green)], // {T}: Add {G}
+            text: String::new(),
+            ..Default::default()
+        });
+        db.insert(cards::CardDef {
+            chars: Characteristics {
+                name: "Badgermole (test)".into(),
+                card_types: vec![crate::basics::CardType::Creature],
+                power: Some(2),
+                toughness: Some(2),
+                grp_id: 9971,
+                ..Default::default()
+            },
+            abilities: vec![Ability::Triggered {
+                event: EventPattern::TapCreatureForMana,
+                condition: None,
+                intervening_if: false,
+                effect: Effect::AddMana {
+                    who: PlayerRef::Controller,
+                    mana: ManaSpec {
+                        produces: vec![(Color::Green, ValueExpr::Fixed(1))],
+                        any_color: None,
+                    },
+                },
+            }],
+            text: String::new(),
+            ..Default::default()
+        });
+        let mut state = GameState::new(2, 1);
+        state.set_card_db(Arc::new(db));
+        let dork = {
+            let c = state.card_db().get(9970).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, Zone::Battlefield)
+        };
+        {
+            let c = state.card_db().get(9971).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, Zone::Battlefield);
+        }
+        state.objects.get_mut(&dork).unwrap().summoning_sick = false; // may tap for mana
+
+        let paid = auto_pay(&mut state, PlayerId(0), &cost(0, &[(Color::Green, 1)]));
+        assert!(paid, "the {{G}} cost was paid by tapping the creature dork");
+        assert!(state.object(dork).status.tapped, "the dork tapped for mana");
+        assert_eq!(
+            state.player(PlayerId(0)).mana_pool.amounts.get(&Color::Green).copied().unwrap_or(0),
+            1,
+            "Badgermole added a bonus {{G}} to the pool"
+        );
     }
 
     #[test]
