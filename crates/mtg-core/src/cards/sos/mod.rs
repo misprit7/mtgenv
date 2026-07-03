@@ -90,6 +90,7 @@ pub mod shattered_acolyte;
 pub mod shopkeepers_bane;
 pub mod send_in_the_pest;
 pub mod silverquill_charm;
+pub mod snarl_song;
 pub mod sneering_shadewriter;
 pub mod spectacular_skywhale;
 pub mod spectacle_summit;
@@ -212,6 +213,7 @@ pub fn register(db: &mut CardDb) {
     shopkeepers_bane::register(db);
     send_in_the_pest::register(db);
     silverquill_charm::register(db);
+    snarl_song::register(db);
     sneering_shadewriter::register(db);
     spectacular_skywhale::register(db);
     spectacle_summit::register(db);
