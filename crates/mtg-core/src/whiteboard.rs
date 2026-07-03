@@ -334,6 +334,16 @@ impl EngineCore {
             }
             // A no-op never counts as "performed" (so it can't satisfy an `IfYouDo` cost).
             Effect::Nothing => false,
+            // Create token(s), then COMMIT them immediately (deferred→imperative boundary, #61) so a
+            // LATER step in the same resolution can see them on the battlefield — Antiquities on the
+            // Loose's "create two Spirits, then put a +1/+1 counter on each Spirit you control." The
+            // rewrite pass still runs on the flushed batch, so "enters with counters" replacements are
+            // unaffected. (A standalone CreateToken flushes what it staged and is otherwise unchanged.)
+            Effect::CreateToken { .. } => {
+                self.materialize(effect, ctx, wb, cursor);
+                self.flush_pending(wb);
+                true
+            }
             // Pure leaves (and not-yet-interactive nodes) lower without agent interaction; a leaf
             // that lowers is considered performed.
             _ => {

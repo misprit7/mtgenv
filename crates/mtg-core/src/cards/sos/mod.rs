@@ -4,6 +4,7 @@ use crate::cards::CardDb;
 
 pub mod abstract_paintmage;
 pub mod additive_evolution;
+pub mod antiquities_on_the_loose;
 pub mod applied_geometry;
 pub mod arcane_omens;
 pub mod artistic_process;
@@ -130,6 +131,7 @@ pub mod zealous_lorecaster;
 pub fn register(db: &mut CardDb) {
     abstract_paintmage::register(db);
     additive_evolution::register(db);
+    antiquities_on_the_loose::register(db);
     applied_geometry::register(db);
     arcane_omens::register(db);
     artistic_process::register(db);

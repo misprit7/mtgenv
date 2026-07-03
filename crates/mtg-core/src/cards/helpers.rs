@@ -227,9 +227,8 @@ pub(crate) fn elemental_token() -> TokenSpec {
     }
 }
 
-/// The "Spirit" token (CR 111.3): a 2/2 red-and-white Spirit. Shared by every Spirit-maker (Group
-/// Project, Living History, Garrison Excavator, …). Ready for the next Spirit-maker card.
-#[allow(dead_code)]
+/// The "Spirit" token (CR 111.3): a 2/2 red-and-white Spirit. Shared by every Spirit-maker
+/// (Antiquities on the Loose; future Group Project, Living History, …).
 pub(crate) fn spirit_token() -> TokenSpec {
     TokenSpec {
         grp_id: 0,

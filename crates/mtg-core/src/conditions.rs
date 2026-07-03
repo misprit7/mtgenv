@@ -81,6 +81,11 @@ pub(crate) fn holds_for_source(
             eval_value(state, a, source_controller, source)
                 >= eval_value(state, b, source_controller, source)
         }
+        // "cast from anywhere other than your hand" — the source spell carries `flashback_cast`
+        // (the only non-hand cast the engine tracks today). `false` if there's no source object.
+        Condition::CastFromNotHand => {
+            source.and_then(|s| state.objects.get(&s)).is_some_and(|o| o.flashback_cast)
+        }
     }
 }
 
