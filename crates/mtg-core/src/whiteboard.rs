@@ -1320,8 +1320,8 @@ impl Engine {
     }
 
     /// C6: put a token onto the battlefield from its [`TokenSpec`] (CR 111.3). A token has no
-    /// printing (`grp_id` 0) — its characteristics live entirely on the object. (Token keyword
-    /// abilities aren't wired yet — `TokenSpec.keywords` is currently a vanilla-token no-op.)
+    /// printing (`grp_id` 0) — its characteristics live entirely on the object, including its
+    /// printed keyword abilities (`TokenSpec.keywords`, e.g. an Inkling's Flying).
     fn create_token(&mut self, spec: &TokenSpec, controller: PlayerId) {
         let chars = Characteristics {
             name: spec.name.clone(),
@@ -1330,6 +1330,7 @@ impl Engine {
             colors: spec.colors.clone(),
             power: Some(spec.power),
             toughness: Some(spec.toughness),
+            keywords: spec.keywords.clone(),
             ..Default::default()
         };
         let is_creature = chars.is_creature();

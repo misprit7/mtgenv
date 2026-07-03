@@ -4,6 +4,7 @@
 //! the engine's job, see `docs/design/AGENT_INTERFACE.md`). Distinct from `basics::Target`,
 //! which is a *concrete* reference.
 
+use super::ability::Keyword;
 use super::value::{PlayerRef, ValueExpr};
 use crate::basics::{CardType, Color, CounterKind, Zone};
 use crate::subtypes::{Subtype, Supertype};
@@ -113,7 +114,9 @@ pub struct TokenSpec {
     pub colors: Vec<Color>,
     pub power: i32,
     pub toughness: i32,
-    pub keywords: Vec<String>,
+    /// Printed keyword abilities the token has (CR 111.4) — e.g. an Inkling token's Flying. Applied
+    /// to the token's characteristics on creation.
+    pub keywords: Vec<Keyword>,
     /// Counters the token enters with (CR 614.1e), as `(kind, count)`.
     pub counters: Vec<(CounterKind, u32)>,
 }
