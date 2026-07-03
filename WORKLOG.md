@@ -5,6 +5,16 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-07-03 (night)
 
+- **cards(sos) — S15 impulse-play base + Practiced Scrollsmith (`d079eb0`):** adopted a ~90%-complete
+  *orphaned, uncommitted* S15 implementation left in the shared tree by a terminated predecessor;
+  reviewed it hunk-by-hunk against the ledger plan, confirmed it compiled + matched the warp/flashback
+  idioms, then hardened it with tests I wrote (interpreter arm, ETB exile+grant, offer window/expiry) and
+  landed the first consumer card. Ships `Effect`/`Action::ExileForPlay` + `Object.play_until_turn` (reset
+  on any zone change) + a unified exile-cast offer loop honouring warp-recast (sorcery-speed) vs impulse
+  (card's own timing within the window). **Practiced Scrollsmith** (`{R}{R/W}{W}` 3/2 first strike; ETB
+  impulse-exile a target noncreature/nonland from your gy, castable until end of your next turn). 466
+  mtg-core tests green (+4). Still deferred (no consumer yet): top-of-library source, land-play-from-exile,
+  graveyard-play. Next: S13 restricted-mana (Hydro-Channeler).
 - **gym (the combat-judgment ladder — cause definitively isolated):** three controlled experiments
   on "why does it chump-block the trampler at high life": (1) 2.8-swine-500k = user's reshaped
   reward (card-dominant Φ 0.5/0.3/0.2, coef 0.1, 50→80% anneal) → small directional nudge

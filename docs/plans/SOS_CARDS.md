@@ -63,7 +63,7 @@ each cap unlocks the bracketed count. `⏳` = not yet built.
 | **S12** Cost-reduction cond. | "costs {N} less if it targets X / you control Y / a card left your gy" (cast-time) | 7 | ⏳ |
 | **S14** Copy spell/perm | "copy target spell", "create a token that's a copy of" (heavier small-cap) | 7 | ⏳ **token-copy DONE** (`Effect::CreateTokenCopy`+`TokenCopyMods`, `a8c8a2d` → Applied Geometry); **spell-copy** portion still ⏳ |
 | **S17** Ward {cost} | Ward N / Ward—Pay life / Ward—Discard (counter-unless-pay on becoming targeted) | 7 | ⏳ |
-| **S15** Impulse play | exile/mill → "you may play it until end of turn / your next turn" | 6 | ⏳ |
+| **S15** Impulse play | exile/mill → "you may play it until end of turn / your next turn" | 6 | ◑ **base DONE** `d079eb0` (Effect/Action::ExileForPlay + `Object.play_until_turn` window + unified exile-cast offer w/ timing+expiry → Practiced Scrollsmith; land-play-from-exile + top-of-library source + graveyard-play still ⏳) |
 | **S3** Stun counters | `CounterKind::Stun` + "would untap → remove a stun counter instead" replacement | 6 | ⏳ |
 | **S18** Graveyard-activated | an ability that functions while its card is in the graveyard (recursion) | 6 | ⏳ |
 | **S11** Token-with-ability | `TokenSpec` carries an ability (Treasure `{T},Sac`; Pest attack→gain life) | 5 | ⏳ |
@@ -340,7 +340,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Potioner's Trove | S22 | `sos` | ⏳ | activate only if cast an I/S this turn |
 | Pox Plague | Native | `sos` | ⏳ | halve life/hand/permanents (one-off) |
 | Practiced Offense | S10 | `sos` | ⏳ | flashback |
-| Practiced Scrollsmith | S15 | `sos` | ⏳ | impulse cast exiled graveyard card |
+| Practiced Scrollsmith | S15 | `sos` | ✅ done | ETB impulse-exile target noncreature/nonland from your gy, castable until end of your next turn (`ExileForPlay{YourNextTurn}`; `{R/W}` hybrid + first strike) |
 | Primary Research | S9 | `sos` | ✅ done | card-left-graveyard-this-turn condition |
 | Prismari Charm | S1 | `sos` | ⏳ | surveil mode |
 | Procrastinate | S3 | `sos` | ✅ done | stun counters (twice X) |
@@ -613,7 +613,33 @@ Rubble Rouser need reanimate-self / reflexive-mana — defer.)
 3. Paying: exile the card (move to Exile) as part of the cost, then the ability's effect resolves.
 4. Test: card in graveyard + mana → offered; activate → card exiled + effect ran (two Inklings).
 
-## S15 impulse-play — scoped plan (NEXT priority per lead; foundation already exists)
+## S15 impulse-play — ◑ BASE DONE (`d079eb0`) — adopted from orphaned predecessor WIP
+
+**Provenance:** the engine base (steps 1–2 below) was found as ~90%-complete **uncommitted** work in the
+shared tree — a predecessor was mid-build when its process was terminated to free resources. Reviewed
+hunk-by-hunk against this plan, confirmed compiling + consistent with the warp/flashback idioms, then
+hardened with tests I wrote (interpreter arm, ETB exile+grant, offer window/expiry) and landed with the
+first consumer card.
+
+**Shipped:** `Effect::ExileForPlay { what, window: PlayWindow }` + `Action::ExileForPlay { obj, until }`
++ `Object.play_until_turn: Option<u32>` (reset on any zone change, CR 400.7) + the **unified** exile-cast
+offer loop in `legal_priority_actions` (warp-recast = sorcery-speed/no-limit; impulse = card's own timing
+within `play_until_turn`). Whiteboard interpreter arm handles the **`Target`** source with 2-player
+"your next turn" arithmetic (+2 if it's already your turn, else +1). → **Practiced Scrollsmith** (ETB
+exile a target noncreature/nonland card from your gy, castable until end of your next turn).
+
+**Still ⏳ (deferred — no consumer landed yet; wire each WITH its card, revert-unused-cap precedent):**
+- **Top-of-library source** — the interpreter arm only handles `EffectTarget::Target`; a "top card of
+  your library" exile (Elemental Mascot, Suspend Aggression) needs a non-`Target` source path.
+- **Land-play-from-exile** — the offer loop `continue`s on lands (a land is *played*, not cast); a
+  `PlayLand`-from-exile offer keyed to `castable_from_exile`/`play_until_turn` is needed for cards whose
+  exiled card can be a land (Elemental Mascot, Suspend Aggression, Ark of Hunger). Note `legal_priority_
+  actions` already has a `PlayLand`-from-exile branch gated on a separate `PlayLandsFrom` permission
+  (priority.rs ~977) — reconcile with that.
+- **Graveyard-play** (`PlayWindow::ThisTurn` from the graveyard) — Ark of Hunger / Tablet of Discovery
+  play a **milled** card (graveyard, not exile); needs a zone-general "playable-from-current-zone" flag.
+
+### original scoped plan (foundation already existed)
 "Exile [a card] — you may **play** it until [end of turn / end of your next turn]." **Good news:** the
 warp-recast mechanism already gives us most of it — `Object.castable_from_exile: bool`
 (`state/mod.rs:157`, reset on any zone change per CR 400.7) + an offer loop (`priority.rs:1029-1041`)
