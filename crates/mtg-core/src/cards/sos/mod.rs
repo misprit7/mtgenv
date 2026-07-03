@@ -30,6 +30,7 @@ pub mod expressive_firedancer;
 pub mod fractal_mascot;
 pub mod flow_state;
 pub mod fields_of_strife;
+pub mod follow_the_lumarets;
 pub mod foolish_fate;
 pub mod forum_of_amity;
 pub mod garrison_excavator;
@@ -131,6 +132,7 @@ pub fn register(db: &mut CardDb) {
     fractal_mascot::register(db);
     flow_state::register(db);
     fields_of_strife::register(db);
+    follow_the_lumarets::register(db);
     foolish_fate::register(db);
     forum_of_amity::register(db);
     garrison_excavator::register(db);

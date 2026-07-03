@@ -291,7 +291,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Fix What's Broken | PayXLife | `sos` | ⏳ | additional cost pay X life; reanimate MV=X |
 | Flashback | S10 | `sos` | ⏳ | grants flashback to graveyard card |
 | Flow State | S2 | `sos` | ✅ done | look-and-pick top three to hand |
-| Follow the Lumarets | S2,S4 | `sos` | ⏳ | look-and-pick plus infusion gained-life |
+| Follow the Lumarets | S2,S4 | `sos` | ✅ done | filtered look-pick (creature/land) + Infusion take 1→2 |
 | Foolish Fate | S4 | `sos` | ✅ done | destroy plus infusion gained-life drain |
 | Forum Necroscribe | S8,S17 | `sos` | ⏳ | Ward—Discard + Repartee reanimation |
 | Forum of Amity | S1 | `sos` | ✅ done | land ability surveil 1 |
