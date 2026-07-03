@@ -76,10 +76,19 @@ each cap unlocks the bracketed count. `⏳` = not yet built.
 
 Building **S1, S4, S5, S6, S7, S8, S10** (the seven big-count caps) converts ~**79** T3 cards to authorable.
 
-## ⚠️ Trigger-system gap — **found 2026-07-03** (blocks begin-of-step cards; latent-partials)
+## ✅ Trigger-system gap — **found + FIXED 2026-07-03** (`20965a8`)
 
-Tracing the turn engine for Abstract Paintmage's "at the beginning of your first main phase" trigger
-surfaced **two real, pre-existing gaps** in the triggered-ability system (code evidence, not yet fixed):
+**RESOLVED.** Both gaps below are fixed: `collect_triggers` now queues each permanent's
+`BeginningOfStep(phase)` trigger at phase transitions (`queue_begin_of_step_triggers`); a
+non-intervening-if trigger condition (CR 603.2) gates queueing, and an intervening-if (CR 603.4) is
+re-checked at put-on-stack + resolution (`trigger_intervening_if_holds`). Scoped to condition-bearing
+triggers, so `condition: None` triggers are unaffected. **Turn-engine integration tests prove the 4
+revived cards now fire (and gate correctly): Startled Relic Sloth, Essenceknit Scholar, Primary
+Research, Additive Evolution** — all four are now genuinely `fully_implemented` (flags never lied
+across a session boundary). Ennis (unimplemented) will benefit when authored.
+
+_Original finding (kept for the record):_ tracing Abstract Paintmage's "at the beginning of your first
+main phase" trigger surfaced **two real, pre-existing gaps** in the triggered-ability system:
 
 1. **`EventPattern::BeginningOfStep(phase)` permanent triggers are never queued.** `collect_triggers`
    (priority.rs ~2718) handles `PhaseBegan` only for `Phase::End` *delayed* triggers (warp exile); there
@@ -92,17 +101,16 @@ surfaced **two real, pre-existing gaps** in the triggered-ability system (code e
    (non-reflexive) trigger — it extracts `effect` and resolves it unconditionally. So a
    `condition: Some(YourTurn)`-style gate on a triggered ability is silently ignored.
 
-**Impact — these "done" cards are actually latent-partial** (their begin-of-step / conditional triggers
-pass only their `resolve_effect`-direct unit tests, never the turn engine): **Essenceknit Scholar**
-(end-step draw), **Startled Relic Sloth** (begin-combat exile), **Ennis, Debate Moderator** (conditional
-end-step counter), plus any future begin-of-step card. **Blocks:** Abstract Paintmage (S13 rider),
-Fractal Tender, and the S16 end-step-token cards' timing.
+_Impact was:_ Essenceknit Scholar (end-step draw), Startled Relic Sloth (begin-combat exile), Primary
+Research (end-step draw), Additive Evolution (begin-combat pump) — all fixed + integration-tested.
+Abstract Paintmage / Fractal Tender / S16 end-step-token timing are now **unblocked** (Abstract Paintmage
+needs only its first-main-phase trigger authored — the queue + `add_mana`-to-restricted-bucket are wired).
 
-**Fix (a real cap, own careful task — trigger system is load-bearing):** (a) in `collect_triggers`, on
-`PhaseBegan{phase, active}` queue every permanent's `BeginningOfStep(phase)` trigger; (b) evaluate the
-trigger `condition` (as an intervening-if, CR 603.4) when the trigger would be queued/put on the stack —
-reuse `conditions::holds_for_source`. Add turn-engine integration tests (drive a real turn, assert the
-trigger fires only when its condition holds). This should be its own commit, not bolted onto a card.
+**➕ Proposed systemic audit rule (for a future #60-style pass):** _every `Triggered` ability in the pool
+should fire at least once through the REAL turn engine in some test_ (broadcast the event → `run_agenda` →
+`resolve_top`), not only via `resolve_effect`-direct. This class of "silently-inert" bug (unqueued
+triggers, ignored conditions) is invisible to resolve_effect-direct tests. The 4 integration tests added
+here are the seed. The Selesnya pool got this audit (see SELESNYA_LANDFALL_CARDS.md #60); SOS deserves it.
 
 ## Engine reality-check — unimplemented effect leaves (E-caps) — **found during Phase 2**
 

@@ -39,6 +39,15 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
   begin-of-step/conditional triggers pass only `resolve_effect`-direct tests, not the turn engine), and
   Abstract Paintmage / Fractal Tender / S16 end-step timing are blocked. Flagged to lead — a load-bearing
   trigger-system cap deserving its own careful commit, not a rushed rider.
+- **engine(triggers) — begin-of-step triggers + `Triggered.condition` NOW WIRED (`20965a8`):** fixed the
+  gap found above. `collect_triggers` queues each permanent's `BeginningOfStep(phase)` trigger at phase
+  transitions; a non-intervening-if trigger condition (CR 603.2) gates queueing, an intervening-if (CR
+  603.4) is re-checked at put-on-stack + resolution (`trigger_intervening_if_holds`). Scoped to
+  condition-bearing triggers → `condition:None` triggers unaffected (480→484, no regressions). **Turn-engine
+  integration tests** (broadcast PhaseBegan → run_agenda → resolve_top) prove all 4 revived cards fire and
+  gate: Startled Relic Sloth, Essenceknit Scholar, Primary Research, Additive Evolution — now genuinely
+  fully-implemented. Unblocks Abstract Paintmage (just needs its first-main trigger authored). Proposed a
+  systemic audit rule in the ledger: every Triggered ability should fire once through the real engine.
 - **engine+cards(sos) — Select-based Exile + Heated Argument (`5596fb4`):** `Effect::Exile` now handles
   `EffectTarget::Select` in `interpret` (via `select_for_each`), returning whether the selection reached its
   `min` so a wrapping `IfYouDo` gates correctly (previously it fell to `materialize`'s Target-only arm →

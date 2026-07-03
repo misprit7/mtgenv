@@ -77,8 +77,11 @@ MTGA client.
   Aggression. Then **S13 restricted-mana DONE** (`ffcc0df`, `ManaSpec.restriction` + `ManaPool.restricted`
   bucket, `allow_restricted` threaded through payment) → Hydro-Channeler. Then **Select-exile-as-cost**
   (`5596fb4`, `Effect::Exile` handles a resolution-time `Select`, gates `IfYouDo`) → Heated Argument. 480
-  mtg-core tests green. **Open finding:** begin-of-step triggers + `Triggered.condition` are unwired (see
-  SOS_CARDS.md ⚠️ section) — Essenceknit/Startled/Ennis latent-partial; own trigger-system cap needed.
+  mtg-core tests green. Then **begin-of-step-trigger cap** (`20965a8`): `collect_triggers` now queues
+  `BeginningOfStep(phase)` permanent triggers + evaluates `Triggered.condition` (CR 603.2/603.4), fixing 4
+  latent-partial cards (Startled/Essenceknit/Primary Research/Additive Evolution) with turn-engine
+  integration tests. 484 mtg-core tests green. Proposed a "every trigger fires through the real engine"
+  audit rule for a future SOS pass.
 - **✅ #60 END-TO-END AUDIT COMPLETE — all 18 cards driven through the REAL cast→pay→resolve loop.** The
   prior behaviour tests called `resolve_effect` directly, bypassing casting + mana payment, so "18/18
   fully implemented" was *asserted, not proven*. This audit rebuilt a harness on the engine's `pub(crate)`
