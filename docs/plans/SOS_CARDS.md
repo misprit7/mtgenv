@@ -334,7 +334,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Paradox Surveyor | S2 | `sos` | ⏳ | look-and-pick ETB selection |
 | Pensive Professor | S6 | `sos` | ⏳ | Increment (plus counter-added trigger) |
 | Pest Mascot | S16 | `sos` | ✅ done | whenever-you-gain-life trigger |
-| Pestbrood Sloth | S11 | `sos` | ⏳ | Pest token with attack ability |
+| Pestbrood Sloth | S11 | `sos` | ✅ done | Pest token with attack ability |
 | Poisoner's Apprentice | S4 | `sos` | ✅ done | Infusion gained-life-this-turn condition |
 | Postmortem Professor | S18 | `sos` | ⏳ | exile-from-graveyard recursion + attack drain |
 | Potioner's Trove | S22 | `sos` | ⏳ | activate only if cast an I/S this turn |
@@ -355,7 +355,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Run Behind | S12 | `sos` | ⏳ | conditional cost reduction targeting attacker |
 | Scolding Administrator | S8 | `sos` | ⏳ | Repartee targets-a-creature trigger |
 | Seize the Spoils | S11 | `khm` | ⏳ | Treasure token with ability |
-| Send in the Pest | S11 | `sos` | ⏳ | Pest token with attack ability |
+| Send in the Pest | S11 | `sos` | ✅ done | Pest token with attack ability |
 | Slumbering Trudge | S3 | `sos` | ⏳ | enters with stun counters |
 | Snarl Song | S7 | `sos` | ⏳ | converge, colors of mana spent |
 | Snooping Page | S8 | `sos` | ⏳ | Repartee: cast IS targeting creature |
