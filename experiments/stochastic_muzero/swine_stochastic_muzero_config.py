@@ -20,6 +20,9 @@ from easydict import EasyDict
 import lz_patches  # noqa: F401  — monkeypatches LightZero v0.2.0 stochastic-muzero bugs on import
 
 SMOKE = "--smoke" in sys.argv
+# Parallel collection across worker processes — the main throughput lever (collection is CPU/MCTS
+# bound, GPU sits ~15%). 'base' is serial. Verify workers can import this module + mtgenv_gym.
+SUBPROCESS = "--subprocess" in sys.argv
 
 # ── swine env-measured dims (see README M0) ──────────────────────────────────────────────────
 OBS_DIM = 2650          # flattened Dict obs (1966 spec + 684 card-id one-hots)
@@ -101,7 +104,7 @@ swine_stochastic_muzero_create_config = dict(
         type='mtg_swine',
         import_names=['swine_lightzero_env'],  # module on sys.path (run from this dir)
     ),
-    env_manager=dict(type='base'),  # serial; switch to 'subprocess' for the M3 real run
+    env_manager=dict(type='subprocess' if SUBPROCESS else 'base'),  # --subprocess = parallel collection
     policy=dict(
         type='stochastic_muzero',
         import_names=['lzero.policy.stochastic_muzero'],
