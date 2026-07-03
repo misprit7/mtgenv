@@ -22,6 +22,7 @@ pub mod eager_glyphmage;
 pub mod efflorescence;
 pub mod environmental_scientist;
 pub mod erode;
+pub mod essenceknit_scholar;
 pub mod exhibition_tidecaller;
 pub mod expressive_firedancer;
 pub mod fractal_mascot;
@@ -110,6 +111,7 @@ pub fn register(db: &mut CardDb) {
     efflorescence::register(db);
     environmental_scientist::register(db);
     erode::register(db);
+    essenceknit_scholar::register(db);
     exhibition_tidecaller::register(db);
     expressive_firedancer::register(db);
     fractal_mascot::register(db);

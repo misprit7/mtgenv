@@ -69,6 +69,14 @@ pub(crate) fn holds_for_source(
                 .map(|pl| pl.cards_left_graveyard_this_turn > 0)
                 .unwrap_or(false)
         }
+        Condition::CreatureDiedThisTurn { who } => {
+            let p = resolve_player(state, *who, source_controller);
+            state
+                .players
+                .get(p.0 as usize)
+                .map(|pl| pl.creatures_died_this_turn > 0)
+                .unwrap_or(false)
+        }
         Condition::ValueAtLeast(a, b) => {
             eval_value(state, a, source_controller, source)
                 >= eval_value(state, b, source_controller, source)

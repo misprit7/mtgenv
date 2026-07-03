@@ -691,6 +691,7 @@ impl Engine {
         for i in 0..self.state.players.len() {
             self.state.players[i].life_gained_this_turn = 0;
             self.state.players[i].cards_left_graveyard_this_turn = 0;
+            self.state.players[i].creatures_died_this_turn = 0;
         }
         let perms = self.state.player(ap).battlefield.clone();
         for id in perms {
@@ -2236,11 +2237,12 @@ impl Engine {
                     }
                 }
                 StateBasedAction::CreatureDies { creature, .. } => {
-                    let owner = match self.state.objects.get(creature) {
-                        Some(o) if o.zone == Zone::Battlefield => o.owner,
+                    let (owner, controller) = match self.state.objects.get(creature) {
+                        Some(o) if o.zone == Zone::Battlefield => (o.owner, o.controller),
                         _ => continue,
                     };
                     if self.state.move_object(*creature, Zone::Graveyard, owner) {
+                        self.state.player_mut(controller).creatures_died_this_turn += 1;
                         self.broadcast(GameEvent::PermanentDied { obj: *creature });
                         self.broadcast(GameEvent::ObjectMoved {
                             obj: *creature,

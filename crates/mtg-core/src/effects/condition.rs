@@ -31,6 +31,8 @@ pub enum Condition {
     GainedLifeThisTurn { who: PlayerRef },
     /// One or more cards left the named player's graveyard this turn — the SoS Lorehold gate.
     CardLeftGraveyardThisTurn { who: PlayerRef },
+    /// One or more creatures died under the named player's control this turn (CR 700.4).
+    CreatureDiedThisTurn { who: PlayerRef },
     /// Compare two values.
     ValueAtLeast(ValueExpr, ValueExpr),
 }

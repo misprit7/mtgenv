@@ -193,6 +193,11 @@ pub struct Player {
     /// this turn …" condition.
     #[serde(default)]
     pub cards_left_graveyard_this_turn: u32,
+    /// How many creatures died under this player's control this turn (CR 700.4) — reset each turn,
+    /// incremented in the creature-death SBA. Read by "if a creature died under your control this
+    /// turn" (Essenceknit Scholar).
+    #[serde(default)]
+    pub creatures_died_this_turn: u32,
     pub hand_size_limit: usize,
     pub has_lost: bool,
     /// Set when a draw is attempted from an empty library; the SBA (CR 704.5b) reads it on
@@ -216,6 +221,7 @@ impl Player {
             lands_played_this_turn: 0,
             life_gained_this_turn: 0,
             cards_left_graveyard_this_turn: 0,
+            creatures_died_this_turn: 0,
             hand_size_limit: DEFAULT_HAND_SIZE,
             has_lost: false,
             drew_from_empty: false,
