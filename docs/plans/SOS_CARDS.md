@@ -54,7 +54,7 @@ each cap unlocks the bracketed count. `⏳` = not yet built.
 | **S1** Surveil N | look at top N, put any number in graveyard, rest back (CR 701.42) — `Effect::Surveil` | 15 | ✅ **DONE** `cc58a7b` |
 | **S5** Opus | `SpellCast(I/S you control)` trigger + `ValueExpr::ManaSpentOnTrigger` + `≥5` condition | 13 | ⏳ |
 | **S8** Repartee | `SpellCast(I/S you control **that targets a creature**)` trigger (inspect cast targets) | 12 | ⏳ |
-| **S4** Infusion | per-turn per-player "gained life this turn" state + a `Condition` reading it | 12 | ⏳ |
+| **S4** Infusion | per-turn per-player "gained life this turn" state + a `Condition` reading it | 12 | ✅ **DONE** `89b3581` |
 | **S10** Flashback | alt-cast from graveyard for a flashback cost, then exile (Warp-analogue) | 11 | ⏳ |
 | **S6** Increment | `SpellCast(you)` trigger + condition "mana spent > this creature's power OR toughness" | 9 | ⏳ |
 | **S7** Converge | `ValueExpr::ColorsOfManaSpent` (ETB counters / X in Converge spells) | 9 | ⏳ |
@@ -292,7 +292,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Flashback | S10 | `sos` | ⏳ | grants flashback to graveyard card |
 | Flow State | S2 | `sos` | ⏳ | look-and-pick top three to hand |
 | Follow the Lumarets | S2,S4 | `sos` | ⏳ | look-and-pick plus infusion gained-life |
-| Foolish Fate | S4 | `sos` | ⏳ | destroy plus infusion gained-life drain |
+| Foolish Fate | S4 | `sos` | ✅ done | destroy plus infusion gained-life drain |
 | Forum Necroscribe | S8,S17 | `sos` | ⏳ | Ward—Discard + Repartee reanimation |
 | Forum of Amity | S1 | `sos` | ⏳ | land ability surveil 1 |
 | Fractal Anomaly | S19 | `sos` | ⏳ | X = cards drawn this turn |
@@ -327,7 +327,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Moseo, Vein's New Dean | S4,S11 | `sos` | ⏳ | Pest token with ability + Infusion reanimate |
 | Muse Seeker | S5 | `sos` | ⏳ | Opus cast-trigger |
 | Muse's Encouragement | S1 | `sos` | ✅ done | surveil 2 (keyword-only token) |
-| Old-Growth Educator | S4 | `sos` | ⏳ | Infusion gained-life-this-turn condition |
+| Old-Growth Educator | S4 | `sos` | ✅ done | Infusion gained-life-this-turn condition |
 | Orysa, Tide Choreographer | S12 | `sos` | ⏳ | conditional cost reduction on toughness |
 | Owlin Historian | S1,S9 | `sos` | ⏳ | surveil + cards-leave-graveyard trigger |
 | Paradox Gardens | S1 | `sos` | ⏳ | surveil activated ability |
