@@ -284,7 +284,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Emil, Vastlands Roamer | DistinctNames | `sos` | ⏳ | X = differently-named lands you control |
 | End of the Hunt | GreatestMV | `sos` | ⏳ | select greatest-MV creature/pw |
 | Essenceknit Scholar | S11 | `sos` | ✅ done | Pest token with attack-lifegain ability |
-| Eternal Student | S18 | `sos` | ⏳ | {1}{B},exile-from-graveyard activated ability |
+| Eternal Student | S18 | `sos` | ✅ done | {1}{B},exile-from-graveyard activated ability |
 | Exhibition Tidecaller | S5 | `sos` | ✅ done | Opus mill trigger, mana-spent threshold |
 | Expressive Firedancer | S5 | `sos` | ✅ done | Opus self-pump, mana-spent threshold |
 | Fields of Strife | S1 | `sos` | ✅ done | land ability surveil 1 |
@@ -367,7 +367,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Steal the Show | Native | `sos` | ⏳ | wheel: discard any number, draw that many |
 | Stirring Honormancer | S2 | `sos` | ✅ done | look at top X, pick one |
 | Stirring Hopesinger | S8 | `sos` | ✅ done | Repartee: cast IS targeting creature |
-| Stone Docent | S1,S18 | `sos` | ⏳ | graveyard-activated gain-life + surveil |
+| Stone Docent | S1,S18 | `sos` | ✅ done | graveyard-activated gain-life + surveil |
 | Stress Dream | S2 | `sos` | ✅ done | look-and-pick top two |
 | Summoned Dromedary | S18 | `sos` | ⏳ | {1}{W} return this from graveyard to hand |
 | Sundering Archaic | S7 | `sos` | ⏳ | converge, colors of mana spent |
@@ -560,7 +560,10 @@ ManaCost fields (transparent); the web client (`main.ts`) renders from `generic`
 deferred. → Stirring Honormancer. Next: rebuild the creature-died flag *with* Essenceknit Scholar (now
 unblocked); then Moseo, Abstract Paintmage.
 
-## S18 graveyard-activated — scoped plan
+## S18 graveyard-activated — ✅ DONE (`6190bb2`)
+_(scoped plan below, now implemented: `CostComponent::ExileSelfFromGraveyard` + graveyard enumeration in `legal_priority_actions` + exile-on-pay. → Eternal Student, Stone Docent. Postmortem Professor / Rubble Rouser still deferred.)_
+
+### original plan
 Cards: **Eternal Student** (`{1}{B}, Exile this from your graveyard: create two Inklings`), **Stone
 Docent** (`{W}, Exile this from graveyard: gain 2, surveil 1; sorcery-speed`). (Postmortem Professor /
 Rubble Rouser need reanimate-self / reflexive-mana — defer.)
