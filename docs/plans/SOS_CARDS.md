@@ -183,7 +183,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Arnyn, Deathbloom Botanist | - | `sos` | ⏳ | deathtouch, filtered dies-trigger drain |
 | Artistic Process | - | `sos` | ⏳ | modal damage + flying token, all IR |
 | Ascendant Dustspeaker | - | `sos` | ⏳ | flying, ETB counter, exile graveyard card |
-| Bogwater Lumaret | - | `sos` | ⏳ | creature-ETB gain-life trigger, IR |
+| Bogwater Lumaret | - | `sos` | ✅ done | creature-ETB gain-life trigger, IR |
 | Borrowed Knowledge | - | `sos` | ⏳ | modal discard hand, draw by count |
 | Burrog Banemaker | - | `sos` | ⏳ | deathtouch + activated pump |
 | Burrog Barrage | - | `sos` | ⏳ | conditional pump + power-based damage |
@@ -217,9 +217,9 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Masterful Flourish | - | `sos` | ⏳ | pump plus indestructible |
 | Mind Roots | - | `sos` | ⏳ | discard two, put discarded land onto battlefield tapped |
 | Mind into Matter | - | `sos` | ⏳ | draw X, put permanent from hand into play |
-| Mindful Biomancer | - | `sos` | ⏳ | ETB gain life; once-per-turn pump |
+| Mindful Biomancer | - | `sos` | ✅ done | ETB gain life; once-per-turn pump |
 | Moment of Reckoning | - | `sos` | ⏳ | modal choose-up-to-four destroy/reanimate |
-| Noxious Newt | - | `sos` | ⏳ | deathtouch plus mana ability |
+| Noxious Newt | - | `sos` | ✅ done | deathtouch plus mana ability |
 | Oracle's Restoration | - | `sos` | ✅ done | pump, draw, gain life |
 | Planar Engineering | - | `sos` | ⏳ | sacrifice lands, search basics onto battlefield |
 | Proctor's Gaze | - | `sos` | ⏳ | bounce plus search basic to battlefield |
