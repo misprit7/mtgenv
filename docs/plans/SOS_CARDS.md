@@ -12,11 +12,17 @@ restricted-mana, Select-exile-as-cost, begin-of-step-triggers, `CardFilter::HasK
 was still green — this is a risk-curve call, not a broken state). **Every remaining reachable card needs a
 small-but-load-bearing cap; do each fresh, one commit, with a test.** Prioritized by yield:
 
-1. **Multi-target MoveZone (HIGHEST YIELD — 3 cards):** Pull from the Grave, Divergent Equation (`up to X`),
-   Moment of Reckoning (modal up-to-four). Gap: the `Effect::MoveZone` materialize arm does ONE
-   `resolve_target` (cursor++), so a spec with `max>1` drops all but the first target. Need the arm (and
-   likely a small target-model change) to consume ALL targets a single multi-pick spec claimed. Check how
-   `parse_targets`/`StackObject.targets` represent a `max=2` slot's picks before starting (that's the crux).
+1. **Multi-target MoveZone** — ◑ **Pull from the Grave DONE** (`12c41f8`). Crux resolved: `chosen_targets`
+   is a FLAT `Vec<Target>` — a `max>1` slot flattens all its picks into it (parse_targets pushes one entry
+   per `(slot,cand)` pair; RandomAgent's `subset` produces multiple pairs). The `MoveZone` arm now loops up
+   to `spec.max`, emitting one `Action::MoveZone` per chosen object. **Invariant (documented in the arm): a
+   `max>1` slot must be the spell's LAST targeting sub-effect** — the flat cursor can't tell where one
+   multi-slot's picks end and a following targeting slot begins (all real "return up to N" cards satisfy
+   this; later clauses are non-targeting). The other two cards need ORTHOGONAL caps, not this one:
+   - **Divergent Equation** ("up to **X** target"): `TargetSpec.max` is a fixed `u32`; needs a **dynamic
+     target count driven by the cast's X** (max = chosen X). Separate cap — leave until built.
+   - **Moment of Reckoning** ("choose up to four; may choose the same mode more than once"): **repeatable
+     modal modes** (one target per chosen instance). Separate/bigger cap — deferred with the modal work.
 2. **Another-target self-exclusion (1 card, now half-done):** Ascendant Dustspeaker — its begin-combat
    exile trigger already works (begin-of-step cap); it just needs "+1/+1 on ANOTHER target creature you
    control". Gap: `target_candidates(spec, caster)` doesn't take the source, so `Not(ItSelf)` can't be
@@ -164,7 +170,7 @@ caps (each is a small, card-agnostic interpreter arm lowering to an already-exis
 
 | E-cap | Effect leaf | Blocks (examples) | Status |
 |---|---|---|---|
-| **E1** | `Effect::MoveZone` (bounce / return-to-hand / reanimate) | Zealous Lorecaster, Banishing Betrayal, Proctor's Gaze, Prismari Charm, Matterbending Mage, Pull from the Grave, Moment of Reckoning, Lorehold Charm | ✅ **DONE** `0e85b76` (single-target; multi-target "up to two" still TODO) |
+| **E1** | `Effect::MoveZone` (bounce / return-to-hand / reanimate) | Zealous Lorecaster, Banishing Betrayal, Proctor's Gaze, Prismari Charm, Matterbending Mage, Pull from the Grave, Moment of Reckoning, Lorehold Charm | ✅ **DONE** `0e85b76` single-target + `12c41f8` multi-target fixed-max ("up to two" → Pull from the Grave). Dynamic-X-count (Divergent Equation) + repeatable-modal (Moment of Reckoning) still need their own caps. |
 | **E2** | `Effect::Counter` (counter target spell), respecting `CantBeCountered` | Essence Scatter, Brush Off, Mana Sculpt, Quandrix Charm | ✅ **DONE** `eb2b364` (+ stack-zone static gathering; closed Surrak's deferral) |
 | **E3** | `Effect::Discard` (loot "then discard a card"; "target player discards") | Traumatic Critique, Stadium Tidalmage, Charging Strifeknight, Rubble Rouser, Colossus, Rapturous Moment, Borrowed Knowledge, Send in the Pest | ✅ **DONE** `506baf9` |
 | **E4** | `Effect::Sacrifice` (as an effect — "each player sacrifices", "sacrifice two lands") | Planar Engineering, Witherbloom Charm, Social Snub (needs S14 copy too), Pox Plague | ✅ **DONE** `b5ea234` (per-player: Controller / EachPlayer / EachOpponent) |

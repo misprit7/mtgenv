@@ -5,6 +5,15 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-07-03 (night)
 
+- **engine+cards(sos) — multi-target MoveZone + Pull from the Grave (`12c41f8`):** the `Effect::MoveZone`
+  materialize arm now consumes a whole `max>1` target slot (loops up to `spec.max`, one `Action::MoveZone`
+  per chosen object) instead of one. Crux was that `chosen_targets`/`StackObject.targets` is a **flat**
+  `Vec<Target>` — a "up to two target" slot flattens both picks into it (parse_targets pushes one entry per
+  `(slot,cand)` pair). Documented invariant: a `max>1` slot must be the spell's **last targeting sub-effect**
+  (the flat cursor can't recover slot boundaries; every real "return up to N" card satisfies it). Consumer:
+  **Pull from the Grave** (`{2}{B}` sorcery — return up to two target creature cards from your gy to hand,
+  gain 2 life; behaviour test proves BOTH return). Sibling cards need orthogonal caps, NOT this one:
+  Divergent Equation = dynamic-X target count; Moment of Reckoning = repeatable modal modes.
 - **cards(sos) — S15 impulse-play base + Practiced Scrollsmith (`d079eb0`):** adopted a ~90%-complete
   *orphaned, uncommitted* S15 implementation left in the shared tree by a terminated predecessor;
   reviewed it hunk-by-hunk against the ledger plan, confirmed it compiled + matched the warp/flashback
