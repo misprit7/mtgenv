@@ -195,7 +195,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Charging Strifeknight | discard-cost | `sos` | ✅ done | haste + {T},Discard-a-card: draw (CostComponent::Discard wired) |
 | Chase Inspiration | - | `sos` | ✅ done | pump + grant hexproof |
 | Chelonian Tackle | - | `sos` | ✅ done | pump + fight up to one |
-| Colossus of the Blood Age | - | `sos` | ⏳ | ETB drain + dies rummage draw |
+| Colossus of the Blood Age | - | `sos` | ◑ partial | ETB drain+gain done; dies rummage (discard N, draw N+1) deferred |
 | Cost of Brilliance | - | `sos` | ✅ done | draw, lose life, counter |
 | Deathcap Glade | - | `vow` | ✅ done | checkland conditional tap + mana |
 | Dina's Guidance | - | `sos` | ✅ done | search creature to hand/graveyard |

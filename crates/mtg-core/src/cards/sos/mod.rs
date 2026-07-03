@@ -12,6 +12,7 @@ pub mod burrog_banemaker;
 pub mod charging_strifeknight;
 pub mod chase_inspiration;
 pub mod chelonian_tackle;
+pub mod colossus_of_the_blood_age;
 pub mod comforting_counsel;
 pub mod cost_of_brilliance;
 pub mod cuboid_colony;
@@ -117,6 +118,7 @@ pub fn register(db: &mut CardDb) {
     charging_strifeknight::register(db);
     chase_inspiration::register(db);
     chelonian_tackle::register(db);
+    colossus_of_the_blood_age::register(db);
     comforting_counsel::register(db);
     cost_of_brilliance::register(db);
     cuboid_colony::register(db);
