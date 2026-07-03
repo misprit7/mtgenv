@@ -53,7 +53,7 @@ each cap unlocks the bracketed count. `⏳` = not yet built.
 |---|---|---|---|
 | **S1** Surveil N | look at top N, put any number in graveyard, rest back (CR 701.42) — `Effect::Surveil` | 15 | ✅ **DONE** `cc58a7b` |
 | **S5** Opus | `SpellCast(I/S you control)` trigger + `ValueExpr::ManaSpentOnTrigger` + `≥5` condition | 13 | ✅ **DONE** `e85771e` |
-| **S8** Repartee | `SpellCast(I/S you control **that targets a creature**)` trigger (inspect cast targets) | 12 | ⏳ |
+| **S8** Repartee | `SpellCast(I/S you control **that targets a creature**)` trigger (inspect cast targets) | 12 | ✅ **DONE** |
 | **S4** Infusion | per-turn per-player "gained life this turn" state + a `Condition` reading it | 12 | ✅ **DONE** `89b3581` |
 | **S10** Flashback | alt-cast from graveyard for a flashback cost, then exile (Warp-analogue) | 11 | ⏳ |
 | **S6** Increment | `SpellCast(you)` trigger + condition "mana spent > this creature's power OR toughness" | 9 | ⏳ |
@@ -309,18 +309,18 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Hungry Graffalon | S6 | `sos` | ⏳ | Increment mechanic |
 | Hydro-Channeler | S13 | `sos` | ⏳ | mana only for instants/sorceries |
 | Imperious Inkmage | S1 | `sos` | ✅ done | ETB surveil 2 |
-| Informed Inkwright | S8 | `sos` | ⏳ | Repartee makes Inkling token |
+| Informed Inkwright | S8 | `sos` | ✅ done | Repartee makes Inkling token |
 | Inkling Mascot | S8,S1 | `sos` | ⏳ | Repartee grants flying, surveil |
 | Inkshape Demonstrator | S17,S8 | `sos` | ⏳ | Ward, Repartee pump/lifelink |
 | Killian's Confidence | S18 | `sos` | ⏳ | triggered ability functions from graveyard |
-| Lecturing Scornmage | S8 | `sos` | ⏳ | Repartee self-counter |
+| Lecturing Scornmage | S8 | `sos` | ✅ done | Repartee self-counter |
 | Living History | S9 | `sos` | ⏳ | attack trigger gated on graveyard-leave |
 | Lumaret's Favor | S14,S4 | `sos` | ⏳ | conditional copy (infusion) plus pump |
 | Magmablood Archaic | S5,S7 | `sos` | ⏳ | Converge; I/S trigger scales by colors |
 | Mana Sculpt | S5 | `sos` | ⏳ | counter; delayed mana = mana spent |
 | Mathemagics | Native | `sos` | ⏳ | draw 2^X (one-off value) |
 | Matterbending Mage | S21 | `sos` | ⏳ | cast-spell-with-X trigger -> unblockable |
-| Melancholic Poet | S8 | `sos` | ⏳ | Repartee drain |
+| Melancholic Poet | S8 | `sos` | ✅ done | Repartee drain |
 | Mica, Reader of Ruins | S14,S17 | `sos` | ⏳ | Ward-pay-life; copy I/S on sacrifice |
 | Molten Note | S10 | `sos` | ⏳ | flashback; damage equals mana spent |
 | Molten-Core Maestro | S5 | `sos` | ⏳ | Opus cast-trigger with mana-spent condition |
@@ -349,7 +349,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Rabid Attack | GrantAbility | `sos` | ⏳ | grant ad-hoc dies-draw ability EOT |
 | Rancorous Archaic | S7 | `sos` | ⏳ | Converge counters equal colors spent |
 | Rapier Wit | S3 | `sos` | ⏳ | stun counter |
-| Rehearsed Debater | S8 | `sos` | ⏳ | Repartee targets-a-creature trigger |
+| Rehearsed Debater | S8 | `sos` | ✅ done | Repartee targets-a-creature trigger |
 | Render Speechless | DirectedDiscard | `sos` | ⏳ | you choose opponent's discarded card |
 | Root Manipulation | GrantAbility | `sos` | ⏳ | grant ad-hoc attacks-gain-life EOT |
 | Run Behind | S12 | `sos` | ⏳ | conditional cost reduction targeting attacker |
@@ -366,7 +366,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Spirit Mascot | S9 | `sos` | ⏳ | cards leave graveyard trigger |
 | Steal the Show | Native | `sos` | ⏳ | wheel: discard any number, draw that many |
 | Stirring Honormancer | S2 | `sos` | ⏳ | look at top X, pick one |
-| Stirring Hopesinger | S8 | `sos` | ⏳ | Repartee: cast IS targeting creature |
+| Stirring Hopesinger | S8 | `sos` | ✅ done | Repartee: cast IS targeting creature |
 | Stone Docent | S1,S18 | `sos` | ⏳ | graveyard-activated gain-life + surveil |
 | Stress Dream | S2 | `sos` | ⏳ | look-and-pick top two |
 | Summoned Dromedary | S18 | `sos` | ⏳ | {1}{W} return this from graveyard to hand |
