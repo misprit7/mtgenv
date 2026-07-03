@@ -423,6 +423,18 @@ pub fn bears_deck() -> Vec<u32> {
     deck
 }
 
+/// "Heralds": 40 Mist-Cloaked Herald + 20 Island — an intentionally degenerate RL sanity deck
+/// where optimal play is trivially "play a land, play creatures, attack with everything." The
+/// Herald is a `{U}` 1/1 that can't be blocked, so combat life-loss is unconditional. Preset:
+/// `"heralds"`.
+pub fn heralds_deck() -> Vec<u32> {
+    use std::iter::repeat;
+    let mut deck = Vec::new();
+    deck.extend(repeat(rix::mist_cloaked_herald::MIST_CLOAKED_HERALD).take(40));
+    deck.extend(repeat(grp::ISLAND).take(20));
+    deck
+}
+
 /// The **real** mtggoldfish "Standard Selesnya Landfall" 60 — all 18 distinct nonbasic cards at their
 /// decklist quantities + 7 Forest + 2 Plains. Every card is now implemented (most fully; a few as
 /// faithful tracked-partials — Mightform's warp, Dyadrine's attack ability, Surrak's stack-spell half),
@@ -457,13 +469,14 @@ pub fn selesnya_landfall_deck() -> Vec<u32> {
     deck
 }
 
-/// A preset deck by name (`"burn"`, `"bears"`, `"demo"`, `"selesnya"`/`"landfall"`),
+/// A preset deck by name (`"burn"`, `"bears"`, `"demo"`, `"heralds"`, `"selesnya"`/`"landfall"`),
 /// case-insensitive. For the harness/CLI/web.
 pub fn preset_deck(name: &str) -> Option<Vec<u32>> {
     match name.to_ascii_lowercase().as_str() {
         "burn" => Some(burn_deck()),
         "bears" => Some(bears_deck()),
         "demo" => Some(demo_deck()),
+        "heralds" => Some(heralds_deck()),
         "selesnya" | "landfall" => Some(selesnya_landfall_deck()),
         _ => None,
     }
@@ -546,5 +559,27 @@ mod tests {
         );
         assert_eq!(preset_deck("selesnya").unwrap().len(), 60);
         assert_eq!(preset_deck("Landfall").unwrap().len(), 60);
+        // Heralds: 60 cards = 40 Mist-Cloaked Herald + 20 Island, all resolving in the DB.
+        let heralds = heralds_deck();
+        assert_eq!(heralds.len(), 60);
+        assert_eq!(
+            heralds.iter().filter(|&&g| g == grp::ISLAND).count(),
+            20,
+            "20 Islands"
+        );
+        assert_eq!(
+            heralds
+                .iter()
+                .filter(|&&g| g == rix::mist_cloaked_herald::MIST_CLOAKED_HERALD)
+                .count(),
+            40,
+            "40 Mist-Cloaked Heralds"
+        );
+        assert!(
+            heralds.iter().all(|&g| db.get(g).is_some()),
+            "every Heralds card resolves in the starter DB"
+        );
+        assert_eq!(preset_deck("heralds").unwrap().len(), 60);
+        assert_eq!(preset_deck("HERALDS").unwrap().len(), 60);
     }
 }
