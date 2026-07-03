@@ -1012,9 +1012,20 @@ function refreshPreview(): void {
   if (url) showPreview(url, { clientX: ptrX, clientY: ptrY } as MouseEvent);
   else hidePreview();
 }
-document.addEventListener("mousemove", (e) => { ptrX = e.clientX; ptrY = e.clientY; refreshPreview(); }, true);
-// Cursor leaves the document entirely (e.g. out the top of the window) → drop the preview.
-document.addEventListener("mouseout", (e) => { if (!(e as MouseEvent).relatedTarget) { ptrX = ptrY = -1; hidePreview(); } });
+// The hover preview is a MOUSE-ONLY affordance (covers board/hand/stack AND the zone/decklist modal
+// grids). On touch, a tap emits emulated mouse events (iOS Safari fires mousemove before click), which
+// used to open this preview on every tap — and with no mouseleave on touch it never dismissed, blocking
+// the UI. So we drive it from pointer events and ignore anything that isn't a real mouse: touch/pen get
+// NO hover preview at all (the long-press overlay below is their only way to inspect a card).
+document.addEventListener("pointermove", (e) => {
+  if (e.pointerType !== "mouse") return;
+  ptrX = e.clientX; ptrY = e.clientY; refreshPreview();
+}, true);
+// Real mouse cursor leaves the document entirely (e.g. out the top of the window) → drop the preview.
+document.addEventListener("pointerout", (e) => {
+  if (e.pointerType !== "mouse") return;
+  if (!(e as PointerEvent).relatedTarget) { ptrX = ptrY = -1; hidePreview(); }
+});
 
 // ── long-press full-card preview (touch) ───────────────────────────────────────
 // Desktop keeps the hover preview (#preview) untouched. On touch, a ~450ms hold on any previewable
