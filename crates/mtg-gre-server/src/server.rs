@@ -25,6 +25,7 @@ use mtg_core::agent::{Agent, RandomAgent};
 use mtg_core::basics::Phase;
 use mtg_core::ids::PlayerId;
 use tokio::net::TcpListener;
+use tower_http::compression::CompressionLayer;
 use tower_http::services::ServeDir;
 
 use crate::driver;
@@ -79,7 +80,12 @@ pub fn app() -> Router {
     } else {
         router = router.fallback(get(embedded));
     }
-    router.with_state(lobby)
+    // gzip/br response compression. Replay JSON (`/api/replays/:id`) is huge and massively redundant
+    // (god-view board snapshot per frame) — tens of MB raw, which never finishes downloading over a
+    // phone connection; it compresses ~20-30×. Transparent (negotiated via Accept-Encoding), and the
+    // WS upgrade at `/ws` is unaffected (a 101 has no body to compress). Card art is external
+    // (Scryfall CDN), so there's nothing already-compressed worth excluding here.
+    router.layer(CompressionLayer::new()).with_state(lobby)
 }
 
 /// The lobby landing page (`/`).
