@@ -275,7 +275,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Conciliator's Duelist | S8 | `sos` | ⏳ | Repartee cast-targets-creature trigger |
 | Cuboid Colony | S6 | `sos` | ✅ done | Increment on flash flyer |
 | Daydream | S10 | `sos` | ⏳ | blink with counter + flashback |
-| Deluge Virtuoso | S3,S5 | `sos` | ⏳ | stun counter ETB + Opus trigger |
+| Deluge Virtuoso | S3,S5 | `sos` | ✅ done | stun counter ETB + Opus trigger |
 | Diary of Dreams | S12 | `sos` | ⏳ | activation cost scales down per counter |
 | Dig Site Inventory | S10 | `sos` | ⏳ | counter + vigilance, flashback |
 | Duel Tactics | S10 | `sos` | ⏳ | damage + can't-block, flashback |
@@ -296,7 +296,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Forum Necroscribe | S8,S17 | `sos` | ⏳ | Ward—Discard + Repartee reanimation |
 | Forum of Amity | S1 | `sos` | ✅ done | land ability surveil 1 |
 | Fractal Anomaly | S19 | `sos` | ⏳ | X = cards drawn this turn |
-| Fractal Mascot | S3 | `sos` | ⏳ | ETB tap plus stun counter |
+| Fractal Mascot | S3 | `sos` | ✅ done | ETB tap plus stun counter |
 | Fractal Tender | S6,S17 | `sos` | ⏳ | Increment, Ward, conditional end-step token |
 | Garrison Excavator | S9 | `sos` | ⏳ | cards-leave-graveyard trigger makes token |
 | Geometer's Arthropod | S2,S21 | `sos` | ⏳ | cast-spell-with-X trigger + look-and-pick |
@@ -348,7 +348,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Quandrix Charm | SoftCounter | `sos` | ⏳ | counter-unless-pay mode |
 | Rabid Attack | GrantAbility | `sos` | ⏳ | grant ad-hoc dies-draw ability EOT |
 | Rancorous Archaic | S7 | `sos` | ⏳ | Converge counters equal colors spent |
-| Rapier Wit | S3 | `sos` | ⏳ | stun counter |
+| Rapier Wit | S3 | `sos` | ✅ done | stun counter |
 | Rehearsed Debater | S8 | `sos` | ✅ done | Repartee targets-a-creature trigger |
 | Render Speechless | DirectedDiscard | `sos` | ⏳ | you choose opponent's discarded card |
 | Root Manipulation | GrantAbility | `sos` | ⏳ | grant ad-hoc attacks-gain-life EOT |
