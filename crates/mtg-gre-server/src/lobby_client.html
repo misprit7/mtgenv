@@ -9,6 +9,13 @@
     --muted:#7e948a; --accent:#39d98a; --accent2:#2bb3ff; --warn:#b9821f; }
   * { box-sizing: border-box; }
   body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.5 ui-sans-serif,system-ui,Segoe UI,Roboto,sans-serif; }
+  /* Kill the double-tap-to-zoom (and its ~300ms click delay) on touch — the deck-builder steppers
+     invite rapid taps that would otherwise zoom the page. Pinch-zoom stays available: we deliberately
+     do NOT set user-scalable=no on the viewport, so accessibility zoom is untouched. */
+  html, body { touch-action: manipulation; }
+  button, a, select, input, .tabbtn, .decktab, .dcard, .fchip, .stepper button {
+    touch-action: manipulation;
+  }
   .wrap { max-width: 980px; margin: 0 auto; padding: 22px 18px 60px; }
   h1 { font-size: 22px; margin: 0 0 2px; }
   h1 .tag { color: var(--accent); }
