@@ -146,6 +146,13 @@ Card-agnostic caps to build in the Selesnya style (new `EventPattern` / `ValueEx
 `Effect` leaf / `Qualification` / `Rewrite` / `TokenSpec` field). Build **highest-leverage first**;
 each cap unlocks the bracketed count. `⏳` = not yet built.
 
+> ⚠️ **PROCESS RULE (learned the hard way — S7, S10, S2, S3, S18, S11 all drifted stale):** flip a cap's
+> Status cell to ✅/◑ **in the SAME commit that lands the cap**, with the commit hash. Before scoping any
+> "⏳" cap as new work, `git log -S "<mechanism/enum name>"` first — the row may already be done. A
+> **2026-07-03 audit** re-verified every row against the codebase; genuinely-open caps are now only: S12
+> (conditional cost-reduction — only the unconditional `CostReductionGeneric` static exists), S14 spell-copy
+> (token-copy done, copy-target-spell not), S19/S20/S22, and most `misc one-offs` + `Native`.
+
 | Cap | What it adds | Cards | Status |
 |---|---|---|---|
 | **S1** Surveil N | look at top N, put any number in graveyard, rest back (CR 701.42) — `Effect::Surveil` | 15 | ✅ **DONE** `cc58a7b` |
@@ -161,14 +168,14 @@ each cap unlocks the bracketed count. `⏳` = not yet built.
 | **S14** Copy spell/perm | "copy target spell", "create a token that's a copy of" (heavier small-cap) | 7 | ⏳ **token-copy DONE** (`Effect::CreateTokenCopy`+`TokenCopyMods`, `a8c8a2d` → Applied Geometry); **spell-copy** portion still ⏳ |
 | **S17** Ward {cost} | Ward N / Ward—Pay life / Ward—Discard (counter-unless-pay on becoming targeted) | 7 | ◑ **mana DONE** `96dbc35` — `Effect::CounterUnlessPay{ what, cost:Cost }` soft-counter + `EffectTarget::Triggering` (the targeting spell/ability, threaded via `GameEvent::Targeted.source` → `state.trigger_targeting_source` → `ResolutionCtx.triggering_stack`); `CardFilter::ItSelf` now matches in `enter_filter_matches` (source-threaded, opt-in from the targeted path). Reuses `Cost`+`can_pay_cost`/`pay_cost`. Ward constructors live in `cards/helpers.rs` (`ward`/`ward_mana`/`ward_discard`). → **Colorstorm Stallion** (Ward {1}, mana) + **Forum Necroscribe** (Ward—Discard, the non-mana path — reuses the `Discard` cost arms). **Ward—Pay life** (Mica/Prismari): `pay_cost` has NO `PayLife` arm yet (falls to `_ => {}`, so life isn't deducted) — add it first; their *secondaries* are also blocked (spell-copy/storm). Side-fix landed here: `Effect::MoveZone`'s target was missing from `collect_specs_into` (never collected through the REAL cast/trigger path — prior MoveZone tests bypassed casting), now fixed. |
 | **S15** Impulse play | exile/mill → "you may play it until end of turn / your next turn" | 6 | ◑ **DONE for exile cases** (`d079eb0` base + `0e17d3e` top-of-library source + land-play) → Practiced Scrollsmith, Elemental Mascot, Suspend Aggression (3). Only **graveyard-play** (milled card played from gy — Ark of Hunger, Tablet) still ⏳; the other 2 S15 cards are cap-blocked (Archaic's Agony=S7, Tablet=S13) |
-| **S3** Stun counters | `CounterKind::Stun` + "would untap → remove a stun counter instead" replacement | 6 | ⏳ |
-| **S18** Graveyard-activated | an ability that functions while its card is in the graveyard (recursion) | 6 | ⏳ |
-| **S11** Token-with-ability | `TokenSpec` carries an ability (Treasure `{T},Sac`; Pest attack→gain life) | 5 | ⏳ |
+| **S3** Stun counters | `CounterKind::Stun` + "would untap → remove a stun counter instead" replacement | 6 | ✅ **DONE** `f8ab8ea` (untap-step replacement, CR 702.171) → Procrastinate, Deluge Virtuoso, Fractal Mascot, Rapier Wit. (Was mis-listed ⏳.) |
+| **S18** Graveyard-activated | an ability that functions while its card is in the graveyard (recursion) | 6 | ✅ **DONE** `6190bb2` (`CostComponent::ExileSelfFromGraveyard` + graveyard ability enumeration in `legal_priority_actions`) → Eternal Student, Stone Docent. Also `DiscardSelfFromHand` for hand-usable cycling-style abilities (Visionary's Dance). (Was mis-listed ⏳.) |
+| **S11** Token-with-ability | `TokenSpec` carries an ability (Treasure `{T},Sac`; Pest attack→gain life) | 5 | ◑ **DONE for grp-id ability tokens** — a `TokenSpec.grp_id` points at a registered token def whose abilities fire (Pest `PEST_TOKEN`=9001, "attack → gain 1 life") → Send in the Pest, Pestbrood Sloth, Essenceknit Scholar. A **Treasure** token (`{T}, Sac: add one mana of any color` — an ACTIVATED mana ability on a token) is not yet verified; check for a registered Treasure def before authoring one. (Was mis-listed ⏳.) |
 | **S13** Restricted mana | mana usable "only to cast instant and sorcery spells" (spend-restriction tag) | 4 | ✅ **DONE** `ffcc0df` (`ManaSpec.restriction=InstantSorceryOnly` + `ManaPool.restricted` bucket + `allow_restricted` threaded through the payment path; spell casts pass card-is-I/S, ability costs pass false) → Hydro-Channeler |
 | **S16** Gain-life trigger | `EventPattern::GainLife` ("whenever you gain life, …") | 3 | ✅ **DONE** |
-| **S21** cast-with-{X} trigger | `SpellCast` filtered to "has {X} in its cost" | 2 | ◑ **DONE for Matterbending Mage** (`134444d`) — added `HasXInCost` arm to `enter_filter_matches` (`SpellCast(All([ControlledBy, HasXInCost]))` now matches). Geometer's Arthropod still needs **S2 look-and-pick** + reading the *triggering spell's* X (top-X selection). |
+| **S21** cast-with-{X} trigger | `SpellCast` filtered to "has {X} in its cost" | 2 | ◑ **DONE for Matterbending Mage** (`134444d`) — added `HasXInCost` arm to `enter_filter_matches` (`SpellCast(All([ControlledBy, HasXInCost]))` now matches). Geometer's Arthropod still needs only **reading the *triggering spell's* X** for its "look at the top X" count (S2 look-and-pick is DONE) — a new `ValueExpr` reading the triggering stack object's chosen X (the `triggering_spell`/`triggering_stack` ctx now carries the object; its `x` field holds the value). |
 | **S19/S20/S22** | cards-drawn-this-turn value / counters-on-target value / cast-I/S-this-turn cond | 1 ea | ⏳ |
-| **misc one-offs** | GreatestMV, DistinctNames, SoftCounter (counter-unless-pay), DirectedDiscard, AltCost, PayXLife, NoMaxHand, GrantAbility | 1–3 ea | ⏳ |
+| **misc one-offs** | GreatestMV, DistinctNames, ~~SoftCounter~~, DirectedDiscard, AltCost, PayXLife, NoMaxHand, GrantAbility | 1–3 ea | ⏳ except **SoftCounter (counter-unless-pay) ✅ DONE** via `Effect::CounterUnlessPay` (Ward, `96dbc35`). The rest (GreatestMV/DistinctNames/DirectedDiscard/AltCost/PayXLife/NoMaxHand/GrantAbility) are genuinely unbuilt (verified vs codebase 2026-07-03). |
 | **Native** | genuine one-offs via the `Native` escape hatch: Mathemagics (2^X), Pox Plague (halving), Steal the Show (wheel) | 4 | ⏳ |
 
 Building **S1, S4, S5, S6, S7, S8, S10** (the seven big-count caps) converts ~**79** T3 cards to authorable.
