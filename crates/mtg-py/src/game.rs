@@ -45,6 +45,11 @@ pub enum Deck {
     /// (attacking into untapped 2/2s trades; board stalls are plausible) and there's no provable
     /// "always attack" optimum — a test that learning progresses sensibly with combat credit.
     Bears,
+    /// "Swine": tier-3 combat-judgment mirror — 25 Forest + 10 Argothian Swine ({3}{G} 3/3 TRAMPLE)
+    /// + 25 Grizzly Bears. Trample makes single-blocking a Swine strictly bad (chump-block leaks
+    /// damage AND the blocker dies), so — unlike the vanilla Bears mirror — a policy with real
+    /// combat judgment should decline those blocks (aggregate block_rate settles below 1.0).
+    Swine,
 }
 
 impl Deck {
@@ -56,6 +61,7 @@ impl Deck {
             "selesnya" | "landfall" => Some(Deck::Selesnya),
             "heralds" => Some(Deck::Heralds),
             "bears" => Some(Deck::Bears),
+            "swine" => Some(Deck::Swine),
             _ => None,
         }
     }
@@ -80,6 +86,11 @@ impl Deck {
                 let d = mtg_core::cards::preset_deck("bears").expect("bears preset deck");
                 mtg_core::cards::build_game(seed, &[d.as_slice(), d.as_slice()])
             }
+            Deck::Swine => {
+                // Mirror of the "swine" tier-3 preset (one library per seat) — trample combat judgment.
+                let d = mtg_core::cards::preset_deck("swine").expect("swine preset deck");
+                mtg_core::cards::build_game(seed, &[d.as_slice(), d.as_slice()])
+            }
         }
     }
 
@@ -99,6 +110,7 @@ impl Deck {
             Deck::Selesnya => vec![preset_deck("selesnya").unwrap_or_default()],
             Deck::Heralds => vec![preset_deck("heralds").unwrap_or_default()],
             Deck::Bears => vec![preset_deck("bears").unwrap_or_default()],
+            Deck::Swine => vec![preset_deck("swine").unwrap_or_default()],
             Deck::LandsOnly => vec![], // basics-only deck-out test; no spell pool to identify
         };
         let mut set = std::collections::BTreeSet::new();
@@ -331,6 +343,7 @@ mod tests {
         assert_eq!(Deck::parse("burn-vs-bears"), Some(Deck::BurnVsBears));
         assert_eq!(Deck::parse("heralds"), Some(Deck::Heralds));
         assert_eq!(Deck::parse("Bears"), Some(Deck::Bears));
+        assert_eq!(Deck::parse("swine"), Some(Deck::Swine));
         assert_eq!(Deck::parse("nope"), None);
     }
 

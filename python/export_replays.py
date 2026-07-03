@@ -26,7 +26,7 @@ from selfplay_train import make_vecenv, SelfPlayEval, LadderEval
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--deck", default="demo", choices=["lands", "demo", "burn_vs_bears", "selesnya", "heralds", "bears"])
+    ap.add_argument("--deck", default="demo", choices=["lands", "demo", "burn_vs_bears", "selesnya", "heralds", "bears", "swine"])
     ap.add_argument("--timesteps", type=int, default=60_000)
     ap.add_argument("--record-every", type=int, default=10_000, help="record a replay every N steps")
     ap.add_argument("--tensorboard", default="/tmp/mtgenv_tb", help="TensorBoard log dir")
