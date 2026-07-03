@@ -4,6 +4,17 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>mtgenv — web play</title>
+    <script>
+      // No-FOUC theme: stamp data-theme on <html> before first paint. `mtg_theme` in localStorage holds
+      // only explicit choices ("light"/"dark"); absent = Auto (follow the OS). Shared with the lobby.
+      (function () {
+        try {
+          var t = localStorage.getItem("mtg_theme");
+          if (t !== "light" && t !== "dark") t = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+          document.documentElement.dataset.theme = t;
+        } catch (e) {}
+      })();
+    </script>
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
@@ -20,6 +31,7 @@
           <a href="?p0=burn&amp;p1=bears">burn</a> ·
           <a href="?p0=bears&amp;p1=burn">bears</a> ·
           <a href="?p0=heralds&amp;p1=heralds">heralds</a></span>
+        <button class="themetoggle" id="themeToggle" title="Theme: Auto → Light → Dark">◐ Auto</button>
         <button class="logtoggle" id="logToggle" title="Show / hide the game log">▤ Log</button>
       </div>
 

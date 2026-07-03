@@ -1,10 +1,35 @@
+  /* ══ CMYK misregistration theme ═══════════════════════════════════════════════
+     One ruleset, two skins. Everything is expressed through custom properties; the
+     LIGHT values live on :root, DARK overrides on :root[data-theme="dark"] (and, before
+     the theme script runs, on prefers-color-scheme). The spot inks (cyan/magenta/yellow/
+     green) are identical in both themes — they pop the same on paper or on indigo stock. */
   :root {
-    --felt: #28452f; --felt2: #1d3324; --ink: #ecefe6; --muted: #9fb0a0;
-    --rail: #1b1f1a; --panel: #232a22; --line: #3a4438; --accent: #6fd08c;
-    --legal: #ffe066; --legalglow: rgba(255,224,102,.85); --sel: #5b8cff;
-    /* card frame tints */
-    --cW:#f4efd8; --cU:#bfe0f4; --cB:#cabfb9; --cR:#f3b9a6; --cG:#bcdcb6;
-    --cMulti:#efd98a; --cColorless:#d8dadd; --cLand:#d8c3a0;
+    /* spot inks — shared by both themes */
+    --cyan:#29b6d8; --magenta:#ec4f9d; --yellow:#f5c528; --green:#37a86a;
+    /* light surfaces + ink */
+    --paper:#faf7ef; --panel:#fffdf6; --surface:#f1ead9; --ink:#232a4d; --muted:#5c6187;
+    --line:#232a4d;                       /* chunky ink linework */
+    --hair:rgba(35,42,77,.20);            /* subtle dividers */
+    --board1:#f4eedd; --board2:#e8dec8;   /* board felt → paper wash */
+    --low:#d83f5b;                        /* low-life / danger */
+    --shadowc:var(--cyan);                /* default offset-print shadow ink */
+    /* little-card faces stay paper in BOTH themes (they're the readable "content") */
+    --cW:#f6f1dc; --cU:#c9e8f6; --cB:#d3ccd9; --cR:#f8cbb8; --cG:#c7e7c2;
+    --cMulti:#f4e39a; --cColorless:#e6e2d6; --cLand:#e4d4b2;
+    --condensed:"Avenir Next Condensed","Avenir Next",Futura,"Trebuchet MS",system-ui,sans-serif;
+  }
+  :root[data-theme="dark"] {
+    --paper:#14172a; --panel:#1d2138; --surface:#191d31; --ink:#e9e3d4; --muted:#a29d8b;
+    --line:#e9e3d4; --hair:rgba(233,227,212,.18);
+    --board1:#191d33; --board2:#12152a; --low:#ff7a8f; --shadowc:var(--cyan);
+  }
+  @media (prefers-color-scheme: dark) {
+    /* pre-script / no-JS fallback: only while no explicit choice is stamped on <html> */
+    :root:not([data-theme="light"]):not([data-theme="dark"]) {
+      --paper:#14172a; --panel:#1d2138; --surface:#191d31; --ink:#e9e3d4; --muted:#a29d8b;
+      --line:#e9e3d4; --hair:rgba(233,227,212,.18);
+      --board1:#191d33; --board2:#12152a; --low:#ff7a8f;
+    }
   }
   * { box-sizing: border-box; }
   /* The `hidden` attribute must win over component `display` rules (e.g. .replaybar/.hand use
@@ -17,58 +42,64 @@
   /* Belt-and-suspenders on the directly-tappable surfaces so double-tap-zoom is reliably suppressed on
      iOS regardless of ancestor-combination quirks (pinch-zoom + scroll still work). */
   .card, button, a, .pile, .step .sdotrow, .dlrow { touch-action: manipulation; }
-  body { margin: 0; background: var(--felt2); color: var(--ink);
+  body { margin: 0; background: var(--paper); color: var(--ink);
     font: 13px/1.4 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; overflow: hidden; }
 
   .app { display: grid; grid-template-columns: 172px 1fr 264px; grid-template-rows: 40px 1fr; height: 100vh; }
   .topbar { grid-column: 1 / 4; grid-row: 1; display: flex; align-items: center; gap: 14px;
-    padding: 0 14px; background: var(--rail); border-bottom: 1px solid var(--line); }
-  .topbar h1 { font-size: 14px; margin: 0; font-weight: 800; letter-spacing: .4px; }
+    padding: 0 14px; background:
+      linear-gradient(90deg, rgba(41,182,216,.10), rgba(236,79,157,.10) 52%, rgba(245,197,40,.12)), var(--surface);
+    border-bottom: 3px solid var(--ink); }
+  .topbar h1 { font-family: var(--condensed); font-size: 15px; margin: 0; font-weight: 800;
+    letter-spacing: .8px; text-transform: uppercase; }
   .topbar .s { color: var(--muted); font-size: 12px; }
-  .topbar a { color: var(--accent); text-decoration: none; }
+  .topbar a { color: var(--magenta); text-decoration: none; font-weight: 700; }
   .topbar a:hover { text-decoration: underline; }
   .topbar .spacer { flex: 1; }
 
-  .rail { grid-column: 1; grid-row: 2; background: var(--rail); border-right: 1px solid var(--line);
+  .rail { grid-column: 1; grid-row: 2; background: var(--surface); border-right: 3px solid var(--ink);
     display: flex; flex-direction: column; gap: 8px; padding: 10px 8px; overflow: auto; }
-  .pinfo { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px; }
-  .pinfo.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
-  .pinfo .who { font-weight: 700; display: flex; justify-content: space-between; align-items: baseline; }
-  .pinfo .you { color: var(--accent); font-size: 11px; }
-  .pinfo .life { font-size: 26px; font-weight: 800; line-height: 1; margin: 4px 0 6px; }
-  .pinfo .life.low { color: #ff7a7a; }
+  .pinfo { background: var(--panel); border: 2.5px solid var(--ink); border-radius: 8px 5px 7px 6px;
+    padding: 8px; box-shadow: 3px 3px 0 var(--cyan); }
+  .pinfo.opp  { background: linear-gradient(0deg, rgba(236,79,157,.12), rgba(236,79,157,.12)), var(--panel); }
+  .pinfo.self { background: linear-gradient(0deg, rgba(41,182,216,.13), rgba(41,182,216,.13)), var(--panel); }
+  .pinfo.active { box-shadow: 3px 3px 0 var(--magenta), 6px 6px 0 var(--cyan); }
+  .pinfo .who { font-weight: 800; display: flex; justify-content: space-between; align-items: baseline; }
+  .pinfo .you { color: var(--magenta); font-size: 11px; font-family: var(--condensed); text-transform: uppercase; letter-spacing: .5px; }
+  .pinfo .life { font-size: 26px; font-weight: 800; line-height: 1; margin: 4px 0 6px; font-family: var(--condensed); }
+  .pinfo .life.low { color: var(--low); }
   .pinfo .floatmana { display: flex; gap: 2px; flex-wrap: wrap; align-items: center; margin: 0 0 6px;
-    padding: 3px 5px; background: var(--felt2); border: 1px solid var(--line); border-radius: 7px; }
+    padding: 3px 5px; background: var(--paper); border: 2px solid var(--ink); border-radius: 6px; }
   .pinfo .floatmana .ms { height: 16px; width: 16px; }
   .piles { display: flex; gap: 6px; }
-  .pile { flex: 1; background: var(--felt2); border: 1px solid var(--line); border-radius: 7px;
+  .pile { flex: 1; background: var(--paper); border: 2px solid var(--ink); border-radius: 6px;
     padding: 5px 4px; text-align: center; cursor: pointer; }
-  .pile:hover { border-color: var(--accent); }
-  .pile .n { font-weight: 700; font-size: 14px; }
-  .pile .l { color: var(--muted); font-size: 9px; text-transform: uppercase; letter-spacing: .04em; }
-  .phasebar { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 6px 8px;
+  .pile:hover { box-shadow: 2px 2px 0 var(--yellow); }
+  .pile .n { font-weight: 800; font-size: 14px; font-family: var(--condensed); }
+  .pile .l { color: var(--magenta); font-size: 9px; text-transform: uppercase; letter-spacing: .06em; font-weight: 700; }
+  .phasebar { background: var(--panel); border: 2.5px solid var(--ink); border-radius: 7px 5px 6px 8px; padding: 6px 8px;
     font-size: 11px; color: var(--muted); }
   .phasebar b { color: var(--ink); }
-  .phasebar .stopline { color: var(--accent); font-size: 10px; }
+  .phasebar .stopline { color: var(--magenta); font-size: 10px; font-weight: 700; }
 
   .center { grid-column: 2; grid-row: 2; display: flex; flex-direction: column; min-width: 0;
-    background: radial-gradient(120% 80% at 50% 50%, var(--felt) 0%, var(--felt2) 100%); }
+    background: radial-gradient(120% 80% at 50% 50%, var(--board1) 0%, var(--board2) 100%); }
   .play { flex: 1; display: flex; flex-direction: column; min-height: 0; padding: 8px 10px; gap: 4px; overflow: auto; position: relative; }
   .half { flex: 1; display: flex; flex-direction: column; gap: 6px; justify-content: center; min-height: 0; }
   .half.you { justify-content: flex-start; }
   .half.oppo { justify-content: flex-end; }
-  .midline { height: 0; border-top: 1px dashed rgba(255,255,255,.18); margin: 2px 0; }
+  .midline { height: 0; border-top: 2px dashed var(--hair); margin: 2px 0; }
   /* Combat lane: blocked attackers + their blockers face off here during combat. */
   .combatlane { display: flex; justify-content: center; flex-wrap: wrap; gap: 16px; padding: 6px 10px;
-    margin: 2px 0; background: rgba(224,132,111,.07); border: 1px solid rgba(224,132,111,.28);
+    margin: 2px 0; background: rgba(236,79,157,.08); border: 2px dashed var(--magenta);
     border-radius: 10px; }
   .combatlane[hidden] { display: none; }
   .matchup { display: flex; flex-direction: column; align-items: center; gap: 1px;
-    padding: 5px 7px; border-radius: 9px; background: rgba(0,0,0,.18); box-shadow: inset 0 0 0 1px rgba(224,132,111,.22); }
+    padding: 5px 7px; border-radius: 9px; background: var(--panel); box-shadow: inset 0 0 0 2px rgba(236,79,157,.35); }
   .matchrow { display: flex; gap: 5px; align-items: flex-start; justify-content: center; }
-  .matchup .vs { color: #e0846f; font-size: 12px; line-height: 1; font-weight: 700; letter-spacing: .04em; }
-  .matchup.unblocked { box-shadow: inset 0 0 0 1px rgba(224,132,111,.5); }
-  .matchup .vs.through { color: #e8b06a; }
+  .matchup .vs { color: var(--magenta); font-size: 12px; line-height: 1; font-weight: 800; letter-spacing: .04em; }
+  .matchup.unblocked { box-shadow: inset 0 0 0 2px var(--magenta); }
+  .matchup .vs.through { color: var(--yellow); }
   .row { display: flex; gap: 7px; flex-wrap: wrap; align-items: flex-start; min-height: 96px; align-content: flex-start; }
   .row.lands { min-height: 80px; }
   /* Creature band: two side-by-side groups (don't wrap the groups; each wraps internally). */
@@ -76,92 +107,94 @@
   .permgroup { display: flex; gap: 7px; flex-wrap: wrap; align-items: flex-start; align-content: flex-start; }
   .permgroup.cg { flex: 1 1 auto; min-width: 0; }            /* creatures — grow, wrap internally */
   .permgroup.og { flex: 0 0 auto; align-self: stretch; max-width: 45%;  /* noncreature artifacts/enchantments — off to the right */
-    margin-left: 10px; padding-left: 12px; border-left: 1px dashed var(--line); }
-  .rowlabel { color: var(--muted); font-size: 9px; text-transform: uppercase; letter-spacing: .08em;
-    align-self: center; width: 46px; flex: 0 0 46px; text-align: right; padding-right: 4px; opacity: .65; }
+    margin-left: 10px; padding-left: 12px; border-left: 2px dashed var(--hair); }
+  .rowlabel { color: var(--magenta); font-size: 9px; text-transform: uppercase; letter-spacing: .08em; font-weight: 700;
+    align-self: center; width: 46px; flex: 0 0 46px; text-align: right; padding-right: 4px; opacity: .8; }
 
   .stack { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); z-index: 5;
     display: flex; gap: 8px; pointer-events: none; }
   /* Container stays click-through (so the gaps don't block the board beneath it), but the cards
      themselves capture the pointer — otherwise hover-preview + click-to-target a stack spell fail. */
-  .stack .card { box-shadow: 0 8px 24px rgba(0,0,0,.5); pointer-events: auto; }
+  .stack .card { box-shadow: 4px 4px 0 var(--magenta), 0 8px 22px rgba(0,0,0,.35); pointer-events: auto; }
 
-  /* MTGO-style phase/step bar, just above the hand */
-  .stepbar { display: flex; gap: 3px; padding: 5px 12px; background: var(--rail);
-    border-top: 1px solid var(--line); align-items: stretch; }
-  .step { flex: 1 1 0; min-width: 40px; text-align: center; padding: 3px 2px; border-radius: 6px;
-    background: var(--panel); border: 1px solid var(--line); position: relative; user-select: none; }
-  .step.cur { background: var(--accent); color: #06140b; border-color: var(--accent); font-weight: 800; }
+  /* Print-chip phase/step bar, just above the hand */
+  .stepbar { display: flex; gap: 3px; padding: 5px 12px; background: var(--surface);
+    border-top: 3px solid var(--ink); align-items: stretch; }
+  .step { flex: 1 1 0; min-width: 40px; text-align: center; padding: 3px 2px; border-radius: 5px 4px 5px 4px;
+    background: var(--panel); border: 2px solid var(--ink); position: relative; user-select: none; }
+  .step.cur { background: linear-gradient(135deg, var(--cyan), var(--magenta)); color: #fff; border-color: var(--ink); font-weight: 800; }
   .step.clickable { cursor: pointer; }
-  .step.clickable:hover { border-color: var(--accent); }
-  .step .slabel { font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .step.clickable:hover { box-shadow: 2px 2px 0 var(--yellow); }
+  .step .slabel { font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    font-family: var(--condensed); text-transform: uppercase; letter-spacing: .3px; }
   /* two stop dots per step: top = your turn, bottom = opponent's turn (independently toggleable) */
   .step .sdots { display: flex; flex-direction: column; align-items: stretch; gap: 2px; margin-top: 3px; }
   /* each dot sits in a full-width clickable row → a big, easy hit target (not just the 12px dot) */
   .step .sdotrow { display: flex; justify-content: center; align-items: center; height: 18px;
     border-radius: 4px; cursor: pointer; }
-  .step .sdotrow:hover { background: rgba(255,255,255,.12); }
-  .step .sdot { width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid var(--muted); }
-  .step .sdotrow:hover .sdot { border-color: var(--accent); }
+  .step .sdotrow:hover { background: rgba(41,182,216,.18); }
+  .step .sdot { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--muted); }
+  .step .sdotrow:hover .sdot { border-color: var(--cyan); }
   .step .sdot.opp { border-style: dashed; } /* opponent's-turn dot reads as a dashed ring when off */
-  .step .sdot.on { background: #d23b3b; border-color: #ff7a7a; box-shadow: 0 0 6px #d23b3b; }
-  .step.cur .sdot { border-color: #06140b; }
+  .step .sdot.on { background: var(--magenta); border-color: var(--magenta); box-shadow: 0 0 0 2px rgba(236,79,157,.35); }
+  .step.cur .sdot { border-color: #fff; }
   .step .dotlbl { font-size: 9px; line-height: 18px; height: 18px; color: var(--muted); }
   .step.legend { flex: 0 0 auto; min-width: 28px; background: transparent; border-color: transparent; }
   /* auto-pass-this-turn indicator (Enter) */
   .autopass-badge { position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%);
-    background: #b9821f; color: #1a1205; font-weight: 700; font-size: 12px; padding: 6px 14px;
-    border-radius: 999px; box-shadow: 0 4px 16px rgba(0,0,0,.5); z-index: 90; display: none; }
+    background: var(--yellow); color: #232a4d; font-weight: 800; font-size: 12px; padding: 6px 14px;
+    border: 2.5px solid var(--ink); border-radius: 999px; box-shadow: 3px 3px 0 var(--magenta); z-index: 90; display: none; }
   .autopass-badge::before { content: "⏩ "; }
-  .hand { background: var(--rail); border-top: 1px solid var(--line); padding: 8px 12px 10px;
+  .hand { background: var(--surface); border-top: 3px solid var(--ink); padding: 8px 12px 10px;
     display: flex; gap: 8px; align-items: flex-end; overflow-x: auto; min-height: 150px; }
-  .hand .hlabel { color: var(--muted); font-size: 10px; align-self: center; writing-mode: vertical-rl;
-    transform: rotate(180deg); text-transform: uppercase; letter-spacing: .1em; }
+  .hand .hlabel { color: var(--magenta); font-size: 10px; align-self: center; writing-mode: vertical-rl;
+    transform: rotate(180deg); text-transform: uppercase; letter-spacing: .1em; font-weight: 800; }
 
-  .logpanel { grid-column: 3; grid-row: 2; background: var(--rail); border-left: 1px solid var(--line);
+  .logpanel { grid-column: 3; grid-row: 2; background: var(--surface); border-left: 3px solid var(--ink);
     display: flex; flex-direction: column; min-height: 0; }
-  .promptbox { padding: 10px; border-bottom: 1px solid var(--line); }
-  .promptbox .title { font-weight: 700; margin-bottom: 8px; }
+  .promptbox { padding: 10px; border-bottom: 2px dashed var(--hair); }
+  .promptbox .title { font-weight: 800; margin-bottom: 8px; font-family: var(--condensed); text-transform: uppercase; letter-spacing: .4px; }
   .promptbox .opts { display: flex; flex-direction: column; gap: 6px; }
   .promptbox .hint { color: var(--muted); font-size: 11px; margin: 6px 0; }
-  .promptbox .slotgroup { margin: 4px 0 8px; padding-left: 8px; border-left: 2px solid var(--line); }
-  .promptbox .slothdr { font-weight: 700; font-size: 12px; color: var(--accent); margin: 4px 0; }
+  .promptbox .slotgroup { margin: 4px 0 8px; padding-left: 8px; border-left: 3px solid var(--magenta); }
+  .promptbox .slothdr { font-weight: 800; font-size: 12px; color: var(--magenta); margin: 4px 0; }
   .opt.optcard { display: flex; align-items: center; gap: 8px; text-align: left; }
   .opt.optcard .optart { width: 38px; height: 27px; border-radius: 3px; flex: 0 0 auto;
-    background: #0c120f center/cover no-repeat; border: 1px solid rgba(0,0,0,.4); }
+    background: var(--paper) center/cover no-repeat; border: 2px solid var(--ink); }
   .opt.optcard .optname { font-weight: 700; }
-  button.opt { text-align: left; background: var(--panel); color: var(--ink); border: 1px solid var(--line);
-    border-radius: 8px; padding: 7px 9px; cursor: pointer; font: inherit; }
-  button.opt:hover { border-color: var(--accent); }
+  button.opt { text-align: left; background: var(--panel); color: var(--ink); border: 2.5px solid var(--ink);
+    border-radius: 7px 4px 7px 4px; padding: 7px 9px; cursor: pointer; font: inherit; box-shadow: 3px 3px 0 var(--yellow); }
+  button.opt:hover { box-shadow: 3px 3px 0 var(--cyan); }
+  button.opt:active { transform: translate(2px,2px); box-shadow: 1px 1px 0 var(--cyan); }
   .actions { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
-  button.act { background: var(--accent); color: #06140b; border: none; border-radius: 8px;
-    padding: 7px 13px; font-weight: 700; cursor: pointer; font: inherit; }
-  button.pass { background: var(--panel); color: var(--ink); border: 1px solid var(--line);
-    border-radius: 8px; padding: 7px 13px; cursor: pointer; font: inherit; }
+  button.act { background: var(--magenta); color: #fff; border: 2.5px solid var(--ink); border-radius: 7px 4px 7px 4px;
+    padding: 7px 13px; font-weight: 800; cursor: pointer; font: var(--condensed); font-size: 13px;
+    text-transform: uppercase; letter-spacing: .5px; box-shadow: 3px 3px 0 var(--cyan); }
+  button.act:active { transform: translate(2px,2px); box-shadow: 1px 1px 0 var(--cyan); }
+  button.pass { background: var(--panel); color: var(--ink); border: 2.5px solid var(--ink);
+    border-radius: 7px 4px 7px 4px; padding: 7px 13px; cursor: pointer; font: inherit; font-weight: 700;
+    box-shadow: 3px 3px 0 var(--yellow); }
+  button.pass:active { transform: translate(2px,2px); box-shadow: 1px 1px 0 var(--yellow); }
   button:disabled { opacity: .45; cursor: not-allowed; }
   input[type=number] { width: 80px; background: var(--panel); color: var(--ink);
-    border: 1px solid var(--line); border-radius: 8px; padding: 6px; font: inherit; }
+    border: 2.5px solid var(--ink); border-radius: 6px; padding: 6px; font: inherit; }
   .waiting { color: var(--muted); font-style: italic; }
-  .banner { padding: 10px; border-radius: 8px; background: rgba(111,208,140,.14); border: 1px solid var(--accent);
-    color: var(--accent); font-weight: 800; }
-  .logtitle { padding: 8px 10px 4px; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+  .banner { padding: 10px; border-radius: 8px 5px 7px 6px; background: var(--panel); border: 2.5px solid var(--ink);
+    color: var(--ink); font-weight: 800; box-shadow: 3px 3px 0 var(--magenta), 6px 6px 0 var(--cyan); }
+  .logtitle { padding: 8px 10px 4px; color: var(--magenta); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; font-weight: 800; }
   #log { flex: 1; overflow: auto; padding: 0 10px 10px; font-family: ui-monospace, Menlo, monospace;
     font-size: 10px; color: var(--muted); white-space: pre-wrap; }
 
-  /* ── MTG card frame ───────────────────────────────────────────── */
-  .card { width: 86px; height: 120px; border-radius: 7px; padding: 4px; position: relative;
-    background: var(--cColorless); color: #15110c; border: 2px solid rgba(0,0,0,.45);
-    box-shadow: 0 2px 5px rgba(0,0,0,.4); display: flex; flex-direction: column; gap: 2px;
+  /* ── MTG card frame (stays paper-faced in BOTH themes — legible content) ─────── */
+  .card { width: 86px; height: 120px; border-radius: 7px 4px 8px 5px; padding: 4px; position: relative;
+    background: var(--cColorless); color: #15110c; border: 2.5px solid var(--ink);
+    box-shadow: 3px 3px 0 var(--shadowc); display: flex; flex-direction: column; gap: 2px;
     flex: 0 0 auto; user-select: none; }
-  /* Card colour is shown by a coloured 2px frame + a tinted title bar. */
-  .card.w { background: var(--cW); border-color: #cdbd6a; }
-  .card.u { background: var(--cU); border-color: #3b7cb3; }
-  .card.b { background: var(--cB); border-color: #6b6660; }
-  .card.r { background: var(--cR); border-color: #c4503c; }
-  .card.g { background: var(--cG); border-color: #3f8f46; }
-  .card.multi { background: var(--cMulti); border-color: #c9a227; }
-  .card.land { background: var(--cLand); border-color: #9a7b45; }
-  .card.colorless { background: var(--cColorless); border-color: #9aa0a6; }
+  /* Card colour identity is the paper face tint + tinted title bar; the border stays chunky ink. */
+  .card.w { background: var(--cW); } .card.u { background: var(--cU); } .card.b { background: var(--cB); }
+  .card.r { background: var(--cR); } .card.g { background: var(--cG); }
+  .card.multi { background: var(--cMulti); } .card.land { background: var(--cLand); }
+  .card.colorless { background: var(--cColorless); }
   .card .c-hdr { display: flex; justify-content: space-between; align-items: center; gap: 3px;
     background: rgba(255,255,255,.5); border-radius: 4px; padding: 1px 3px; }
   .card.w .c-hdr { background: #ece3a8; } .card.u .c-hdr { background: #b7d8f0; }
@@ -192,41 +225,44 @@
        ellipsis instead of letting it blow out of the card frame. */
     display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; line-clamp: 4; }
   .card .c-pt { position: absolute; right: 3px; bottom: 2px; background: rgba(255,255,255,.85);
-    border: 1px solid rgba(0,0,0,.4); border-radius: 4px; font-size: 9px; font-weight: 800; padding: 0 3px; }
+    border: 1.5px solid var(--ink); border-radius: 4px; font-size: 9px; font-weight: 800; padding: 0 3px; color: #15110c; }
+  /* 90° tap is game semantics — it STAYS (there are no decorative tilts in this theme). */
   .card.tapped { transform: rotate(90deg); margin: 18px 24px; }
-  .card.legal { cursor: pointer; box-shadow: 0 0 0 2px var(--legal), 0 0 12px var(--legalglow); }
-  .card.legal:hover { box-shadow: 0 0 0 3px var(--legal), 0 0 16px var(--legalglow); }
-  .card.selected { box-shadow: 0 0 0 3px var(--sel), 0 0 14px rgba(91,140,255,.7); position: relative; }
+  .card.legal { cursor: pointer; box-shadow: 3px 3px 0 var(--magenta), 6px 6px 0 var(--cyan); }
+  .card.legal:hover { box-shadow: 4px 4px 0 var(--magenta), 8px 8px 0 var(--cyan); }
+  /* Attacking: yellow+magenta double misregistration. */
+  .card.attacking { box-shadow: 3px 3px 0 var(--yellow), 6px 6px 0 var(--magenta); }
+  .card.selected { box-shadow: 3px 3px 0 var(--cyan), 0 0 0 3px var(--magenta); position: relative; }
   .card.selected::after { content: "🎯"; position: absolute; top: 2px; right: 3px; font-size: 13px;
     text-shadow: 0 0 3px #000; }
   /* Cast-variant chooser: a small popup when a card has >1 legal cast (e.g. Normal + Warp). */
-  .varmenu { position: fixed; z-index: 80; background: var(--panel); border: 1px solid var(--line);
-    border-radius: 8px; padding: 5px; box-shadow: 0 6px 22px rgba(0,0,0,.55); display: flex;
+  .varmenu { position: fixed; z-index: 80; background: var(--panel); border: 2.5px solid var(--ink);
+    border-radius: 8px 5px 7px 6px; padding: 5px; box-shadow: 4px 4px 0 var(--cyan); display: flex;
     flex-direction: column; gap: 4px; min-width: 170px; }
   .varhdr { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .06em;
     padding: 2px 6px 3px; }
-  .varitem { text-align: left; background: var(--rail); color: var(--ink); border: 1px solid var(--line);
+  .varitem { text-align: left; background: var(--surface); color: var(--ink); border: 2px solid var(--ink);
     border-radius: 6px; padding: 7px 10px; font-size: 12px; cursor: pointer; }
-  .varitem:hover { border-color: var(--accent); background: var(--panel); }
+  .varitem:hover { box-shadow: 2px 2px 0 var(--magenta); }
   /* chosen target/option feedback: selected side-panel buttons, player panels, and a summary line */
-  button.opt.sel { background: var(--sel); color: #06140b; border-color: var(--sel); font-weight: 700; }
+  button.opt.sel { background: var(--magenta); color: #fff; border-color: var(--ink); font-weight: 800; box-shadow: 3px 3px 0 var(--cyan); }
   button.opt.sel::before { content: "✓ "; }
-  .pinfo.targetable { cursor: pointer; box-shadow: 0 0 0 2px var(--legal), 0 0 12px var(--legalglow); }
-  .pinfo.targeted { cursor: pointer; box-shadow: 0 0 0 3px var(--sel), 0 0 16px rgba(91,140,255,.8); }
-  .pinfo .tgtbadge { color: var(--sel); font-weight: 800; font-size: 11px; }
-  .chosen { margin-top: 6px; color: var(--sel); font-weight: 700; font-size: 12px; }
-  .card.back { background: repeating-linear-gradient(45deg,#3a2d52,#3a2d52 6px,#473864 6px,#473864 12px);
-    border: 1px solid #241c33; }
+  .pinfo.targetable { cursor: pointer; box-shadow: 3px 3px 0 var(--magenta), 6px 6px 0 var(--cyan); }
+  .pinfo.targeted { cursor: pointer; box-shadow: 3px 3px 0 var(--cyan), 0 0 0 3px var(--magenta); }
+  .pinfo .tgtbadge { color: var(--magenta); font-weight: 800; font-size: 11px; }
+  .chosen { margin-top: 6px; color: var(--magenta); font-weight: 800; font-size: 12px; }
+  .card.back { background: repeating-linear-gradient(45deg, var(--cyan), var(--cyan) 5px, var(--magenta) 5px, var(--magenta) 10px);
+    border: 2.5px solid var(--ink); }
   /* dev "not fully implemented" alert — yellow corner badge; tooltip carries the deferred clause */
   .card .warnbadge { position: absolute; top: 2px; left: 2px; min-width: 15px; height: 15px; padding: 0 2px;
-    border-radius: 4px; background: #f5c518; color: #1a1205; font-size: 11px; line-height: 15px; text-align: center;
-    font-weight: 900; box-shadow: 0 0 4px rgba(0,0,0,.55); cursor: help; z-index: 3; }
+    border-radius: 4px; background: var(--yellow); color: #232a4d; font-size: 11px; line-height: 15px; text-align: center;
+    font-weight: 900; border: 1.5px solid var(--ink); cursor: help; z-index: 3; }
   .card .badge { position: absolute; left: 3px; bottom: 2px; font-size: 8px; font-weight: 800;
-    padding: 0 3px; border-radius: 4px; }
-  .badge.atk { background: #d23b3b; color: #fff; } .badge.blk { background: #3b78d2; color: #fff; }
-  .badge.dmg { background: #111; color: #ff7a7a; right: 3px; left: auto; bottom: 18px; }
+    padding: 0 3px; border-radius: 4px; border: 1.5px solid var(--ink); }
+  .badge.atk { background: var(--magenta); color: #fff; } .badge.blk { background: var(--cyan); color: #08202a; }
+  .badge.dmg { background: #15110c; color: #ff9a8a; right: 3px; left: auto; bottom: 18px; border-color: #15110c; }
   .ctrs { position: absolute; top: 18px; left: 3px; display: flex; flex-direction: column; gap: 1px; }
-  .ctr { background: #2a8a52; color: #fff; font-size: 7px; font-weight: 800; padding: 0 2px; border-radius: 3px; border: 1px solid rgba(0,0,0,.4); }
+  .ctr { background: var(--green); color: #fff; font-size: 7px; font-weight: 800; padding: 0 2px; border-radius: 3px; border: 1px solid var(--ink); }
   .card.sick .c-art::after { content: "˝"; }
   .card.sick { opacity: .82; }
   .hand .card { width: 104px; height: 146px; }
@@ -236,85 +272,94 @@
   .card.mini { width: 64px; height: 90px; }
 
   /* zone viewer modal */
-  .modal { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none; align-items: center;
+  .modal { position: fixed; inset: 0; background: rgba(15,17,30,.62); display: none; align-items: center;
     justify-content: center; z-index: 50; }
   .modal.show { display: flex; }
-  .modal .box { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px;
-    max-width: 80vw; max-height: 80vh; overflow: auto; }
-  .modal .box h3 { margin: 0 0 10px; }
+  .modal .box { background: var(--surface); border: 3px solid var(--ink); border-radius: 10px 6px 9px 7px; padding: 16px;
+    max-width: 80vw; max-height: 80vh; overflow: auto; box-shadow: 6px 6px 0 var(--cyan); }
+  .modal .box h3 { margin: 0 0 10px; font-family: var(--condensed); text-transform: uppercase; letter-spacing: .4px; }
   .modal .grid { display: flex; flex-wrap: wrap; gap: 8px; }
-  .modal .close { float: right; cursor: pointer; color: var(--muted); }
-  .pile.clk { box-shadow: inset 0 0 0 1px var(--accent); }
+  .modal .close { float: right; cursor: pointer; color: var(--magenta); font-weight: 800; }
+  .pile.clk { box-shadow: 2px 2px 0 var(--magenta); }
   /* decklist peek (grouped, MTGO-style deck view) */
   .decklist { display: flex; flex-direction: column; gap: 3px; min-width: 360px; }
   .dlrow { display: flex; align-items: center; gap: 8px; padding: 3px 8px 3px 4px; border-radius: 6px;
-    background: var(--felt2); border-left: 3px solid var(--line); cursor: default; }
-  .dlrow:hover { background: var(--panel); }
-  .dlrow.w { border-left-color: #e9e3c8; } .dlrow.u { border-left-color: #6fb7e6; }
-  .dlrow.b { border-left-color: #9b8aa6; } .dlrow.r { border-left-color: #e08a6f; }
-  .dlrow.g { border-left-color: #74b06a; } .dlrow.multi { border-left-color: #d9b85a; }
+    background: var(--panel); border: 2px solid var(--ink); border-left-width: 4px; cursor: default; }
+  .dlrow:hover { box-shadow: 2px 2px 0 var(--yellow); }
+  .dlrow.w { border-left-color: #cbb45f; } .dlrow.u { border-left-color: var(--cyan); }
+  .dlrow.b { border-left-color: #6b6699; } .dlrow.r { border-left-color: #e0603f; }
+  .dlrow.g { border-left-color: var(--green); } .dlrow.multi { border-left-color: var(--yellow); }
   .dlrow.land { border-left-color: #b08a5a; } .dlrow.colorless { border-left-color: #9aa0a6; }
-  .dlcount { font-weight: 700; font-size: 13px; width: 26px; text-align: right; color: var(--muted); }
+  .dlcount { font-weight: 800; font-size: 13px; width: 26px; text-align: right; color: var(--muted); }
   .dlthumb { width: 34px; height: 24px; border-radius: 3px; background-size: cover; background-position: center 18%;
-    background-color: var(--felt); flex: none; }
+    background-color: var(--paper); border: 1.5px solid var(--ink); flex: none; }
   .dlname { flex: 1; font-size: 13px; }
   .dlpips { display: flex; gap: 1px; align-items: center; }
   .dlpips .ms { width: 14px; height: 14px; }
   /* hover full-card preview */
   #preview { position: fixed; display: none; width: 320px; border-radius: 12px; z-index: 100;
-    box-shadow: 0 12px 44px rgba(0,0,0,.75); pointer-events: none; }
+    box-shadow: 0 12px 44px rgba(0,0,0,.55); pointer-events: none; }
   /* Target arrows: a full-viewport SVG overlay drawn from stack cards to their targets. */
   #arrows { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 60; }
   /* Auras / equipment stacked behind their host. The wrapper is the row's flow element; the
      attached cards are absolutely positioned behind, the host sits on top. */
   .attachwrap { position: relative; flex: 0 0 auto; }
-  .attachwrap .card.attach { position: absolute; top: 0; left: 0; box-shadow: 0 3px 8px rgba(0,0,0,.6);
-    filter: brightness(.9); }
+  .attachwrap .card.attach { position: absolute; top: 0; left: 0; box-shadow: 3px 3px 0 var(--yellow);
+    filter: brightness(.95); }
   /* A triggered/activated ability on the stack (vs. a spell card) — dashed frame. */
-  .card.ability { border-style: dashed; border-width: 2px; }
+  .card.ability { border-style: dashed; border-width: 2.5px; }
   /* God-view opponent hand strip (replay / spectate). */
-  .godhand { border-bottom: 1px solid var(--line); }
-  .godhand .hlabel { color: var(--accent2); }
+  .godhand { border-bottom: 3px solid var(--ink); }
+  .godhand .hlabel { color: var(--cyan); }
   /* Replay playback bar. */
   .replaybar { display: flex; align-items: center; gap: 10px; padding: 6px 10px; margin: 4px 0;
-    background: var(--panel); border: 1px solid var(--line); border-radius: 8px; flex-wrap: wrap; }
-  .replaybar .rbtn { background: var(--accent2); color: #04121d; border: none; border-radius: 6px;
+    background: var(--panel); border: 2.5px solid var(--ink); border-radius: 8px 5px 7px 6px; flex-wrap: wrap;
+    box-shadow: 3px 3px 0 var(--cyan); }
+  .replaybar .rbtn { background: var(--cyan); color: #08202a; border: 2.5px solid var(--ink); border-radius: 6px;
     padding: 4px 10px; font-weight: 800; cursor: pointer; font-size: 13px; }
-  .replaybar .rbtn:hover { filter: brightness(1.08); }
+  .replaybar .rbtn:hover { box-shadow: 2px 2px 0 var(--magenta); }
+  .replaybar .rbtn:active { transform: translate(1px,1px); }
   .replaybar .rbtn:disabled { opacity: .4; cursor: not-allowed; }
-  .replaybar .rbscrub { flex: 1 1 220px; min-width: 140px; accent-color: var(--accent2); cursor: pointer; }
+  .replaybar .rbscrub { flex: 1 1 220px; min-width: 140px; accent-color: var(--magenta); cursor: pointer; }
   .replaybar .rbframe { font-variant-numeric: tabular-nums; color: var(--muted); min-width: 64px; }
   .replaybar .rbrate { color: var(--muted); font-size: 12px; display: flex; align-items: center; gap: 5px; }
-  .replaybar .rbrate input { accent-color: var(--accent2); }
+  .replaybar .rbrate input { accent-color: var(--cyan); }
   .replaybar .rblabel { color: var(--ink); font-size: 12px; flex: 1 1 140px; min-width: 120px;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   /* Replay load status: progress / error panel centered over the board (all sizes). The replay JSON is
      tens of MB, so a slow phone download needs a visible indicator instead of a dead bar. */
   .replay-status { position: fixed; z-index: 110; left: 50%; top: 44%; transform: translate(-50%,-50%);
     display: none; flex-direction: column; gap: 10px; align-items: center; text-align: center;
-    background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px 24px;
-    box-shadow: 0 12px 40px rgba(0,0,0,.6); max-width: 84vw; }
-  .replay-status .rs-title { font-weight: 800; font-size: 14px; }
-  .replay-status .rs-prog { color: var(--accent); font-variant-numeric: tabular-nums; font-size: 13px; }
-  .replay-status .rs-err { color: #ff9a8a; font-size: 12px; max-width: 70vw; word-break: break-word; }
-  .replay-status .rs-retry { background: var(--accent); color: #06140b; border: none; border-radius: 8px;
-    padding: 9px 20px; font-weight: 700; cursor: pointer; font: inherit; }
+    background: var(--surface); border: 3px solid var(--ink); border-radius: 10px 6px 9px 7px; padding: 18px 24px;
+    box-shadow: 6px 6px 0 var(--cyan); max-width: 84vw; }
+  .replay-status .rs-title { font-weight: 800; font-size: 14px; font-family: var(--condensed); text-transform: uppercase; letter-spacing: .4px; }
+  .replay-status .rs-prog { color: var(--magenta); font-variant-numeric: tabular-nums; font-size: 13px; font-weight: 700; }
+  .replay-status .rs-err { color: var(--low); font-size: 12px; max-width: 70vw; word-break: break-word; }
+  .replay-status .rs-retry { background: var(--magenta); color: #fff; border: 2.5px solid var(--ink); border-radius: 7px 4px 7px 4px;
+    padding: 9px 20px; font-weight: 800; cursor: pointer; font: inherit; box-shadow: 3px 3px 0 var(--cyan); }
+  .replay-status .rs-retry:active { transform: translate(2px,2px); box-shadow: 1px 1px 0 var(--cyan); }
 
-  /* ── new touch affordances (all viewport sizes) ─────────────────────────────── */
+  /* ── touch affordances (all viewport sizes) ─────────────────────────────────── */
+  /* Theme toggle (Auto → Light → Dark) — a print chip in the top bar. */
+  .themetoggle { background: var(--panel); color: var(--ink); border: 2.5px solid var(--ink);
+    border-radius: 7px 4px 7px 4px; padding: 4px 10px; font: var(--condensed); font-size: 12px; font-weight: 800;
+    text-transform: uppercase; letter-spacing: .4px; cursor: pointer; box-shadow: 2px 2px 0 var(--yellow); white-space: nowrap; }
+  .themetoggle:active { transform: translate(2px,2px); box-shadow: 0 0 0 var(--yellow); }
   /* "Pass turn" button — on-screen equivalent of Enter (hold through this turn's stops). */
-  button.passturn.held { background: #b9821f; color: #1a1205; border-color: #d69a2a; font-weight: 700; }
+  button.passturn.held { background: var(--yellow); color: #232a4d; border-color: var(--ink); font-weight: 800; box-shadow: 3px 3px 0 var(--magenta); }
   button.passturn.held::before { content: "⏩ "; }
   /* Mobile-only "Log" toggle in the top bar (hidden on desktop). */
-  .logtoggle { display: none; background: var(--panel); color: var(--ink); border: 1px solid var(--line);
-    border-radius: 8px; padding: 4px 10px; font: inherit; cursor: pointer; }
-  .logtoggle.on { background: var(--accent); color: #06140b; border-color: var(--accent); }
+  .logtoggle { display: none; background: var(--panel); color: var(--ink); border: 2.5px solid var(--ink);
+    border-radius: 7px 4px 7px 4px; padding: 4px 10px; font: var(--condensed); font-size: 12px; font-weight: 800;
+    text-transform: uppercase; letter-spacing: .4px; cursor: pointer; box-shadow: 2px 2px 0 var(--cyan); }
+  .logtoggle.on { background: var(--cyan); color: #08202a; }
   /* Long-press full-card preview (touch): centered overlay. Desktop still uses hover #preview;
      this only opens on a touch long-press, so it's harmless at desktop sizes. */
   .preview-overlay { position: fixed; inset: 0; z-index: 120; display: none;
-    align-items: center; justify-content: center; background: rgba(0,0,0,.74); padding: 20px; }
+    align-items: center; justify-content: center; background: rgba(15,17,30,.8); padding: 20px; }
   .preview-overlay.show { display: flex; }
   .preview-overlay img { max-width: 90vw; max-height: 84vh; border-radius: 14px;
-    box-shadow: 0 14px 50px rgba(0,0,0,.8); }
+    box-shadow: 0 14px 50px rgba(0,0,0,.7); }
   .preview-overlay .preview-close { position: fixed; top: 10px; right: 16px; color: #fff;
     font-size: 30px; line-height: 1; font-weight: 700; cursor: pointer; text-shadow: 0 1px 4px #000; }
   /* Bottom-sheet slot for your player strip (mobile only). Empty & inert on desktop; on mobile the
@@ -366,21 +411,21 @@
     /* Replay bar: pin to the very top during replay (the client also re-parents it to the app root) so
        board reflow between frames can't shove the controls — Pause stays under your thumb. */
     .replaybar { order: -1; position: sticky; top: 0; z-index: 45; margin: 0; border-radius: 0;
-      border: none; border-bottom: 1px solid var(--line); }
+      border: none; border-bottom: 3px solid var(--ink); box-shadow: none; }
     /* Damp the jumping: hold the board block at a stable height during replay so frame-to-frame content
        changes reflow the page far less. */
     body.replay-mode .play { min-height: 46vh; }
 
     /* bottom sheet: your strip + the prompt are ALWAYS reachable (sticky bottom); log hides behind a
        toggle. Sheet order top→bottom: [log title, log] (when open) · your strip · prompt (thumb). */
-    .logpanel { position: sticky; bottom: 0; z-index: 30; background: var(--rail);
-      border-left: none; border-top: 1px solid var(--line);
+    .logpanel { position: sticky; bottom: 0; z-index: 30; background: var(--surface);
+      border-left: none; border-top: 3px solid var(--ink);
       display: flex; flex-direction: column; }
     .logtitle { order: 0; display: none; }
     #log { order: 1; display: none; max-height: 40vh; }
     #selfSlot { order: 2; }
     .promptbox { order: 3; border-bottom: none; max-height: 46vh; overflow: auto;
-      box-shadow: 0 -6px 20px rgba(0,0,0,.5); }
+      box-shadow: 0 -6px 20px rgba(0,0,0,.35); }
     body.show-log .logtitle { display: block; }
     body.show-log #log { display: block; }
 

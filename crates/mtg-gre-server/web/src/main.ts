@@ -766,7 +766,7 @@ function cardEl(c: Any, ctx: Any): HTMLElement {
   if (chars.power != null) d.appendChild(el("div", "c-pt", `${chars.power}/${chars.toughness}`));
 
   if (view.combat) {
-    if ((view.combat.attackers || []).some((a: Any) => a[0] === c.id)) d.appendChild(el("div", "badge atk", "ATK"));
+    if ((view.combat.attackers || []).some((a: Any) => a[0] === c.id)) { d.classList.add("attacking"); d.appendChild(el("div", "badge atk", "ATK")); }
     if ((view.combat.blockers || []).some((b: Any) => b[0] === c.id)) d.appendChild(el("div", "badge blk", "BLK"));
   }
   if (c.dmg > 0) d.appendChild(el("div", "badge dmg", `${c.dmg}✶`));
@@ -1056,6 +1056,30 @@ $("modal").onclick = (e) => { if (e.target === $("modal")) $("modal").classList.
 // stays always-on); this flips `body.show-log` to reveal/collapse the history.
 const logToggle = document.getElementById("logToggle");
 if (logToggle) logToggle.onclick = () => { logToggle.classList.toggle("on", document.body.classList.toggle("show-log")); };
+
+// ── theme (Auto → Light → Dark) ────────────────────────────────────────────────
+// localStorage `mtg_theme` holds only explicit choices; absent = Auto (follows the OS live). The head
+// script already stamped data-theme for a flash-free first paint; here we wire the toggle + keep Auto
+// in sync with the OS. Same key as the lobby, so the preference carries across both clients.
+const THEME_KEY = "mtg_theme";
+const themeMql = window.matchMedia("(prefers-color-scheme: dark)");
+function themeMode(): string { const t = localStorage.getItem(THEME_KEY); return (t === "light" || t === "dark") ? t : "auto"; }
+function resolvedTheme(): string { const m = themeMode(); return m === "auto" ? (themeMql.matches ? "dark" : "light") : m; }
+function updateThemeToggle(): void {
+  const b = document.getElementById("themeToggle"); if (!b) return;
+  const m = themeMode();
+  b.textContent = m === "auto" ? "◐ Auto" : m === "light" ? "☀ Light" : "☾ Dark";
+}
+function applyTheme(): void { document.documentElement.dataset.theme = resolvedTheme(); updateThemeToggle(); }
+function cycleTheme(): void {
+  const nxt: Any = { auto: "light", light: "dark", dark: "auto" };
+  const m = nxt[themeMode()];
+  if (m === "auto") localStorage.removeItem(THEME_KEY); else localStorage.setItem(THEME_KEY, m);
+  applyTheme();
+}
+themeMql.addEventListener("change", () => { if (themeMode() === "auto") applyTheme(); }); // Auto follows the OS
+{ const tb = document.getElementById("themeToggle"); if (tb) tb.onclick = cycleTheme; }
+applyTheme(); // reconcile the toggle label with the head-script's data-theme
 
 // ── misc ───────────────────────────────────────────────────────────────────────
 function nameOf(id: number): string {
