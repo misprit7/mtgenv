@@ -1,0 +1,64 @@
+{
+  "label": "fleet-after",
+  "date_utc": "2026-07-03 17:27 UTC",
+  "git_sha": "cd9f8b2",
+  "host": "oko",
+  "config": {
+    "deck": "bears",
+    "n_steps": 256,
+    "rollouts": 3,
+    "vecenv": "fleet",
+    "num_workers": 8,
+    "callbacks": "eval/pool/replay OFF"
+  },
+  "results": [
+    {
+      "n_envs": 32,
+      "timesteps": 24576,
+      "rollouts": 3,
+      "wall_s": 12.8,
+      "steady_fps": 2175,
+      "fps_series": [
+        2509,
+        2202,
+        2148
+      ]
+    },
+    {
+      "n_envs": 128,
+      "timesteps": 98304,
+      "rollouts": 3,
+      "wall_s": 34.9,
+      "steady_fps": 3252,
+      "fps_series": [
+        4222,
+        3362,
+        3143
+      ]
+    },
+    {
+      "n_envs": 256,
+      "timesteps": 196608,
+      "rollouts": 3,
+      "wall_s": 64.2,
+      "steady_fps": 3555,
+      "fps_series": [
+        4533,
+        3654,
+        3456
+      ]
+    },
+    {
+      "n_envs": 512,
+      "timesteps": 393216,
+      "rollouts": 3,
+      "wall_s": 129.5,
+      "steady_fps": 3534,
+      "fps_series": [
+        4635,
+        3634,
+        3433
+      ]
+    }
+  ]
+}
