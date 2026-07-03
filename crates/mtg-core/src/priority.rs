@@ -988,6 +988,18 @@ impl Engine {
                     }
                 }
             }
+            // Impulse-play a LAND from exile (SoS impulse-play): a land granted `castable_from_exile`
+            // with an active `play_until_turn` window is *played* (not cast) — still using your land
+            // drop for the turn (this block is gated on the per-turn limit) and only within its window.
+            for &card in &s.player(p).exile {
+                let o = s.object(card);
+                if o.castable_from_exile
+                    && o.chars.is_land()
+                    && o.play_until_turn.is_some_and(|until| s.turn_number <= until)
+                {
+                    actions.push(PlayableAction::PlayLand { card });
+                }
+            }
         }
 
         // Cast a spell (CR 601). Instants any time you have priority; everything else at

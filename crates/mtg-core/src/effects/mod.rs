@@ -47,6 +47,11 @@ pub enum EffectTarget {
     /// The object currently being iterated by the enclosing `ForEach` (CR "for each …") — used by a
     /// per-iteration body, e.g. "remove a counter from each of two creatures you control."
     Each,
+    /// The **top card of a player's library** (CR 401.1, the last element of the library vec). Not a
+    /// chosen target — resolved at resolution time to whatever is on top. Used by impulse-play from
+    /// the top of library (SoS: Elemental Mascot's "exile the top card of your library"). Resolves to
+    /// `None` (no-op) if that library is empty.
+    TopOfLibrary(PlayerRef),
 }
 
 /// One mode of a modal spell/ability (CR 700.2): a presented label + the effect it runs.

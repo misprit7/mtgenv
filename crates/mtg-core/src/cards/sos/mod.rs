@@ -24,6 +24,7 @@ pub mod dissection_practice;
 pub mod duel_tactics;
 pub mod eager_glyphmage;
 pub mod efflorescence;
+pub mod elemental_mascot;
 pub mod embrace_the_paradox;
 pub mod environmental_scientist;
 pub mod erode;
@@ -134,6 +135,7 @@ pub fn register(db: &mut CardDb) {
     duel_tactics::register(db);
     eager_glyphmage::register(db);
     efflorescence::register(db);
+    elemental_mascot::register(db);
     embrace_the_paradox::register(db);
     environmental_scientist::register(db);
     erode::register(db);

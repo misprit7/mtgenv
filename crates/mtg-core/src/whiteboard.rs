@@ -1863,6 +1863,11 @@ impl EngineCore {
             EffectTarget::Each => self.foreach_current.map(Target::Object),
             EffectTarget::Player(who) => Some(Target::Player(self.eval_player(*who, ctx))),
             EffectTarget::SourceSelf => ctx.source.map(Target::Object),
+            // The top card of the player's library (last element) — no-op on an empty library.
+            EffectTarget::TopOfLibrary(who) => {
+                let pl = self.eval_player(*who, ctx);
+                self.state.player(pl).library.last().copied().map(Target::Object)
+            }
             EffectTarget::Select(_) => None,
         }
     }
