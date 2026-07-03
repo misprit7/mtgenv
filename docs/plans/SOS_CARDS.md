@@ -90,10 +90,12 @@ dies-triggers need LKI (Arnyn, Cauldron of Essence).
 
 **▶ Fresh authorable-now list (2026-07-03 unauthored-card audit — verified vs the real engine):** the audit
 found `ConditionalStatic`, stun counters, `ValueExpr::{Sum,XTimes,NumTargets,PowerOfTarget}`, `CardFilter::
-{Named,ManaValue,PowerAtMost}`, `Effect::{Fight,Distribute,BecomeCreature}` all LIVE. Cards still authorable on
-existing caps (Antiquities/Rancorous/Aberrant/Topiary/Thornfist already done this session): **Ancestral Anger**
-`{R}` sorcery (vow reprint — resolve folder; `Sum(1, Count{Graveyard, Named})` pump + Trample + Draw),
-**Homesickness** `{4}{U}{U}` instant (Draw target-player + Tap up-to-2 + Stun each — check up-to-2 multi-target).
+{Named,ManaValue,PowerAtMost}`, `Effect::{Fight,Distribute,BecomeCreature}` all LIVE. The audit's AUTHORABLE-NOW list is now
+**fully swept**: Antiquities/Rancorous/Aberrant/Topiary/Thornfist done this session, and **Ancestral Anger was
+already authored** in `vow/` (the audit only scanned `sos/`, so it wrongly listed it). The only remaining item,
+**Homesickness** `{4}{U}{U}` (Draw target-player + Tap up-to-two + Stun each), needs an **apply-to-each-of-a-
+variable-multi-target** mechanism ("put a stun counter on each of them" over a 0–2 `Tap` slot) — no `ChosenIndex`
+covers a variable count. Small cap; the next genuinely-new card work.
 Genuinely-absent caps (from the audit): spell-copy, move-counters, counters-on-TARGET value, no-max-hand,
 DYNAMIC ManaValue bounds, one-shot set-base-P/T on a target, self "costs less", grant-arbitrary-ability; DFC/
 Lesson/planeswalker/named-keyword buckets remain deferred (36 DFC + more).
