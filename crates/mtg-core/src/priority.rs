@@ -3356,6 +3356,9 @@ fn collect_specs_into(effect: &Effect, out: &mut Vec<TargetSpec>) {
         Effect::Exile { what: EffectTarget::Target(spec) } => out.push(spec.clone()),
         // Impulse-play exiles a targeted card (Practiced Scrollsmith's graveyard card).
         Effect::ExileForPlay { what: EffectTarget::Target(spec), .. } => out.push(spec.clone()),
+        // "Return target card from a zone …" — a chosen target (Pull from the Grave's graveyard→hand,
+        // Forum Necroscribe / Lorehold Charm's graveyard→battlefield reanimation).
+        Effect::MoveZone { what: EffectTarget::Target(spec), .. } => out.push(spec.clone()),
         // "Create a token that's a copy of target permanent" — its source is a chosen target.
         Effect::CreateTokenCopy { source: EffectTarget::Target(spec), .. } => out.push(spec.clone()),
         // "Put a +1/+1 counter on target creature" / "target creature gains trample" — the targeted

@@ -40,6 +40,7 @@ pub mod flow_state;
 pub mod fields_of_strife;
 pub mod follow_the_lumarets;
 pub mod foolish_fate;
+pub mod forum_necroscribe;
 pub mod forum_of_amity;
 pub mod garrison_excavator;
 pub mod glorious_decay;
@@ -164,6 +165,7 @@ pub fn register(db: &mut CardDb) {
     fields_of_strife::register(db);
     follow_the_lumarets::register(db);
     foolish_fate::register(db);
+    forum_necroscribe::register(db);
     forum_of_amity::register(db);
     garrison_excavator::register(db);
     glorious_decay::register(db);

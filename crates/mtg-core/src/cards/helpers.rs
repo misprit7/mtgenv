@@ -7,7 +7,7 @@
 //! That keeps every card module a leaf node — no card-to-card tangle as the pool grows.
 
 use crate::basics::{CardType, Color, CounterKind, Zone, ZoneDest, ZonePos};
-use crate::effects::ability::{Ability, EventPattern, Keyword};
+use crate::effects::ability::{Ability, Cost, CostComponent, EventPattern, Keyword};
 use crate::effects::condition::Condition;
 use crate::effects::target::{CardFilter, SelectSpec, TargetKind, TargetSpec, TokenSpec};
 use crate::effects::value::{PlayerRef, ValueExpr};
@@ -62,6 +62,40 @@ pub(crate) fn increment_ability() -> Ability {
             otherwise: None,
         },
     }
+}
+
+/// **Ward** (CR 702.21): "Whenever this permanent becomes the target of a spell or ability an
+/// opponent controls, counter it unless that player pays `cost`." Modeled as a `BecomesTargeted{
+/// ItSelf, by_opponent }` trigger whose effect is the `CounterUnlessPay` soft-counter over the
+/// *triggering* spell/ability (`EffectTarget::Triggering`). Shared by every Ward card; the wrappers
+/// below build the printed cost forms (Ward {N} / Ward—Discard).
+pub(crate) fn ward(cost: Cost) -> Ability {
+    Ability::Triggered {
+        event: EventPattern::BecomesTargeted { filter: CardFilter::ItSelf, by_opponent: true },
+        condition: None,
+        intervening_if: false,
+        effect: Effect::CounterUnlessPay { what: EffectTarget::Triggering, cost },
+    }
+}
+
+/// "Ward {N}" — the targeting player pays N generic mana (Colorstorm Stallion, Fractal Tender, …).
+pub(crate) fn ward_mana(n: u32) -> Ability {
+    ward(Cost { mana: Some(crate::cards::mana_cost(n, &[])), components: Vec::new() })
+}
+
+/// "Ward—Discard a card." — the targeting player discards a card of their choice from hand (Forum
+/// Necroscribe, Tragedy Feaster). Non-mana Ward cost.
+pub(crate) fn ward_discard() -> Ability {
+    ward(Cost {
+        mana: None,
+        components: vec![CostComponent::Discard(SelectSpec {
+            zone: Zone::Hand,
+            filter: CardFilter::Any,
+            chooser: PlayerRef::Controller,
+            min: ValueExpr::Fixed(1),
+            max: ValueExpr::Fixed(1),
+        })],
+    })
 }
 
 /// "an instant or sorcery spell" — `AnyOf([Instant, Sorcery])`. Shared by the SoS Opus / Repartee

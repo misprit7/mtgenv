@@ -16,31 +16,17 @@
 //!   ≥ 5` — also creates a token that's a copy of itself (`CreateTokenCopy` over `SourceSelf`).
 
 use crate::basics::Color;
-use crate::cards::helpers::instant_or_sorcery;
+use crate::cards::helpers::{instant_or_sorcery, ward_mana};
 use crate::cards::{creature, mana_cost, CardDb};
-use crate::effects::ability::{Ability, Cost, EventPattern, Keyword};
+use crate::effects::ability::{Ability, EventPattern, Keyword};
 use crate::effects::condition::{Condition, Duration};
-use crate::effects::target::{CardFilter, TokenCopyMods};
+use crate::effects::target::TokenCopyMods;
 use crate::effects::value::{PlayerRef, ValueExpr};
 use crate::effects::{Effect, EffectTarget};
 use crate::subtypes::CreatureType;
 
 /// grp id (per-set ids live near their cards).
 pub const COLORSTORM_STALLION: u32 = 332;
-
-/// "Ward {N}" (CR 702.21): whenever this permanent becomes the target of an opponent's spell or
-/// ability, counter that spell/ability unless its controller pays {N} generic mana.
-pub(crate) fn ward_mana(n: u32) -> Ability {
-    Ability::Triggered {
-        event: EventPattern::BecomesTargeted { filter: CardFilter::ItSelf, by_opponent: true },
-        condition: None,
-        intervening_if: false,
-        effect: Effect::CounterUnlessPay {
-            what: EffectTarget::Triggering,
-            cost: Cost { mana: Some(mana_cost(n, &[])), components: Vec::new() },
-        },
-    }
-}
 
 /// "Opus — … this creature gets +1/+1 until end of turn. If five or more mana was spent to cast that
 /// spell, create a token that's a copy of this creature."
