@@ -322,7 +322,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Matterbending Mage | S21 | `sos` | ⏳ | cast-spell-with-X trigger -> unblockable |
 | Melancholic Poet | S8 | `sos` | ✅ done | Repartee drain |
 | Mica, Reader of Ruins | S14,S17 | `sos` | ⏳ | Ward-pay-life; copy I/S on sacrifice |
-| Molten Note | S10 | `sos` | ⏳ | flashback; damage equals mana spent |
+| Molten Note | S10 | `sos` | ✅ done | flashback; damage equals mana spent |
 | Molten-Core Maestro | S5 | `sos` | ✅ done | Opus cast-trigger with mana-spent condition |
 | Moseo, Vein's New Dean | S4,S11 | `sos` | ⏳ | Pest token with ability + Infusion reanimate |
 | Muse Seeker | S5 | `sos` | ✅ done | Opus cast-trigger |
