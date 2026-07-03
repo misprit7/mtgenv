@@ -42,6 +42,7 @@ pub mod garrison_excavator;
 pub mod graduation_day;
 pub mod grapple_with_death;
 pub mod harsh_annotation;
+pub mod heated_argument;
 pub mod hungry_graffalon;
 pub mod hydro_channeler;
 pub mod imperious_inkmage;
@@ -155,6 +156,7 @@ pub fn register(db: &mut CardDb) {
     graduation_day::register(db);
     grapple_with_death::register(db);
     harsh_annotation::register(db);
+    heated_argument::register(db);
     hungry_graffalon::register(db);
     hydro_channeler::register(db);
     imperious_inkmage::register(db);

@@ -223,6 +223,21 @@ impl EngineCore {
                 }
                 any > 0
             }
+            // "Exile a card from a zone" chosen at resolution (a `Select`, not the word "target") —
+            // e.g. Heated Argument's "you may exile a card from your graveyard". Handled here (not just
+            // `materialize`) so it (a) actually resolves the selection and (b) reports **performed** =
+            // the selection reached its `min`, so an empty graveyard withholds a wrapping `IfYouDo`
+            // reward. The "exile target …" case (an `EffectTarget::Target`) stays in `materialize`.
+            Effect::Exile { what: EffectTarget::Select(spec) } => {
+                self.flush_pending(wb);
+                let min = self.eval_value(&spec.min, ctx).max(0) as usize;
+                let chosen = self.select_for_each(spec, ctx);
+                let performed = chosen.len() >= min;
+                for obj in chosen {
+                    wb.push(Action::Exile { obj, source: ctx.source });
+                }
+                performed
+            }
             // "You may …" (CR 603.5 / optional effect): ask the controller; run `body` on yes.
             // Performed iff the controller said yes AND the body itself performed (so a "may" whose
             // body can't be carried out still reports "not done" to a wrapping `IfYouDo`).
