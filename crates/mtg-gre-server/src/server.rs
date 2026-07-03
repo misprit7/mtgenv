@@ -428,16 +428,28 @@ async fn delete_deck(
     }
 }
 
-/// `GET /api/cards` — the deck builder's card catalog: **every registered card** (the full engine
-/// registry via `CardDb::iter`), each projected into the same [`DeckCard`] shape as the deck viewer.
-/// `count` is meaningless here (always 1) — the builder treats these as templates.
+/// `GET /api/cards` — the deck builder's card catalog: every **deck-legal** registered card (the
+/// full engine registry via `CardDb::iter`, minus tokens), each projected into the same [`DeckCard`]
+/// shape as the deck viewer. `count` is meaningless here (always 1) — the builder treats these as
+/// templates.
 ///
 /// This is the whole implemented pool, not just cards used by a preset, so newly-authored cards are
 /// buildable immediately. Art can lag (the manifest is regenerated separately) — a card without a
 /// baked image just renders as a text tile, which the client handles gracefully.
+///
+/// **Tokens are excluded**: a token carries the `Token` supertype and can only be *created* by an
+/// effect, never put in a deck, so it has no place in the builder. (The art dump — `dump-cards` /
+/// [`driver::all_cards`] — keeps them, so a token still gets art for when it appears on the
+/// battlefield.) Today no registered card is a token, so this filters nothing; it guards the day
+/// predefined token cards land in the DB.
 async fn card_catalog() -> impl IntoResponse {
+    use mtg_core::subtypes::Supertype;
     let db = mtg_core::cards::starter_db();
-    let mut cards: Vec<DeckCard> = db.iter().map(|(grp, def)| card_view(grp, 1, def)).collect();
+    let mut cards: Vec<DeckCard> = db
+        .iter()
+        .filter(|(_, def)| !def.chars.supertypes.contains(&Supertype::Token))
+        .map(|(grp, def)| card_view(grp, 1, def))
+        .collect();
     deck_sort(&mut cards);
     axum::Json(cards)
 }
