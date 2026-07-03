@@ -317,7 +317,8 @@ function stopsSummary(ss: Any): string {
 }
 
 function pinfoEl(p: Any, you: boolean): HTMLElement {
-  const d = el("div", "pinfo" + (view.active_player === p.player ? " active" : ""));
+  // `.self`/`.opp` let the mobile reflow place your panel by the prompt and the opponent's up top.
+  const d = el("div", "pinfo" + (you ? " self" : " opp") + (view.active_player === p.player ? " active" : ""));
   d.dataset.pid = p.player; // target-arrow destination for player-targeting spells
   // If this player is a legal target of the current choice, make the whole panel a click target.
   const pIdx = playerOptIdx(p.player);
@@ -938,6 +939,10 @@ function openDecklist(title: string, entries: Any[]): void {
 }
 $("modalClose").onclick = () => $("modal").classList.remove("show");
 $("modal").onclick = (e) => { if (e.target === $("modal")) $("modal").classList.remove("show"); };
+// Mobile "Log" toggle: the game log is hidden by default on narrow screens (only the current prompt
+// stays always-on); this flips `body.show-log` to reveal/collapse the history.
+const logToggle = document.getElementById("logToggle");
+if (logToggle) logToggle.onclick = () => { logToggle.classList.toggle("on", document.body.classList.toggle("show-log")); };
 
 // ── misc ───────────────────────────────────────────────────────────────────────
 function nameOf(id: number): string {

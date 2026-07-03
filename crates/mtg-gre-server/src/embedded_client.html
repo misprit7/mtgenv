@@ -289,6 +289,80 @@
   .replaybar .rbrate input { accent-color: var(--accent2); }
   .replaybar .rblabel { color: var(--ink); font-size: 12px; flex: 1 1 140px; min-width: 120px;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* ── new touch affordances (all viewport sizes) ─────────────────────────────── */
+  /* "Pass turn" button — on-screen equivalent of Enter (hold through this turn's stops). */
+  button.passturn.held { background: #b9821f; color: #1a1205; border-color: #d69a2a; font-weight: 700; }
+  button.passturn.held::before { content: "⏩ "; }
+  /* Mobile-only "Log" toggle in the top bar (hidden on desktop). */
+  .logtoggle { display: none; background: var(--panel); color: var(--ink); border: 1px solid var(--line);
+    border-radius: 8px; padding: 4px 10px; font: inherit; cursor: pointer; }
+  .logtoggle.on { background: var(--accent); color: #06140b; border-color: var(--accent); }
+  /* Long-press full-card preview (touch): centered overlay. Desktop still uses hover #preview;
+     this only opens on a touch long-press, so it's harmless at desktop sizes. */
+  .preview-overlay { position: fixed; inset: 0; z-index: 120; display: none;
+    align-items: center; justify-content: center; background: rgba(0,0,0,.74); padding: 20px; }
+  .preview-overlay.show { display: flex; }
+  .preview-overlay img { max-width: 90vw; max-height: 84vh; border-radius: 14px;
+    box-shadow: 0 14px 50px rgba(0,0,0,.8); }
+  .preview-overlay .preview-close { position: fixed; top: 10px; right: 16px; color: #fff;
+    font-size: 30px; line-height: 1; font-weight: 700; cursor: pointer; text-shadow: 0 1px 4px #000; }
+
+  /* ── mobile reflow (iPhone portrait ~390×844; landscape secondary) ──────────────
+     Everything is scoped to narrow viewports; the desktop layout above is untouched. */
+  @media (max-width: 760px) {
+    html, body { height: auto; }
+    body { overflow: auto; }
+    /* single column, whole page scrolls — kills the play-area-squeezed-between-two-sidebars complaint */
+    .app { display: flex; flex-direction: column; height: auto; min-height: 100dvh; overflow-x: clip; }
+
+    /* compact, wrapping top bar + a Log toggle */
+    .topbar { order: 0; flex-wrap: wrap; height: auto; gap: 4px 10px; padding: 6px 10px; }
+    .topbar a { padding: 3px 3px; }
+    .logtoggle { display: inline-block; }
+
+    /* flatten the rail so its opponent panel / phasebar / your panel become direct flex items we can
+       interleave: opponent strip up top, your strip down by the prompt (Arena-style vertical order). */
+    .rail { display: contents; }
+    .phasebar { display: none; }
+    .pinfo.opp  { order: 1; }
+    .center     { order: 2; }
+    .pinfo.self { order: 3; }
+    .logpanel   { order: 4; }
+
+    /* player panels → compact horizontal strips */
+    .pinfo { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin: 6px 8px; padding: 6px 8px; }
+    .pinfo .who { flex: 0 0 auto; }
+    .pinfo .life { font-size: 20px; margin: 0; }
+    .pinfo .floatmana { margin: 0; }
+    .pinfo .piles { flex: 1 1 auto; justify-content: flex-end; }
+
+    /* board grows with its content; the page scrolls (no inner scroll pane) */
+    .center { min-width: 0; }
+    .play { overflow: visible; padding: 6px 6px; }
+    .half { flex: none; }
+
+    /* phase/step bar must never force the page wide — scroll it internally instead */
+    .stepbar { overflow-x: auto; }
+
+    /* bottom sheet: the prompt is ALWAYS reachable (sticky bottom); the log hides behind a toggle */
+    .logpanel { position: sticky; bottom: 0; z-index: 30; background: var(--rail);
+      border-left: none; border-top: 1px solid var(--line);
+      display: flex; flex-direction: column; }
+    .promptbox { order: 2; border-bottom: none; max-height: 46vh; overflow: auto;
+      box-shadow: 0 -6px 20px rgba(0,0,0,.5); }
+    .logtitle { order: 0; display: none; }
+    #log { order: 1; display: none; max-height: 40vh; }
+    body.show-log .logtitle { display: block; }
+    body.show-log #log { display: block; }
+
+    /* bigger touch targets */
+    .step .sdotrow { height: 34px; }
+    .step .sdot { width: 15px; height: 15px; }
+    .decklist { min-width: 0; }
+    button.opt, button.act, button.pass { padding: 9px 12px; }
+    .pile { padding: 6px 5px; }
+  }
 </style>
 </head>
 <body>
@@ -304,6 +378,7 @@
       <a href="?">demo</a> ·
       <a href="?p0=burn&amp;p1=bears">burn</a> ·
       <a href="?p0=bears&amp;p1=burn">bears</a></span>
+    <button class="logtoggle" id="logToggle" title="Show / hide the game log">▤ Log</button>
   </div>
 
   <div class="rail" id="rail"></div>
@@ -653,7 +728,8 @@
   }
 
   function pinfoEl(p, you) {
-    const d = el("div", "pinfo" + (view.active_player === p.player ? " active" : ""));
+    // `.self`/`.opp` let the mobile reflow place your panel by the prompt and the opponent's up top.
+    const d = el("div", "pinfo" + (you ? " self" : " opp") + (view.active_player === p.player ? " active" : ""));
     d.dataset.pid = p.player; // target-arrow destination for player-targeting spells
     // If this player is a legal target of the current choice, make the whole panel a click target.
     const pIdx = playerOptIdx(p.player);
@@ -1276,6 +1352,10 @@
   }
   $("modalClose").onclick = () => $("modal").classList.remove("show");
   $("modal").onclick = (e) => { if (e.target === $("modal")) $("modal").classList.remove("show"); };
+  // Mobile "Log" toggle: the game log is hidden by default on narrow screens (only the current prompt
+  // stays always-on); this flips `body.show-log` to reveal/collapse the history.
+  const logToggle = document.getElementById("logToggle");
+  if (logToggle) logToggle.onclick = () => { logToggle.classList.toggle("on", document.body.classList.toggle("show-log")); };
 
   // ── misc ────────────────────────────────────────────────────────────────
   function nameOf(id) {
