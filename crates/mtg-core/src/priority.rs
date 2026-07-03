@@ -1203,7 +1203,7 @@ impl Engine {
 
     /// Whether `p` can pay `cost` to activate an ability of `source`. Handles the components the
     /// starter set uses (mana, `{T}`); other components aren't masked yet and pass through.
-    fn can_pay_cost(&self, p: PlayerId, source: ObjId, cost: &Cost) -> bool {
+    pub(crate) fn can_pay_cost(&self, p: PlayerId, source: ObjId, cost: &Cost) -> bool {
         if let Some(m) = &cost.mana {
             // Exclude sources committed to a non-mana component from the mana check (they'll be
             // tapped/sacrificed before mana is paid, so they can't also produce it) — #57. `{T}`
@@ -1235,6 +1235,11 @@ impl Engine {
                 // permanents (e.g. `{T}, Sacrifice this:` needs the source itself on the field).
                 CostComponent::Sacrifice(spec) => {
                     self.sacrifice_candidates(p, source, spec).len() as u32 >= cost_count(&spec.min)
+                }
+                // Discard (CR 701.8): payable iff the payer has enough matching cards in the zone
+                // (normally the hand) — "Discard a card:" needs at least one card in hand.
+                CostComponent::Discard(spec) => {
+                    self.discard_candidates(p, spec).len() as u32 >= cost_count(&spec.min)
                 }
                 // Crew N (CR 702.122): payable iff untapped creatures you control total power ≥ N.
                 CostComponent::Crew(n) => {
@@ -1413,6 +1418,7 @@ impl Engine {
                     }
                 }
                 CostComponent::Sacrifice(spec) => self.pay_sacrifice(p, source, spec),
+                CostComponent::Discard(spec) => self.pay_discard(p, spec),
                 CostComponent::Crew(n) => self.pay_crew(p, source, *n),
                 // "Exile this card from your graveyard" — move the source to exile as the cost.
                 CostComponent::ExileSelfFromGraveyard => {
@@ -1549,6 +1555,49 @@ impl Engine {
                 min: want,
                 max: want,
                 description: "sacrifice as a cost".to_string(),
+            };
+            let idxs = match self.ask(payer, &req) {
+                DecisionResponse::Indices(i) => {
+                    self.distinct_valid_indices(&i, candidates.len(), want)
+                }
+                _ => (0..want as usize).collect(),
+            };
+            idxs.into_iter().map(|i| candidates[i]).collect()
+        };
+        for obj in chosen {
+            let owner = self.state.object(obj).owner;
+            self.state.move_object(obj, Zone::Graveyard, owner);
+            self.broadcast(GameEvent::ObjectMoved { obj, to: Zone::Graveyard });
+        }
+    }
+
+    /// The cards `payer` could discard to pay a [`CostComponent::Discard`] — cards in `spec.zone`
+    /// (normally the hand) they control that match the filter. "Discard a card" = any hand card.
+    fn discard_candidates(&self, payer: PlayerId, spec: &SelectSpec) -> Vec<ObjId> {
+        self.state
+            .player(payer)
+            .zone_ids(spec.zone)
+            .iter()
+            .copied()
+            .filter(|&o| self.enter_filter_matches(o, &spec.filter, payer))
+            .collect()
+    }
+
+    /// Pay a [`CostComponent::Discard`]: discard `spec.min` matching cards (CR 701.8 — move to the
+    /// graveyard). When more than enough candidates exist, the payer chooses which (`SelectCards`);
+    /// when exactly determined, no decision is asked.
+    fn pay_discard(&mut self, payer: PlayerId, spec: &SelectSpec) {
+        let candidates = self.discard_candidates(payer, spec);
+        let want = cost_count(&spec.min).min(candidates.len() as u32);
+        let chosen: Vec<ObjId> = if candidates.len() as u32 <= want {
+            candidates
+        } else {
+            let req = DecisionRequest::SelectCards {
+                reason: SelectReason::Discard,
+                from: candidates.clone(),
+                min: want,
+                max: want,
+                description: "discard as a cost".to_string(),
             };
             let idxs = match self.ask(payer, &req) {
                 DecisionResponse::Indices(i) => {

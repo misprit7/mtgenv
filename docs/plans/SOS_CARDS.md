@@ -192,7 +192,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Burrog Banemaker | - | `sos` | ✅ done | deathtouch + activated pump |
 | Burrog Barrage | - | `sos` | ⏳ | conditional pump + power-based damage |
 | Cauldron of Essence | - | `sos` | ⏳ | dies-drain + activated reanimation |
-| Charging Strifeknight | - | `sos` | ⏳ | haste + tap/discard loot activated |
+| Charging Strifeknight | discard-cost | `sos` | ✅ done | haste + {T},Discard-a-card: draw (CostComponent::Discard wired) |
 | Chase Inspiration | - | `sos` | ✅ done | pump + grant hexproof |
 | Chelonian Tackle | - | `sos` | ✅ done | pump + fight up to one |
 | Colossus of the Blood Age | - | `sos` | ⏳ | ETB drain + dies rummage draw |
@@ -587,6 +587,14 @@ computed as `generic + colored` at cast, so it under-counts hybrid/mono-hybrid p
 
 Next hybrid follow-up: rebuild the creature-died flag *with* Essenceknit Scholar (now unblocked); then
 Moseo, Abstract Paintmage.
+
+## Discard-cost activated — ✅ DONE (`CostComponent::Discard` wired)
+`CostComponent::Discard(SelectSpec)` already existed but was **defined-but-unpaid** (`_ => {}` in
+`pay_cost`, `_ => true` in `can_pay_cost`). Now wired: `can_pay_cost` gates on having ≥`min` matching
+cards in `spec.zone` (the hand); `pay_cost` calls `pay_discard` (mirrors `pay_sacrifice` — asks which to
+discard when there's a choice, moves to graveyard). `can_pay_cost` made `pub(crate)` for card-level cost
+tests. → **Charging Strifeknight** (`{T}, Discard a card: Draw`). Unblocks the discard-cost half of
+Hardened Academic (still needs S9-trigger — has one) / Rubble Rouser (reflexive-mana, defer).
 
 ## S18 graveyard-activated — ✅ DONE (`6190bb2`)
 _(scoped plan below, now implemented: `CostComponent::ExileSelfFromGraveyard` + graveyard enumeration in `legal_priority_actions` + exile-on-pay. → Eternal Student, Stone Docent. Postmortem Professor / Rubble Rouser still deferred.)_

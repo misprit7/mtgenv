@@ -9,6 +9,7 @@ pub mod banishing_betrayal;
 pub mod blech_loafing_pest;
 pub mod bogwater_lumaret;
 pub mod burrog_banemaker;
+pub mod charging_strifeknight;
 pub mod chase_inspiration;
 pub mod chelonian_tackle;
 pub mod comforting_counsel;
@@ -111,6 +112,7 @@ pub fn register(db: &mut CardDb) {
     blech_loafing_pest::register(db);
     bogwater_lumaret::register(db);
     burrog_banemaker::register(db);
+    charging_strifeknight::register(db);
     chase_inspiration::register(db);
     chelonian_tackle::register(db);
     comforting_counsel::register(db);
