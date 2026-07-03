@@ -319,16 +319,33 @@ pub fn counters_deck() -> Vec<u32> {
     deck
 }
 
-/// Resolve a web/CLI deck name to a `grp_id` list: the server-local complex decks first
-/// (`"counters"`), then the engine's [`mtg_core::cards::preset_deck`] (`burn`/`bears`/`demo`).
-/// `None` for an unknown name (callers fall back to the demo deck).
+/// Resolve a web/CLI deck name to a `grp_id` list. Precedence: built-in **presets** first
+/// ([`resolve_preset`]), then the server's user-built **custom decks**
+/// ([`crate::custom_decks`]). `None` for an unknown name (callers fall back to the demo deck).
+///
+/// Presets deliberately win a name collision, and [`crate::custom_decks::save`] refuses to create a
+/// custom that shadows a preset — so this order can never surprise a player. Custom decks are a
+/// server concern only: the gym / mtg-core resolve `mtg_core::cards::preset_deck` directly and
+/// never see customs (that boundary keeps self-play reproducible from the card pool alone).
 pub fn resolve_deck(name: &str) -> Option<Vec<u32>> {
+    resolve_preset(name).or_else(|| crate::custom_decks::resolve(name))
+}
+
+/// Resolve just the built-in presets: the server-local complex deck (`"counters"`), else the
+/// engine's [`mtg_core::cards::preset_deck`] (`burn`/`bears`/`demo`/`heralds`, and
+/// `selesnya`/`landfall`). `None` if `name` is not a preset.
+pub fn resolve_preset(name: &str) -> Option<Vec<u32>> {
     match name.to_ascii_lowercase().as_str() {
         "counters" => Some(counters_deck()),
         // "selesnya"/"landfall" fall through to the engine's official implemented-landfall
         // preset (mtg_core::cards::selesnya_landfall_deck) — NOT the server-local counters deck.
         other => mtg_core::cards::preset_deck(other),
     }
+}
+
+/// Is `name` a built-in preset? Used to keep custom decks from shadowing one.
+pub fn is_preset_name(name: &str) -> bool {
+    resolve_preset(name).is_some()
 }
 
 /// Build a game from optional per-seat deck names (`"counters"`/`"burn"`/`"bears"`/`"demo"`); any

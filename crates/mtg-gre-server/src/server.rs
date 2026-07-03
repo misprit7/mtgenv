@@ -403,6 +403,7 @@ pub(crate) fn stops_msg(s: &StopConfig) -> ServerMsg {
 
 /// Bind `addr` and serve until the process exits.
 pub async fn serve(addr: &str) -> std::io::Result<()> {
+    crate::custom_decks::load_all(); // restore user-built decks from data/decks/ across restarts
     warn_missing_card_art();
     let listener = TcpListener::bind(addr).await?;
     let local = listener.local_addr()?;
