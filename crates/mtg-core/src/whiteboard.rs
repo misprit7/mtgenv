@@ -1267,9 +1267,11 @@ impl EngineCore {
                 );
             }
             // Dynamic count: evaluate `n` as the object enters, with the entering object as source
-            // (so `ValueExpr::ManaSpent` reads what was paid to cast it). CR 614.1e.
+            // (so `ValueExpr::ManaSpent` reads what was paid to cast it) and the resolution's `x`
+            // carried through (so "enters with X +1/+1 counters" reads the chosen X — Pterafractyl).
+            // CR 614.1e.
             Rewrite::EntersWithCountersValue { kind, n } => {
-                let ctx = ResolutionCtx { source: Some(obj), ..Default::default() };
+                let ctx = ResolutionCtx { source: Some(obj), x: wb.ctx.x, ..Default::default() };
                 let count = self.eval_value(n, &ctx).max(0) as i32;
                 wb.actions.insert(
                     ai + 1,

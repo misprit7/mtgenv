@@ -227,7 +227,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Oracle's Restoration | - | `sos` | ✅ done | pump, draw, gain life |
 | Planar Engineering | - | `sos` | ✅ done | sacrifice lands, search basics onto battlefield |
 | Proctor's Gaze | - | `sos` | ✅ done | bounce plus search basic to battlefield |
-| Pterafractyl | - | `sos` | ⏳ | enters with X counters, ETB gain life |
+| Pterafractyl | - | `sos` | ✅ done | enters with X +1/+1 counters (fixed: perm resolution now carries `x` to ETB replacements), ETB gain 2 |
 | Pull from the Grave | - | `sos` | ⏳ | return creatures to hand, gain life |
 | Quick Study | - | `woe` | ✅ done | draw two cards |
 | Rapturous Moment | - | `sos` | ✅ done | draw, discard, add mana ritual |
@@ -239,7 +239,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Sneering Shadewriter | - | `sos` | ✅ done | ETB lose/gain life |
 | Splatter Technique | - | `sos` | ⏳ | modal draw/area damage |
 | Stadium Tidalmage | - | `sos` | ✅ done | ETB/attack loot draw-discard |
-| Stand Up for Yourself | - | `sos` | ⏳ | destroy target power-3+ creature |
+| Stand Up for Yourself | - | `sos` | ✅ done | destroy target power-3+ creature (Not(PowerAtMost(2))) |
 | Startled Relic Sloth | - | `sos` | ✅ done | combat trigger exile graveyard card |
 | Stormcarved Coast | - | `vow` | ✅ done | conditional enters-tapped dual |
 | Strixhaven Skycoach | - | `sos` | ✅ done | vehicle crew, ETB land search |

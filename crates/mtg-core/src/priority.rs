@@ -2118,10 +2118,12 @@ impl Engine {
                     let warp_cast = self.state.object(id).warp_cast;
                     // Permanent spell → enters the battlefield (CR 608.3), routed through the
                     // whiteboard so ETB replacement effects (enters-with-counters / -tapped)
-                    // apply and the ETB event (→ triggers) fires from commit.
+                    // apply and the ETB event (→ triggers) fires from commit. `x` carries the spell's
+                    // chosen X so an "enters with X +1/+1 counters" replacement reads it (Pterafractyl).
                     let ctx = ResolutionCtx {
                         controller: Some(obj.controller),
                         source: Some(id),
+                        x: obj.x,
                         ..Default::default()
                     };
                     let mut wb = Whiteboard::new(WbReason::Resolve(obj.id), ctx);
