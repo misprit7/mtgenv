@@ -1139,6 +1139,42 @@ impl Engine {
             }
         }
 
+        // Hand-activated abilities (cycling-style: Visionary's Dance's "{2}, Discard this card:"). A
+        // card in hand whose `Activated` ability carries `DiscardSelfFromHand`; gated like the others,
+        // and paying it discards the source to the graveyard.
+        for &h in &s.player(p).hand {
+            let Some(def) = s.def_of(h) else { continue };
+            for (i, ab) in def.abilities.iter().enumerate() {
+                let Ability::Activated { cost, effect, timing, restriction, is_mana } = ab else {
+                    continue;
+                };
+                if *is_mana
+                    || !cost.components.iter().any(|c| matches!(c, CostComponent::DiscardSelfFromHand))
+                {
+                    continue;
+                }
+                let timing_ok = match timing {
+                    Timing::Instant => true,
+                    Timing::Sorcery => sorcery_speed,
+                };
+                if !timing_ok {
+                    continue;
+                }
+                if matches!(restriction, Some(Restriction::OnlyYourTurn)) && p != s.active_player {
+                    continue;
+                }
+                if !self.can_pay_cost(p, h, cost) {
+                    continue;
+                }
+                let has_targets = collect_target_specs(effect)
+                    .iter()
+                    .all(|spec| self.target_candidates(spec, p).len() as u32 >= spec.min.max(1));
+                if has_targets {
+                    actions.push(PlayableAction::Activate { source: h, ability: AbilityRef(i as u32) });
+                }
+            }
+        }
+
         // Manual mana abilities (CR 605.3a). Offered ONLY to a seat with manual mana on (a UI
         // session): one `ActivateMana` per untapped usable source, so a human can tap specific
         // lands to control which sources fund a spell. Headless/agent seats leave this off and
@@ -1382,6 +1418,12 @@ impl Engine {
                     let owner = self.state.object(source).owner;
                     self.state.move_object(source, Zone::Exile, owner);
                     self.broadcast(GameEvent::ObjectMoved { obj: source, to: Zone::Exile });
+                }
+                // "Discard this card" — move the source (from hand) to the graveyard as the cost.
+                CostComponent::DiscardSelfFromHand => {
+                    let owner = self.state.object(source).owner;
+                    self.state.move_object(source, Zone::Graveyard, owner);
+                    self.broadcast(GameEvent::ObjectMoved { obj: source, to: Zone::Graveyard });
                 }
                 _ => {}
             }

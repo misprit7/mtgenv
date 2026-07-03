@@ -50,6 +50,10 @@ pub enum CostComponent {
     /// Eternal Student, Stone Docent). `legal_priority_actions` scans the graveyard for abilities
     /// carrying this component; paying it moves the source card to exile.
     ExileSelfFromGraveyard,
+    /// "Discard this card" — both the cost (discard the source) AND the marker that this `Activated`
+    /// ability is usable **from the hand** (a cycling-style ability: Visionary's Dance). Paying it
+    /// moves the source card to its owner's graveyard.
+    DiscardSelfFromHand,
 }
 
 /// Timing restriction for casting/activating (CR 117.1a, 602.5d/e).

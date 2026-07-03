@@ -90,6 +90,7 @@ pub mod traumatic_critique;
 pub mod ulna_alley_shopkeep;
 pub mod unsubtle_mockery;
 pub mod vibrant_outburst;
+pub mod visionarys_dance;
 pub mod wander_off;
 pub mod witherbloom_charm;
 pub mod zealous_lorecaster;
@@ -183,6 +184,7 @@ pub fn register(db: &mut CardDb) {
     ulna_alley_shopkeep::register(db);
     unsubtle_mockery::register(db);
     vibrant_outburst::register(db);
+    visionarys_dance::register(db);
     wander_off::register(db);
     witherbloom_charm::register(db);
     zealous_lorecaster::register(db);
