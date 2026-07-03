@@ -1,0 +1,16 @@
+{
+  "set": "SOS",
+  "set_name": "Secrets of Strixhaven",
+  "format": "PremierDraft",
+  "source": "17lands.com public datasets (CC BY 4.0)",
+  "files": {
+    "replay_data": "replay_data_public.SOS.PremierDraft.csv.gz",
+    "game_data": "game_data_public.SOS.PremierDraft.csv.gz"
+  },
+  "date_pulled": "2026-07-03",
+  "total_games": 582914,
+  "feature_sample_games": 80000,
+  "feature_snapshot_rows": 1437392,
+  "card_data_source": "game_data (GIH/OH/GP win rates)",
+  "note": "Generic-feature model + per-card rankings; card P/T/CMC/name joined from local Scryfall sqlite."
+}
