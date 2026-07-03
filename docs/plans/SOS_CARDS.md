@@ -273,7 +273,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Shopkeeper's Bane | - | `sos` | ✅ done | attack trigger gain life |
 | Silverquill Charm | - | `sos` | ✅ done | modal counters/exile/drain |
 | Sneering Shadewriter | - | `sos` | ✅ done | ETB lose/gain life |
-| Splatter Technique | - | `sos` | ⏳ | modal draw/area damage |
+| Splatter Technique | multi-player-ForEach | `sos` | ✅ done | modal: draw four / 4 to each creature+planeswalker (both players via `EachPlayer` area selector) (`6e6180c`) |
 | Stadium Tidalmage | - | `sos` | ✅ done | ETB/attack loot draw-discard |
 | Stand Up for Yourself | - | `sos` | ✅ done | destroy target power-3+ creature (Not(PowerAtMost(2))) |
 | Startled Relic Sloth | - | `sos` | ✅ done | combat trigger exile graveyard card |

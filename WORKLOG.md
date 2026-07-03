@@ -39,6 +39,10 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
   begin-of-step/conditional triggers pass only `resolve_effect`-direct tests, not the turn engine), and
   Abstract Paintmage / Fractal Tender / S16 end-step timing are blocked. Flagged to lead — a load-bearing
   trigger-system cap deserving its own careful commit, not a rushed rider.
+- **engine+cards(sos) — multi-player ForEach + Splatter Technique (`6e6180c`):** `select_for_each` now spans
+  ALL players when `chooser = EachPlayer` (area effects); every other `PlayerRef` stays single-player
+  (Artistic Process etc. unchanged). → **Splatter Technique** (modal: draw four / 4 to each creature+planeswalker
+  on both battlefields). Behaviour test asserts both sides take 4. 496 mtg-core tests green.
 - **engine+cards(sos) — two small filter caps (`0622d36`, `40ee29c`):** `CardFilter::HasKeyword` ("target
   creature with flying" etc., reads computed keywords) → **Glorious Decay** (modal destroy-artifact /
   4-to-flyer / exile-gy+draw); `CardFilter::Multicolored` (≥2 colors) → **Mage Tower Referee** (colorless
