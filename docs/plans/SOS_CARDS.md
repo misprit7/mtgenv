@@ -51,7 +51,7 @@ each cap unlocks the bracketed count. `⏳` = not yet built.
 
 | Cap | What it adds | Cards | Status |
 |---|---|---|---|
-| **S1** Surveil N | look at top N, put any number in graveyard, rest back (CR 701.42) — `Effect::Surveil` | 15 | ⏳ |
+| **S1** Surveil N | look at top N, put any number in graveyard, rest back (CR 701.42) — `Effect::Surveil` | 15 | ✅ **DONE** `cc58a7b` |
 | **S5** Opus | `SpellCast(I/S you control)` trigger + `ValueExpr::ManaSpentOnTrigger` + `≥5` condition | 13 | ⏳ |
 | **S8** Repartee | `SpellCast(I/S you control **that targets a creature**)` trigger (inspect cast targets) | 12 | ⏳ |
 | **S4** Infusion | per-turn per-player "gained life this turn" state + a `Condition` reading it | 12 | ⏳ |
@@ -308,7 +308,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Homesickness | S3 | `sos` | ⏳ | draw, tap, stun counters |
 | Hungry Graffalon | S6 | `sos` | ⏳ | Increment mechanic |
 | Hydro-Channeler | S13 | `sos` | ⏳ | mana only for instants/sorceries |
-| Imperious Inkmage | S1 | `sos` | ⏳ | ETB surveil 2 |
+| Imperious Inkmage | S1 | `sos` | ✅ done | ETB surveil 2 |
 | Informed Inkwright | S8 | `sos` | ⏳ | Repartee makes Inkling token |
 | Inkling Mascot | S8,S1 | `sos` | ⏳ | Repartee grants flying, surveil |
 | Inkshape Demonstrator | S17,S8 | `sos` | ⏳ | Ward, Repartee pump/lifelink |
@@ -388,7 +388,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Tragedy Feaster | S4,S17 | `sos` | ⏳ | Ward—Discard plus Infusion |
 | Transcendent Archaic | S7 | `sos` | ⏳ | converge, colors of mana spent |
 | Ulna Alley Shopkeep | S4 | `sos` | ⏳ | Infusion: gained-life-this-turn condition |
-| Unsubtle Mockery | S1 | `sos` | ⏳ | damage plus surveil 1 |
+| Unsubtle Mockery | S1 | `sos` | ✅ done | damage plus surveil 1 |
 | Vicious Rivalry | PayXLife | `sos` | ⏳ | additional cost pay X life; destroy MV<=X |
 | Visionary's Dance | S2 | `sos` | ⏳ | look-and-pick top two |
 | Wild Hypothesis | S1 | `sos` | ⏳ | Fractal token; surveil 2 |
