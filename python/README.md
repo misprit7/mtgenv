@@ -47,6 +47,14 @@ PYTHONPATH=python python/.venv/bin/python python/train.py --deck burn_vs_bears -
 tensorboard --logdir runs/
 ```
 
+### Self-play stepping (fleet, default)
+
+`selfplay_train.py` defaults to **`--vecenv fleet`** (M3.4): the N self-play games are stepped in
+`mtg_py.Fleet` worker threads (Rust, parallel) instead of the single-threaded Python pump — ~2.8× the
+throughput at 512 envs, byte-identical behavior (equivalence-gated), same learned policy. `--vecenv
+batched` selects the old pump as a fallback; `--num-workers N` sets the fleet thread count (default
+8). Deferred throughput levers toward fully-GPU-bound are documented atop `mtgenv_gym/fleet_selfplay.py`.
+
 ### Run naming (versioned)
 
 `selfplay_train.py` / `export_replays.py` name each run `<major>.<minor>-<slug>` (e.g. `2.7-bears-200k`)

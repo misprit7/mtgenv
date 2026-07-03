@@ -255,6 +255,10 @@ def main():
     ap.add_argument("--run-name", default=None, help="override the full run name (else versioned '<M>.<m>-<deck>-<steps>k')")
     ap.add_argument("--run-major", type=int, default=None,
                     help="bump the TB/replay version major (sticky via <tb-root>/.run_major); minor auto-increments")
+    ap.add_argument("--vecenv", default="fleet", choices=["fleet", "batched"],
+                    help="'fleet' (M3.4, worker-thread parallel stepping, ~2.8x — DEFAULT) or 'batched' "
+                         "(single-threaded Python pump, fallback)")
+    ap.add_argument("--num-workers", type=int, default=8, help="fleet worker threads (--vecenv fleet)")
     args = ap.parse_args()
 
     # Versioned run name (shared by the TB run dir + the lobby replay tag), unless --run-name overrides.
@@ -265,7 +269,8 @@ def main():
     model, ref = train_selfplay(
         deck=args.deck, timesteps=args.timesteps, n_envs=args.n_envs, pool_dir=args.pool_dir,
         tensorboard_log=args.tensorboard, subproc=args.subproc, shaping_coef=args.shaping_coef,
-        notes=args.notes, replay_every=args.replay_every, run_name=run_name, verbose=1,
+        notes=args.notes, replay_every=args.replay_every, run_name=run_name,
+        vecenv=args.vecenv, num_workers=args.num_workers, verbose=1,
     )
     wr_rand = play_winrate(model, args.deck, "random", 200, 9_000_000)
     wr_init = play_winrate(model, args.deck, ModelOpponent(ref), 200, 9_500_000)

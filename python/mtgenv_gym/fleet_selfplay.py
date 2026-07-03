@@ -9,6 +9,22 @@ learner decision again. Obs/masks cross once per pump round as bytes (`np.frombu
 Drop-in for `MaskablePPO` like the batched env: provides per-env masks via `env_method`. Opponent
 routing reuses `_PooledBatchedOpponent` unchanged through a tiny `_FleetEnvView` (ext_obs/ext_mask
 read the decoded batch row).
+
+Status (M3.4, shipped at ~2.8x over the pump at 512 envs, byte-identical behavior): the fleet is the
+default self-play vec env. It is NOT yet fully forward-bound (GPU ~44% peak). Profiling `step_wait`
+(256 envs) put `Fleet.advance` at 63% of the time — ~11 pump rounds per step (one per opponent
+sub-step between learner decisions), each a worker round-trip + a main-side O(N) re-assemble. The
+decode (14%) is already vectorized; an incremental-encode attempt (re-encode only changed rows) was
+measured **neutral-to-worse** (the per-round clone offset the savings) and reverted. DEFERRED levers
+toward fully-GPU-bound, in the order the profile suggests, for when throughput binds again (bigger
+pools / longer runs):
+  (a) incremental ASSEMBLE — have each `Fleet.advance` patch only the changed rows into a persistent
+      main buffer instead of re-stitching all N rows every round (kills the O(N)-per-round copy).
+  (b) fewer pump ROUNDS — most rounds only touch a few opponent-pending envs; collapse consecutive
+      opponent sub-steps of the same game where the codec allows, or overlap the learner forward with
+      the next round's stepping.
+  (c) bigger n_envs — now that envs are cheap, larger batches make the forward the bottleneck (the
+      GPU-batch-size story) rather than the pump.
 """
 
 from __future__ import annotations
