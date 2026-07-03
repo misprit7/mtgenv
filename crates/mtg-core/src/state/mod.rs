@@ -176,6 +176,10 @@ pub struct Player {
     pub counters: CounterBag,
     /// Lands played this turn (CR 116.2a / 505.6b: one per turn by default).
     pub lands_played_this_turn: u32,
+    /// Total life gained this turn (CR 118.9) — reset at the start of each turn, incremented by each
+    /// `GainLife`. Read by the SoS "Infusion — if you gained life this turn …" condition.
+    #[serde(default)]
+    pub life_gained_this_turn: u32,
     pub hand_size_limit: usize,
     pub has_lost: bool,
     /// Set when a draw is attempted from an empty library; the SBA (CR 704.5b) reads it on
@@ -197,6 +201,7 @@ impl Player {
             mana_pool: ManaPool::default(),
             counters: CounterBag::default(),
             lands_played_this_turn: 0,
+            life_gained_this_turn: 0,
             hand_size_limit: DEFAULT_HAND_SIZE,
             has_lost: false,
             drew_from_empty: false,

@@ -647,6 +647,10 @@ impl Engine {
     fn begin_turn(&mut self) {
         let ap = self.state.active_player;
         self.state.player_mut(ap).lands_played_this_turn = 0;
+        // "gained life this turn" (CR 118.9) is per-turn — reset it for every player at turn start.
+        for i in 0..self.state.players.len() {
+            self.state.players[i].life_gained_this_turn = 0;
+        }
         let perms = self.state.player(ap).battlefield.clone();
         for id in perms {
             if let Some(o) = self.state.objects.get_mut(&id) {

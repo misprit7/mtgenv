@@ -1212,7 +1212,13 @@ impl Engine {
                 kind,
             } => self.apply_damage(target, amount, source, kind),
             Action::Draw { player, count } => self.draw(player, count),
-            Action::GainLife { player, amount } => self.change_life(player, amount as i32),
+            Action::GainLife { player, amount } => {
+                self.change_life(player, amount as i32);
+                // Track life gained this turn (CR 118.9) for the "Infusion" condition.
+                if let Some(p) = self.state.players.get_mut(player.0 as usize) {
+                    p.life_gained_this_turn = p.life_gained_this_turn.saturating_add(amount);
+                }
+            }
             Action::LoseLife { player, amount } => self.change_life(player, -(amount as i32)),
             Action::AddCounters { obj, kind, n } => {
                 if let Some(o) = self.state.objects.get_mut(&obj) {

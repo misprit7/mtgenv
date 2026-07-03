@@ -53,6 +53,14 @@ pub(crate) fn holds_for_source(
             let p = resolve_player(state, *who, source_controller);
             life(state, p) <= eval_value(state, n, source_controller, source)
         }
+        Condition::GainedLifeThisTurn { who } => {
+            let p = resolve_player(state, *who, source_controller);
+            state
+                .players
+                .get(p.0 as usize)
+                .map(|pl| pl.life_gained_this_turn > 0)
+                .unwrap_or(false)
+        }
         Condition::ValueAtLeast(a, b) => {
             eval_value(state, a, source_controller, source)
                 >= eval_value(state, b, source_controller, source)

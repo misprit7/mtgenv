@@ -27,6 +27,8 @@ pub enum Condition {
     LifeAtMost { who: PlayerRef, n: ValueExpr },
     /// It is the controller's turn.
     YourTurn,
+    /// The named player has gained one or more life this turn (CR 118.9) — the SoS "Infusion" gate.
+    GainedLifeThisTurn { who: PlayerRef },
     /// Compare two values.
     ValueAtLeast(ValueExpr, ValueExpr),
 }
