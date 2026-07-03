@@ -39,6 +39,11 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
   begin-of-step/conditional triggers pass only `resolve_effect`-direct tests, not the turn engine), and
   Abstract Paintmage / Fractal Tender / S16 end-step timing are blocked. Flagged to lead — a load-bearing
   trigger-system cap deserving its own careful commit, not a rushed rider.
+- **engine+cards(sos) — two small filter caps (`0622d36`, `40ee29c`):** `CardFilter::HasKeyword` ("target
+  creature with flying" etc., reads computed keywords) → **Glorious Decay** (modal destroy-artifact /
+  4-to-flyer / exile-gy+draw); `CardFilter::Multicolored` (≥2 colors) → **Mage Tower Referee** (colorless
+  artifact creature, `SpellCast(Multicolored)` → +1/+1 self). Both filters wired in the target/enter/count
+  matchers; integration/filter tests included. 493 mtg-core tests green.
 - **cards(sos) — Abstract Paintmage (`00e18a9`):** closed the loop on the card that revealed the trigger
   gap. `{U}{U/R}{R}` 2/2 with a `BeginningOfStep(PrecombatMain)`/YourTurn trigger that floats restricted
   `{U}{R}`. Integration-tested: at your first main the trigger fires and the floated mana pays an I/S but

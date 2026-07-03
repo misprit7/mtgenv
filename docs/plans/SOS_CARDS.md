@@ -245,7 +245,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Erode | - | `sos` | ✅ done (sos) | destroy + opponent fetches basic land |
 | Essence Scatter | - | `m10` | ✅ done | counter target creature spell |
 | Fractalize | - | `sos` | ⏳ | becomes Fractal, base P/T X+1 |
-| Glorious Decay | - | `sos` | ⏳ | modal destroy/damage/exile-draw |
+| Glorious Decay | HasKeyword | `sos` | ✅ done | modal destroy-artifact / 4-to-flying-creature (`CardFilter::HasKeyword`) / exile-gy-card+draw (`0622d36`) |
 | Grapple with Death | - | `sos` | ✅ done | destroy artifact/creature, gain life |
 | Harsh Annotation | - | `sos` | ✅ done | destroy; controller makes Inkling token |
 | Heated Argument | Select-exile | `sos` | ✅ done | 6 to target creature; `Optional{IfYouDo{ exile a gy card (Select), 2 to ControllerOfTarget(0) }}` — landed the Select-exile-as-cost machinery (`5596fb4`) |
@@ -253,7 +253,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Interjection | - | `sos` | ✅ done | pump plus first strike |
 | Last Gasp | - | `rav` | ✅ done | -3/-3 to target creature |
 | Lorehold Charm | - | `sos` | ✅ done | modal: each-opp-sac artifact / reanimate MV<=2 from your gy / mass +1/+1+trample |
-| Mage Tower Referee | - | `sos` | ⏳ | multicolored-cast trigger self-counter |
+| Mage Tower Referee | Multicolored | `sos` | ✅ done | colorless artifact creature; `SpellCast(Multicolored)` (`CardFilter::Multicolored`) → +1/+1 self (`40ee29c`) |
 | Masterful Flourish | - | `sos` | ✅ done | pump plus indestructible |
 | Mind Roots | - | `sos` | ⏳ | discard two, put discarded land onto battlefield tapped |
 | Mind into Matter | - | `sos` | ⏳ | draw X, put permanent from hand into play |
