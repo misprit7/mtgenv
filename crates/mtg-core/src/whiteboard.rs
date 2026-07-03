@@ -227,6 +227,28 @@ impl EngineCore {
                 }
                 did
             }
+            // Conditional (CR 603.4 / intervening-if / "if …"): evaluated here (not only in
+            // `materialize`) so an *interactive* branch (a conditional Discard/Surveil/Search — Muse
+            // Seeker's "discard a card unless five or more mana …") actually runs. A **targeted**
+            // `then` inside an ability is still a reflexive sub-trigger (CR 603.7c): delegate the whole
+            // node to `materialize`, which registers the reflexive. `cond` is evaluated ctx-aware
+            // (so `ManaSpentOnTrigger`/`X` resolve).
+            Effect::Conditional { cond, then, otherwise } => {
+                let reflexive = ctx
+                    .source
+                    .zip(ctx.ability_index)
+                    .filter(|_| !crate::priority::collect_target_specs(then).is_empty());
+                if reflexive.is_some() {
+                    self.materialize(effect, ctx, wb, cursor);
+                    true
+                } else if self.cond_holds(cond, ctx) {
+                    self.interpret(then, ctx, sid, wb, cursor)
+                } else if let Some(otherwise) = otherwise {
+                    self.interpret(otherwise, ctx, sid, wb, cursor)
+                } else {
+                    true
+                }
+            }
             // "For each [selector] …" (CR): select the objects (asking if it's a choice), then run
             // `body` once per object with it bound as `EffectTarget::Each` (Dyadrine's "remove a
             // counter from each of two creatures you control"). Performed iff the selection reached

@@ -36,6 +36,15 @@ pub(crate) fn lands_you_control() -> ValueExpr {
     }
 }
 
+/// "an instant or sorcery spell" — `AnyOf([Instant, Sorcery])`. Shared by the SoS Opus / Repartee
+/// cast-trigger cycles ("whenever you cast an instant or sorcery spell").
+pub(crate) fn instant_or_sorcery() -> CardFilter {
+    CardFilter::AnyOf(vec![
+        CardFilter::HasCardType(CardType::Instant),
+        CardFilter::HasCardType(CardType::Sorcery),
+    ])
+}
+
 /// `CardFilter` matching a basic land card (CR 205.4b) — `All([Land, Supertype(Basic)])`.
 /// Shared by every "search your library for a basic land card" effect (fetch lands, Bushwhack,
 /// Lumbering Worldwagon…).

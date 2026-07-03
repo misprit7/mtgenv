@@ -10,25 +10,16 @@
 //! triggering spell recorded by the SpellCast trigger machinery.
 
 use crate::basics::Color;
+use crate::cards::helpers::instant_or_sorcery;
 use crate::cards::{creature, mana_cost, CardDb};
 use crate::effects::ability::{Ability, EventPattern, Keyword};
 use crate::effects::condition::{Condition, Duration};
-use crate::effects::target::CardFilter;
 use crate::effects::value::ValueExpr;
 use crate::effects::{Effect, EffectTarget};
 use crate::subtypes::CreatureType;
-use crate::basics::CardType;
 
 /// grp id (per-set ids live near their cards).
 pub const EXPRESSIVE_FIREDANCER: u32 = 254;
-
-/// "an instant or sorcery spell" — the Opus cast filter.
-pub(crate) fn instant_or_sorcery() -> CardFilter {
-    CardFilter::AnyOf(vec![
-        CardFilter::HasCardType(CardType::Instant),
-        CardFilter::HasCardType(CardType::Sorcery),
-    ])
-}
 
 pub fn register(db: &mut CardDb) {
     db.insert(
