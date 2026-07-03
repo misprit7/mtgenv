@@ -3,6 +3,42 @@
 Short, dated entries for future-agent consumption. Newest first. One line or a few bullets
 per unit of meaningful progress. Keep it terse — detail lives in `docs/` and git history.
 
+## 2026-07-03 (afternoon)
+
+- **webui (deck builder shipped):** lobby "Decks" tab — create/duplicate/edit/save custom decks
+  (searchable+filterable catalog, tap-to-add, steppers, mana curve, mobile-first), persisted to
+  gitignored data/decks/ (survive restarts), full REST CRUD (/api/decks GET/POST/PUT/DELETE) +
+  /api/cards catalog; per-seat picker now reads the live deck list; customs resolve in game
+  creation after presets (3b4f216, 1325456, eebf28a). Catalog switched from the 37-card preset
+  pool to the FULL registry via new `CardDb::iter()` (76976ee engine, 5a90f9e server) — 91 cards
+  incl. the whole SOS pool; art manifest regenned for all of them.
+- **webui (replays surfaced + overwrite bug):** lobby "Saved games" section lists every finished
+  game from data/replays/ (survives restarts; ▶ /play?replay=<id>) (bd6d810); fixed game-id
+  counter resetting to 1 per restart and silently clobbering old replay files — now seeds above
+  the max saved id (00dcd44). NOTE: some pre-fix replays 1–12 were already clobbered by test games.
+- **gym (TB infra + ladder + watchable replays):** run/notes TEXT summaries (--notes + auto config
+  block) + Custom Scalars "key metrics" dashboard on every run, backfilled into the 4 existing runs
+  (tb_meta.py, 4e0108d); GameLengthCallback (game/turns_mean); LadderEval finally wired into
+  train_selfplay's default callbacks (was dead-code drift since June) — old runs can't be backfilled
+  (pool pruned), fresh bears export run shows a real ladder (0.70/0.575/0.55/0.50 vs 10/25/50/75%).
+  Exported watchable replays to the lobby: 9-game bears greedy learning arc (step 0→200k), the 3
+  analyzed bears games, 1 heralds final.
+- **gym (bears sanity verdict):** combat mirror converges (greedy: attack/block/productive all
+  1.000, win 0.882 vs random baseline 0.502, 0% truncation); learns UNCONDITIONAL attack-all/
+  block-all — correct equilibrium for a vanilla 2/2 mirror (trades are always even), so bears
+  validates machinery but not combat judgment; next tier needs real tradeoffs (removal/asymmetric
+  P/T). Deck::Bears mirror added to mtg-py (c495b19).
+- **engine (M3 STARTED — resumable step API):** user greenlit; design doc committed
+  (docs/design/RESUMABLE_ENGINE.md, bf6d6af): stackful-coroutine session (all ~24 ask-sites funnel
+  through Engine::ask → yield there; game logic byte-identical, ~300 tests protected), blocking
+  Agent trait becomes a driver loop, endgame = GIL-free Rust fleet stepping, ONE PyO3 crossing per
+  micro-tick. Search/clone-for-MCTS explicitly CUT (user: learned search à la MuZero only, no
+  engine support needed) — GYM_PLAN §8-M3 re-scoped to throughput (f1dd9b3). M3.0 spike underway.
+- **sos-cards (standing grind):** 40 fully-implemented cards, 8 caps (MoveZone, Discard,
+  Counter+stack-statics → Surrak fully faithful = Selesnya 18/18 complete, Sacrifice, Surveil,
+  Infusion, token-keywords) + exhaustive-match loud guard (unwired IR leaves can't silently no-op;
+  new variants are compile errors). 318 mtg-core tests. CardDb::iter() for the UI catalog.
+
 ## 2026-07-03
 
 - **webui (mobile package):** game client is now phone-playable (user drives it over Tailscale).
