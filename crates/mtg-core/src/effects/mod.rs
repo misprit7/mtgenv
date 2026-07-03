@@ -286,6 +286,17 @@ pub enum Effect {
         selector: SelectSpec,
         body: Box<Effect>,
     },
+    /// Apply `body` once per **chosen target** in a variable multi-target `slot` — "tap up to two
+    /// target creatures. Put a stun counter on each of them" (Homesickness). The slot is declared as
+    /// a targeting spec at cast (CR 601.2c) exactly like any `Target(...)`; at resolution each chosen
+    /// target is bound to `EffectTarget::Each` in turn while `body` runs. `body` MUST reference its
+    /// per-iteration target via `Each` (not `Target`/`ChosenIndex`); the loop itself consumes the
+    /// slot's cursor positions. Distinct from `ForEach`, which iterates a resolution-time `Select`
+    /// rather than the spell's locked targets.
+    ForEachTarget {
+        slot: TargetSpec,
+        body: Box<Effect>,
+    },
     /// Distribute `total` among the `among` set (≥ `min_each` each), running `body` per unit.
     Distribute {
         total: ValueExpr,

@@ -38,6 +38,14 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
   = Ward {2} (S17) + Increment (S6, its +1/+1 sets the flag) + `BeginningOfStep(End)` intervening-if trigger →
   0/0 Fractal token with three +1/+1 counters (`fractal_token(3)`). The 6th of 8 Ward cards. Real-path tests: the
   end-step trigger fires through the engine and gates on the flag; a real `PutCounters`→`AddCounters` sets it. 541 tests.
+- **cards(sos) — Homesickness + `Effect::ForEachTarget` cap (queue item #4, apply-to-each-of-a-variable-multi-target).**
+  New IR leaf `ForEachTarget { slot: TargetSpec, body }`: the slot is declared as a targeting spec at cast (added
+  to `collect_specs_into`), and at resolution each chosen target of the (0–N) slot is bound to `EffectTarget::Each`
+  in turn while `body` runs — reusing the existing `foreach_current`/`Each` machinery (no new target-resolution
+  path). **Homesickness** `{4}{U}{U}` Instant = `TargetPlayer`+`Draw{ChosenTarget(0),2}` then `ForEachTarget` over
+  up-to-2 target creatures with `body = Tap{Each}+PutCounters{Each,Stun}`. Tests: IR snapshot, targeting-collection
+  (`target_specs_for` → [Player, Creature 0..2]), and resolution with 2 vs 1 chosen creatures. Reusable for any
+  "do X to each of up-to-N target creatures." 545 tests.
 
 ## 2026-07-03 (night)
 

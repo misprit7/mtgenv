@@ -332,6 +332,25 @@ impl EngineCore {
                 }
                 performed
             }
+            // "for each of the up-to-N target creatures, run `body`" (Homesickness). Bind each chosen
+            // target of the multi-target slot to `EffectTarget::Each` in turn; the loop consumes the
+            // slot's cursor positions (an "up to N" slot may have fewer picks, so stop when they run
+            // out). `body` references its per-iteration target via `Each`.
+            Effect::ForEachTarget { slot, body } => {
+                let probe = EffectTarget::Target(slot.clone());
+                let mut performed = false;
+                for _ in 0..slot.max.max(1) {
+                    match self.resolve_target(&probe, ctx, cursor) {
+                        Some(Target::Object(obj)) => {
+                            let prev = self.foreach_current.replace(obj);
+                            performed |= self.interpret(body, ctx, sid, wb, cursor);
+                            self.foreach_current = prev;
+                        }
+                        _ => break,
+                    }
+                }
+                performed
+            }
             // A no-op never counts as "performed" (so it can't satisfy an `IfYouDo` cost).
             Effect::Nothing => false,
             // Create token(s), then COMMIT them immediately (deferred→imperative boundary, #61) so a
@@ -1202,6 +1221,7 @@ impl EngineCore {
             | Effect::Optional { .. }
             | Effect::IfYouDo { .. }
             | Effect::ForEach { .. }
+            | Effect::ForEachTarget { .. }
             | Effect::Search { .. }
             | Effect::AddMana { .. }
             | Effect::Discard { .. }

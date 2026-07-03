@@ -58,8 +58,11 @@ real-path test; flip the ledger Status cell in the SAME commit).** Ordered by re
    (6th of 8 Ward cards). Remaining Ward: Mica + Prismari (PayLife + spell-copy/storm).
 3. **`pay_cost` `PayLife` arm** (tiny) + then Ward—Pay-life cards (**Mica**, **Prismari**) — BUT both are also
    blocked by spell-copy/storm secondaries, so PayLife alone yields 0 cards. Build it only alongside a consumer.
-4. **Apply-to-each-of-a-variable-multi-target** → **Homesickness** (`{4}{U}{U}`: draw target-player + tap up-to-2
-   + stun each of those 0–2). No `ChosenIndex` covers a variable count. Small; 1 card.
+4. ~~**Apply-to-each-of-a-variable-multi-target**~~ — **DONE** (agent 6). New `Effect::ForEachTarget { slot, body }`:
+   declares `slot` as a targeting spec at cast (added to `collect_specs_into`), then at resolution binds each chosen
+   target to `EffectTarget::Each` in turn and runs `body` (reusing the `foreach_current` machinery). → **Homesickness**
+   (`{4}{U}{U}`: `TargetPlayer`+`Draw{ChosenTarget(0),2}` then `ForEachTarget` over up-to-2 creatures with
+   `body = Tap{Each}+PutCounters{Each,Stun}`). Reusable for any "do X to each of up-to-N target creatures."
 5. **Spell-copy** (S14, ⏳ — token-copy already done). A real subsystem: mint a StackObject copy of a spell above
    the original (CR 707.10) + a "you may choose new targets" reselection. LOW practical yield — of its 7 cards,
    most are ALSO blocked elsewhere (Aziza tap-3 cost, Choreographed Sparks modal+creature-copy-grants, Mica
@@ -103,13 +106,12 @@ found `ConditionalStatic`, stun counters, `ValueExpr::{Sum,XTimes,NumTargets,Pow
 {Named,ManaValue,PowerAtMost}`, `Effect::{Fight,Distribute,BecomeCreature}` all LIVE. The audit's AUTHORABLE-NOW list is
 **fully swept**: Antiquities/Rancorous/Aberrant/Topiary/Thornfist done, Ancestral Anger already in `vow/`. **Plus
 2 cards the audit wrongly marked "lifelink-blocked"** — lifelink IS wired, so **Inkshape Demonstrator** (5th Ward
-card) and **Hardened Academic** are done too. **Remaining unauthored non-DFC cards all need a genuinely-new cap**
-(verified): **Homesickness** `{4}{U}{U}` → apply-to-each-of-a-variable-multi-target ("stun counter on each of a
-0–2 `Tap` slot"; no `ChosenIndex` covers a variable count); the rest need spell-copy / move-counters / counters-
-on-TARGET / dynamic-ManaValue / one-shot-set-base-P/T-on-target / pay-life / grant-arbitrary-ability, or are
-DFC/Lesson/planeswalker/named-keyword (deferred). **The no-cap card vein is now genuinely mined out** — next
-work is a new cap. Recommended order by realistic yield: **lifelink-adjacent already done → check double-strike
-wiring next (may free more) → Homesickness multi-target-each (1) → spell-copy (subsystem, ~1: Lumaret's Favor).**
+card) and **Hardened Academic** are done too. **Homesickness DONE** (agent 6, `Effect::ForEachTarget`).
+**Remaining unauthored non-DFC cards all need a genuinely-new cap** (verified): the rest need spell-copy /
+move-counters / counters-on-TARGET / dynamic-ManaValue / one-shot-set-base-P/T-on-target / pay-life /
+grant-arbitrary-ability, or are DFC/Lesson/planeswalker/named-keyword (deferred). **The no-cap card vein is now
+genuinely mined out** — next work is a new cap. Recommended order by realistic yield: **first/double-strike +
+per-turn-counter-tracker + multi-target-each all DONE → spell-copy (subsystem, ~1: Lumaret's Favor) → Fractalize.**
 Genuinely-absent caps (from the audit): spell-copy, move-counters, counters-on-TARGET value, no-max-hand,
 DYNAMIC ManaValue bounds, one-shot set-base-P/T on a target, self "costs less", grant-arbitrary-ability; DFC/
 Lesson/planeswalker/named-keyword buckets remain deferred (36 DFC + more).

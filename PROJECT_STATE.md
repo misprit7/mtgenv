@@ -105,7 +105,8 @@ MTGA client.
   card) → 541 tests.** New `Object.counter_added_this_turn` (set in the `AddCounters` executor) +
   `Condition::PutCounterOnSelfThisTurn`. ALSO corrected two wrong "unwired" beliefs by reading the code:
   first/double-strike combat damage is **already wired** (CR 510.4 two-substep in `combat/mod.rs` since `a15015f`,
-  with passing tests) — the handoff's #1 task was a no-op.
+  with passing tests) — the handoff's #1 task was a no-op. Then **Homesickness + `Effect::ForEachTarget` cap**
+  (apply a body to each chosen target of a variable multi-target slot, reusing `EffectTarget::Each`) → 545 tests.
 - **✅ #60 END-TO-END AUDIT COMPLETE — all 18 cards driven through the REAL cast→pay→resolve loop.** The
   prior behaviour tests called `resolve_effect` directly, bypassing casting + mana payment, so "18/18
   fully implemented" was *asserted, not proven*. This audit rebuilt a harness on the engine's `pub(crate)`
