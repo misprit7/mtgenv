@@ -100,7 +100,6 @@ mod tests {
     #[test]
     fn rapturous_moment_draws_discards_and_makes_mana() {
         use crate::agent::{Agent, DecisionRequest, DecisionResponse, PlayerView};
-        use crate::basics::Zone;
         use crate::cards::{build_game, grp};
         use crate::effects::action::{ResolutionCtx, WbReason};
         use crate::ids::{PlayerId, StackId};
@@ -121,7 +120,7 @@ mod tests {
         }
 
         // Library of three Forests to draw.
-        let mut state = build_game(1, &[&[grp::FOREST, grp::FOREST, grp::FOREST], &[]]);
+        let state = build_game(1, &[&[grp::FOREST, grp::FOREST, grp::FOREST], &[]]);
         let effect = state.card_db().get(RAPTUROUS_MOMENT).unwrap().spell_effect().unwrap().clone();
         let mut e = Engine::new(state, vec![Box::new(DiscardAgent), Box::new(DiscardAgent)]);
         e.resolve_effect(

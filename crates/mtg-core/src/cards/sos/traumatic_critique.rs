@@ -101,7 +101,7 @@ mod tests {
     #[test]
     fn traumatic_critique_deals_x_and_loots() {
         use crate::agent::{Agent, DecisionRequest, DecisionResponse, PlayerView};
-        use crate::basics::{Target, Zone};
+        use crate::basics::Target;
         use crate::cards::{build_game, grp};
         use crate::effects::action::{ResolutionCtx, WbReason};
         use crate::ids::{PlayerId, StackId};
@@ -123,7 +123,7 @@ mod tests {
         }
 
         // Caster library has two Forests to draw.
-        let mut state = build_game(1, &[&[grp::FOREST, grp::FOREST], &[]]);
+        let state = build_game(1, &[&[grp::FOREST, grp::FOREST], &[]]);
         let effect = state.card_db().get(TRAUMATIC_CRITIQUE).unwrap().spell_effect().unwrap().clone();
         let mut e = Engine::new(state, vec![Box::new(DiscardAgent), Box::new(DiscardAgent)]);
         let p1 = e.state.player(PlayerId(1)).life;

@@ -139,7 +139,8 @@ pub(crate) fn fractal_token(counters: u32) -> TokenSpec {
 }
 
 /// The "Spirit" token (CR 111.3): a 2/2 red-and-white Spirit. Shared by every Spirit-maker (Group
-/// Project, Living History, Garrison Excavator, …).
+/// Project, Living History, Garrison Excavator, …). Ready for the next Spirit-maker card.
+#[allow(dead_code)]
 pub(crate) fn spirit_token() -> TokenSpec {
     TokenSpec {
         name: "Spirit".to_string(),
