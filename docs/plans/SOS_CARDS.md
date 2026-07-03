@@ -4,56 +4,55 @@ Standing workstream: implement the Secrets of Strixhaven set for **limited (40-c
 `mtg-core`, easiest-first, correctness over count. This ledger is the capability index + full
 per-card triage, modeled on `SELESNYA_LANDFALL_CARDS.md`.
 
-## ▶ NEXT AGENT — start here (handoff from sos-cards-3, 2026-07-03)
+## ▶ NEXT AGENT — start here (handoff from sos-cards-4, 2026-07-03)
 
-Tree clean, 496 mtg-core tests green. This session shipped **9 cards + 7 caps** (S15 impulse-play, S13
-restricted-mana, Select-exile-as-cost, begin-of-step-triggers, `CardFilter::HasKeyword`,
-`CardFilter::Multicolored`, multi-player-ForEach — all with tests). Handed off at context-fatigue (quality
-was still green — this is a risk-curve call, not a broken state). **Every remaining reachable card needs a
-small-but-load-bearing cap; do each fresh, one commit, with a test.** Prioritized by yield:
+Tree clean, **509 mtg-core tests green**, all pushed. This session (sos-cards-4) shipped **5 cards + 4 caps**,
+all with tests incl. real-turn-engine integration tests where a trigger fires. Handing off at a natural
+boundary (still green — the small/clean caps are largely picked; what remains is heavier). What landed:
+- **Multi-target MoveZone** (`12c41f8`, E1 extension) → **Pull from the Grave**. `chosen_targets` is a FLAT
+  `Vec<Target>`; a `max>1` slot flattens all picks into it, so the MoveZone arm loops up to `spec.max`.
+  **Invariant (in the arm):** a `max>1` slot must be the spell's LAST targeting sub-effect.
+- **Source-threaded `Not(ItSelf)`** (`1f6e284`) → **Ascendant Dustspeaker**. `target_candidates` /
+  `target_matches_filter` now take `source: Option<ObjId>` + a `CardFilter::ItSelf` arm → "another target"
+  excludes the source at the *targeting* layer (not just resolution).
+- **S21 cast-with-{X} trigger** (`134444d`, `HasXInCost` in `enter_filter_matches`) → **Matterbending Mage**.
+- **`CreateToken.dynamic_counters`** (`9d2a856`) → **Wild Hypothesis** + **Snarl Song** (Snarl Song was FREE:
+  cap + S7 `ColorsSpent`). The Quandrix "0/0 Fractal → X/X" pattern; reusable.
 
-1. **Multi-target MoveZone** — ◑ **Pull from the Grave DONE** (`12c41f8`). Crux resolved: `chosen_targets`
-   is a FLAT `Vec<Target>` — a `max>1` slot flattens all its picks into it (parse_targets pushes one entry
-   per `(slot,cand)` pair; RandomAgent's `subset` produces multiple pairs). The `MoveZone` arm now loops up
-   to `spec.max`, emitting one `Action::MoveZone` per chosen object. **Invariant (documented in the arm): a
-   `max>1` slot must be the spell's LAST targeting sub-effect** — the flat cursor can't tell where one
-   multi-slot's picks end and a following targeting slot begins (all real "return up to N" cards satisfy
-   this; later clauses are non-targeting). The other two cards need ORTHOGONAL caps, not this one:
-   - **Divergent Equation** ("up to **X** target"): `TargetSpec.max` is a fixed `u32`; needs a **dynamic
-     target count driven by the cast's X** (max = chosen X). Separate cap — leave until built.
-   - **Moment of Reckoning** ("choose up to four; may choose the same mode more than once"): **repeatable
-     modal modes** (one target per chosen instance). Separate/bigger cap — deferred with the modal work.
-2. **Another-target self-exclusion** — ✅ **DONE** (`1f6e284`). Ascendant Dustspeaker authored (ETB "+1/+1
-   on another target creature you control" + begin-combat gy-exile + Flying). `target_candidates` and
-   `target_matches_filter` now take a `source: Option<ObjId>` (threaded from the cast/activate/trigger call
-   sites; `None` at spell prechecks/tests) and a `CardFilter::ItSelf => source == Some(id)` arm, so
-   `Not(ItSelf)` excludes the ability's own source at the **targeting** layer. End-to-end tests: with a 2nd
-   creature the counter lands on the other; alone the trigger has no legal target and is removed (CR 603.3c).
-2b. **S21 cast-with-{X} trigger + Matterbending Mage** — ✅ **DONE** (`134444d`), picked up out of order as a
-   clean win once the `Not(ItSelf)` cap landed (its ETB "return up to one OTHER target creature" reuses it).
-   Added a `HasXInCost` arm to `enter_filter_matches`, so `SpellCast(All([ControlledBy, HasXInCost]))` fires;
-   the trigger grants the Mage `CantBeBlocked` (a `Qualification`, not a keyword) until EOT. See the S21 row.
-3. **dynamic-MV filter — Mind into Matter — ⚠️ NOT 1 cap, it's 3; DEFERRED (assessed, not attempted):**
-   "Draw X. Then you may put a permanent card with MV≤X from your hand onto the battlefield **tapped**."
-   Needs THREE new pieces, none trivial: (a) **dynamic-MV filter** — `count_filter_matches` is EXHAUSTIVE and
-   takes **no `ctx`**, so a `ManaValueAtMost(ValueExpr)` sibling filter (ValueExpr *is* Eq/Serialize, so it
-   fits `CardFilter`) forces threading `ctx` through `count_filter_matches` + all its callers to read X;
-   (b) **`Effect::MoveZone` from a `Select`** (put a card from hand → battlefield) — MoveZone only handles
-   `EffectTarget::Target` today; (c) **enter-tapped** — `ZoneDest`/MoveZone has no tapped flag. Do these as
-   separate caps if/when a cheaper consumer appears; not worth it for one card.
-4. **set-base-P/T — split:** ✅ **Wild Hypothesis DONE** (`9d2a856`) — it does NOT need set-base-P/T; it's a
-   0/0 Fractal token entering with **X** +1/+1 counters + Surveil 2. Added `Effect::CreateToken.dynamic_counters:
-   Vec<(CounterKind, ValueExpr)>` (counter counts evaluated at resolution, baked onto the token's spec at
-   materialize — the token enters as an X/X). **New reusable cap** — the Quandrix "0/0 Fractal + N dynamic
-   counters" pattern. It immediately made **Snarl Song** a ZERO-new-cap card: ✅ **DONE** (`b58763d`) —
-   `CreateToken{count:2, dynamic_counters:[(+1/+1, ColorsSpent)]}` (each of the two tokens gets X counters) +
-   `GainLife(ColorsSpent)`; Converge via S7's `ValueExpr::ColorsSpent` (reads the resolving spell's
-   `colors_spent`). Still unlocks **Fractal Anomaly** (X = cards-drawn-this-turn, needs S19), **Emil** (X =
-   differently-named-lands, needs a DistinctNames ValueExpr + its {T} activated ability) as those X-value
-   ValueExprs land. ⏳ **Fractalize** still needs true set-base-P/T: "target creature *becomes* a green-and-blue
-   Fractal with base P/T = X+1, loses all other colors and creature types" — that's SET (replace) color/type
-   layer semantics (not Earthbend's ADD), so new `StaticContribution::{SetColors,SetCreatureTypes}` + a dynamic
-   `SetBasePT`. Higher-risk layer work — do carefully.
+**Fresh prioritized queue** (heavier caps now — each still: one cap, one card, one commit, a test):
+
+1. **S17 Ward** (⏳, gates **7** cards — the biggest single unblock; named in the Blocked set below).
+   "Ward {cost}" = a counter-unless-pay replacement when the permanent *becomes targeted* by an opponent.
+   Infra hint: the `Targeted { object, by }` event + `queue_watching_targeted_triggers` already exist (used
+   by Surrak's "becomes the target" trigger, `by_opponent`), and E2's `Effect::Counter` exists. Model Ward as
+   a triggered "when this becomes the target of a spell/ability an opponent controls, counter it unless they
+   pay {cost}" — the SoftCounter (counter-unless-pay) leaf is the new bit. Start with **Ward N (pay generic)**.
+2. **S10 Flashback** (⏳, **11** cards — highest raw count). Alt-cast from graveyard for a flashback cost,
+   then exile. **Infra likely partly present:** `Object.flashback_cast` and `warp_cast` flags already exist
+   (see `add_card`), and Warp is the cast-from-a-nonhand-zone analogue (`castable_from_exile` + the unified
+   exile-cast offer loop from S15, `d079eb0`). Likely = a graveyard analogue of that offer loop + exile-on-
+   resolve. Read the S15 impulse-play commits first — much of the plumbing is shared.
+3. **S2 Look-and-pick** (⏳, **8** cards) — "look at top N, put one/some in hand, rest on bottom." Distinct
+   from S15 impulse (which plays from exile); this is a hidden top-N selection into hand. Unlocks
+   **Geometer's Arthropod** (with S21 done + reading the *triggering spell's* X for the "top X" count).
+4. **Fractalize** (set-base-P/T, layer work — do carefully). "Target creature *becomes* a green-and-blue
+   Fractal, base P/T = X+1, **loses all other colors and creature types**." That's SET/replace color+type
+   layer semantics (not Earthbend's ADD): new `StaticContribution::{SetColors, SetCreatureTypes}` + a dynamic
+   `SetBasePT`. Also lays groundwork for other "becomes a Fractal" cards.
+
+**Assessed-and-deferred (don't re-derive — the analysis is done):**
+- **Mind into Matter** = **3 caps, not 1** (leave until a cheaper consumer): (a) dynamic-MV filter —
+  `count_filter_matches` is EXHAUSTIVE and takes **no ctx**, so a `ManaValueAtMost(ValueExpr)` sibling filter
+  (ValueExpr *is* Eq/Serialize → fits `CardFilter`) forces threading ctx through it + callers; (b) `MoveZone`
+  from a `Select` (put a card from hand → battlefield; MoveZone only handles `Target` today); (c) enter-tapped
+  (`ZoneDest`/MoveZone has no tapped flag).
+- **Divergent Equation** = dynamic-X target count (`TargetSpec.max` fixed `u32`; needs max = chosen X).
+- **Moment of Reckoning** = repeatable modal modes (choose same mode >1×, one target per instance).
+- **Ennis** = ETB blink (exile + delayed return next end step) + exile-count-this-turn condition.
+- **Tester of the Tangential** = pay-{X}-in-an-ability + a MoveCounters effect (move X counters between
+  creatures) — `Not(ItSelf)` (done) covers only its "another target creature".
+- **Fractal Anomaly / Emil** = the dynamic-counters cap is ready; they only need their X-value ValueExprs
+  (cards-drawn-this-turn = S19; differently-named-lands = a new DistinctNames value) + Emil's {T} ability.
 
 DEFERRED still (never build): DFC/modal, Lessons/Paradigm, planeswalkers, Casualty, Elder-Dragon grants;
 dies-triggers need LKI (Arnyn, Cauldron of Essence).
