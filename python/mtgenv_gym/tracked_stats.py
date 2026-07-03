@@ -51,6 +51,12 @@ REGISTRY: list[StatDef] = [
     StatDef("attack_rate", _ratio("attack_declared", "attack_eligible")),
     StatDef("block_rate", _ratio("block_declared", "block_eligible")),
     StatDef("playland_rate", _ratio("playland_taken", "playland_legal")),
+    # `productive_rate` = took a cast/land/activate when at least one was legal (vs passing). Unlike
+    # cast_rate/playland_rate — which are per-window selection rates between mutually-exclusive
+    # productive actions and so cap below 1.0 for optimal play — this → 1.0 for a policy that never
+    # squanders a priority window. It's OR-combined per window in decision_stats.rs (not derivable
+    # from the summed cast/land/activate fields), which is why it needs its own record fields.
+    StatDef("productive_rate", _ratio("productive_taken", "productive_legal")),
 ]
 
 

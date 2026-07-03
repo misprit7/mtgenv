@@ -30,6 +30,24 @@ pub fn summarize(req: &DecisionRequest, resp: &DecisionResponse) -> Vec<(&'stati
             let act = |a: &PlayableAction| {
                 matches!(a, PlayableAction::Activate { .. } | PlayableAction::ActivateMana { .. })
             };
+            // "Productive" = any non-pass game action (cast / land / activate). `cast_rate` and
+            // `playland_rate` are per-window action *selection* rates, so they cap below 1.0 for an
+            // optimal policy: when a cast and a land drop are BOTH legal in one window, taking one
+            // scores a miss against the other. `productive_rate = productive_taken/productive_legal`
+            // has no such artifact — it asks "when something useful was possible, did you do
+            // something useful (vs pass)?" and → 1.0 for optimal play. OR-combined per window here
+            // because it can't be recovered from the summed cast/land/activate fields downstream.
+            // Non-capturing (inlined, not `cast||land||act`) so it still coerces to the `fn` pointer
+            // `any`/`is` take — a closure that captured the others could not.
+            let productive = |a: &PlayableAction| {
+                matches!(
+                    a,
+                    PlayableAction::Cast { .. }
+                        | PlayableAction::PlayLand { .. }
+                        | PlayableAction::Activate { .. }
+                        | PlayableAction::ActivateMana { .. }
+                )
+            };
             vec![
                 ("priority_windows", 1.0),
                 ("cast_legal", b(any(cast))),
@@ -38,6 +56,8 @@ pub fn summarize(req: &DecisionRequest, resp: &DecisionResponse) -> Vec<(&'stati
                 ("playland_taken", b(is(chosen, land))),
                 ("activate_legal", b(any(act))),
                 ("activate_taken", b(is(chosen, act))),
+                ("productive_legal", b(any(productive))),
+                ("productive_taken", b(is(chosen, productive))),
                 ("priority_passed", b(matches!(resp, DecisionResponse::Pass))),
             ]
         }
@@ -80,18 +100,23 @@ mod tests {
             PlayableAction::PlayLand { card: ObjId(2) },
         ];
         let req = DecisionRequest::Priority { actions, can_pass: true };
-        // Took the cast (action 0).
+        // Took the cast (action 0). Both cast and land were legal, so playland scores a miss even
+        // though a productive action WAS taken — hence productive_taken=1 (the artifact-free view).
         let rec = summarize(&req, &DecisionResponse::Action(0));
         assert_eq!(field(&rec, "cast_legal"), 1.0);
         assert_eq!(field(&rec, "cast_taken"), 1.0);
         assert_eq!(field(&rec, "playland_legal"), 1.0);
         assert_eq!(field(&rec, "playland_taken"), 0.0);
         assert_eq!(field(&rec, "priority_windows"), 1.0);
-        // Passed instead: cast was legal but not taken.
+        assert_eq!(field(&rec, "productive_legal"), 1.0);
+        assert_eq!(field(&rec, "productive_taken"), 1.0);
+        // Passed instead: cast was legal but not taken, and nothing productive was taken.
         let rec = summarize(&req, &DecisionResponse::Pass);
         assert_eq!(field(&rec, "cast_legal"), 1.0);
         assert_eq!(field(&rec, "cast_taken"), 0.0);
         assert_eq!(field(&rec, "priority_passed"), 1.0);
+        assert_eq!(field(&rec, "productive_legal"), 1.0);
+        assert_eq!(field(&rec, "productive_taken"), 0.0);
     }
 
     #[test]
