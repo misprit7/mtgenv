@@ -15,6 +15,7 @@ pub mod rearing_embermare;
 pub mod shopkeepers_bane;
 pub mod silverquill_charm;
 pub mod sneering_shadewriter;
+pub mod traumatic_critique;
 pub mod vibrant_outburst;
 pub mod wander_off;
 pub mod zealous_lorecaster;
@@ -33,6 +34,7 @@ pub fn register(db: &mut CardDb) {
     shopkeepers_bane::register(db);
     silverquill_charm::register(db);
     sneering_shadewriter::register(db);
+    traumatic_critique::register(db);
     vibrant_outburst::register(db);
     wander_off::register(db);
     zealous_lorecaster::register(db);

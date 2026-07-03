@@ -154,6 +154,16 @@ impl Engine {
                 self.add_mana(player, mana, ctx);
                 true
             }
+            // Discard N cards (CR 701.8): the discarding player chooses which. Imperative + asks the
+            // agent, so it lives here (not `materialize`). Flush staged actions FIRST so a loot's
+            // "draw two, then discard a card" chooses from the post-draw hand. Performed iff at least
+            // one card was discarded (an empty hand performs nothing).
+            Effect::Discard { who, count } => {
+                self.flush_pending(wb);
+                let player = self.eval_player(*who, ctx);
+                let count = self.eval_value(count, ctx).max(0) as u32;
+                self.interpret_discard(player, count) > 0
+            }
             // "You may …" (CR 603.5 / optional effect): ask the controller; run `body` on yes.
             // Performed iff the controller said yes AND the body itself performed (so a "may" whose
             // body can't be carried out still reports "not done" to a wrapping `IfYouDo`).
@@ -263,6 +273,56 @@ impl Engine {
         if zone == Zone::Library {
             self.state.shuffle_library(searcher);
         }
+    }
+
+    /// Discard `count` cards from `player`'s hand (CR 701.8): the discarding player chooses which
+    /// (fewer if the hand is smaller). Mandatory — if the agent under-selects, the front of the
+    /// hand fills in. Returns the number actually discarded (for the `IfYouDo`/"performed" flag).
+    fn interpret_discard(&mut self, player: PlayerId, count: u32) -> usize {
+        let hand = self.state.player(player).hand.clone();
+        let n = (count as usize).min(hand.len());
+        if n == 0 {
+            return 0;
+        }
+        let req = DecisionRequest::SelectCards {
+            reason: SelectReason::Discard,
+            from: hand.clone(),
+            min: n as u32,
+            max: n as u32,
+            description: "Discard".into(),
+        };
+        let mut seen = std::collections::BTreeSet::new();
+        let mut chosen: Vec<ObjId> = match self.ask(player, &req) {
+            DecisionResponse::Indices(idxs) => idxs
+                .iter()
+                .filter_map(|&i| hand.get(i as usize).copied())
+                .filter(|o| seen.insert(*o))
+                .take(n)
+                .collect(),
+            DecisionResponse::Index(i) => hand
+                .get(i as usize)
+                .copied()
+                .filter(|o| seen.insert(*o))
+                .into_iter()
+                .collect(),
+            _ => Vec::new(),
+        };
+        // Discard is mandatory: if the agent under-picked, fill from the front of the hand.
+        for &o in &hand {
+            if chosen.len() >= n {
+                break;
+            }
+            if seen.insert(o) {
+                chosen.push(o);
+            }
+        }
+        let discarded = chosen.len();
+        for card in chosen {
+            let owner = self.state.object(card).owner;
+            self.state.move_object(card, Zone::Graveyard, owner);
+            self.broadcast(GameEvent::ObjectMoved { obj: card, to: Zone::Graveyard });
+        }
+        discarded
     }
 
     /// Select the objects a `ForEach`/`Select` ranges over: the `chooser`'s objects in `selector.zone`
@@ -696,7 +756,6 @@ impl Engine {
             // here, not a silent gap.
             Effect::Sacrifice { .. }
             | Effect::Counter { .. }
-            | Effect::Discard { .. }
             | Effect::Repeat { .. }
             | Effect::Distribute { .. }
             | Effect::Native { .. } => {
@@ -711,6 +770,7 @@ impl Engine {
             | Effect::ForEach { .. }
             | Effect::Search { .. }
             | Effect::AddMana { .. }
+            | Effect::Discard { .. }
             | Effect::Nothing => {}
         }
     }
