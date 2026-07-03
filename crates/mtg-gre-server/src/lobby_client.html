@@ -5,10 +5,24 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>mtgenv — lobby</title>
 <style>
-  :root { --bg:#0e1411; --panel:#16201b; --rail:#101713; --line:#23302a; --ink:#e7efe9;
-    --muted:#7e948a; --accent:#39d98a; --accent2:#2bb3ff; --warn:#b9821f; }
+  /* ── CMYK print theme ──────────────────────────────────────────────────────
+     Light = indigo ink linework on warm paper; Dark = cream linework on indigo
+     stock (print language, not glow). Spot colors (cyan/magenta/yellow) are shared.
+     Auto follows prefers-color-scheme; an explicit pick (data-theme on <html>) wins
+     either way. All components read these custom properties. */
+  :root {
+    --paper:#faf7ef; --card:#fffdf6; --ink:#232a4d; --muted:#575d86;
+    --cyan:#29b6d8; --magenta:#ec4f9d; --yellow:#f5c528;
+    --border: 2.5px solid var(--ink);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --paper:#14172a; --card:#1d2138; --ink:#e9e3d4; --muted:#a7abcc; }
+  }
+  :root[data-theme="light"] { --paper:#faf7ef; --card:#fffdf6; --ink:#232a4d; --muted:#575d86; }
+  :root[data-theme="dark"]  { --paper:#14172a; --card:#1d2138; --ink:#e9e3d4; --muted:#a7abcc; }
+
   * { box-sizing: border-box; }
-  body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.5 ui-sans-serif,system-ui,Segoe UI,Roboto,sans-serif; }
+  body { margin:0; background:var(--paper); color:var(--ink); font:14px/1.5 ui-sans-serif,system-ui,Segoe UI,Roboto,sans-serif; }
   /* Kill the double-tap-to-zoom (and its ~300ms click delay) on touch — the deck-builder steppers
      invite rapid taps that would otherwise zoom the page. Pinch-zoom stays available: we deliberately
      do NOT set user-scalable=no on the viewport, so accessibility zoom is untouched. */
@@ -16,128 +30,165 @@
   button, a, select, input, .tabbtn, .decktab, .dcard, .fchip, .stepper button {
     touch-action: manipulation;
   }
-  .wrap { max-width: 980px; margin: 0 auto; padding: 22px 18px 60px; }
-  h1 { font-size: 22px; margin: 0 0 2px; }
-  h1 .tag { color: var(--accent); }
-  .sub { color: var(--muted); margin: 0 0 22px; font-size: 13px; }
-  .panel { background: var(--panel); border:1px solid var(--line); border-radius: 12px; padding: 16px 18px; margin-bottom: 22px; }
-  .panel h2 { margin: 0 0 12px; font-size: 15px; }
-  .ghdr { display:flex; align-items:center; justify-content:space-between; }
-  .ghdr h2 { margin: 0 0 12px; }
-  button.small { padding: 5px 10px; font-size: 12px; }
-  button.rm { background: transparent; color: var(--muted); border:1px solid var(--line); padding: 5px 9px; font-size: 12px; }
-  button.rm:hover { color:#ff7a7a; border-color:#ff7a7a; }
+  /* Heavy condensed uppercase headers (print poster). */
+  h1, h2, .sectlbl, .seat h3, .badge, .tabbtn, .decktab, button {
+    font-family: "Avenir Next Condensed","Futura","Helvetica Neue",sans-serif;
+    text-transform: uppercase; letter-spacing:.02em; }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 20px 16px 60px; }
+  .apphdr { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+  h1 { font-size: 26px; font-weight: 800; margin: 0; }
+  h1 .tag { color: var(--magenta); }
+  /* tri-spot gradient wash rule under the header */
+  .hdrrule { height:5px; border-radius:3px; margin:9px 0 16px;
+    background: linear-gradient(90deg, var(--cyan), var(--magenta) 55%, var(--yellow)); }
+  .themebtn { box-shadow: 2px 2px 0 var(--cyan); padding:5px 11px; font-size:12px; white-space:nowrap; }
+  .themebtn:active { box-shadow:none; transform: translate(2px,2px); }
+  .sub { color: var(--muted); margin: 0 0 20px; font-size: 13px; }
+  .panel { background: var(--card); border:var(--border); border-radius: 14px 11px 13px 12px; padding: 15px 16px;
+    margin-bottom: 20px; box-shadow: 3px 3px 0 var(--cyan); }
+  .panel h2 { margin: 0 0 12px; font-size: 17px; font-weight: 800; }
+  .ghdr { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; }
+  .ghdr h2 { margin: 0 0 8px; }
+  /* Buttons — ink border, yellow offset that collapses on press (poster press). */
+  button { background: var(--card); color:var(--ink); border:var(--border); border-radius:9px 7px 8px 7px; padding:8px 15px;
+    font-weight:800; font-size: 13px; cursor:pointer; box-shadow: 3px 3px 0 var(--yellow); }
+  button:hover { background: var(--yellow); }
+  button:active { box-shadow:none; transform: translate(3px,3px); }
+  button.small { padding: 5px 10px; font-size: 11px; box-shadow: 2px 2px 0 var(--yellow); }
+  button.small:active { transform: translate(2px,2px); }
+  button.ghost { box-shadow:none; }
+  button.ghost:hover { background: var(--paper); border-color: var(--magenta); }
+  button.ghost:active { transform:none; }
+  button.rm { color: var(--muted); box-shadow:none; padding: 5px 9px; font-size: 12px; }
+  button.rm:hover { color:var(--magenta); border-color:var(--magenta); background:var(--card); }
+  button:disabled { opacity:.45; cursor:not-allowed; box-shadow:none; transform:none; }
   .seats { display:flex; gap:14px; flex-wrap: wrap; }
-  .seat { background: var(--rail); border:1px solid var(--line); border-radius: 10px; padding: 12px; min-width: 220px; flex:1; }
-  .seat h3 { margin:0 0 8px; font-size: 13px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing:.04em; }
-  label { display:block; font-size: 12px; color: var(--muted); margin: 8px 0 3px; }
-  select, input[type=text] { width:100%; background:#0c120f; color:var(--ink); border:1px solid var(--line);
-    border-radius:7px; padding:7px 8px; font-size: 13px; }
+  .seat { background: var(--paper); border:var(--border); border-radius: 11px 9px 10px 8px; padding: 12px; min-width: 220px; flex:1;
+    box-shadow: 3px 3px 0 var(--cyan); }
+  .seat h3 { margin:0 0 8px; font-size: 13px; color: var(--magenta); font-weight: 800; }
+  label { display:block; font-size: 11px; color: var(--muted); margin: 8px 0 3px; font-weight:700;
+    text-transform: uppercase; letter-spacing:.03em; }
+  select, input[type=text], .filterbar input { width:100%; background:var(--card); color:var(--ink); border:var(--border);
+    border-radius:8px; padding:7px 8px; font-size: 13px; font-family:inherit; }
+  input::placeholder { color: var(--muted); }
   .row { display:flex; gap:12px; align-items:flex-end; margin-top:14px; flex-wrap: wrap; }
   .row .grow { flex:1; min-width: 200px; }
-  button { background: var(--accent); color:#06140b; border:none; border-radius:8px; padding:9px 16px;
-    font-weight:700; font-size: 13px; cursor:pointer; }
-  button:hover { filter: brightness(1.07); }
-  button.ghost { background: transparent; color: var(--ink); border:1px solid var(--line); }
-  button:disabled { opacity:.45; cursor:not-allowed; }
   /* Cap the visible height so long lists (many games / training checkpoints) don't push the page
      down forever — the most-recent rows sit at the top and the rest are reachable by scrolling. */
-  .games { display:flex; flex-direction:column; gap:12px; max-height:850px; overflow-y:auto; }
+  .games { display:flex; flex-direction:column; gap:12px; max-height:850px; overflow-y:auto; padding: 2px 4px 4px 0; }
   .games::-webkit-scrollbar { width:10px; }
-  .games::-webkit-scrollbar-thumb { background:var(--line); border-radius:8px; }
-  .game { background: var(--rail); border:1px solid var(--line); border-radius:10px; padding:12px 14px;
-    display:flex; align-items:center; gap:14px; flex-wrap: wrap; }
-  .game .gid { font-weight:800; }
+  .games::-webkit-scrollbar-thumb { background:var(--ink); border-radius:8px; }
+  .game { background: var(--paper); border:var(--border); border-radius:10px 8px 11px 8px; padding:11px 13px;
+    display:flex; align-items:center; gap:12px; flex-wrap: wrap; box-shadow: 3px 3px 0 var(--cyan); }
+  .game .gid { font-weight:900; }
   .game .gname { color: var(--muted); }
-  .badge { font-size:11px; padding:2px 8px; border-radius:999px; font-weight:700; }
-  .badge.waiting { background:#2a2410; color:#e8c55b; }
-  .badge.running { background:#0f2a1c; color:var(--accent); }
-  .badge.finished { background:#101d2a; color:var(--accent2); }
+  .badge { font-size:11px; padding:2px 9px; border-radius:999px; font-weight:800; border:2px solid var(--ink); color:#232a4d; }
+  .badge.waiting { background:var(--yellow); }
+  .badge.running { background:var(--cyan); }
+  .badge.finished { background:var(--magenta); }
   .chips { display:flex; gap:6px; flex-wrap:wrap; }
-  .chip { font-size:11px; padding:2px 8px; border-radius:6px; border:1px solid var(--line); background:#0c120f; }
-  .chip.human { border-color:#2f5; }
-  .chip.open { border-color: var(--warn); color:#e8c55b; }
+  .chip { font-size:11px; padding:2px 8px; border-radius:6px; border:2px solid var(--ink); background:var(--card); color:var(--ink); }
+  .chip.human { border-color:var(--cyan); }
+  .chip.open { border-color: var(--magenta); color:var(--magenta); font-weight:700; }
   .spacer { flex:1; }
   .acts { display:flex; gap:8px; align-items:center; }
-  a.joinbtn { background: var(--accent2); color:#04121d; text-decoration:none; border-radius:8px; padding:7px 12px; font-weight:700; font-size:12px; }
-  a.joinbtn:hover { filter:brightness(1.08); }
-  .winner { color: var(--accent2); font-weight:700; }
+  a.joinbtn { background: var(--cyan); color:#232a4d; text-decoration:none; border:var(--border); border-radius:8px;
+    padding:6px 11px; font-weight:800; font-size:12px; text-transform:uppercase; box-shadow: 2px 2px 0 var(--magenta); }
+  a.joinbtn:active { box-shadow:none; transform:translate(2px,2px); }
+  .winner { color: var(--magenta); font-weight:800; }
   .empty { color: var(--muted); padding: 8px 2px; }
   .runhdr { margin: 12px 0 4px; font-size: 13px; }
   .runhdr:first-child { margin-top: 0; }
-  .runhdr .runname { font-weight: 700; color: var(--accent); }
+  .runhdr .runname { font-weight: 800; color: var(--cyan); }
   .runhdr .runmeta { color: var(--muted); font-weight: 400; font-size: 12px; }
   .hint { color: var(--muted); font-size: 12px; margin-top: 10px; }
-  .links a { color: var(--accent2); }
+  .links a { color: var(--cyan); }
   #newlinks { margin-top: 10px; font-size: 13px; }
-  #newlinks a { color: var(--accent2); margin-right: 12px; }
+  #newlinks a { color: var(--cyan); margin-right: 12px; font-weight:700; }
   /* tabs */
-  .tabbar { display: flex; gap: 4px; margin-bottom: 18px; border-bottom: 1px solid var(--line); }
-  .tabbtn { background: transparent; color: var(--muted); border: none; border-bottom: 2px solid transparent;
-    padding: 8px 16px; font-weight: 700; font-size: 14px; cursor: pointer; }
-  .tabbtn:hover { color: var(--ink); }
-  .tabbtn.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tabbar { display: flex; gap: 4px; margin-bottom: 18px; border-bottom: 2.5px solid var(--ink); }
+  .tabbtn { background: transparent; color: var(--muted); border: none; border-bottom: 3px solid transparent;
+    padding: 8px 16px; font-weight: 800; font-size: 14px; cursor: pointer; box-shadow:none; }
+  .tabbtn:hover { color: var(--ink); background: transparent; }
+  .tabbtn:active { transform:none; }
+  .tabbtn.active { color: var(--magenta); border-bottom-color: var(--magenta); }
   /* deck viewer */
   .decktabs { display: flex; gap: 6px; flex-wrap: wrap; }
-  .decktab { background: #0c120f; color: var(--ink); border: 1px solid var(--line); border-radius: 7px;
-    padding: 5px 10px; font-size: 12px; cursor: pointer; }
-  .decktab:hover { border-color: var(--accent); }
-  .decktab.active { border-color: var(--accent); color: var(--accent); }
+  .decktab { background: var(--card); color: var(--ink); border: var(--border); border-radius: 8px 6px 7px 6px;
+    padding: 4px 10px; font-size: 12px; font-weight:700; cursor: pointer; }
+  .decktab:hover { background: var(--yellow); }
+  .decktab.active { background: var(--magenta); color: #fff; box-shadow: 3px 3px 0 var(--cyan); }
   .decksummary { color: var(--muted); font-size: 13px; margin: 2px 0 12px; }
-  .deckgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); gap: 10px; }
-  .dcard { background: var(--rail); border: 1px solid var(--line); border-radius: 8px; padding: 8px;
-    position: relative; display: flex; flex-direction: column; gap: 5px; cursor: help; }
-  .dcard.partial { border-color: #f5c518; }
+  .deckgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); gap: 12px; padding: 2px 4px 4px 2px; }
+  .dcard { background: var(--card); border: var(--border); border-radius: 9px 7px 8px 7px; padding: 8px;
+    position: relative; display: flex; flex-direction: column; gap: 5px; cursor: help; box-shadow: 3px 3px 0 var(--cyan); }
+  .dcard.partial { box-shadow: 3px 3px 0 var(--yellow); }
   .dchdr { display: flex; justify-content: space-between; align-items: center; gap: 4px; }
-  .dcname { font-weight: 700; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dcname { font-weight: 800; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .dcmana { display: flex; gap: 1px; flex: 0 0 auto; }
   .dcmana .ms { width: 13px; height: 13px; }
-  .dcart { height: 70px; border-radius: 5px; background: #0c120f center/cover no-repeat; border: 1px solid var(--line); }
+  .dcart { height: 70px; border-radius: 5px; background: var(--paper) center/cover no-repeat; border: 2px solid var(--ink); }
   .dctype { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .dcfoot { display: flex; justify-content: space-between; align-items: center; font-size: 11px; }
-  .dccount { background: var(--accent); color: #06140b; border-radius: 999px; padding: 1px 7px; font-weight: 800; }
-  .dcpt { color: var(--ink); font-weight: 700; }
-  .dcwarn { position: absolute; top: 4px; right: 4px; background: #f5c518; color: #1a1205; border-radius: 4px;
-    font-size: 11px; font-weight: 900; padding: 0 3px; line-height: 15px; }
-  #cardpreview { position: fixed; display: none; width: 300px; border-radius: 12px; z-index: 200;
-    box-shadow: 0 12px 44px rgba(0,0,0,.8); pointer-events: none; }
+  .dccount { background: var(--cyan); color: #232a4d; border-radius: 999px; padding: 1px 7px; font-weight: 900; border:2px solid var(--ink); }
+  .dcpt { color: var(--ink); font-weight: 800; }
+  .dcwarn { position: absolute; top: 4px; right: 4px; background: var(--yellow); color: #232a4d; border-radius: 4px;
+    font-size: 11px; font-weight: 900; padding: 0 3px; line-height: 15px; border:2px solid var(--ink); }
+  #cardpreview { position: fixed; display: none; width: 300px; border-radius: 10px; z-index: 200;
+    border:2.5px solid var(--ink); box-shadow: 5px 5px 0 var(--magenta); pointer-events: none; }
   /* deck builder */
   .deckacts { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
   .deckhdr { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
   .bname { flex: 1 1 180px; }
   .bsum { color: var(--muted); font-size: 13px; margin: 2px 0 4px; }
-  .bsum b { color: var(--ink); font-size: 15px; }
-  .bwarn { color: #f5c518; font-size: 12px; margin-top: 3px; }
+  .bsum b { color: var(--ink); font-size: 16px; }
+  .bwarn { color: var(--magenta); font-size: 12px; margin-top: 3px; font-weight:700; }
   .curve { display: flex; align-items: flex-end; gap: 3px; height: 46px; margin: 4px 0 8px; }
   .curvecol { display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
     gap: 1px; font-size: 10px; color: var(--muted); flex: 1; height: 100%; }
-  .curvebar { width: 100%; background: var(--accent); border-radius: 3px 3px 0 0; min-height: 2px; }
+  .curvebar { width: 100%; background: var(--cyan); border:2px solid var(--ink); border-bottom:none;
+    border-radius: 3px 3px 0 0; min-height: 3px; }
   .filterbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 4px 0 10px; }
   .filterbar input { flex: 1 1 140px; }
   .filterbar select { width: auto; flex: 0 0 auto; padding: 5px 6px; font-size: 12px; }
-  .searchhelp { flex-basis: 100%; background: #0c120f; border: 1px solid var(--line); border-radius: 8px;
+  .searchhelp { flex-basis: 100%; background: var(--paper); border: var(--border); border-radius: 8px;
     padding: 8px 10px; font-size: 11px; color: var(--muted); line-height: 1.7; }
-  .searchhelp code { color: var(--accent); background: rgba(57,217,138,.08); padding: 0 3px; border-radius: 3px; }
-  .fchip { background: #0c120f; color: var(--muted); border: 1px solid var(--line); border-radius: 999px;
-    padding: 3px 9px; font-size: 11px; cursor: pointer; user-select: none; }
-  .fchip.on { border-color: var(--accent); color: var(--accent); }
-  .sectlbl { font-weight: 700; font-size: 12px; color: var(--muted); margin: 14px 0 8px;
-    text-transform: uppercase; letter-spacing: .04em; }
+  .searchhelp code { color: var(--ink); background: var(--yellow); padding: 0 3px; border-radius: 3px; font-weight:700; }
+  .fchip { background: var(--card); color: var(--muted); border: 2px solid var(--ink); border-radius: 999px;
+    padding: 3px 9px; font-size: 11px; font-weight:700; cursor: pointer; user-select: none; }
+  .fchip.on { background: var(--cyan); color: #232a4d; }
+  .sectlbl { font-weight: 800; font-size: 12px; color: var(--magenta); margin: 14px 0 8px; letter-spacing: .04em; }
   .dcard.addable { cursor: pointer; }
-  .dcard.addable:hover { border-color: var(--accent); }
-  .dcard .indeck { position: absolute; top: 4px; left: 4px; background: var(--accent2); color: #06140b;
-    border-radius: 999px; font-size: 11px; font-weight: 800; padding: 0 6px; }
+  .dcard.addable:hover { box-shadow: 3px 3px 0 var(--magenta), 6px 6px 0 var(--cyan); }
+  .dcard .indeck { position: absolute; top: 4px; left: 4px; background: var(--magenta); color: #fff;
+    border-radius: 999px; font-size: 11px; font-weight: 800; padding: 0 6px; border:2px solid var(--ink); }
   .stepper { display: flex; align-items: center; gap: 6px; }
-  .stepper button { background: #0c120f; color: var(--ink); border: 1px solid var(--line); border-radius: 6px;
-    width: 28px; height: 28px; font-size: 16px; font-weight: 800; cursor: pointer; padding: 0; }
-  .stepper button:hover { border-color: var(--accent); }
-  .zoombtn { position: absolute; bottom: 4px; right: 4px; background: rgba(6,20,11,.78); color: var(--ink);
-    border: 1px solid var(--line); border-radius: 6px; font-size: 12px; padding: 0 5px; line-height: 18px; cursor: pointer; }
+  .stepper button { background: var(--card); color: var(--ink); border: 2px solid var(--ink); border-radius: 6px;
+    width: 28px; height: 28px; font-size: 16px; font-weight: 900; cursor: pointer; padding: 0; box-shadow: 2px 2px 0 var(--yellow); }
+  .stepper button:hover { background: var(--yellow); }
+  .stepper button:active { box-shadow:none; transform: translate(2px,2px); }
+  .zoombtn { position: absolute; bottom: 4px; right: 4px; background: var(--card); color: var(--ink);
+    border: 2px solid var(--ink); border-radius: 6px; font-size: 12px; padding: 0 5px; line-height: 18px; cursor: pointer; box-shadow:none; }
+  .zoombtn:active { transform:none; }
 </style>
+<script>
+// Apply the saved theme BEFORE first paint (no flash). Absent/other = Auto (CSS follows the system
+// via prefers-color-scheme). Shared key `mtg_theme` with the game client so the pick carries across.
+(function () {
+  try {
+    var t = localStorage.getItem("mtg_theme");
+    if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+  } catch (e) {}
+})();
+</script>
 </head>
 <body>
 <div class="wrap">
-  <h1>mtg<span class="tag">env</span> · lobby</h1>
+  <div class="apphdr">
+    <h1>mtg<span class="tag">env</span> · lobby</h1>
+    <button id="themeBtn" class="themebtn" title="Cycle theme: Auto / Light / Dark">◐ Auto</button>
+  </div>
+  <div class="hdrrule"></div>
   <p class="sub">Set up a game and choose who plays each seat. Open one browser tab per human seat —
     games start automatically once every human seat is connected.</p>
 
@@ -988,6 +1039,23 @@ async function saveBuilder() {
     if (pane === "decks" && !allDecks.length) refreshDecks();
   };
 });
+
+// ── theme toggle: Auto (follow system) → Light → Dark, persisted to `mtg_theme` (shared with the
+// game client so the pick carries across pages). data-theme on <html>; absent = Auto, and the CSS
+// @media (prefers-color-scheme) follows the system live with no JS.
+const THEME_CYCLE = ["auto", "light", "dark"];
+const THEME_LABEL = { auto: "◐ Auto", light: "☀ Light", dark: "☾ Dark" };
+function currentTheme() {
+  const t = localStorage.getItem("mtg_theme");
+  return t === "light" || t === "dark" ? t : "auto";
+}
+function applyTheme(mode) {
+  if (mode === "auto") { document.documentElement.removeAttribute("data-theme"); localStorage.removeItem("mtg_theme"); }
+  else { document.documentElement.setAttribute("data-theme", mode); localStorage.setItem("mtg_theme", mode); }
+  const b = $("themeBtn"); if (b) b.textContent = THEME_LABEL[mode];
+}
+applyTheme(currentTheme()); // sync the button label to the persisted mode (the FOUC script set <html>)
+$("themeBtn").onclick = () => applyTheme(THEME_CYCLE[(THEME_CYCLE.indexOf(currentTheme()) + 1) % THEME_CYCLE.length]);
 
 buildForm();
 $("createBtn").onclick = createGame;
