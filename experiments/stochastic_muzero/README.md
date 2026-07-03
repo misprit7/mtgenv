@@ -7,32 +7,49 @@ has a known, stubborn failure (it chump-blocks the trampling 3/3 even at high li
 Everything here is **isolated**: this dir has its own venv, README, and `.gitignore`. It only
 *reads/imports* `python/mtgenv_gym/` and `crates/` — it never modifies them.
 
-> Status: **M0 ✅ · M1 ✅ · M2 ✅ · M3 finding #1 = pure run COLD-START COLLAPSE** (killed at ~67k
-> steps, 0% win — see below). **M3 run #2 = `3.1-muzero-swine-shaped` NOW TRAINING** (PBRS remedy;
-> 10%-gate at ~25k env-steps decides ride-or-kill). M4 harness ready.
+> Status: **M0 ✅ · M1 ✅ · M2 ✅ · M3 CONCLUDED — two-config HONEST NEGATIVE.** Both the pure
+> sparse-reward run and the PBRS-shaped run collapse at the sub-decision cold-start (~25–34k
+> env-steps each); neither reaches even random's 53.5% win-rate, let alone PPO's 0.90. **M4 judgment
+> comparison is moot** (the policy never learns competent play — see below). The pipeline, adapter,
+> and eval harness all work; the *finding* is that Stochastic MuZero doesn't learn swine at this budget.
 
-## M3 finding (pure sparse-reward run) — the sub-decision cold-start collapse
+## M3 result — Stochastic MuZero fails the swine cold-start (two configs)
 
-The pure run (`3.0-muzero-swine`: sparse ±1 terminal reward, 50 sims, vs random) is **mechanically
-healthy but does not learn to win** — in fact it gets *worse*:
+Two runs, matched ~40-min GPU budget, greedy win-rate vs random (deterministic MCTS argmax):
 
-- **iteration_0 (untrained): 25% win** vs random (12 games) → **iteration_10000 (~25k env-steps): 0%**
-  (30 games, greedy *and* stochastic). Loss decreases then plateaus ~5; eval win-rate flat at −1.0.
-- **Behavior:** greedy play collapses to **always-mulligan** (mulligans to ~0 cards, loses turn 14–20).
-  MCTS visit split is a *soft* ~36/50 mulligan vs ~14/50 keep — not a hard collapse, but argmax locks on.
-- **Root cause:** `predicted_value ≈ −0.8 everywhere` — the value net learns "every position loses"
-  because collection ~never wins, so there's no gradient toward good play. This is the
-  **sub-decision-lookahead dilution + sparse-reward cold-start** flagged up front: 50-sim search over
-  *factored sub-decisions* (a game-turn ≈ several sub-decisions) can't see far enough to find the
-  winning lines needed to bootstrap. PPO sidesteps it with 500k cheap model-free steps + advantage
-  estimation. **Honest read: Stochastic MuZero at this budget/config underperforms PPO — it doesn't
-  even reach random's 53.5%.**
+| checkpoint | env-steps | win-rate vs random | behavior | value |
+|---|---|---|---|---|
+| untrained (iter_0) | 0 | **0.25** (12 g) | quasi-random | ~−0.5 |
+| **3.0 pure** iter_10000 | ~25k | **0.00** (30 g, greedy *and* stochastic) | always-mulligan (7×), loses T14–20 | ≈ −0.8 |
+| **3.1 shaped** iter_10000 | ~25–34k | **0.00** (30 g) | still always-mulligan | ≈ −0.8 |
+| — reference — | | random-v-random **0.535**, PPO 2.9 **0.90** | | |
 
-**Remedy under test — `3.1-muzero-swine-shaped` (`--shaping`):** dense **potential-based** reward
-`F = γΦ(s') − Φ(s)` using the *same card-dominant Φ the PPO training uses*
-(`batched_selfplay._phi_batch`), coef 0.3, plus sims 50→100. Policy-invariant (Φ(terminal)=0), and
-**eval is always the raw ±1** — so a win-rate improvement is real, not shaping-inflated. This targets
-the cold-start basin directly (gives the value net a signal before it ever wins a full game).
+**Both configs get *worse* than the untrained net** (0% < 25%) and never approach random.
+
+**Root cause — the pre-flagged crux, confirmed.** `predicted_value ≈ −0.8 everywhere`: the value net
+learns "every position loses" because collection ~never wins, so there's no gradient toward good play.
+MuZero's 50–100-sim search runs over **factored sub-decisions** (a game-turn ≈ several sub-decisions),
+so within budget it can't see far enough to find the winning lines needed to bootstrap out of the
+losing basin. The greedy policy then collapses to an **always-mulligan attractor** (mulligans to ~0
+cards → loses). PPO sidesteps all of this with 500k cheap model-free steps + advantage estimation.
+
+**Did the shaping help?** Mechanically yes, not enough. The gym's own card-dominant PBRS Φ (coef 0.1)
+gave the value net a real dense gradient (`reward_loss → 0.4`) and pushed the mulligan visit-split from
+3.0's ~**[36,14]** toward **[25,25]/[33,17]** (the Φ cards-term punishing mull-to-0, exactly as
+predicted) — but it wasn't enough to flip greedy off mulligan or escape the −0.8 basin at this budget.
+
+**Why M4 is moot.** The headline question was "does learned search fix PPO's chump-blocking?" It can't
+be answered here: a policy that mulligans to death and loses every game never reaches meaningful combat,
+so there are no block decisions to measure. The negative result *is* the finding.
+
+**What a fair MuZero attempt would likely need (future work, not this window):** (a) **macro-compose a
+full engine decision into one search action** so the tree measures game-turns not sub-decisions (the #1
+lever — directly attacks the dilution); (b) a **much larger step budget** (PPO needed 500k model-free;
+MuZero's model-learning burden makes it slower per useful signal); (c) possibly a **warm-start** from a
+behavior-cloned or PPO policy to escape the cold-start basin. None fit the ~3.5h exploratory window.
+
+Both TB runs (`3.0-muzero-swine`, `3.1-muzero-swine-shaped`) are on the shared board (:6006) with
+run-notes in each Text tab. Checkpoints kept under each run's `ckpt/`.
 
 ---
 
@@ -236,12 +253,17 @@ interfere. `mtg_py` (abi3) is import-compatible with both.
   Env + model wiring smokes pass.
 - **M2 — smoke train.** ✅ Tiny config trains end-to-end on swine (CPU), no crash, losses sane,
   checkpoints saved. Needed the 3 integration fixes above.
-- **M3 — real run** (GPU, coordinate via lead). Comparable-budget run (a few hours; note: matching
-  PPO 500k ≈ 20 min wall-clock is likely too little for MuZero — budget documented honestly).
-  Versioned TB run.
-- **M4 — evaluate.** (a) win-rate vs random-legal (same 500-game protocol; vs 0.535 / PPO 0.90);
-  (b) head-to-head vs PPO 2.9 if feasible; (c) **the judgment metrics** — `swine_blocks.py`-style
-  chump-block rate at life ≥ 15 and gang rate on greedy MuZero play. Honest comparison table + verdict.
+- **M3 — real run** (GPU). ✅ *Concluded — negative.* Two matched-budget runs (`3.0` pure sparse,
+  `3.1` PBRS-shaped), each ~40 min / ~25–34k env-steps on GPU. Both collapse at the sub-decision
+  cold-start (0% win vs random, always-mulligan attractor, value ≈ −0.8). See "M3 result" up top.
+- **M4 — evaluate.** ⏹️ *Moot / not run.* The harness (`eval_muzero_swine.py`) is built and validated,
+  but the judgment comparison (chump-block rate at life ≥ 15, gang rate) requires a policy that
+  *plays* — MuZero here never reaches competent combat (mulligans to death), so there are no block
+  decisions to measure and no fair head-to-head vs PPO. Documented as the reason, not skipped silently.
 
-**Honest negative results are a success state.** If Stochastic MuZero underperforms PPO at matched
-budget, this README will say so plainly, with the numbers.
+**Outcome: honest negative — a success state.** Stochastic MuZero (LightZero) is fully wired to the
+swine env (pipeline, masking, VQ chance, self-play framing all work), but at a matched ~40-min budget
+it does **not** learn competent play, so it can't be compared to PPO on combat judgment. The blocker is
+the pre-flagged sub-decision-lookahead-dilution + sparse-reward cold-start, confirmed across two
+configs. Future work to give MuZero a fair shot is listed under "M3 result" (macro-compose decisions,
+much larger budget, warm-start).
