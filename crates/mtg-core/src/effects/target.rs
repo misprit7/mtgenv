@@ -81,6 +81,9 @@ pub enum CardFilter {
     HasCounter(CounterKind),
     /// Matches a specific named card (rare; for the few effects that name a card).
     Named(String),
+    /// A card with `{X}` in its mana cost (CR 107.3) — Paradox Surveyor's "a card with {X} in its
+    /// mana cost". Matches when the printed cost has one or more `{X}` symbols.
+    HasXInCost,
     /// Matches iff the candidate object **is the source of the ability/effect doing the
     /// matching** — i.e. "this" (CR self-referential, e.g. "prevent damage to THIS creature",
     /// "THIS enters with…"). The engine evaluates it against the matcher's source object. This

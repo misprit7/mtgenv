@@ -56,6 +56,7 @@ pub mod paradox_gardens;
 pub mod pest_mascot;
 pub mod planar_engineering;
 pub mod owlin_historian;
+pub mod paradox_surveyor;
 pub mod pestbrood_sloth;
 pub mod poisoners_apprentice;
 pub mod primary_research;
@@ -153,6 +154,7 @@ pub fn register(db: &mut CardDb) {
     pest_mascot::register(db);
     planar_engineering::register(db);
     owlin_historian::register(db);
+    paradox_surveyor::register(db);
     pestbrood_sloth::register(db);
     poisoners_apprentice::register(db);
     primary_research::register(db);

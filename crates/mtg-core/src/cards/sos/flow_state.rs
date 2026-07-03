@@ -25,6 +25,7 @@ fn look_take(take: i64) -> Effect {
         take: ValueExpr::Fixed(take),
         take_to: Zone::Hand,
         rest_to: Zone::Library,
+        take_filter: CardFilter::Any,
     }
 }
 
@@ -110,6 +111,7 @@ mod tests {
                     ),
                     take_to: Hand,
                     rest_to: Library,
+                    take_filter: Any,
                 },
                 otherwise: Some(
                     LookAndPick {
@@ -121,6 +123,7 @@ mod tests {
                         ),
                         take_to: Hand,
                         rest_to: Library,
+                        take_filter: Any,
                     },
                 ),
             }"#]].assert_eq(&format!("{:#?}", db.get(FLOW_STATE).unwrap().spell_effect().unwrap()));

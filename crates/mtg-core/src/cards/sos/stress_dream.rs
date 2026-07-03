@@ -32,6 +32,7 @@ pub fn register(db: &mut CardDb) {
             take: ValueExpr::Fixed(1),
             take_to: Zone::Hand,
             rest_to: Zone::Library,
+            take_filter: CardFilter::Any,
         },
     ]);
     let mut def = spell(
@@ -87,6 +88,7 @@ mod tests {
                         ),
                         take_to: Hand,
                         rest_to: Library,
+                        take_filter: Any,
                     },
                 ],
             )"#]].assert_eq(&format!("{:#?}", def.spell_effect().unwrap()));
@@ -111,7 +113,7 @@ mod tests {
         let lib = vec![grp::FOREST, grp::GRIZZLY_BEARS, grp::ISLAND];
         let state = build_game(1, &[&lib, &[]]);
         // Only the look-and-pick node (skip the damage; no target).
-        let effect = Effect::LookAndPick { count: ValueExpr::Fixed(2), take: ValueExpr::Fixed(1), take_to: Zone::Hand, rest_to: Zone::Library };
+        let effect = Effect::LookAndPick { count: ValueExpr::Fixed(2), take: ValueExpr::Fixed(1), take_to: Zone::Hand, rest_to: Zone::Library, take_filter: CardFilter::Any };
         let mut e = Engine::new(state, vec![Box::new(KeepFirst), Box::new(KeepFirst)]);
         let (lib0, hand0) = (e.state.players[0].library.len(), e.state.players[0].hand.len());
         e.resolve_effect(&effect, &ResolutionCtx { controller: Some(PlayerId(0)), ..Default::default() }, WbReason::Resolve(StackId(0)));

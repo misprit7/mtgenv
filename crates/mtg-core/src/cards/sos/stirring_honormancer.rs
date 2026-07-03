@@ -40,6 +40,7 @@ pub fn register(db: &mut CardDb) {
                 take: ValueExpr::Fixed(1),
                 take_to: Zone::Hand,
                 rest_to: Zone::Graveyard,
+                take_filter: CardFilter::Any,
             },
         }],
     )

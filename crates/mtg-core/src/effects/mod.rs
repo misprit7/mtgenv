@@ -250,6 +250,10 @@ pub enum Effect {
         take: ValueExpr,
         take_to: Zone,
         rest_to: Zone,
+        /// Only cards matching this filter may be **taken** (Paradox Surveyor: "reveal a land or a card
+        /// with {X} in its cost"). `CardFilter::Any` = any card is takeable; a restrictive filter also
+        /// makes the take *optional* (you may take none if nothing qualifies).
+        take_filter: CardFilter,
     },
 
     /// Declare a **"target player"** (CR 115.1) for the spell/ability — a targeting slot with no

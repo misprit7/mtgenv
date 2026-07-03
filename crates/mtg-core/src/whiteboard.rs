@@ -199,12 +199,12 @@ impl EngineCore {
             }
             // "Look at the top `count`, put `take` into `take_to`, the rest into `rest_to`." Imperative
             // (asks which to take). Flush first.
-            Effect::LookAndPick { count, take, take_to, rest_to } => {
+            Effect::LookAndPick { count, take, take_to, rest_to, take_filter } => {
                 self.flush_pending(wb);
                 let player = ctx.controller.unwrap_or(PlayerId(0));
                 let n = self.eval_value(count, ctx).max(0) as usize;
                 let take = self.eval_value(take, ctx).max(0) as usize;
-                self.interpret_look_and_pick(player, n, take, *take_to, *rest_to);
+                self.interpret_look_and_pick(player, n, take, *take_to, *rest_to, take_filter);
                 true
             }
             Effect::Sacrifice { who, what } => {
@@ -449,6 +449,7 @@ impl EngineCore {
         take: usize,
         take_to: Zone,
         rest_to: Zone,
+        take_filter: &CardFilter,
     ) {
         let lib = &self.state.player(pl).library;
         let count = n.min(lib.len());
@@ -457,26 +458,33 @@ impl EngineCore {
         }
         // Top-first (the library's top is the vec's tail).
         let top: Vec<ObjId> = lib.iter().rev().take(count).copied().collect();
-        let take_n = take.min(count);
+        // Only cards matching `take_filter` may be taken (Paradox Surveyor). A restrictive filter also
+        // makes the take optional (min 0 — you may find nothing that qualifies).
+        let any = matches!(take_filter, CardFilter::Any);
+        let takeable: Vec<ObjId> =
+            top.iter().copied().filter(|&o| self.count_filter_matches(o, take_filter)).collect();
+        let take_n = take.min(takeable.len());
+        let min = if any { take_n } else { 0 };
         let mut seen = std::collections::BTreeSet::new();
         let taken: Vec<ObjId> = if take_n == 0 {
             Vec::new()
         } else {
             let req = DecisionRequest::SelectCards {
                 reason: SelectReason::ScryStage,
-                from: top.clone(),
-                min: take_n as u32,
+                from: takeable.clone(),
+                min: min as u32,
                 max: take_n as u32,
                 description: "Look and pick".into(),
             };
             match self.ask(pl, &req) {
                 DecisionResponse::Indices(idxs) => idxs
                     .iter()
-                    .filter_map(|&i| top.get(i as usize).copied())
+                    .filter_map(|&i| takeable.get(i as usize).copied())
                     .filter(|o| seen.insert(*o))
                     .take(take_n)
                     .collect(),
-                _ => top.iter().take(take_n).copied().collect(),
+                _ if any => takeable.iter().take(take_n).copied().collect(),
+                _ => Vec::new(),
             }
         };
         // Move the taken cards to `take_to`.
@@ -1697,6 +1705,13 @@ impl EngineCore {
             CardFilter::Named(name) => {
                 self.state.objects.get(&id).is_some_and(|o| o.chars.name == *name)
             }
+            // A card with `{X}` in its printed cost (Paradox Surveyor).
+            CardFilter::HasXInCost => self
+                .state
+                .objects
+                .get(&id)
+                .and_then(|o| o.chars.mana_cost.as_ref())
+                .is_some_and(|mc| mc.x > 0),
             CardFilter::PowerAtMost(n) => cc.power.unwrap_or(0) <= *n,
             CardFilter::ManaValue { min, max } => {
                 let mv = self.state.objects.get(&id).map_or(0, |o| o.chars.mana_value());

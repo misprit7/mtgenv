@@ -12,6 +12,7 @@ use crate::basics::{CardType, Color, Zone};
 use crate::cards::helpers::elemental_token;
 use crate::cards::{mana_cost, spell, CardDb};
 use crate::effects::ability::{Ability, Cost, CostComponent, Timing};
+use crate::effects::target::CardFilter;
 use crate::effects::value::{PlayerRef, ValueExpr};
 use crate::effects::Effect;
 
@@ -39,6 +40,7 @@ pub fn register(db: &mut CardDb) {
             take: ValueExpr::Fixed(1),
             take_to: Zone::Hand,
             rest_to: Zone::Graveyard,
+            take_filter: CardFilter::Any,
         },
         timing: Timing::Instant,
         restriction: None,
