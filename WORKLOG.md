@@ -30,9 +30,16 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
   ctx-aware Conditional), S8 Repartee (SpellCastTargetingCreature), S6 Increment (Power/ToughnessOfSelf),
   S9 flag, player-as-target (Effect::TargetPlayer → TargetKind::Player slots; Cost of Brilliance /
   Dissection Practice / Exhibition Tidecaller). 377 mtg-core tests.
-- **M3 in flight:** Session::resume/submit landed earlier (17e9276); Send split holds the priority.rs
-  window; gym's PyGame→Session port staged (blocked only on a Session::replay() accessor);
-  equivalence-fingerprint + bench harness committed as the port's acceptance gate (77efbaf, 35789df).
+- **M3 engine side COMPLETE; port landed with numbers:** PyGame→Session port (8800205) deleted the
+  per-game OS thread + mpsc channels + PyAgent — gated byte-for-byte by the equivalence fingerprints,
+  throughput 1484/1672/1626 → 2254/2730/2714 fps at 32/128/256 envs (**1.5–1.67×**, ad25ad6).
+  The agent-removal/Send split was PRICED AND REJECTED after prototyping: the Engine-wrapper+Deref
+  plan breaks two-phase borrows on the pervasive `e.method(e.state…)` pattern (recorded as
+  do-not-revisit), and `Agent: Send` is a boundary-LAW change forcing Rc→Arc through single-threaded
+  CLI code. DECISION: **thread-pinned fleet groups** — each worker thread creates AND steps its own
+  Sessions, nothing is Send, zero engine changes, no unsafe in production (RESUMABLE_ENGINE.md
+  c0bbc55). The fleet stepper (M3.4, in mtg-py: N workers, batched obs buffers, ONE PyO3 crossing
+  per micro-tick) is in progress — phase-gated by the same fingerprint suite + bench.
 - **infra:** version-prefixed TB runs (`<major>.<minor>-slug`, e6d00d7, backfilled 2.0-2.6);
   replay recording default-on per training run (--replay-every 25k, d501d24); run-notes TEXT +
   Custom Scalars dashboards (4e0108d); n_envs probe: fps flat ~1.6k at 32/128/256, single Python
