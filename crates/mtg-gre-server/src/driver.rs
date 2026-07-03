@@ -231,7 +231,7 @@ pub fn run_demo_game(agents: Vec<Box<dyn Agent>>, seed: u64) -> Outcome {
 /// [`mtg_core::cards::preset_deck`] (`"selesnya"` landfall, the trivial `demo`/`burn`/`bears`
 /// piles, and the `"heralds"` RL-sanity deck — 20 Island + 40 Mist-Cloaked Herald). Shared source
 /// of truth for the lobby/CLI pickers.
-pub const DECK_NAMES: &[&str] = &["selesnya", "counters", "demo", "burn", "bears", "heralds"];
+pub const DECK_NAMES: &[&str] = &["selesnya", "counters", "demo", "burn", "bears", "heralds", "swine"];
 
 /// Every `(grp_id, exact card name)` in the built-in **preset** decks ([`DECK_NAMES`]), resolved
 /// against the engine's [`starter_db`]. Sorted, unique.
