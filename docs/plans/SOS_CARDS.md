@@ -198,7 +198,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Colossus of the Blood Age | - | `sos` | ⏳ | ETB drain + dies rummage draw |
 | Cost of Brilliance | - | `sos` | ✅ done | draw, lose life, counter |
 | Deathcap Glade | - | `vow` | ✅ done | checkland conditional tap + mana |
-| Dina's Guidance | - | `sos` | ⏳ | search creature to hand/graveyard |
+| Dina's Guidance | - | `sos` | ✅ done | search creature to hand/graveyard |
 | Dissection Practice | - | `sos` | ✅ done | drain + pump modal, all IR |
 | Divergent Equation | - | `sos` | ⏳ | X return instant/sorcery cards, exile self |
 | Dreamroot Cascade | - | `vow` | ✅ done | checkland conditional tap + mana |
@@ -229,7 +229,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Proctor's Gaze | - | `sos` | ✅ done | bounce plus search basic to battlefield |
 | Pterafractyl | - | `sos` | ⏳ | enters with X counters, ETB gain life |
 | Pull from the Grave | - | `sos` | ⏳ | return creatures to hand, gain life |
-| Quick Study | - | `woe` | ⏳ | draw two cards |
+| Quick Study | - | `woe` | ✅ done | draw two cards |
 | Rapturous Moment | - | `sos` | ✅ done | draw, discard, add mana ritual |
 | Rubble Rouser | - | `sos` | ⏳ | discard/draw ETB; mana ability with damage |
 | Shattered Acolyte | - | `sos` | ✅ done | lifelink; sac to destroy artifact/enchantment |
@@ -242,9 +242,9 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Stand Up for Yourself | - | `sos` | ⏳ | destroy target power-3+ creature |
 | Startled Relic Sloth | - | `sos` | ✅ done | combat trigger exile graveyard card |
 | Stormcarved Coast | - | `vow` | ✅ done | conditional enters-tapped dual |
-| Strixhaven Skycoach | - | `sos` | ⏳ | vehicle crew, ETB land search |
+| Strixhaven Skycoach | - | `sos` | ✅ done | vehicle crew, ETB land search |
 | Sundown Pass | - | `vow` | ✅ done | conditional enters-tapped dual |
-| Terramorphic Expanse | - | `tsp` | ⏳ | fetch basic land, tapped |
+| Terramorphic Expanse | - | `tsp` | ✅ done | fetch basic land, tapped |
 | Traumatic Critique | - | `sos` | ✅ done | X damage, draw then discard |
 | Vibrant Outburst | - | `sos` | ✅ done | damage plus tap creature |
 | Wander Off | - | `sos` | ✅ done | exile target creature |
