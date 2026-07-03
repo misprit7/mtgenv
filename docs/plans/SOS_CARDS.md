@@ -29,8 +29,18 @@ small-but-load-bearing cap; do each fresh, one commit, with a test.** Prioritize
    system (higher risk — do carefully). See `BecomeCreature`/Earthbend animation for the P/T-set path.
 
 DEFERRED still (never build): DFC/modal, Lessons/Paradigm, planeswalkers, Casualty, Elder-Dragon grants;
-dies-triggers need LKI (Arnyn, Cauldron of Essence). S15 graveyard-play (Ark of Hunger) + Archaic's Agony
-(excess-damage + multi-card top-exile) also await their noted machinery.
+dies-triggers need LKI (Arnyn, Cauldron of Essence).
+
+**Blocked set (need an unbuilt cap first — don't burn time on these until the cap lands):**
+- **Ward (S17, ⏳ not built)** — gates Colorstorm Stallion, Fractal Tender, Forum Necroscribe, Inkshape
+  Demonstrator, Mica, Thornfist Striker, Tragedy Feaster (7). Fractal Tender's end-step-token trigger now
+  fires (begin-of-step cap) but the card still needs Ward.
+- **S16 end-step-token timing** — the begin-of-step-trigger cap unblocked the *timing*; any remaining
+  end-step-token card is now authorable IF its other clauses are (check per-card).
+- **S15 graveyard-play** — Ark of Hunger (mill → play from graveyard); needs a graveyard analog of
+  `castable_from_exile` + a graveyard scan in the offer loop. Tablet of Discovery also needs it (+ S13, done).
+- **Archaic's Agony** — S7+S15 unblocked but still needs an excess-damage value + multi-card top-of-library
+  exile (`TopOfLibrary` is single-card).
 
 Systemic: honour the proposed audit rule (⚠️/✅ trigger section) — every new `Triggered` should fire once
 through the REAL turn engine in a test. SHARED TREE: `git commit --only <paths>`; MuZero teammate lives in
