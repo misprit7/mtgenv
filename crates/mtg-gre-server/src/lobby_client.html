@@ -162,6 +162,10 @@
 <script>
 "use strict";
 const $ = (id) => document.getElementById(id);
+// The cursor-tracking card preview is for real hover devices only. On touch a tap fires an
+// emulated mousemove (which would open the preview) but never a mouseleave (so it would stick
+// and block the UI); touch gets a tap-to-toggle preview instead.
+const HOVER = window.matchMedia("(hover: hover) and (pointer: fine)").matches;
 const KINDS = [["human", "Human"], ["random", "Test agent (random)"], ["rl", "RL AI (not trained — random)"]];
 const DECKS = ["counters", "selesnya", "demo", "burn", "bears", "heralds"];
 const SEAT_COUNT = 2;
@@ -472,8 +476,21 @@ function deckCard(c) {
     d.appendChild(w);
   }
   if (info && info.img) {
-    d.addEventListener("mousemove", (e) => showCardPreview(info.img, e));
-    d.addEventListener("mouseleave", hideCardPreview);
+    if (HOVER) {
+      d.addEventListener("mousemove", (e) => showCardPreview(info.img, e));
+      d.addEventListener("mouseleave", hideCardPreview);
+    } else {
+      // Touch: tap a card toggles a centered preview. Tapping the same card again, the preview,
+      // or anywhere else dismisses it (see the preview/document handlers below). stopPropagation
+      // keeps this opening tap from immediately bubbling to the document dismiss handler.
+      d.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const p = $("cardpreview");
+        const open = p.style.display === "block" && p.dataset.for === String(c.grp_id);
+        if (open) hideCardPreview();
+        else showCardPreviewCentered(info.img, c.grp_id);
+      });
+    }
   }
   return d;
 }
@@ -485,6 +502,24 @@ function showCardPreview(url, ev) {
   p.style.left = x + "px"; p.style.top = y + "px";
 }
 function hideCardPreview() { $("cardpreview").style.display = "none"; }
+// Touch preview: no cursor to track, so center it in the viewport. Enable pointer-events (the CSS
+// default is `none`, for the hover path) so a tap on the preview itself dismisses it.
+function showCardPreviewCentered(url, grpId) {
+  const p = $("cardpreview"); p.src = url; p.dataset.for = String(grpId);
+  p.style.pointerEvents = "auto"; p.style.display = "block";
+  const w = 300, h = 418;
+  p.style.left = Math.max(8, (window.innerWidth - w) / 2) + "px";
+  p.style.top = Math.max(8, (window.innerHeight - h) / 2) + "px";
+}
+if (!HOVER) {
+  // Tap the preview → dismiss (stop here so it doesn't fall through to a card underneath).
+  $("cardpreview").addEventListener("click", (e) => { e.stopPropagation(); hideCardPreview(); });
+  // Tap anywhere else → dismiss. Card taps call stopPropagation, so opening a preview doesn't
+  // immediately close it here.
+  document.addEventListener("click", () => {
+    if ($("cardpreview").style.display === "block") hideCardPreview();
+  });
+}
 
 [...document.querySelectorAll(".tabbtn")].forEach((btn) => {
   btn.onclick = () => {
