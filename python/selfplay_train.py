@@ -160,7 +160,11 @@ def _clean(*paths):
 
 def train_selfplay(deck="demo", timesteps=120_000, n_envs=8, pool_dir=DEFAULT_POOL,
                    tensorboard_log=None, seed=0, pool_every=8000, eval_every=8000, subproc=False,
-                   shaping_coef=0.0, verbose=0):
+                   shaping_coef=0.5, verbose=0):
+    # Heuristic reward shaping (potential-based, GYM_PLAN §5) is ON by default: coef0=0.5, annealed
+    # to 0 over the first 60% by `ShapingAnneal`. PBRS is policy-invariant, so the final policy still
+    # optimizes only the true ±1 terminal reward (eval is always on that). Pass shaping_coef=0 to
+    # disable. See `ab_shaping.py` for the shaped-vs-unshaped harness.
     os.makedirs(pool_dir, exist_ok=True)
     ref_path = os.path.join(os.path.dirname(pool_dir.rstrip("/")) or ".", "mtgenv_ref_initial.zip")
     _clean(os.path.join(pool_dir, "*.zip"), ref_path)  # fresh league each run
@@ -200,17 +204,20 @@ def train_selfplay(deck="demo", timesteps=120_000, n_envs=8, pool_dir=DEFAULT_PO
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--deck", default="demo", choices=["lands", "demo", "burn_vs_bears", "selesnya"])
+    ap.add_argument("--deck", default="demo", choices=["lands", "demo", "burn_vs_bears", "selesnya", "heralds"])
     ap.add_argument("--timesteps", type=int, default=120_000)
     ap.add_argument("--n-envs", type=int, default=8)
     ap.add_argument("--pool-dir", default=DEFAULT_POOL)
     ap.add_argument("--tensorboard", default=None)
     ap.add_argument("--subproc", action="store_true", help="SubprocVecEnv (parallel workers)")
+    ap.add_argument("--shaping-coef", type=float, default=0.5,
+                    help="potential-based reward-shaping coef0 (annealed to 0); 0 disables. On by default.")
     args = ap.parse_args()
 
     model, ref = train_selfplay(
         deck=args.deck, timesteps=args.timesteps, n_envs=args.n_envs, pool_dir=args.pool_dir,
-        tensorboard_log=args.tensorboard, subproc=args.subproc, verbose=1,
+        tensorboard_log=args.tensorboard, subproc=args.subproc, shaping_coef=args.shaping_coef,
+        verbose=1,
     )
     wr_rand = play_winrate(model, args.deck, "random", 200, 9_000_000)
     wr_init = play_winrate(model, args.deck, ModelOpponent(ref), 200, 9_500_000)

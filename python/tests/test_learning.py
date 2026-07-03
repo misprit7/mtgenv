@@ -30,9 +30,15 @@ def test_selfplay_improves_over_initial(tmp_path):
     from selfplay_train import play_winrate, train_selfplay
     from mtgenv_gym.league import ModelOpponent
 
+    # shaping_coef=0.0 pins this to the pure ±1 reward on purpose: it tests the self-play LEAGUE
+    # machinery (does the policy beat its own initial self?), which is orthogonal to reward shaping.
+    # The shaping default is 0.5 (potential-based, GYM_PLAN §5), but at this deliberately tiny 16k
+    # budget the anneal eats the first 60% and the demo mirror doesn't recover in the ~6k pure-reward
+    # steps left, so shaping-on drives this short run below random. Shaping's benefit is validated at
+    # realistic budgets elsewhere (heralds self-play, ab_shaping.py) — not smuggled into this gate.
     model, ref = train_selfplay(
         deck="demo", timesteps=16_000, n_envs=8, pool_dir=str(tmp_path / "pool"),
-        pool_every=4000, eval_every=10**9, seed=0,  # skip in-training eval; final-eval below
+        pool_every=4000, eval_every=10**9, seed=0, shaping_coef=0.0,  # skip in-training eval; final below
     )
     wr_init = play_winrate(model, "demo", ModelOpponent(ref), 120, 7_000_000)
     wr_rand = play_winrate(model, "demo", "random", 120, 8_000_000)
