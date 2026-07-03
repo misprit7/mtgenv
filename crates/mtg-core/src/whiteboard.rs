@@ -686,9 +686,32 @@ impl Engine {
                     });
                 }
             }
-            // Other IR nodes are not yet interpreted (minimal scope). They are a no-op rather
-            // than a panic so a card carrying them degrades gracefully.
-            _ => {}
+            // ── Leaves defined in the IR but not yet given a whiteboard runtime. These fail
+            // LOUD in debug/tests so a card using one can never silently no-op — the exact bug
+            // class that hid Traumatic Critique's "then discard a card" (a defined-but-unwired
+            // leaf that vanished). Release builds degrade to a no-op rather than crash a live
+            // game (`debug_assert!` compiles out). As each leaf is wired it gets a real arm
+            // above and leaves this list. **The match is exhaustive by design (no wildcard):**
+            // a NEW `Effect` variant added without an interpreter arm is a *compile* error
+            // here, not a silent gap.
+            Effect::Sacrifice { .. }
+            | Effect::Counter { .. }
+            | Effect::Discard { .. }
+            | Effect::Repeat { .. }
+            | Effect::Distribute { .. }
+            | Effect::Native { .. } => {
+                debug_assert!(false, "uninterpreted Effect leaf in materialize(): {effect:?}");
+            }
+            // Control-flow / interactive nodes are driven by `interpret` (which asks the agent);
+            // they reach `materialize` only when nested where no interpreter runs (e.g. a
+            // `Conditional`/`Sequence` `then`). Inert here — `interpret` handled the top level.
+            Effect::Modal { .. }
+            | Effect::Optional { .. }
+            | Effect::IfYouDo { .. }
+            | Effect::ForEach { .. }
+            | Effect::Search { .. }
+            | Effect::AddMana { .. }
+            | Effect::Nothing => {}
         }
     }
 
