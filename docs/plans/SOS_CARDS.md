@@ -386,7 +386,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Tome Blast | S10 | `sos` | ✅ done | Flashback |
 | Topiary Lecturer | S6 | `sos` | ⏳ | Increment; mana equal to power |
 | Tragedy Feaster | S4,S17 | `sos` | ⏳ | Ward—Discard plus Infusion |
-| Transcendent Archaic | S7 | `sos` | ⏳ | converge, colors of mana spent |
+| Transcendent Archaic | S7 | `sos` | ✅ done | converge, colors of mana spent |
 | Ulna Alley Shopkeep | S4 | `sos` | ✅ done | Infusion: gained-life-this-turn condition |
 | Unsubtle Mockery | S1 | `sos` | ✅ done | damage plus surveil 1 |
 | Vicious Rivalry | PayXLife | `sos` | ⏳ | additional cost pay X life; destroy MV<=X |
