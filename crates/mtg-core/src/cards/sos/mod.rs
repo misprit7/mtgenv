@@ -37,6 +37,7 @@ pub mod essenceknit_scholar;
 pub mod eternal_student;
 pub mod exhibition_tidecaller;
 pub mod expressive_firedancer;
+pub mod fractal_anomaly;
 pub mod fractal_mascot;
 pub mod fractal_tender;
 pub mod flow_state;
@@ -172,6 +173,7 @@ pub fn register(db: &mut CardDb) {
     eternal_student::register(db);
     exhibition_tidecaller::register(db);
     expressive_firedancer::register(db);
+    fractal_anomaly::register(db);
     fractal_mascot::register(db);
     fractal_tender::register(db);
     flow_state::register(db);

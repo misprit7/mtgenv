@@ -86,8 +86,8 @@ The DFC/Lesson/planeswalker/named-keyword bucket (~40 cards) stays DEFERRED per 
 - **Ennis** = ETB blink (exile + delayed return next end step) + exile-count-this-turn condition.
 - **Tester of the Tangential** = pay-{X}-in-an-ability + a MoveCounters effect (move X counters between
   creatures) — `Not(ItSelf)` (done) covers only its "another target creature".
-- **Fractal Anomaly / Emil** = the dynamic-counters cap is ready; they only need their X-value ValueExprs
-  (cards-drawn-this-turn = S19; differently-named-lands = a new DistinctNames value) + Emil's {T} ability.
+- **Fractal Anomaly DONE** (agent 6, `ValueExpr::CardsDrawnThisTurn`). **Emil** still needs a differently-named-lands
+  value (a new DistinctNames ValueExpr) + Emil's {T} ability (the dynamic-counters cap is ready).
 
 DEFERRED still (never build): DFC/modal, Lessons/Paradigm, planeswalkers, Casualty, Elder-Dragon grants;
 dies-triggers need LKI (Arnyn, Cauldron of Essence).
@@ -199,7 +199,8 @@ each cap unlocks the bracketed count. `⏳` = not yet built.
 | **S13** Restricted mana | mana usable "only to cast instant and sorcery spells" (spend-restriction tag) | 4 | ✅ **DONE** `ffcc0df` (`ManaSpec.restriction=InstantSorceryOnly` + `ManaPool.restricted` bucket + `allow_restricted` threaded through the payment path; spell casts pass card-is-I/S, ability costs pass false) → Hydro-Channeler |
 | **S16** Gain-life trigger | `EventPattern::GainLife` ("whenever you gain life, …") | 3 | ✅ **DONE** |
 | **S21** cast-with-{X} trigger | `SpellCast` filtered to "has {X} in its cost" | 2 | ◑ **DONE for Matterbending Mage** (`134444d`) — added `HasXInCost` arm to `enter_filter_matches` (`SpellCast(All([ControlledBy, HasXInCost]))` now matches). Geometer's Arthropod still needs only **reading the *triggering spell's* X** for its "look at the top X" count (S2 look-and-pick is DONE) — a new `ValueExpr` reading the triggering stack object's chosen X (the `triggering_spell`/`triggering_stack` ctx now carries the object; its `x` field holds the value). |
-| **S19/S20/S22** | cards-drawn-this-turn value / counters-on-target value / cast-I/S-this-turn cond | 1 ea | ⏳ |
+| **S19** cards-drawn-this-turn value | `ValueExpr::CardsDrawnThisTurn` (reads `Player.cards_drawn_this_turn`, reset each turn + incremented in `draw`) | 1 | ✅ **DONE** (agent 6) → **Fractal Anomaly** (0/0 Fractal + X counters, X = cards drawn this turn) |
+| **S20/S22** | counters-on-target value / cast-I/S-this-turn cond | 1 ea | ⏳ |
 | **misc one-offs** | GreatestMV, DistinctNames, ~~SoftCounter~~, DirectedDiscard, AltCost, PayXLife, NoMaxHand, GrantAbility | 1–3 ea | ⏳ except **SoftCounter (counter-unless-pay) ✅ DONE** via `Effect::CounterUnlessPay` (Ward, `96dbc35`). The rest (GreatestMV/DistinctNames/DirectedDiscard/AltCost/PayXLife/NoMaxHand/GrantAbility) are genuinely unbuilt (verified vs codebase 2026-07-03). |
 | **Native** | genuine one-offs via the `Native` escape hatch: Mathemagics (2^X), Pox Plague (halving), Steal the Show (wheel) | 4 | ⏳ |
 

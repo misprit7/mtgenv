@@ -216,6 +216,11 @@ pub struct Player {
     /// turn" (Essenceknit Scholar).
     #[serde(default)]
     pub creatures_died_this_turn: u32,
+    /// How many cards this player has drawn this turn (CR 120) — reset each turn, incremented in
+    /// `draw`. Read by the SoS Quandrix "X = the number of cards you've drawn this turn" value
+    /// (Fractal Anomaly).
+    #[serde(default)]
+    pub cards_drawn_this_turn: u32,
     pub hand_size_limit: usize,
     pub has_lost: bool,
     /// Set when a draw is attempted from an empty library; the SBA (CR 704.5b) reads it on
@@ -240,6 +245,7 @@ impl Player {
             life_gained_this_turn: 0,
             cards_left_graveyard_this_turn: 0,
             creatures_died_this_turn: 0,
+            cards_drawn_this_turn: 0,
             hand_size_limit: DEFAULT_HAND_SIZE,
             has_lost: false,
             drew_from_empty: false,

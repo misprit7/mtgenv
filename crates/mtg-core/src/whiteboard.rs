@@ -1889,6 +1889,12 @@ impl EngineCore {
             ValueExpr::DistinctCardTypesAmongExiledWith => {
                 crate::conditions::distinct_card_types_among_exiled_with(&self.state, ctx.source)
             }
+            // Cards the controller has drawn this turn (CR 120) — Fractal Anomaly.
+            ValueExpr::CardsDrawnThisTurn => ctx
+                .controller
+                .and_then(|p| self.state.players.get(p.0 as usize))
+                .map(|pl| pl.cards_drawn_this_turn as i64)
+                .unwrap_or(0),
         }
     }
 

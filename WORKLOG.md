@@ -46,6 +46,11 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
   up-to-2 target creatures with `body = Tap{Each}+PutCounters{Each,Stun}`. Tests: IR snapshot, targeting-collection
   (`target_specs_for` → [Player, Creature 0..2]), and resolution with 2 vs 1 chosen creatures. Reusable for any
   "do X to each of up-to-N target creatures." 545 tests.
+- **cards(sos) — Fractal Anomaly + S19 `ValueExpr::CardsDrawnThisTurn`.** New per-player `cards_drawn_this_turn`
+  (reset each turn in `begin_turn`, incremented in `Engine::draw` — the single draw path) + a `ValueExpr` reading
+  it for `ctx.controller`. **Fractal Anomaly** `{U}` Instant = 0/0 Fractal token with X +1/+1 counters where X =
+  cards drawn this turn (reuses `CreateToken.dynamic_counters`; same shape as Wild Hypothesis but count is
+  cards-drawn, not `{X}`). Real-path test drives `Engine::draw` then resolves the token → 3 counters. 548 tests.
 
 ## 2026-07-03 (night)
 

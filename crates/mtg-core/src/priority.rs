@@ -693,6 +693,7 @@ impl Engine {
             self.state.players[i].life_gained_this_turn = 0;
             self.state.players[i].cards_left_graveyard_this_turn = 0;
             self.state.players[i].creatures_died_this_turn = 0;
+            self.state.players[i].cards_drawn_this_turn = 0;
         }
         // "you put a counter on this creature this turn" is per-turn and read on EACH end step, so
         // reset the flag on every permanent (not just the active player's).
@@ -2639,6 +2640,8 @@ impl Engine {
             }
         }
         if drawn > 0 {
+            // "cards you've drawn this turn" (CR 120) — the SoS Quandrix value (Fractal Anomaly).
+            self.state.player_mut(p).cards_drawn_this_turn += drawn;
             self.broadcast(GameEvent::DrewCards {
                 player: p,
                 count: drawn,

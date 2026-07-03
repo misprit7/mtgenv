@@ -82,6 +82,10 @@ pub enum ValueExpr {
     /// effect's source object (`Object.exiled_with == source`) — Keen-Eyed Curator's "four or more
     /// card types among cards exiled with this creature." `0` if there's no source.
     DistinctCardTypesAmongExiledWith,
+    /// The number of cards the effect's controller has **drawn this turn** (CR 120) — the SoS Quandrix
+    /// "X = the number of cards you've drawn this turn" (Fractal Anomaly). Reads
+    /// `Player.cards_drawn_this_turn` for `ctx.controller`.
+    CardsDrawnThisTurn,
 }
 
 impl ValueExpr {
