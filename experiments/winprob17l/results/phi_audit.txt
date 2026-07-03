@@ -1,0 +1,20 @@
+=== 1. CURRENT hand-tuned Φ as a win predictor (test set) ===
+  current-Φ AUC        : 0.7100
+  full 23-feat logistic: 0.7392   (from train_baseline)
+  --> the current Φ leaves +0.0292 AUC on the table vs the generic-feature ceiling
+
+=== 2. Data-optimal weights for the current Φ's 3 terms (std. logistic) ===
+  term      hand-tuned  data-optimal  std-coef
+  dcards          0.50          0.48     0.728
+  dpower          0.30          0.18     0.269
+  dlife           0.20          0.34     0.520
+  (data-optimal = |std coef| normalized to sum 1; same-sign as hand-tuned = correct direction)
+
+=== 3. What the weighting misses/wastes (test AUC of small logistic models) ===
+  current Φ inputs      [dcards,dpower,dlife]          AUC 0.7166  (+0.0000 vs current-inputs)
+  drop power term       [dcards,dlife]                 AUC 0.7090  (-0.0077 vs current-inputs)
+  add distinct lands    [dcards,dpower,dlife,dlands]   AUC 0.7171  (+0.0005 vs current-inputs)
+  counts split+lands    [dhand,dlands,dcreat,dlife]    AUC 0.7057  (-0.0109 vs current-inputs)
+
+=== 4. Rank agreement: current Φ vs data-refit Φ (same 3 terms) ===
+  Spearman ρ = 0.9649  (how much the *shape* already agrees despite the mis-weighting)

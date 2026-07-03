@@ -19,6 +19,12 @@ comes later, after results justify it. `data/` is gitignored.
 
 ## Status
 
+- **2026-07-03 — Phase 2 done: audit + artifacts. HELD for user go on the in-gym A/B.**
+  (a) Exported the frozen logistic blob (`model/phi_logistic.json`) + numpy-only adapter
+  (`src/phi_adapter.py`); gym flag seam is *proposed as a diff below, NOT applied*.
+  (b) Audited the current gym Φ against the data — **it's already close to data-optimal**
+  (AUC 0.710 vs 0.739 ceiling, ρ=0.965); the one indicated tweak is a mild power→life
+  reweight (`0.5/0.3/0.2 → ~0.5/0.2/0.3`). See "Audit of the current gym Φ" below.
 - **2026-07-03 — Phase 1 done: baseline trained.** Logistic + small MLP on 80k games /
   1.44M turn-snapshots. Both are **very well calibrated** (the property that matters for a
   potential). Logistic AUC 0.739 / log-loss 0.590; MLP AUC 0.764 / log-loss 0.564 — a
@@ -69,9 +75,10 @@ feature; `my_*` = the perspective player, `opp_*` = opponent). Sorted by magnitu
 **The headline for the lead:** it's **counts, not card stats.** Land count, hand size, and
 creature count carry almost all the signal; life is a clear but secondary factor; the
 per-creature P/T/CMC aggregates add very little on top (and `power-sum` even sign-flips —
-classic multicollinearity once creature *count* is in the model). Concretely: the current
-hand-tuned tanh Φ leaning on life/board-power may be **over-weighting life and P/T and
-under-weighting mana development and card advantage** relative to what real games say.
+classic multicollinearity once creature *count* is in the model). *(NB: this is about the
+23 features individually. How it maps onto the gym's actual 3-term Φ — which lumps all
+card-counts together — is different and less alarming; see the audit below, which corrects
+a naive first read.)*
 
 **AUC by turn bucket (test)** — discrimination grows as the game develops, exactly the
 honest profile you want from a potential:
@@ -102,26 +109,77 @@ P(win); (b) the MLP's interaction terms are the most likely to *not* transfer �
 the logistic Φ for its graceful linear extrapolation off-distribution.** This is the one
 thing results so far cannot settle; it needs an actual A/B in the gym (see below).
 
-### Proposed integration design (NOT implemented this phase)
+### Audit of the current gym Φ vs the data (deliverable b)
 
-- **Adapter shape.** A pure function `phi(features: [f32; 23]) -> f32 in [-1, 1]`, computed
-  as `phi = 2*sigmoid(w·standardize(x)) - 1` from a frozen `(mean, sd, weights, bias)`
-  blob exported by `train_baseline.py`. The 23 features are exactly the generic vector in
-  the spec, all computable from the engine's `PlayerView` (life, four counts per side, four
-  creature aggregates per side, turn/on_play). No card identity, no set data, no sqlite at
-  inference — the P/T/CMC aggregates come from the engine's own card characteristics.
-- **Turn-boundary-only shaping (recommended).** The training data is *end-of-turn* states,
-  so Φ is only meaningfully defined there. Apply the shaping term
-  `F = γ·Φ(s') − Φ(s)` **only at turn boundaries**, not per intra-turn decision (Φ is
-  undefined/untrained on mid-combat states, and per-step shaping on an ill-defined Φ adds
-  noise). This keeps the potential-based-shaping invariance intact (any Φ on the
-  turn-boundary MDP is valid).
-- **Flag-gated.** One config flag selects `phi_source ∈ {tanh_heuristic, winprob17l}`;
-  default stays the current heuristic until an A/B shows the learned Φ helps. The frozen
-  weight blob lives under `experiments/winprob17l/` and is loaded by the adapter only.
-- **Validation before adoption.** A/B two identical training runs (same seed/budget)
-  differing only in `phi_source`; compare productive-rate / win-rate learning curves. This
-  is the only test that resolves the distribution-shift question.
+The gym's current hand-tuned potential (`python/mtgenv_gym/batched_selfplay.py::_phi_batch`)
+is `Φ = 0.5·tanh(dcards/4) + 0.3·tanh(dpower/6) + 0.2·tanh(dlife/10)`, where `dcards` =
+(hand + **all** battlefield permanents, incl. lands) diff, `dpower` = creature power-sum
+diff, `dlife` = life diff. Every input maps onto our features, so `src/audit_current_phi.py`
+evaluates the *exact* current Φ on the same held-out states (`results/phi_audit.txt`):
+
+**The current Φ is already good — not badly mis-weighted (this corrects the naive read above).**
+
+- **Current Φ AUC = 0.710** vs the 23-feature ceiling 0.739 — it leaves only **+0.029** on
+  the table, and Spearman **ρ = 0.965** vs a data-refit 3-term Φ (the *shape* already agrees).
+- **Data-optimal weights for its exact 3 terms** (|std coef|, normalized): cards **0.48**
+  (hand-tuned 0.50 ✓), power **0.18** (hand-tuned 0.30 — mildly *over*), life **0.34**
+  (hand-tuned 0.20 — mildly *under*). All correct sign. The one indicated tweak:
+  **shift ~0.10–0.12 of weight from power → life**, i.e. ≈ `0.5 / 0.2 / 0.3`.
+- **Lands is NOT a missing signal.** It's already inside `dcards` (battlefield count
+  includes lands); adding a *distinct* lands term is worth **+0.0005** AUC (nothing). The
+  per-feature "lands #1" result is real but already captured by the lumped card-count term.
+- **The power term isn't useless as a differential** (dropping it costs −0.008 AUC), just
+  over-weighted. My earlier "power is near-noise" was a full-model collinearity artifact.
+
+So the actionable finding for the gym is small and specific: a **power→life reweight**
+(`0.5/0.3/0.2 → ~0.5/0.2/0.3`) worth ~0.006 AUC — the hand-tuned Φ is otherwise close to the
+best a 3-term potential can do. The full learned Φ's edge over it (0.710→0.739, plus the
+MLP's 0.764) comes from finer per-feature splitting + nonlinearity, not from fixing an error.
+
+### Integration design + artifacts (deliverable a — adapter built, gym seam only proposed)
+
+Built and committed under `experiments/winprob17l/` (nothing in gym/training code touched):
+
+- **Frozen model blob** `model/phi_logistic.json` — `{features[23], mean, scale, coef,
+  intercept, meta}` from `src/export_phi.py` (fit on all 1.44M rows; holdout AUC 0.739).
+- **Adapter** `src/phi_adapter.py` — pure **numpy** (no sklearn/pandas/sqlite at inference):
+  `WinProbPhi.phi(x) = 2·sigmoid(coef·((x−mean)/scale) + intercept) − 1 ∈ [−1,1]`, scalar or
+  batched. The 23 features are exactly the generic spec, all computable from `PlayerView`
+  (P/T/CMC aggregates come from the engine's own card characteristics — no card identity).
+- **Turn-boundary-only shaping (recommended).** Φ is trained on *end-of-turn* states; apply
+  `F = γ·Φ(s') − Φ(s)` only at turn boundaries, not per intra-turn decision (Φ is untrained
+  mid-combat). Any Φ on the turn-boundary MDP keeps the PBRS policy-invariance.
+- **Centering caveat.** The model is trained on the *collector's* 0.554 win rate, so it has
+  a baked-in positive bias (a mirror/neutral state gives Φ≈+0.26, not 0). A constant offset
+  `c` in Φ contributes `(γ−1)c` per step to the shaping reward (non-zero), so before use
+  **re-center** — subtract the base-rate logit, or set `intercept` so a symmetric state maps
+  to Φ=0. Cheap and worth doing for a self-play (symmetric) setting.
+
+**Proposed gym flag seam (NOT applied — for the lead/user to accept):** one flag on the
+shaping potential, default UNCHANGED. In `batched_selfplay.py` (and the mirror in
+`fleet_selfplay.py`):
+
+```python
+# __init__: phi_source: str = "tanh_heuristic"   # {"tanh_heuristic", "winprob17l"}
+self._winprob = None
+if phi_source == "winprob17l":
+    from experiments.winprob17l.src.phi_adapter import WinProbPhi   # or vendor the blob+fn
+    self._winprob = WinProbPhi()          # re-centered; see caveat
+
+def _phi_batch(self, obs):
+    if self._winprob is not None:
+        return self._winprob.phi(self._winprob_features(obs))   # (N,23) from globals+bf_feat
+    ...  # existing 0.5/0.3/0.2 tanh mix unchanged
+```
+
+`_winprob_features(obs)` reads the 23 generic features from `obs["globals"]`/`obs["bf_feat"]`
+(the same arrays `_phi_batch` already indexes). Default path is byte-for-byte the current Φ.
+
+**Validation before adoption (HELD for the user's go + a free GPU):** A/B two identical
+training runs (same seed/budget) differing only in `phi_source`; compare productive-rate /
+win-rate learning curves. This is the only test that resolves the distribution-shift
+question. A cheaper intermediate: just apply the **power→life reweight** to the existing
+tanh Φ (no model, no distribution-shift risk) and A/B that.
 
 ## Phase 0 findings (the GO/NO-GO gate)
 
