@@ -5,6 +5,19 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-07-03 (night)
 
+- **engine+cards(sos) — S17 Ward mana cap + Colorstorm Stallion (`96dbc35`):** Ward {N} (CR 702.21) as a
+  `BecomesTargeted{ItSelf, by_opponent}` trigger → new `Effect::CounterUnlessPay{ what, cost: Cost }`
+  soft-counter leaf. The targeting spell/ability is referenced via new `EffectTarget::Triggering`, threaded
+  from `GameEvent::Targeted{…, source: StackId}` → `state.trigger_targeting_source` (trigger id → targeting
+  stack id, mirrors `trigger_source_spell`) → `ResolutionCtx.triggering_stack`. On resolution the *targeting
+  player* (not the Ward controller) is offered a `Confirm{PayToPrevent}` **only if `can_pay_cost`**, else the
+  object is countered (`interpret_counter`). Reuses the engine `Cost` + `can_pay_cost`/`pay_cost` (made
+  `pub(crate)`), so Ward{N}/Pay-life/Discard all share one leaf. `CardFilter::ItSelf` now matches in
+  `enter_filter_matches` via an opt-in `Option<ObjId>` source (Some(watcher) only from the targeted path; all
+  other callers pass None → behaviour preserved). Consumer **Colorstorm Stallion** (`{1}{U}{R}` 3/3, Ward {1}
+  + haste + Opus-copy) — fully faithful; tests drive the real cast→target→ward→pay/decline path (opponent
+  can't-pay ⇒ countered, pays {1} ⇒ Erode resolves & destroys it, can-but-declines ⇒ countered). 513 tests.
+  ⚠️ `pay_cost` still lacks a `PayLife` arm (no-op) → add before Mica/Prismari's Ward—Pay-life.
 - **cards(sos) — Snarl Song (`b58763d`, no new cap):** the dynamic-counters cap immediately made this a free
   card — `CreateToken{count:2, dynamic_counters:[(+1/+1, ColorsSpent)]}` (each of the two 0/0 Fractals enters
   with X counters) + `GainLife(ColorsSpent)`, Converge driven by S7's `ValueExpr::ColorsSpent`. Test at

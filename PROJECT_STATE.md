@@ -86,6 +86,11 @@ MTGA client.
   fires through the real engine" audit rule. **Session (agent sos-cards-3, 2026-07-03): 9 cards + 7 caps,
   ~117→~126 SOS, 496 mtg-core tests green.** Handed off at context-fatigue with a prioritized next-steps
   block at the TOP of SOS_CARDS.md (multi-target MoveZone is the highest-yield next cap → 3 cards).
+  **Session sos-cards-4 (2026-07-03): 5 cards + 4 caps** (multi-target MoveZone, source-threaded `Not(ItSelf)`,
+  S21 cast-with-{X}, CreateToken dynamic counters) → 509 tests. **Session sos-cards-5 (2026-07-03): S17 Ward
+  mana cap + Colorstorm Stallion** (`96dbc35`) — `Effect::CounterUnlessPay` soft-counter + `EffectTarget::
+  Triggering` (targeting spell threaded through `GameEvent::Targeted.source` → `ResolutionCtx.triggering_stack`);
+  the other 6 Ward cards are now gated only by their secondaries → **513 mtg-core tests green.**
 - **✅ #60 END-TO-END AUDIT COMPLETE — all 18 cards driven through the REAL cast→pay→resolve loop.** The
   prior behaviour tests called `resolve_effect` directly, bypassing casting + mana payment, so "18/18
   fully implemented" was *asserted, not proven*. This audit rebuilt a harness on the engine's `pub(crate)`
