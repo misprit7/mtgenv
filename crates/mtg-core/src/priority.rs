@@ -24,7 +24,7 @@ use crate::effects::action::{Action, MoveCause, ResolutionCtx, Whiteboard, WbRea
 use crate::effects::target::{CardFilter, SelectSpec, TargetKind, TargetSpec};
 use crate::effects::value::{PlayerRef, ValueExpr};
 use crate::effects::{Effect, EffectTarget};
-use crate::ids::{ObjId, PlayerId};
+use crate::ids::{ObjId, PlayerId, StackId};
 use crate::mana;
 use crate::replay::{Replay, ReplayFrame, ReplayMeta, ReplaySource};
 use crate::sba::{self, LossReason, StateBasedAction};
@@ -939,12 +939,9 @@ impl Engine {
             if !timing_ok {
                 continue;
             }
-            // Must be able to choose legal targets (CR 601.2c) — modal-aware (≥min legal modes).
-            let has_targets = match s.def_of(card).and_then(|d| d.spell_effect()) {
-                Some(eff) => self.spell_castable_targets(eff, p),
-                None => true,
-            };
-            if !has_targets {
+            // Must be able to choose legal targets (CR 601.2c) — modal-aware, and Aura-aware (an
+            // Aura needs a legal permanent to enchant, else it deadlocks the target decision).
+            if !self.card_castable_targets(card, p) {
                 continue;
             }
             // Normal cast for the mana cost.
@@ -974,11 +971,7 @@ impl Engine {
                 if !affordable {
                     continue;
                 }
-                let has_targets = match s.def_of(card).and_then(|d| d.spell_effect()) {
-                    Some(eff) => self.spell_castable_targets(eff, p),
-                    None => true,
-                };
-                if has_targets {
+                if self.card_castable_targets(card, p) {
                     actions.push(PlayableAction::Cast { spell: card, variant: CastVariant::Normal });
                 }
             }
@@ -1484,15 +1477,10 @@ impl Engine {
             None => Vec::new(),
         };
         // An Aura spell targets the permanent it will enchant (CR 601.2c / 303.4f); it has no
-        // spell ability, so the target is structural. First pass: Auras enchant a creature
-        // (matches the starter set's "Enchant creature"); a general enchant restriction is future.
-        if self.is_aura(card) {
-            specs.push(TargetSpec {
-                kind: TargetKind::Creature(crate::effects::target::CardFilter::Any),
-                min: 1,
-                max: 1,
-                distinct: true,
-            });
+        // spell ability, so the target is structural. Shared with the offer-side castability gate
+        // via `aura_target_spec` so the offered casts and the target decision can't drift.
+        if let Some(spec) = self.aura_target_spec(card) {
+            specs.push(spec);
         }
 
         // C10 / 601.2b: choose X if the cost has `{X}` (bounded by affordable mana).
@@ -1540,6 +1528,16 @@ impl Engine {
                     max: spec.max,
                 })
                 .collect();
+            // Defensive unhang (CR 601.2c / 728): never emit a `ChooseTargets` a seat can't answer
+            // (a required slot with fewer candidates than its `min`). The offer-side
+            // `card_castable_targets` gate should make this unreachable, but if candidates vanished
+            // between that check and here, rewind the cast rather than deadlock. Targets are chosen
+            // before costs are paid (601.2f), so nothing has been committed — the rewind just pops
+            // the spell off the stack and returns the card to hand.
+            if slots.iter().any(|s| (s.legal.len() as u32) < s.min) {
+                self.rewind_cast(card, sid);
+                return;
+            }
             let req = DecisionRequest::ChooseTargets {
                 for_action: ActionRef(sid),
                 source: Some(card),
@@ -1574,6 +1572,22 @@ impl Engine {
             spell: sid,
             controller: p,
         });
+    }
+
+    /// Abort a cast in progress whose CR 601.2c target choice can't be satisfied (a required slot
+    /// has no legal candidate). Targets are chosen before costs are paid (CR 601.2f), so no mana or
+    /// taps have been committed — undoing the cast (CR 728, reverse the illegal action) is just
+    /// popping the spell off the stack and returning the card to its owner's hand. Defensive: the
+    /// offer-side `card_castable_targets` gate makes this unreachable in normal play.
+    fn rewind_cast(&mut self, card: ObjId, sid: StackId) {
+        self.state.stack.items.retain(|s| s.id != sid);
+        let owner = self.state.object(card).owner;
+        if let Some(o) = self.state.objects.get_mut(&card) {
+            o.zone = Zone::Hand;
+            o.controller = owner;
+            o.warp_cast = false;
+        }
+        self.state.player_mut(owner).hand.push(card);
     }
 
     /// Move a card from its owner's hand onto the stack zone (the object's `ObjId` is kept;
@@ -1616,6 +1630,47 @@ impl Engine {
                 .iter()
                 .all(|spec| self.target_candidates(spec, p).len() as u32 >= spec.min.max(1)),
         }
+    }
+
+    /// The structural target an **Aura** spell declares at CR 601.2c / 303.4f: the permanent it
+    /// will enchant. Auras have no spell ability, so this target is synthesized from the card, not
+    /// its effect IR — first pass, the starter set's Auras all "Enchant creature". `None` for a
+    /// non-Aura. Shared by [`Engine::cast_spell`] (which builds the enchant `ChooseTargets` slot
+    /// from it) and [`Engine::card_castable_targets`] (the offer-side pre-check) so the two can't
+    /// drift and the engine never offers a cast it can't then satisfy.
+    fn aura_target_spec(&self, card: ObjId) -> Option<TargetSpec> {
+        self.is_aura(card).then_some(TargetSpec {
+            kind: TargetKind::Creature(CardFilter::Any),
+            min: 1,
+            max: 1,
+            distinct: true,
+        })
+    }
+
+    /// CR 601.2c: may `card` be offered as a Cast — i.e. can it choose a legal target for **every**
+    /// required slot the cast will declare? The single offer-side gate, covering BOTH the spell
+    /// ability's targets (modal-aware, via [`Engine::spell_castable_targets`]) AND an Aura's
+    /// structural enchant target (via [`Engine::aura_target_spec`]). `cast_spell` builds its
+    /// `ChooseTargets` slots from these very specs, so the offer and the decision can't drift —
+    /// this is what stops the engine offering e.g. Pacifism with no creature to enchant (which then
+    /// deadlocked on a zero-candidate `ChooseTargets`).
+    fn card_castable_targets(&self, card: ObjId, p: PlayerId) -> bool {
+        // Spell-ability targets (modal-aware). A card with no spell ability — an Aura, or a
+        // vanilla permanent — imposes no effect-side target constraint here.
+        let effect_ok = match self.state.def_of(card).and_then(|d| d.spell_effect()) {
+            Some(eff) => self.spell_castable_targets(eff, p),
+            None => true,
+        };
+        if !effect_ok {
+            return false;
+        }
+        // An Aura additionally needs a legal permanent to enchant (CR 303.4f).
+        if let Some(spec) = self.aura_target_spec(card) {
+            if (self.target_candidates(&spec, p).len() as u32) < spec.min.max(1) {
+                return false;
+            }
+        }
+        true
     }
 
     /// The legal target candidates for one target spec (the engine pre-filters; masking is
@@ -2265,6 +2320,12 @@ impl Engine {
     /// Ask seat `p` to decide `req`, presenting its information-filtered view. The single
     /// place the engine consults an agent for a choice.
     pub(crate) fn ask(&mut self, p: PlayerId, req: &DecisionRequest) -> DecisionResponse {
+        // Invariant (CR 601.2c / 728): every decision the engine emits must have ≥1 legal response,
+        // else the game deadlocks. Debug-only canary — the offer-side gates + cast rewind uphold it.
+        debug_assert!(
+            request_has_legal_response(req),
+            "engine emitted a DecisionRequest with no legal response (deadlock): {req:?}"
+        );
         let mut view = self.view_for_seat(p);
         self.reveal_request_objects(&mut view, req);
         self.agents[p.0 as usize].decide(&view, req)
@@ -2830,6 +2891,26 @@ fn parse_targets(slots: &[TargetSlot], resp: &DecisionResponse) -> Vec<Target> {
         }
     }
     chosen
+}
+
+/// Whether `req` provably admits at least one legal response. The engine must never emit a decision
+/// a seat can't answer — that deadlocks the game (CR 601.2c / 728). The only requests that can be
+/// unsatisfiable are the "choose ≥`min` from a finite candidate set" kinds; every other request
+/// (Priority-with-pass, Declare{Attackers,Blockers} where declaring nothing is legal, Confirm,
+/// ChooseNumber with min≤max, …) always has one. Used as a debug-only invariant at the [`Engine::ask`]
+/// seam — a canary that catches any future path that would emit an unanswerable decision.
+fn request_has_legal_response(req: &DecisionRequest) -> bool {
+    match req {
+        DecisionRequest::ChooseTargets { slots, .. } => {
+            slots.iter().all(|s| s.legal.len() as u32 >= s.min)
+        }
+        DecisionRequest::SelectCards { from, min, .. } => from.len() as u32 >= *min,
+        DecisionRequest::ChooseModes { modes, min, .. } => modes.len() as u32 >= *min,
+        DecisionRequest::ChooseOption { options, min, .. } => options.len() as u32 >= *min,
+        // Other requests always admit a legal response (empty declaration, pass, a number in
+        // range, a confirm, …) — not a hang vector.
+        _ => true,
+    }
 }
 
 #[cfg(test)]
@@ -6446,6 +6527,126 @@ mod expect_tests {
         state2.phase = Phase::PrecombatMain;
         state2.player_mut(PlayerId(0)).lands_played_this_turn = 1;
         assert!(pass_engine(state2).legal_priority_actions(PlayerId(0)).is_empty());
+    }
+
+    /// ROOT FIX (CR 601.2c): an Aura is not offered as a Cast when it has no legal permanent to
+    /// enchant — the case that hung the web UI (Pacifism on an empty board → a `ChooseTargets` with
+    /// zero candidates for a required slot, no legal response, deadlock). With a creature on the
+    /// board the Cast returns. Auras have no spell ability, so their enchant target is structural;
+    /// the offer-side gate (`card_castable_targets`) now accounts for it, not just spell-effect
+    /// targets.
+    #[test]
+    fn aura_not_offered_without_a_legal_enchant_target() {
+        use crate::cards::{grp, starter_db};
+        use crate::state::GameState;
+        use std::sync::Arc;
+
+        // P0 in precombat main with Pacifism ({1}{W}) in hand and two Plains to pay for it — but no
+        // creature anywhere to enchant.
+        let mut state = GameState::new(2, 1);
+        state.set_card_db(Arc::new(starter_db()));
+        for _ in 0..2 {
+            let c = state.card_db().get(grp::PLAINS).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, Zone::Battlefield);
+        }
+        let pacifism = {
+            let c = state.card_db().get(grp::PACIFISM).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, Zone::Hand)
+        };
+        state.phase = Phase::PrecombatMain;
+        state.active_player = PlayerId(0);
+        let mut engine = pass_engine(state);
+
+        let offers_pacifism = |e: &Engine| {
+            e.legal_priority_actions(PlayerId(0))
+                .iter()
+                .any(|a| matches!(a, PlayableAction::Cast { spell, .. } if *spell == pacifism))
+        };
+        // Empty board (no creatures): the Aura is NOT castable — no legal enchant target (601.2c).
+        assert!(!offers_pacifism(&engine), "Pacifism must not be offered with no creature to enchant");
+
+        // Add a creature: now there IS a legal enchant target, so the Cast is offered.
+        let bears = engine.state.card_db().get(grp::GRIZZLY_BEARS).unwrap().chars.clone();
+        engine.state.add_card(PlayerId(1), bears, Zone::Battlefield);
+        assert!(offers_pacifism(&engine), "with a creature on the board the Aura becomes castable");
+    }
+
+    /// Regression (CR 601.2c): a creature-only-target spell (Murder — "Destroy target creature") has
+    /// no legal target with no creatures in play, so it isn't castable; adding a creature flips it.
+    /// Burn spells ("any target") can't show the bug because the player is always a legal target —
+    /// this uses a creature-restricted target. Checks `card_castable_targets` directly (the exact
+    /// offer-side gate) so mana affordability, which is gated separately, doesn't confound it.
+    #[test]
+    fn creature_target_spell_castability_tracks_creatures() {
+        use crate::cards::{grp, starter_db};
+        use crate::state::GameState;
+        use std::sync::Arc;
+
+        let mut state = GameState::new(2, 1);
+        state.set_card_db(Arc::new(starter_db()));
+        let murder = {
+            let c = state.card_db().get(grp::MURDER).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, Zone::Hand)
+        };
+        state.active_player = PlayerId(0);
+        let mut engine = pass_engine(state);
+
+        // No creatures ⇒ no legal target ⇒ not castable (target-wise).
+        assert!(!engine.card_castable_targets(murder, PlayerId(0)));
+        // Add a creature ⇒ a legal target exists ⇒ castable (target-wise).
+        let bears = engine.state.card_db().get(grp::GRIZZLY_BEARS).unwrap().chars.clone();
+        engine.state.add_card(PlayerId(1), bears, Zone::Battlefield);
+        assert!(engine.card_castable_targets(murder, PlayerId(0)));
+    }
+
+    /// DEFENSIVE UNHANG (CR 601.2c / 728): if a cast reaches the target step with a required slot
+    /// that has no legal candidate, the engine rewinds instead of deadlocking — the card returns to
+    /// its owner's hand and the stack is left empty (no mana was paid; targets precede costs at
+    /// 601.2f). Driven by calling `cast_spell` directly on Pacifism with an empty board, bypassing
+    /// the offer gate that normally prevents ever reaching here.
+    #[test]
+    fn cast_with_no_legal_target_rewinds_instead_of_hanging() {
+        use crate::cards::{grp, starter_db};
+        use crate::state::GameState;
+        use std::sync::Arc;
+
+        let mut state = GameState::new(2, 1);
+        state.set_card_db(Arc::new(starter_db()));
+        let pacifism = {
+            let c = state.card_db().get(grp::PACIFISM).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, Zone::Hand)
+        };
+        state.active_player = PlayerId(0);
+        let mut engine = pass_engine(state);
+
+        engine.cast_spell(PlayerId(0), pacifism, CastVariant::Normal);
+
+        assert!(engine.state.stack.items.is_empty(), "the aborted cast left nothing on the stack");
+        assert!(
+            engine.state.player(PlayerId(0)).hand.contains(&pacifism),
+            "the card was returned to its owner's hand"
+        );
+        assert_eq!(engine.state.object(pacifism).zone, Zone::Hand);
+    }
+
+    /// The `ask`-seam invariant helper itself: a required target slot with no candidate has no legal
+    /// response; an optional slot (min=0) always does (choose nothing). This is what the debug
+    /// assertion in `ask` enforces on every emitted decision.
+    #[test]
+    fn request_has_legal_response_flags_unsatisfiable_required_slot() {
+        let slot = |legal: Vec<Target>, min: u32| TargetSlot {
+            description: String::new(),
+            legal,
+            min,
+            max: 1,
+        };
+        let make = |min: u32| DecisionRequest::ChooseTargets {
+            for_action: ActionRef(StackId(0)),
+            source: None,
+            slots: vec![slot(vec![], min)],
+        };
+        assert!(!request_has_legal_response(&make(1)), "required slot, zero candidates ⇒ no response");
+        assert!(request_has_legal_response(&make(0)), "optional slot ⇒ 'choose nothing' is legal");
     }
 
     /// #36: manual mana. A seat with `manual_mana` ON is offered an `ActivateMana` per untapped
