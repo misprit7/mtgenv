@@ -1,0 +1,52 @@
+{
+  "label": "fleet-after-optdecode",
+  "date_utc": "2026-07-03 17:35 UTC",
+  "git_sha": "40e494b",
+  "host": "oko",
+  "config": {
+    "deck": "bears",
+    "n_steps": 256,
+    "rollouts": 3,
+    "vecenv": "fleet",
+    "num_workers": 8,
+    "callbacks": "eval/pool/replay OFF"
+  },
+  "results": [
+    {
+      "n_envs": 128,
+      "timesteps": 98304,
+      "rollouts": 3,
+      "wall_s": 27.3,
+      "steady_fps": 4419,
+      "fps_series": [
+        6231,
+        4603,
+        4235
+      ]
+    },
+    {
+      "n_envs": 256,
+      "timesteps": 196608,
+      "rollouts": 3,
+      "wall_s": 47.3,
+      "steady_fps": 5209,
+      "fps_series": [
+        7856,
+        5472,
+        4946
+      ]
+    },
+    {
+      "n_envs": 512,
+      "timesteps": 393216,
+      "rollouts": 3,
+      "wall_s": 91.0,
+      "steady_fps": 5472,
+      "fps_series": [
+        8739,
+        5765,
+        5179
+      ]
+    }
+  ]
+}
