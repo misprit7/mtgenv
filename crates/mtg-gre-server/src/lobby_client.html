@@ -114,6 +114,10 @@
   .curvebar { width: 100%; background: var(--accent); border-radius: 3px 3px 0 0; min-height: 2px; }
   .filterbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 4px 0 10px; }
   .filterbar input { flex: 1 1 140px; }
+  .filterbar select { width: auto; flex: 0 0 auto; padding: 5px 6px; font-size: 12px; }
+  .searchhelp { flex-basis: 100%; background: #0c120f; border: 1px solid var(--line); border-radius: 8px;
+    padding: 8px 10px; font-size: 11px; color: var(--muted); line-height: 1.7; }
+  .searchhelp code { color: var(--accent); background: rgba(57,217,138,.08); padding: 0 3px; border-radius: 3px; }
   .fchip { background: #0c120f; color: var(--muted); border: 1px solid var(--line); border-radius: 999px;
     padding: 3px 9px; font-size: 11px; cursor: pointer; user-select: none; }
   .fchip.on { border-color: var(--accent); color: var(--accent); }
@@ -505,7 +509,9 @@ function el(tag, cls, text) {
 const WUBRG = ["White", "Blue", "Black", "Red", "Green", "Colorless"];
 const CODE = { White: "W", Blue: "U", Black: "B", Red: "R", Green: "G", Colorless: "C" };
 let artMap = {};
-fetch("/card-art.json").then((r) => r.json()).then((m) => { artMap = m; }).catch(() => {});
+// Promise so the deck builder can wait for the manifest (art + per-card set codes) before it renders
+// the catalog / set dropdown. Fire-and-forget elsewhere (card tiles just fill art in as it arrives).
+const artReady = fetch("/card-art.json").then((r) => r.json()).then((m) => { artMap = m; }).catch(() => {});
 function symImg(code) {
   const i = el("img", "ms"); i.src = "https://svgs.scryfall.io/card-symbols/" + code + ".svg";
   i.alt = "{" + code + "}"; i.loading = "lazy"; return i;
@@ -667,6 +673,7 @@ if (!HOVER) {
 // The catalog (`/api/cards`) is every card that can appear in a game — the art-covered playable
 // pool — projected in the same shape as deck cards. Loaded once, lazily.
 async function loadCatalog() {
+  await artReady.catch(() => {}); // ensure per-card set codes are present for the set filter/search
   if (!CATALOG.length) {
     try { CATALOG = await (await fetch("/api/cards")).json(); } catch (e) { CATALOG = []; }
   }
@@ -683,7 +690,7 @@ const withId = (e, id) => { e.id = id; return e; };
 // Open the builder. `name`/`update` = target custom deck (update=true) or a fresh/duplicated one
 // (update=false, name blank so the user names it); `cards` = grp_id→count Map to start from.
 function openBuilder(name, update, cards) {
-  builder = { name, update, cards, q: "", colors: new Set(), types: new Set() };
+  builder = { name, update, cards, q: "", colors: new Set(), types: new Set(), set: "", showHelp: false };
   loadCatalog().then(renderBuilder);
 }
 
@@ -713,9 +720,24 @@ function renderBuilder() {
 
 function filterBar() {
   const bar = el("div", "filterbar");
-  const q = el("input"); q.placeholder = "Search name…"; q.value = builder.q;
+  const q = el("input");
+  q.placeholder = "Search — name, or t: o: c: mv: pow: tou: s: (tap ⓘ)";
+  q.value = builder.q;
   q.oninput = () => { builder.q = q.value; updateCatalog(); };
   bar.appendChild(q);
+  // Set dropdown — the distinct first-printing set codes present in the catalog (from artMap).
+  const sets = catalogSets();
+  if (sets.length) {
+    const sel = el("select");
+    const all = el("option", null, "All sets"); all.value = ""; sel.appendChild(all);
+    sets.forEach((s) => { const o = el("option", null, s.toUpperCase()); o.value = s; sel.appendChild(o); });
+    sel.value = builder.set;
+    sel.onchange = () => { builder.set = sel.value; updateCatalog(); };
+    bar.appendChild(sel);
+  }
+  const help = el("span", "fchip", "ⓘ"); help.title = "Search syntax help";
+  help.onclick = () => { builder.showHelp = !builder.showHelp; const h = $("searchhelp"); if (h) h.hidden = !builder.showHelp; };
+  bar.appendChild(help);
   const chip = (label, set, val) => {
     const c = el("span", "fchip" + (set.has(val) ? " on" : ""), label);
     c.onclick = () => { set.has(val) ? set.delete(val) : set.add(val); c.classList.toggle("on"); updateCatalog(); };
@@ -723,7 +745,21 @@ function filterBar() {
   };
   ["W", "U", "B", "R", "G", "C"].forEach((code) => bar.appendChild(chip(code, builder.colors, code)));
   ["Creature", "Land", "Instant", "Sorcery", "Artifact", "Enchantment"].forEach((t) => bar.appendChild(chip(t, builder.types, t)));
+  bar.appendChild(searchHelpEl());
   return bar;
+}
+
+function searchHelpEl() {
+  const h = withId(el("div", "searchhelp"), "searchhelp");
+  h.hidden = !builder.showHelp;
+  h.innerHTML =
+    'Space-separated terms are ANDed; <code>or</code> for OR; <code>-</code> negates a term; ' +
+    '<code>"exact phrase"</code> for a name phrase.<br>' +
+    '<code>t:</code>type/subtype · <code>o:</code>oracle text · <code>s:</code>set code · ' +
+    '<code>c:</code>colors (<code>c:gw</code>=includes, <code>c=u</code>=exactly, <code>c:c</code>=colorless) · ' +
+    '<code>mv:</code> <code>pow:</code> <code>tou:</code> with <code>= &lt; &gt; &lt;= &gt;=</code>.<br>' +
+    'e.g. <code>t:creature mv&lt;=2</code> · <code>s:sos o:draw</code> · <code>-t:land c:u</code>';
+  return h;
 }
 
 // Refill every dynamic region from `builder.cards`.
@@ -778,16 +814,113 @@ function updateInDeck() {
   })));
 }
 
+// The first-printing set code for a catalog card (from the art manifest), lowercased; "" if unknown.
+function cardSet(c) { const i = artMap[c.grp_id]; return (i && i.set ? String(i.set) : "").toLowerCase(); }
+// Distinct set codes present in the catalog, sorted — for the set dropdown.
+function catalogSets() {
+  const s = new Set();
+  CATALOG.forEach((c) => { const cs = cardSet(c); if (cs) s.add(cs); });
+  return [...s].sort();
+}
+
+// ── Scryfall-style search (a documented subset) ────────────────────────────────────────────────
+// OR-groups separated by a bare `or`; within a group, space-separated terms are ANDed. A term is an
+// optional `-` (negate), then bare words / "quoted" (name substring), or key:value:
+//   t:/type: (card types + subtypes) · o:/oracle: (rules text) · s:/set:/e: (set code, exact)
+//   c:/color: — `:` includes the given wubrg/c letters, `=` matches exactly; `c:c` = colorless
+//   mv:/cmc:, pow:, tou: — with `= < > <= >=` (`:` means `=`)
+// Returns predicate(card)->bool; a blank query matches everything. (rarity/is:/legality/regex are
+// intentionally unsupported — no data / out of scope.)
+function parseSearch(query) {
+  const groups = splitOr(tokenizeSearch(query)).map((toks) => toks.map(parseTerm).filter(Boolean));
+  const nonEmpty = groups.filter((g) => g.length);
+  if (!nonEmpty.length) return () => true;
+  return (c) => nonEmpty.some((g) => g.every((t) => t(c)));
+}
+function tokenizeSearch(q) {
+  const out = []; let cur = "", inq = false;
+  for (const ch of q) {
+    if (ch === '"') { inq = !inq; cur += ch; }
+    else if (/\s/.test(ch) && !inq) { if (cur) { out.push(cur); cur = ""; } }
+    else cur += ch;
+  }
+  if (cur) out.push(cur);
+  return out;
+}
+function splitOr(toks) {
+  const groups = [[]];
+  toks.forEach((t) => { if (t.toLowerCase() === "or") groups.push([]); else groups[groups.length - 1].push(t); });
+  return groups;
+}
+const stripQuotes = (v) => v.replace(/^"(.*)"$/, "$1");
+function parseTerm(tok) {
+  let neg = false;
+  if (tok.startsWith("-") && tok.length > 1) { neg = true; tok = tok.slice(1); }
+  const m = tok.match(/^(type|oracle|color|cmc|mv|pow|tou|set|t|o|c|s|e)(<=|>=|<|>|=|:)(.*)$/i);
+  let pred;
+  if (m) pred = keyedPred(m[1].toLowerCase(), m[2], stripQuotes(m[3]).toLowerCase());
+  else {
+    const v = stripQuotes(tok).toLowerCase();
+    if (!v) return null;
+    pred = (c) => c.name.toLowerCase().includes(v);
+  }
+  if (!pred) return null;
+  return neg ? (c) => !pred(c) : pred;
+}
+function keyedPred(key, op, val) {
+  switch (key) {
+    case "t": case "type":
+      return (c) => c.card_types.concat(c.subtypes).join(" ").toLowerCase().includes(val);
+    case "o": case "oracle":
+      return (c) => (c.rules_text || "").toLowerCase().includes(val);
+    case "s": case "set": case "e":
+      return (c) => cardSet(c) === val;
+    case "c": case "color":
+      return colorPred(op, val);
+    case "mv": case "cmc":
+      return numPred(op, val, (c) => c.mana_value);
+    case "pow":
+      return numPred(op, val, (c) => c.power);
+    case "tou":
+      return numPred(op, val, (c) => c.toughness);
+    default: return null;
+  }
+}
+function colorLetters(c) {
+  if (!c.colors || !c.colors.length) return new Set(["c"]);
+  return new Set(c.colors.map((x) => (CODE[x] || "C").toLowerCase()));
+}
+function colorPred(op, val) {
+  const want = new Set(val.split("").filter((ch) => "wubrgc".includes(ch)));
+  if (!want.size) return () => true;
+  return (c) => {
+    const have = colorLetters(c);
+    if (want.has("c")) return op === "=" ? have.has("c") && have.size === 1 : have.has("c");
+    if (op === "=") return have.size === want.size && [...want].every((x) => have.has(x));
+    return [...want].every((x) => have.has(x)); // ":" includes
+  };
+}
+function numPred(op, val, get) {
+  const n = parseFloat(val); if (isNaN(n)) return () => true;
+  const cmp = op === ":" ? "=" : op;
+  return (c) => {
+    const v = get(c); if (v == null) return false;
+    return cmp === "=" ? v === n : cmp === "<" ? v < n : cmp === ">" ? v > n
+      : cmp === "<=" ? v <= n : cmp === ">=" ? v >= n : false;
+  };
+}
+
 function updateCatalog() {
   const grid = $("bcatalog"); if (!grid) return; grid.innerHTML = "";
-  const q = builder.q.toLowerCase();
+  const pred = parseSearch(builder.q);
   const list = CATALOG.filter((c) => {
-    if (q && !c.name.toLowerCase().includes(q)) return false;
+    if (!pred(c)) return false;
     if (builder.types.size && !c.card_types.some((t) => builder.types.has(t))) return false;
     if (builder.colors.size) {
       const codes = c.colors.length ? c.colors.map((x) => CODE[x]) : ["C"];
       if (!codes.some((cd) => builder.colors.has(cd))) return false;
     }
+    if (builder.set && cardSet(c) !== builder.set) return false;
     return true;
   });
   if (!list.length) { grid.appendChild(el("div", "empty", "No cards match.")); return; }
