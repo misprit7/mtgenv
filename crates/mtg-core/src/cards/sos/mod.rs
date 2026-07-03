@@ -36,6 +36,7 @@ pub mod grapple_with_death;
 pub mod harsh_annotation;
 pub mod hungry_graffalon;
 pub mod imperious_inkmage;
+pub mod impractical_joke;
 pub mod informed_inkwright;
 pub mod inkling_mascot;
 pub mod interjection;
@@ -128,6 +129,7 @@ pub fn register(db: &mut CardDb) {
     harsh_annotation::register(db);
     hungry_graffalon::register(db);
     imperious_inkmage::register(db);
+    impractical_joke::register(db);
     informed_inkwright::register(db);
     inkling_mascot::register(db);
     interjection::register(db);
