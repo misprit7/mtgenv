@@ -5,6 +5,14 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-07-03 (night)
 
+- **engine+cards(sos) — another-target self-exclusion + Ascendant Dustspeaker (`1f6e284`):** `target_candidates`
+  / `target_matches_filter` now carry a `source: Option<ObjId>` (threaded from the spell-cast / activate /
+  trigger targeting sites; `None` at spell prechecks + unit tests) with a `CardFilter::ItSelf => source ==
+  Some(id)` arm, so **`Not(ItSelf)` excludes an ability's own source at the targeting layer** ("another
+  target creature you control"). Consumer: **Ascendant Dustspeaker** (`{4}{W}` 3/4 Flying; ETB +1/+1 on
+  another target creature you control; begin-combat gy-exile). End-to-end tests drive the ETB via the real
+  engine (`broadcast(ObjectMoved→Battlefield)` → `run_agenda`): counter lands on the *other* creature, and
+  when the Dustspeaker is your only creature the trigger has no legal target and is removed (CR 603.3c).
 - **engine+cards(sos) — multi-target MoveZone + Pull from the Grave (`12c41f8`):** the `Effect::MoveZone`
   materialize arm now consumes a whole `max>1` target slot (loops up to `spec.max`, one `Action::MoveZone`
   per chosen object) instead of one. Crux was that `chosen_targets`/`StackObject.targets` is a **flat**

@@ -23,11 +23,12 @@ small-but-load-bearing cap; do each fresh, one commit, with a test.** Prioritize
      target count driven by the cast's X** (max = chosen X). Separate cap — leave until built.
    - **Moment of Reckoning** ("choose up to four; may choose the same mode more than once"): **repeatable
      modal modes** (one target per chosen instance). Separate/bigger cap — deferred with the modal work.
-2. **Another-target self-exclusion (1 card, now half-done):** Ascendant Dustspeaker — its begin-combat
-   exile trigger already works (begin-of-step cap); it just needs "+1/+1 on ANOTHER target creature you
-   control". Gap: `target_candidates(spec, caster)` doesn't take the source, so `Not(ItSelf)` can't be
-   evaluated in targeting. Thread the source `ObjId` through `target_candidates` → `target_matches_filter`
-   and add an `ItSelf` arm there (it already exists in `sac_filter_matches` at priority.rs ~1569).
+2. **Another-target self-exclusion** — ✅ **DONE** (`1f6e284`). Ascendant Dustspeaker authored (ETB "+1/+1
+   on another target creature you control" + begin-combat gy-exile + Flying). `target_candidates` and
+   `target_matches_filter` now take a `source: Option<ObjId>` (threaded from the cast/activate/trigger call
+   sites; `None` at spell prechecks/tests) and a `CardFilter::ItSelf => source == Some(id)` arm, so
+   `Not(ItSelf)` excludes the ability's own source at the **targeting** layer. End-to-end tests: with a 2nd
+   creature the counter lands on the other; alone the trigger has no legal target and is removed (CR 603.3c).
 3. **dynamic-MV filter (1 card):** Mind into Matter (draw X; put a permanent MV≤X from hand). `CardFilter::
    ManaValue{max}` is a fixed `u32`; needs a ValueExpr-driven max (or a sibling filter). Touches the
    exhaustive `count_filter_matches`.
