@@ -6,11 +6,12 @@
 //! `CardDef`/`Ability` builders like `creature`/`mana_ability`, in the parent `crate::cards`).
 //! That keeps every card module a leaf node — no card-to-card tangle as the pool grows.
 
-use crate::basics::{CardType, Zone, ZoneDest, ZonePos};
-use crate::effects::target::{CardFilter, SelectSpec, TargetKind, TargetSpec};
+use crate::basics::{CardType, Color, CounterKind, Zone, ZoneDest, ZonePos};
+use crate::effects::ability::Keyword;
+use crate::effects::target::{CardFilter, SelectSpec, TargetKind, TargetSpec, TokenSpec};
 use crate::effects::value::{PlayerRef, ValueExpr};
 use crate::effects::{Effect, EffectTarget};
-use crate::subtypes::Supertype;
+use crate::subtypes::{CreatureType, Supertype};
 
 /// "a land you control" — the landfall event filter (CR 603.2: a land entering under your
 /// control). Shared by every landfall trigger (Sazh's Chocobo, Mossborn Hydra, Icetill Explorer…).
@@ -101,6 +102,55 @@ pub(crate) fn sacrifice_self() -> SelectSpec {
 /// Tunnel) and Lumbering Worldwagon. `min: 0` allows a failed/declined find; the engine shuffles after.
 pub(crate) fn fetch_basic_tapped() -> Effect {
     fetch_basic_tapped_by(PlayerRef::Controller)
+}
+
+/// The Strixhaven "Inkling" token (CR 111.3): a 1/1 white-and-black Inkling with flying. Shared by
+/// every card that makes one (Eager Glyphmage, Harsh Annotation, Informed Inkwright, …).
+pub(crate) fn inkling_token() -> TokenSpec {
+    TokenSpec {
+        name: "Inkling".to_string(),
+        card_types: vec![CardType::Creature],
+        subtypes: vec![CreatureType::Inkling.into()],
+        colors: vec![Color::White, Color::Black],
+        power: 1,
+        toughness: 1,
+        keywords: vec![Keyword::Flying],
+        counters: vec![],
+    }
+}
+
+/// The "Fractal" token (CR 111.3): a 0/0 green-and-blue Fractal, optionally entering with `counters`
+/// +1/+1 counters. Shared by every Fractal-maker (Additive Evolution, Wild Hypothesis, Snarl Song, …).
+pub(crate) fn fractal_token(counters: u32) -> TokenSpec {
+    TokenSpec {
+        name: "Fractal".to_string(),
+        card_types: vec![CardType::Creature],
+        subtypes: vec![CreatureType::Fractal.into()],
+        colors: vec![Color::Green, Color::Blue],
+        power: 0,
+        toughness: 0,
+        keywords: vec![],
+        counters: if counters > 0 {
+            vec![(CounterKind::PlusOnePlusOne, counters)]
+        } else {
+            vec![]
+        },
+    }
+}
+
+/// The "Spirit" token (CR 111.3): a 2/2 red-and-white Spirit. Shared by every Spirit-maker (Group
+/// Project, Living History, Garrison Excavator, …).
+pub(crate) fn spirit_token() -> TokenSpec {
+    TokenSpec {
+        name: "Spirit".to_string(),
+        card_types: vec![CardType::Creature],
+        subtypes: vec![CreatureType::Spirit.into()],
+        colors: vec![Color::Red, Color::White],
+        power: 2,
+        toughness: 2,
+        keywords: vec![],
+        counters: vec![],
+    }
 }
 
 /// "Earthbend N" (CR 611 animation + counters) — the chosen **target land you control** becomes a
