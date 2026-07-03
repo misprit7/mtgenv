@@ -3,7 +3,7 @@
 Single source of truth for goals + where things stand. Update this (without being asked)
 whenever meaningful progress changes the picture. Companion: `WORKLOG.md` (chronological).
 
-_Last updated: 2026-06-13_
+_Last updated: 2026-07-03_
 
 ## Vision (one sentence)
 
@@ -50,6 +50,18 @@ MTGA client.
 
 ## Current state
 
+- **✅ TRAINING VERIFIED WORKING (2026-07-03) + shaping default ON.** The "heralds" sanity deck
+  (40× Mist-Cloaked Herald + 20× Island, provably-optimal play = land/cast/attack-all) trains to
+  greedy attack_rate 1.000, productive_rate 1.000, 0.972 vs random (baseline 0.478). PBRS shaping
+  (0.5·tanh(Δlife/10)+0.3·tanh(Δpower/6)+0.2·tanh(Δcards/4), 60% anneal) now defaults to coef 0.5;
+  eval stays raw ±1. Per-window cast/playland_rate cap <1.0 for optimal play (mutual-exclusion
+  artifact) — use `productive_rate` as the convergence gauge. TB served from /tmp/mtgenv_tb/.
+- **✅ MOBILE WEB CLIENT (2026-07-03).** Game client + lobby fully playable from a phone: mobile
+  reflow (sticky prompt sheet, opp-top/you-bottom strips, log toggle), touch previews long-press-only
+  (hover gated to real mice), on-screen pass-turn button. Desktop unchanged.
+- **▶ SOS card push (long-term, active):** Secrets of Strixhaven 271 cards triaged in
+  `docs/plans/SOS_CARDS.md` — 74 authorable now, 142 behind ~small caps (7 caps unlock ~79),
+  55 deferred (MDFCs + big subsystems). Agent grinding easiest-first.
 - **✅ #60 END-TO-END AUDIT COMPLETE — all 18 cards driven through the REAL cast→pay→resolve loop.** The
   prior behaviour tests called `resolve_effect` directly, bypassing casting + mana payment, so "18/18
   fully implemented" was *asserted, not proven*. This audit rebuilt a harness on the engine's `pub(crate)`

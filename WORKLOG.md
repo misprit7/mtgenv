@@ -3,6 +3,38 @@
 Short, dated entries for future-agent consumption. Newest first. One line or a few bullets
 per unit of meaningful progress. Keep it terse — detail lives in `docs/` and git history.
 
+## 2026-07-03
+
+- **webui (mobile package):** game client is now phone-playable (user drives it over Tailscale).
+  One `@media (max-width:760px, max-height:500px)` block: single scrollable column (opp strip top →
+  board → hand → your strip + decision prompt as a sticky bottom sheet), log hidden behind a topbar
+  toggle, step bar scrolls. Touch: long-press (~450ms) is the ONLY preview on touch (hover preview
+  gated to `pointerType==='mouse'` — taps no longer open stuck previews anywhere incl. zone/decklist
+  modals), on-screen "⏩ Pass turn" button (was Enter-only), bigger tap targets, heralds topbar
+  quick-link. Desktop pixel-identical; embedded mirror kept byte-identical; Playwright-verified at
+  390×844/844×390/1280×800. (c0fb637..63c5135) Lobby deck-viewer got the same touch fix separately:
+  tap-toggle centered preview, dismiss on any next tap (df52e76).
+- **engine + server ("heralds" RL sanity deck):** Mist-Cloaked Herald authored ({U} 1/1 "can't be
+  blocked" as a printed self-static over `Qualification::CantBeBlocked`, grp 118, cards/rix/) +
+  `heralds` preset (40 Herald + 20 Island) in `preset_deck` (e4b366f, 00aa120); registered in
+  DECK_NAMES + lobby picker (5ca543a); art manifest regen for Island/Herald (bd1679f). 235 mtg-core
+  tests green.
+- **gym (training verified working + shaping default ON):** heralds 200k self-play converges to
+  provably-optimal play: greedy attack_rate 1.000, productive_rate 1.000 (0 wasted windows/~3.5k),
+  0.972 vs random (baseline 0.478), block 0. cast/playland_rate plateaus (~0.83/0.71) proven to be a
+  per-window mutual-exclusion METRIC ARTIFACT, not a learning failure → added `productive_rate`
+  StatDef as the artifact-free convergence gauge (a610017). PBRS shaping now defaults to coef 0.5
+  annealed (0fe3cb0; eval stays raw ±1); caveat: hurts very short budgets (16k demo → below random;
+  that league test pins coef 0). `Deck::Heralds` wired through mtg-py (bdf1f40). Gotchas: concurrent
+  same-parent pool_dirs collide on the shared ref-checkpoint path; CUDA nondeterminism under
+  concurrent GPU jobs can flip A/B conclusions — compare sequentially. TB: /tmp/mtgenv_tb/.
+- **sos-cards (new long-term workstream):** Secrets of Strixhaven (`sos`, 271 cards) triaged into
+  ease tiers → `docs/plans/SOS_CARDS.md` (f9ddafb): 74 authorable now (T1+T2), 142 need one small
+  cap each (top-7 caps unlock ~79), 55 deferred (36 MDFCs per first-pass scope + big subsystems).
+  Grinding easiest-first.
+- **in flight:** engine fix for "targeted spell offered with zero legal targets → ChooseTargets
+  deadlock" (CR 601.2c pre-check + every-request-has-a-legal-response invariant).
+
 ## 2026-06-14
 
 - **gym (#68 done):** tracked_stats — action-rate summary metrics to TensorBoard, encapsulated +
