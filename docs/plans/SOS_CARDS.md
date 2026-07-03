@@ -185,7 +185,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Additive Evolution | - | `sos` | ✅ done | fractal token + combat counter, all IR |
 | Ancestral Anger | - | `vow` | ✅ done | grant trample, named-card-count pump, draw |
 | Arnyn, Deathbloom Botanist | - | `sos` | ⏳ | deathtouch, filtered dies-trigger drain |
-| Artistic Process | - | `sos` | ⏳ | modal damage + flying token, all IR |
+| Artistic Process | - | `sos` | ✅ done | modal: 6-to-target / 2-to-each-opp-creature (ForEach chooser:Opponent) / flying+haste token |
 | Ascendant Dustspeaker | - | `sos` | ⏳ | flying, ETB counter, exile graveyard card |
 | Bogwater Lumaret | - | `sos` | ✅ done | creature-ETB gain-life trigger, IR |
 | Borrowed Knowledge | - | `sos` | ⏳ | modal discard hand, draw by count |
