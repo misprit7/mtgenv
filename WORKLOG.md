@@ -5,6 +5,15 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-07-03 (night)
 
+- **cards(sos) — sweep 4 no-cap cards from the refreshed unauthored-card audit (`5cc…` this batch):** an Explore
+  subagent re-enumerated all 275 SOS names vs the 125 authored files and triaged the unauthored set against the
+  ACTUAL engine (correcting several "not implemented" assumptions — notably `Ability::ConditionalStatic` IS
+  live). Authored 4 fully-faithful cards on existing caps: **Rancorous Archaic** `{5}` 2/2 (Trample/Reach +
+  Converge `EntersWithCountersValue{ColorsSpent}`); **Aberrant Manawurm** `{3}{G}` 2/5 (Trample + cast-I/S
+  `PumpPT{power: ManaSpentOnTrigger}`); **Topiary Lecturer** `{2}{G}` 1/2 (Increment + `{T}: AddMana({G} ×
+  PowerOfSelf)`); **Thornfist Striker** `{2}{G}` 3/3 — the **4th Ward card** (Ward {1} + Infusion team anthem as
+  two `ConditionalStatic`s: `ModifyPT{+1,0}` and `GrantKeyword(Trample)` gated on `GainedLifeThisTurn`; I'd
+  earlier called it blocked, the audit corrected me). Real-path tests each. 531 tests.
 - **engine+cards(sos) — S10 flashback front-cap + Antiquities on the Loose + CreateToken ordering fix (`8ed83b1`):**
   `Condition::CastFromNotHand` reads the source spell's `flashback_cast` flag ("if this spell was cast from
   anywhere other than your hand" — the only non-hand cast the engine tracks). Antiquities `{1}{W}{W}` = two 2/2

@@ -82,11 +82,21 @@ DEFERRED still (never build): DFC/modal, Lessons/Paradigm, planeswalkers, Casual
 dies-triggers need LKI (Arnyn, Cauldron of Essence).
 
 **Blocked set (need an unbuilt cap first — don't burn time on these until the cap lands):**
-- **Ward (S17, ◑ mana+discard built `96dbc35`/`c335bcd`)** — Colorstorm Stallion + Forum Necroscribe + Tragedy
-  Feaster DONE (3 cards). The other 4 named cards each need a NEW secondary cap: Thornfist Striker (conditional
-  anthem static — `Ability::Static` has no condition field), Fractal Tender (per-turn counter-added tracker),
-  Inkshape Demonstrator (lifelink not combat-wired), Mica & Prismari (pay_cost PayLife arm + spell-copy/storm).
-  **Ward—Pay-life needs a `pay_cost` PayLife arm** (IR ready; no-op today).
+- **Ward (S17, ◑ mana+discard built)** — Colorstorm Stallion + Forum Necroscribe + Tragedy Feaster + **Thornfist
+  Striker** DONE (**4 cards**; Thornfist's Infusion anthem uses `Ability::ConditionalStatic`, which DOES exist —
+  the earlier "needs conditional static cap" note was wrong). The other 3 named cards need: Fractal Tender
+  (per-turn counter-added tracker), Inkshape Demonstrator (lifelink not combat-wired), Mica & Prismari (pay_cost
+  PayLife arm + spell-copy/storm). **Ward—Pay-life needs a `pay_cost` PayLife arm** (IR ready; no-op today).
+
+**▶ Fresh authorable-now list (2026-07-03 unauthored-card audit — verified vs the real engine):** the audit
+found `ConditionalStatic`, stun counters, `ValueExpr::{Sum,XTimes,NumTargets,PowerOfTarget}`, `CardFilter::
+{Named,ManaValue,PowerAtMost}`, `Effect::{Fight,Distribute,BecomeCreature}` all LIVE. Cards still authorable on
+existing caps (Antiquities/Rancorous/Aberrant/Topiary/Thornfist already done this session): **Ancestral Anger**
+`{R}` sorcery (vow reprint — resolve folder; `Sum(1, Count{Graveyard, Named})` pump + Trample + Draw),
+**Homesickness** `{4}{U}{U}` instant (Draw target-player + Tap up-to-2 + Stun each — check up-to-2 multi-target).
+Genuinely-absent caps (from the audit): spell-copy, move-counters, counters-on-TARGET value, no-max-hand,
+DYNAMIC ManaValue bounds, one-shot set-base-P/T on a target, self "costs less", grant-arbitrary-ability; DFC/
+Lesson/planeswalker/named-keyword buckets remain deferred (36 DFC + more).
 - **S16 end-step-token timing** — the begin-of-step-trigger cap unblocked the *timing*; any remaining
   end-step-token card is now authorable IF its other clauses are (check per-card).
 - **S15 graveyard-play** — Ark of Hunger (mill → play from graveyard); needs a graveyard analog of

@@ -94,7 +94,11 @@ MTGA client.
   Feaster** (Ward—Discard + Infusion end-step sacrifice, `1ca6d8e`); also fixed `Effect::MoveZone` target
   collection. Then a **ledger-vs-git audit** flipped 4 more stale ⏳ rows (S2/S3/S18/S11 all already done) +
   added a same-commit process rule; and **Antiquities on the Loose** (`8ed83b1`, S10 flashback front-cap:
-  `Condition::CastFromNotHand` + a #61 `CreateToken`-commit-before-next fix). → **523 mtg-core tests green.**
+  `Condition::CastFromNotHand` + a #61 `CreateToken`-commit-before-next fix). Then an Explore-subagent
+  unauthored-card audit refreshed the queue and I swept **4 more no-cap cards** (Rancorous Archaic, Aberrant
+  Manawurm, Topiary Lecturer, and **Thornfist Striker** = the 4th Ward card via `ConditionalStatic`). This
+  session (sos-cards-5): **9 cards + S17 Ward cap + CastFromNotHand cap + 2 engine fixes (MoveZone target
+  collection, CreateToken commit-ordering) + a full ledger-vs-git cap audit.** → **531 mtg-core tests green.**
 - **✅ #60 END-TO-END AUDIT COMPLETE — all 18 cards driven through the REAL cast→pay→resolve loop.** The
   prior behaviour tests called `resolve_effect` directly, bypassing casting + mana payment, so "18/18
   fully implemented" was *asserted, not proven*. This audit rebuilt a harness on the engine's `pub(crate)`
