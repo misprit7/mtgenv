@@ -164,6 +164,17 @@ impl Engine {
                 let count = self.eval_value(count, ctx).max(0) as u32;
                 self.interpret_discard(player, count) > 0
             }
+            // Counter a target spell/ability on the stack (CR 701.5). Imperative (mutates the stack),
+            // so it lives here. A spell with the `CantBeCountered` qualification (CR 701.5f) is left
+            // on the stack — the counterspell still resolved, it just did nothing to that spell.
+            // Flush first so any earlier staged actions apply before the stack changes.
+            Effect::Counter { what } => {
+                self.flush_pending(wb);
+                if let Some(Target::Stack(sid)) = self.resolve_target(what, ctx, cursor) {
+                    self.interpret_counter(sid);
+                }
+                true
+            }
             // "You may …" (CR 603.5 / optional effect): ask the controller; run `body` on yes.
             // Performed iff the controller said yes AND the body itself performed (so a "may" whose
             // body can't be carried out still reports "not done" to a wrapping `IfYouDo`).
@@ -323,6 +334,33 @@ impl Engine {
             self.broadcast(GameEvent::ObjectMoved { obj: card, to: Zone::Graveyard });
         }
         discarded
+    }
+
+    /// Counter the stack object with id `sid` (CR 701.5): remove it from the stack; a countered
+    /// **spell** goes to its owner's graveyard (701.5a), a countered **ability** simply ceases to
+    /// exist. A spell that "can't be countered" (`CantBeCountered`, CR 701.5f — read from its
+    /// computed characteristics, which now include stack-zone statics like Surrak's) is left on the
+    /// stack untouched, so it will still resolve.
+    fn interpret_counter(&mut self, sid: StackId) {
+        let Some(so) = self.state.stack.items.iter().find(|s| s.id == sid).cloned() else {
+            return;
+        };
+        if let crate::stack::StackObjectKind::Spell(card) = so.kind {
+            if self
+                .state
+                .computed(card)
+                .has_qualification(crate::effects::ability::Qualification::CantBeCountered)
+            {
+                return; // CR 701.5f — unaffected; stays on the stack.
+            }
+            self.state.stack.items.retain(|s| s.id != sid);
+            let owner = self.state.object(card).owner;
+            self.state.move_object(card, Zone::Graveyard, owner);
+            self.broadcast(GameEvent::ObjectMoved { obj: card, to: Zone::Graveyard });
+        } else {
+            // An activated/triggered ability that is countered just leaves the stack (CR 701.5b).
+            self.state.stack.items.retain(|s| s.id != sid);
+        }
     }
 
     /// Select the objects a `ForEach`/`Select` ranges over: the `chooser`'s objects in `selector.zone`
@@ -755,7 +793,6 @@ impl Engine {
             // a NEW `Effect` variant added without an interpreter arm is a *compile* error
             // here, not a silent gap.
             Effect::Sacrifice { .. }
-            | Effect::Counter { .. }
             | Effect::Repeat { .. }
             | Effect::Distribute { .. }
             | Effect::Native { .. } => {
@@ -771,6 +808,7 @@ impl Engine {
             | Effect::Search { .. }
             | Effect::AddMana { .. }
             | Effect::Discard { .. }
+            | Effect::Counter { .. }
             | Effect::Nothing => {}
         }
     }

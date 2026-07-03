@@ -333,6 +333,29 @@ fn gather_statics(state: &GameState) -> Vec<StaticEffect<'_>> {
             }
         }
     }
+    // Statics that function while a spell is on the stack (CR 113.6f / 604.5) — e.g. "this spell
+    // can't be countered." Gather from each spell object on the stack whose printed static targets
+    // the Stack zone, painting on itself (`ItSelf`). Battlefield gathering above never sees these
+    // (the card is in `Zone::Stack`), so this is the stack-zone static pass.
+    for so in &state.stack.items {
+        if let crate::stack::StackObjectKind::Spell(card_id) = so.kind {
+            let Some(src) = state.objects.get(&card_id) else { continue };
+            let Some(def) = state.card_db.get(src.chars.grp_id) else { continue };
+            for ab in &def.abilities {
+                if let Ability::Static { contribution, affects, .. } = ab {
+                    if affects.zone == Zone::Stack {
+                        v.push(StaticEffect {
+                            timestamp: src.timestamp,
+                            src_id: card_id,
+                            src_controller: src.controller,
+                            contribution,
+                            scope: Scope::Filter { zone: affects.zone, filter: &affects.filter },
+                        });
+                    }
+                }
+            }
+        }
+    }
     // Floating continuous effects created by resolution (CR 611). Each contribution becomes its
     // own `StaticEffect` over the effect's fixed affected set.
     for ce in &state.continuous_effects {

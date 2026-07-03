@@ -4,8 +4,10 @@ use crate::cards::CardDb;
 
 pub mod child_of_night;
 pub mod divination;
+pub mod essence_scatter;
 
 pub fn register(db: &mut CardDb) {
     child_of_night::register(db);
     divination::register(db);
+    essence_scatter::register(db);
 }

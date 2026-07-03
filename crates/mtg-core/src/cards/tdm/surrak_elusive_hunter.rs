@@ -18,15 +18,14 @@
 //!   ControlledBy(Controller)`) matches a creature *spell* on the stack, so no IR change was needed.
 //!   Fires once per matching object that becomes a target (CR 603.2e).
 //!
-//! INCOMPLETE — TRACKED (`fully_implemented: false`), one remaining capability gap, NOT approximated:
-//!   - **"This spell can't be countered."** Modeled faithfully as the CR-correct static ability
-//!     that functions while the spell is on the stack (CR 113.6f / 604.5): a `Qualification(
-//!     CantBeCountered)` painted on `ItSelf` in `Zone::Stack`. It is **inert today** on two counts —
-//!     (a) `chars::gather_statics` only walks the battlefield, so a stack-zone static is never
-//!     gathered; (b) nothing in the engine reads `CantBeCountered` and **there is no counterspell in
-//!     the card pool**, so the qualification has nothing to act on. Per the lead, this is deferred (a
-//!     documented standing gap) until a counter subsystem exists — building it now is pure
-//!     infrastructure for zero current effect. The IR declares the intent; the engine grows to interpret it.
+//! **FULLY IMPLEMENTED** (`fully_implemented: true`) — every clause now lands:
+//!   - **"This spell can't be countered."** The CR-correct static ability that functions while the
+//!     spell is on the stack (CR 113.6f / 604.5): a `Qualification(CantBeCountered)` painted on
+//!     `ItSelf` in `Zone::Stack`. Previously inert (the standing "G" deferral), now live on two new
+//!     caps built for the SOS push: (a) `chars::gather_statics` also gathers stack-zone statics from
+//!     spells on the stack, so Surrak's spell reads `CantBeCountered`; (b) `Effect::Counter`
+//!     (Essence Scatter) checks that qualification (CR 701.5f) and leaves the spell on the stack.
+//!     Regression-tested by `m10::essence_scatter::essence_scatter_cannot_counter_surrak`.
 
 use crate::basics::{CardType, Color, Zone};
 use crate::cards::{creature, mana_cost, CardDb};
@@ -90,10 +89,9 @@ pub fn register(db: &mut CardDb) {
     def.chars.supertypes = vec![Supertype::Legendary];
     def.chars.keywords = vec![Keyword::Trample];
     def.text = "This spell can't be countered.\nTrample\nWhenever a creature you control or a creature spell you control becomes the target of a spell or ability an opponent controls, draw a card.".to_string();
-    // Tracked-incomplete: "can't be countered" is inert (no stack-static gathering / no counter
-    // subsystem); the draw trigger now covers BOTH halves (battlefield creature + creature spell on
-    // the stack, cap d3ee9e9). Only can't-be-countered remains deferred. See module docs.
-    def.fully_implemented = false;
+    // Fully faithful: can't-be-countered now lands (stack-zone static gathering + `Effect::Counter`
+    // reading `CantBeCountered`, both built for the SOS push); the draw trigger covers both halves
+    // (battlefield creature + creature spell on the stack, cap d3ee9e9). No remaining deferral.
     db.insert(def);
 }
 
@@ -113,9 +111,9 @@ mod tests {
         assert_eq!(def.chars.keywords, vec![Keyword::Trample]); // trample works today
         assert_eq!(def.chars.power, Some(4));
         assert_eq!(def.chars.toughness, Some(3));
-        // Tracked-incomplete on ONLY the inert can't-be-countered (no counterspell in the pool); the
-        // draw trigger now covers both the battlefield-creature and creature-spell-on-stack halves.
-        assert!(!def.fully_implemented);
+        // Fully faithful now: can't-be-countered lands (stack-static gathering + Effect::Counter check),
+        // and the draw trigger covers both the battlefield-creature and creature-spell-on-stack halves.
+        assert!(def.fully_implemented);
         // The can't-be-countered static + the becomes-targeted draw trigger (battlefield half, C16).
         expect![[r#"
             [
