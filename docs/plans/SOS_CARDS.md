@@ -559,3 +559,22 @@ ManaCost fields (transparent); the web client (`main.ts`) renders from `generic`
 (UI team): render `{X/Y}` pips in `main.ts`. Monocolour hybrid (`{2/G}`, Wildgrowth Archaic) still
 deferred. → Stirring Honormancer. Next: rebuild the creature-died flag *with* Essenceknit Scholar (now
 unblocked); then Moseo, Abstract Paintmage.
+
+## S18 graveyard-activated — scoped plan
+Cards: **Eternal Student** (`{1}{B}, Exile this from your graveyard: create two Inklings`), **Stone
+Docent** (`{W}, Exile this from graveyard: gain 2, surveil 1; sorcery-speed`). (Postmortem Professor /
+Rubble Rouser need reanimate-self / reflexive-mana — defer.)
+1. `effects/ability.rs`: `CostComponent::ExileSelfFromGraveyard` — both the "exile this card" cost AND
+   the marker that this `Activated` ability is usable from the graveyard (no new zone field on
+   `Activated`; the cost component signals the zone, keeping the literals unbroken).
+2. `priority.rs` `legal_priority_actions`: after the battlefield activated-ability scan, scan
+   `player.graveyard`; for each card whose def has an `Activated` ability whose cost contains
+   `ExileSelfFromGraveyard`, offer it if the mana is affordable and timing ok (respect
+   `Restriction`/sorcery-speed).
+3. Paying: exile the card (move to Exile) as part of the cost, then the ability's effect resolves.
+4. Test: card in graveyard + mana → offered; activate → card exiled + effect ran (two Inklings).
+
+## Session note (git hygiene)
+Shared **index** in this working tree: plain `git commit` (even after `git add <my paths>`) commits the
+WHOLE index and sweeps up teammates' pre-staged files. ALWAYS `git commit --only <explicit paths> -m`.
+(Matches the [[shared-tree-git-hygiene]] memory's `git commit -- <paths>` rule — follow it.)
