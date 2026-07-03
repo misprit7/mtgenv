@@ -1679,12 +1679,21 @@ impl EngineCore {
             CardFilter::Named(name) => {
                 self.state.objects.get(&id).is_some_and(|o| o.chars.name == *name)
             }
+            CardFilter::PowerAtMost(n) => cc.power.unwrap_or(0) <= *n,
+            CardFilter::ManaValue { min, max } => {
+                let mv = self.state.objects.get(&id).map_or(0, |o| o.chars.mana_value());
+                min.is_none_or(|lo| mv >= lo) && max.is_none_or(|hi| mv <= hi)
+            }
+            CardFilter::Tapped => self.state.objects.get(&id).is_some_and(|o| o.status.tapped),
+            CardFilter::Untapped => self.state.objects.get(&id).is_some_and(|o| !o.status.tapped),
             CardFilter::All(fs) => fs.iter().all(|f| self.count_filter_matches(id, f)),
             CardFilter::AnyOf(fs) => fs.iter().any(|f| self.count_filter_matches(id, f)),
             CardFilter::Not(f) => !self.count_filter_matches(id, f),
-            // Remaining leaves (ManaValue/PowerAtMost/Tapped/Untapped/ItSelf/AttachedHost) aren't
-            // used by any current `Count`/`ForEach` filter; default to no match.
-            _ => false,
+            // `ItSelf`/`AttachedHost` resolve against the effect's source/attachment, which a bare
+            // `Count`/`ForEach` enumeration doesn't carry — no such filter is used in that context, so
+            // treat as no match. Exhaustive by design (no wildcard): a NEW `CardFilter` without an arm
+            // is a compile error here, not a silent `false`.
+            CardFilter::ItSelf | CardFilter::AttachedHost => false,
         }
     }
 
