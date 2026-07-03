@@ -32,8 +32,13 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
   ease tiers → `docs/plans/SOS_CARDS.md` (f9ddafb): 74 authorable now (T1+T2), 142 need one small
   cap each (top-7 caps unlock ~79), 55 deferred (36 MDFCs per first-pass scope + big subsystems).
   Grinding easiest-first.
-- **in flight:** engine fix for "targeted spell offered with zero legal targets → ChooseTargets
-  deadlock" (CR 601.2c pre-check + every-request-has-a-legal-response invariant).
+- **engine (no-target cast hang fixed, 2a0b85d):** auras (no spell effect) bypassed the
+  castable-targets gate → Pacifism on an empty board was offered, then `ChooseTargets` with 0
+  candidates deadlocked at the agent boundary (no escape existed). Fix: `card_castable_targets`
+  gates ALL casts (modal-aware + aura enchant spec, factored so offer & decision share one spec);
+  `cast_spell` rewinds instead of asking when a required slot is unsatisfiable (601.2f — nothing
+  paid yet); debug assert "every DecisionRequest has ≥1 legal response" live at the `ask` seam
+  (246 tests green with it). DeclareAttackers/Blockers can't hang (empty declaration always legal).
 
 ## 2026-06-14
 
