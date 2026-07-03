@@ -277,7 +277,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Daydream | S10 | `sos` | ⏳ | blink with counter + flashback |
 | Deluge Virtuoso | S3,S5 | `sos` | ✅ done | stun counter ETB + Opus trigger |
 | Diary of Dreams | S12 | `sos` | ⏳ | activation cost scales down per counter |
-| Dig Site Inventory | S10 | `sos` | ⏳ | counter + vigilance, flashback |
+| Dig Site Inventory | S10 | `sos` | ✅ done | counter + vigilance, flashback |
 | Duel Tactics | S10 | `sos` | ⏳ | damage + can't-block, flashback |
 | Efflorescence | S4 | `sos` | ✅ done | Infusion gained-life-this-turn condition |
 | Elemental Mascot | S5,S15 | `sos` | ⏳ | Opus + impulse play top card |
