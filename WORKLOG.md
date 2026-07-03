@@ -5,6 +5,14 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-07-03 (night)
 
+- **cards(sos) — Inkshape Demonstrator (5th Ward card) + Hardened Academic (`9be0eb3`), no new cap — LIFELINK
+  CORRECTION:** reading `apply_damage` (whiteboard.rs ~1704) showed **lifelink is ALREADY wired** (source's
+  controller gains life = damage dealt, CR 702.15) and it reads the COMPUTED keyword set, so a *granted* lifelink
+  counts. The "lifelink not combat-wired" belief (mine AND the audit subagent's) was wrong. That unblocked:
+  **Inkshape Demonstrator** `{3}{W}` 3/4 (Ward {2} + Repartee grants +1/+0 & lifelink UEOT — the 5th Ward card;
+  test drives the real Repartee trigger then verifies the granted lifelink gains 4 life on 4 combat damage) and
+  **Hardened Academic** `{R}{W}` 2/1 (Flying/haste + Discard→lifelink activated ability + S9 CardsLeaveYourGraveyard
+  → +1/+1 on a target creature). Lesson: verify keyword wiring by READING the damage path, not by memory. 536 tests.
 - **cards(sos) — sweep 4 no-cap cards from the refreshed unauthored-card audit (`5cc…` this batch):** an Explore
   subagent re-enumerated all 275 SOS names vs the 125 authored files and triaged the unauthored set against the
   ACTUAL engine (correcting several "not implemented" assumptions — notably `Ability::ConditionalStatic` IS

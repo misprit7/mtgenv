@@ -82,20 +82,26 @@ DEFERRED still (never build): DFC/modal, Lessons/Paradigm, planeswalkers, Casual
 dies-triggers need LKI (Arnyn, Cauldron of Essence).
 
 **Blocked set (need an unbuilt cap first — don't burn time on these until the cap lands):**
-- **Ward (S17, ◑ mana+discard built)** — Colorstorm Stallion + Forum Necroscribe + Tragedy Feaster + **Thornfist
-  Striker** DONE (**4 cards**; Thornfist's Infusion anthem uses `Ability::ConditionalStatic`, which DOES exist —
-  the earlier "needs conditional static cap" note was wrong). The other 3 named cards need: Fractal Tender
-  (per-turn counter-added tracker), Inkshape Demonstrator (lifelink not combat-wired), Mica & Prismari (pay_cost
-  PayLife arm + spell-copy/storm). **Ward—Pay-life needs a `pay_cost` PayLife arm** (IR ready; no-op today).
+- **Ward (S17, ◑ mana+discard built)** — Colorstorm Stallion + Forum Necroscribe + Tragedy Feaster + Thornfist
+  Striker + **Inkshape Demonstrator** DONE (**5 of 8 cards**). ⚠️ **Lifelink IS combat-wired** (`apply_damage`
+  gains the source's controller life = damage dealt, CR 702.15, and reads the COMPUTED keyword set so a GRANTED
+  lifelink counts) — the earlier "lifelink not combat-wired" note (mine + the audit's) was WRONG; that unblocked
+  Inkshape (Repartee grants lifelink) AND **Hardened Academic** (Discard→lifelink). Remaining 3 Ward cards:
+  **Fractal Tender** (per-turn counter-added tracker), **Mica** & **Prismari** (pay_cost PayLife arm +
+  spell-copy/storm). **Ward—Pay-life needs a `pay_cost` PayLife arm** (IR ready; no-op today).
 
 **▶ Fresh authorable-now list (2026-07-03 unauthored-card audit — verified vs the real engine):** the audit
 found `ConditionalStatic`, stun counters, `ValueExpr::{Sum,XTimes,NumTargets,PowerOfTarget}`, `CardFilter::
-{Named,ManaValue,PowerAtMost}`, `Effect::{Fight,Distribute,BecomeCreature}` all LIVE. The audit's AUTHORABLE-NOW list is now
-**fully swept**: Antiquities/Rancorous/Aberrant/Topiary/Thornfist done this session, and **Ancestral Anger was
-already authored** in `vow/` (the audit only scanned `sos/`, so it wrongly listed it). The only remaining item,
-**Homesickness** `{4}{U}{U}` (Draw target-player + Tap up-to-two + Stun each), needs an **apply-to-each-of-a-
-variable-multi-target** mechanism ("put a stun counter on each of them" over a 0–2 `Tap` slot) — no `ChosenIndex`
-covers a variable count. Small cap; the next genuinely-new card work.
+{Named,ManaValue,PowerAtMost}`, `Effect::{Fight,Distribute,BecomeCreature}` all LIVE. The audit's AUTHORABLE-NOW list is
+**fully swept**: Antiquities/Rancorous/Aberrant/Topiary/Thornfist done, Ancestral Anger already in `vow/`. **Plus
+2 cards the audit wrongly marked "lifelink-blocked"** — lifelink IS wired, so **Inkshape Demonstrator** (5th Ward
+card) and **Hardened Academic** are done too. **Remaining unauthored non-DFC cards all need a genuinely-new cap**
+(verified): **Homesickness** `{4}{U}{U}` → apply-to-each-of-a-variable-multi-target ("stun counter on each of a
+0–2 `Tap` slot"; no `ChosenIndex` covers a variable count); the rest need spell-copy / move-counters / counters-
+on-TARGET / dynamic-ManaValue / one-shot-set-base-P/T-on-target / pay-life / grant-arbitrary-ability, or are
+DFC/Lesson/planeswalker/named-keyword (deferred). **The no-cap card vein is now genuinely mined out** — next
+work is a new cap. Recommended order by realistic yield: **lifelink-adjacent already done → check double-strike
+wiring next (may free more) → Homesickness multi-target-each (1) → spell-copy (subsystem, ~1: Lumaret's Favor).**
 Genuinely-absent caps (from the audit): spell-copy, move-counters, counters-on-TARGET value, no-max-hand,
 DYNAMIC ManaValue bounds, one-shot set-base-P/T on a target, self "costs less", grant-arbitrary-ability; DFC/
 Lesson/planeswalker/named-keyword buckets remain deferred (36 DFC + more).
@@ -174,7 +180,7 @@ each cap unlocks the bracketed count. `⏳` = not yet built.
 | **S9** Graveyard-leave | "cards leave your graveyard" trigger + "a card left your graveyard this turn" cond | 8 | ✅ **DONE** (flag `f9b5584` + trigger: LeftGraveyard event snapshot in resolve_effect → Spirit Mascot, Owlin Historian, Garrison Excavator) |
 | **S2** Look-and-pick | look at top N, put one/some in hand, rest on bottom (impulse selection) | 8 | ✅ **DONE** (`Effect::LookAndPick{ count, take, take_to, rest_to, take_filter }` — implemented; consumers Flow State, Stress Dream, Stirring Honormancer, Paradox Surveyor, Follow the Lumarets, Visionary's Dance). The ledger previously mis-listed this as ⏳. Geometer's Arthropod still needs "top-X" = reading the *triggering spell's* X (a separate need). |
 | **S12** Cost-reduction cond. | "costs {N} less if it targets X / you control Y / a card left your gy" (cast-time) | 7 | ⏳ |
-| **S14** Copy spell/perm | "copy target spell", "create a token that's a copy of" (heavier small-cap) | 7 | ⏳ **token-copy DONE** (`Effect::CreateTokenCopy`+`TokenCopyMods`, `a8c8a2d` → Applied Geometry); **spell-copy** portion still ⏳ |
+| **S14** Copy spell/perm | "copy target spell", "create a token that's a copy of" (heavier small-cap) | 7 | ◑ **token-copy DONE** (`Effect::CreateTokenCopy`+`TokenCopyMods`, `a8c8a2d` → Applied Geometry); **spell-copy** portion ⏳ — a real subsystem (copy a stack spell per CR 707.10: mint a new StackObject copy above the original + a "you may choose new targets" reselection). **Low practical yield (scoped 2026-07-03):** of the 7 spell-copy cards, most are ALSO blocked elsewhere — Aziza (tap-3-creatures cost), Choreographed Sparks (modal + creature-spell-copy-with-grants + "can't be copied"), Mica (Ward—Pay-life), Prismari (Storm + Elder Dragon). Spell-copy ALONE unblocks essentially only **Lumaret's Favor** (Infusion "copy it if you gained life this turn" + a +2/+4 pump). So build it for the subsystem, not the count. |
 | **S17** Ward {cost} | Ward N / Ward—Pay life / Ward—Discard (counter-unless-pay on becoming targeted) | 7 | ◑ **mana DONE** `96dbc35` — `Effect::CounterUnlessPay{ what, cost:Cost }` soft-counter + `EffectTarget::Triggering` (the targeting spell/ability, threaded via `GameEvent::Targeted.source` → `state.trigger_targeting_source` → `ResolutionCtx.triggering_stack`); `CardFilter::ItSelf` now matches in `enter_filter_matches` (source-threaded, opt-in from the targeted path). Reuses `Cost`+`can_pay_cost`/`pay_cost`. Ward constructors live in `cards/helpers.rs` (`ward`/`ward_mana`/`ward_discard`). → **Colorstorm Stallion** (Ward {1}, mana) + **Forum Necroscribe** (Ward—Discard, the non-mana path — reuses the `Discard` cost arms). **Ward—Pay life** (Mica/Prismari): `pay_cost` has NO `PayLife` arm yet (falls to `_ => {}`, so life isn't deducted) — add it first; their *secondaries* are also blocked (spell-copy/storm). Side-fix landed here: `Effect::MoveZone`'s target was missing from `collect_specs_into` (never collected through the REAL cast/trigger path — prior MoveZone tests bypassed casting), now fixed. |
 | **S15** Impulse play | exile/mill → "you may play it until end of turn / your next turn" | 6 | ◑ **DONE for exile cases** (`d079eb0` base + `0e17d3e` top-of-library source + land-play) → Practiced Scrollsmith, Elemental Mascot, Suspend Aggression (3). Only **graveyard-play** (milled card played from gy — Ark of Hunger, Tablet) still ⏳; the other 2 S15 cards are cap-blocked (Archaic's Agony=S7, Tablet=S13) |
 | **S3** Stun counters | `CounterKind::Stun` + "would untap → remove a stun counter instead" replacement | 6 | ✅ **DONE** `f8ab8ea` (untap-step replacement, CR 702.171) → Procrastinate, Deluge Virtuoso, Fractal Mascot, Rapier Wit. (Was mis-listed ⏳.) |
