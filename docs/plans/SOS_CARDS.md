@@ -335,7 +335,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Pensive Professor | S6 | `sos` | ⏳ | Increment (plus counter-added trigger) |
 | Pest Mascot | S16 | `sos` | ✅ done | whenever-you-gain-life trigger |
 | Pestbrood Sloth | S11 | `sos` | ⏳ | Pest token with attack ability |
-| Poisoner's Apprentice | S4 | `sos` | ⏳ | Infusion gained-life-this-turn condition |
+| Poisoner's Apprentice | S4 | `sos` | ✅ done | Infusion gained-life-this-turn condition |
 | Postmortem Professor | S18 | `sos` | ⏳ | exile-from-graveyard recursion + attack drain |
 | Potioner's Trove | S22 | `sos` | ⏳ | activate only if cast an I/S this turn |
 | Pox Plague | Native | `sos` | ⏳ | halve life/hand/permanents (one-off) |
