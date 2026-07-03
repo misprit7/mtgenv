@@ -39,6 +39,11 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
   begin-of-step/conditional triggers pass only `resolve_effect`-direct tests, not the turn engine), and
   Abstract Paintmage / Fractal Tender / S16 end-step timing are blocked. Flagged to lead — a load-bearing
   trigger-system cap deserving its own careful commit, not a rushed rider.
+- **cards(sos) — Abstract Paintmage (`00e18a9`):** closed the loop on the card that revealed the trigger
+  gap. `{U}{U/R}{R}` 2/2 with a `BeginningOfStep(PrecombatMain)`/YourTurn trigger that floats restricted
+  `{U}{R}`. Integration-tested: at your first main the trigger fires and the floated mana pays an I/S but
+  not a creature; gated off on the opponent's turn. Exercises the begin-of-step-trigger + S13 caps together.
+  487 mtg-core tests green (6 cards + 4 caps this session).
 - **engine(triggers) — begin-of-step triggers + `Triggered.condition` NOW WIRED (`20965a8`):** fixed the
   gap found above. `collect_triggers` queues each permanent's `BeginningOfStep(phase)` trigger at phase
   transitions; a non-intervening-if trigger condition (CR 603.2) gates queueing, an intervening-if (CR

@@ -292,7 +292,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Card | Caps | Folder | Status | Gating clause |
 |---|---|---|---|---|
 | Aberrant Manawurm | S5 | `sos` | ⏳ | pump by mana spent on triggering spell |
-| Abstract Paintmage | S13 | `sos` | ⏳ | I/S-restricted mana added each main phase |
+| Abstract Paintmage | S13,begin-of-step | `sos` | ✅ done | `{U/R}` hybrid + first-main-phase (`BeginningOfStep(PrecombatMain)`/YourTurn) trigger floats restricted `{U}{R}`; integration-tested end-to-end |
 | Ajani's Response | S12 | `sos` | ⏳ | conditional cost reduction if targets tapped creature |
 | Ambitious Augmenter | S6 | `sos` | ⏳ | Increment mechanic (mana-spent vs power/toughness) |
 | Antiquities on the Loose | S10 | `sos` | ⏳ | flashback + cast-from-zone condition |
