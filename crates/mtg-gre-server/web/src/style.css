@@ -336,6 +336,11 @@
     .center { min-width: 0; }
     .play { overflow: visible; padding: 6px 6px; }
     .half { flex: none; }
+    /* compact the (often-empty) rows so the board doesn't push your hand far below the fold */
+    .row { min-height: 64px; }
+    .row.lands { min-height: 50px; }
+    .hand { min-height: 0; }
+    .hand .card { width: 88px; height: 124px; }
 
     /* phase/step bar must never force the page wide — scroll it internally instead */
     .stepbar { overflow-x: auto; }

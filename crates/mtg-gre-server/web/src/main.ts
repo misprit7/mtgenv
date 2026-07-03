@@ -889,11 +889,22 @@ function renderPrompt(): void {
     acts.push(sub);
   }
   if (p.canPass) acts.push(passBtn("Pass", () => send({ pass: true })));
+  // At a priority window, offer the on-screen "pass through this turn's stops" hold next to Pass.
+  if (isPriorityPrompt(p)) acts.push(passTurnBtn());
   if (acts.length) addActions(root, acts);
 }
 function addActions(root: HTMLElement, btns: HTMLElement[]): void { const r = el("div", "actions"); btns.forEach((b) => r.appendChild(b)); root.appendChild(r); }
 function actBtn(t: string, fn: () => void): HTMLElement { const b = el("button", "act", t) as HTMLButtonElement; b.onclick = fn; return b; }
 function passBtn(t: string, fn: () => void): HTMLElement { const b = el("button", "pass", t) as HTMLButtonElement; b.onclick = fn; return b; }
+// "Pass turn": on-screen equivalent of the Enter key — hold through this turn's remaining priority
+// stops. Shows a held state when engaged; tap again (or Esc) to cancel. Rendered at priority windows.
+function passTurnBtn(): HTMLElement {
+  const on = autoPassEngaged();
+  const b = el("button", "pass passturn" + (on ? " held" : ""), on ? "Holding turn" : "⏩ Pass turn") as HTMLButtonElement;
+  b.title = "Pass through this turn's remaining stops (same as Enter). Tap again to cancel.";
+  b.onclick = () => { toggleAutoPass(); if (cur) renderPrompt(); };
+  return b;
+}
 
 function renderEnd(winner: number | null): void {
   const w = winner == null ? "draw" : `Player ${winner}`;
@@ -1003,6 +1014,47 @@ function refreshPreview(): void {
 document.addEventListener("mousemove", (e) => { ptrX = e.clientX; ptrY = e.clientY; refreshPreview(); }, true);
 // Cursor leaves the document entirely (e.g. out the top of the window) → drop the preview.
 document.addEventListener("mouseout", (e) => { if (!(e as MouseEvent).relatedTarget) { ptrX = ptrY = -1; hidePreview(); } });
+
+// ── long-press full-card preview (touch) ───────────────────────────────────────
+// Desktop keeps the hover preview (#preview) untouched. On touch, a ~450ms hold on any previewable
+// card (hand / battlefield / stack) opens a centered overlay AND cancels the pending tap, so you can
+// inspect a legal card without firing its game action. Tap outside / ✕ closes it.
+const LP_MS = 450, LP_MOVE = 12;
+let lpTimer: Any = null, lpX = 0, lpY = 0, suppressClick = false;
+function lpClear(): void { if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; } }
+function showOverlayPreview(url: string): void {
+  let ov = document.getElementById("previewOverlay");
+  if (!ov) {
+    ov = el("div", "preview-overlay"); ov.id = "previewOverlay";
+    const img = el("img") as HTMLImageElement; img.id = "previewOverlayImg"; img.alt = "card preview";
+    ov.appendChild(img); ov.appendChild(el("div", "preview-close", "✕"));
+    ov.addEventListener("click", hideOverlayPreview); // tap outside / on ✕ closes
+    document.body.appendChild(ov);
+  }
+  (document.getElementById("previewOverlayImg") as HTMLImageElement).src = url;
+  ov.classList.add("show");
+  hidePreview(); // clear any hover preview underneath
+}
+function hideOverlayPreview(): void { const ov = document.getElementById("previewOverlay"); if (ov) ov.classList.remove("show"); }
+document.addEventListener("pointerdown", (e: PointerEvent) => {
+  suppressClick = false; lpClear();
+  if (e.pointerType === "mouse") return;                     // mouse keeps hover-preview; touch/pen only
+  const t = e.target as HTMLElement;
+  const card = t && t.closest ? (t.closest("[data-preview]") as HTMLElement | null) : null;
+  if (!card) return;
+  lpX = e.clientX; lpY = e.clientY;
+  const url = card.dataset.preview as string;
+  lpTimer = setTimeout(() => { lpTimer = null; suppressClick = true; showOverlayPreview(url); }, LP_MS);
+}, true);
+document.addEventListener("pointermove", (e: PointerEvent) => {
+  if (lpTimer && (Math.abs(e.clientX - lpX) > LP_MOVE || Math.abs(e.clientY - lpY) > LP_MOVE)) lpClear();
+}, true);
+document.addEventListener("pointerup", lpClear, true);
+document.addEventListener("pointercancel", lpClear, true);
+// Eat the click that follows a long-press so the card's game action doesn't fire.
+document.addEventListener("click", (e) => {
+  if (suppressClick) { e.stopPropagation(); e.preventDefault(); suppressClick = false; }
+}, true);
 
 // ── stack → target arrows ──────────────────────────────────────────────────────
 const SVGNS = "http://www.w3.org/2000/svg";
