@@ -5,6 +5,15 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-07-03 (night)
 
+- **engine+cards(sos) — S21 cast-with-{X} trigger + Matterbending Mage (`134444d`):** added a `HasXInCost`
+  arm to `enter_filter_matches` (the SpellCast-trigger filter path), so `SpellCast(All([ControlledBy,
+  HasXInCost]))` = "whenever you cast a spell with {X} in its mana cost" now fires. Consumer: **Matterbending
+  Mage** (`{2}{U}` 2/2; ETB return up to one OTHER target creature — reuses the new `Not(ItSelf)` cap; +
+  cast-{X} trigger granting itself `CantBeBlocked` (a `Qualification`, honoured by combat `can_block`) until
+  EOT). Integration test casts an {X} spell vs a non-{X} spell and asserts the grant fires only for the
+  former. **Deferred Mind into Matter** (ledger item #3) after assessing it as a 3-cap card, not 1:
+  dynamic-MV filter needs ctx threaded through the exhaustive `count_filter_matches`; plus MoveZone-from-Select
+  and enter-tapped. Documented in the ledger.
 - **engine+cards(sos) — another-target self-exclusion + Ascendant Dustspeaker (`1f6e284`):** `target_candidates`
   / `target_matches_filter` now carry a `source: Option<ObjId>` (threaded from the spell-cast / activate /
   trigger targeting sites; `None` at spell prechecks + unit tests) with a `CardFilter::ItSelf => source ==

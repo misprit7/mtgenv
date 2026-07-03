@@ -29,9 +29,18 @@ small-but-load-bearing cap; do each fresh, one commit, with a test.** Prioritize
    sites; `None` at spell prechecks/tests) and a `CardFilter::ItSelf => source == Some(id)` arm, so
    `Not(ItSelf)` excludes the ability's own source at the **targeting** layer. End-to-end tests: with a 2nd
    creature the counter lands on the other; alone the trigger has no legal target and is removed (CR 603.3c).
-3. **dynamic-MV filter (1 card):** Mind into Matter (draw X; put a permanent MV≤X from hand). `CardFilter::
-   ManaValue{max}` is a fixed `u32`; needs a ValueExpr-driven max (or a sibling filter). Touches the
-   exhaustive `count_filter_matches`.
+2b. **S21 cast-with-{X} trigger + Matterbending Mage** — ✅ **DONE** (`134444d`), picked up out of order as a
+   clean win once the `Not(ItSelf)` cap landed (its ETB "return up to one OTHER target creature" reuses it).
+   Added a `HasXInCost` arm to `enter_filter_matches`, so `SpellCast(All([ControlledBy, HasXInCost]))` fires;
+   the trigger grants the Mage `CantBeBlocked` (a `Qualification`, not a keyword) until EOT. See the S21 row.
+3. **dynamic-MV filter — Mind into Matter — ⚠️ NOT 1 cap, it's 3; DEFERRED (assessed, not attempted):**
+   "Draw X. Then you may put a permanent card with MV≤X from your hand onto the battlefield **tapped**."
+   Needs THREE new pieces, none trivial: (a) **dynamic-MV filter** — `count_filter_matches` is EXHAUSTIVE and
+   takes **no `ctx`**, so a `ManaValueAtMost(ValueExpr)` sibling filter (ValueExpr *is* Eq/Serialize, so it
+   fits `CardFilter`) forces threading `ctx` through `count_filter_matches` + all its callers to read X;
+   (b) **`Effect::MoveZone` from a `Select`** (put a card from hand → battlefield) — MoveZone only handles
+   `EffectTarget::Target` today; (c) **enter-tapped** — `ZoneDest`/MoveZone has no tapped flag. Do these as
+   separate caps if/when a cheaper consumer appears; not worth it for one card.
 4. **set-base-P/T (2 cards):** Fractalize, Wild Hypothesis — "becomes a Fractal with base P/T = X+1". Layer
    system (higher risk — do carefully). See `BecomeCreature`/Earthbend animation for the P/T-set path.
 
@@ -118,7 +127,7 @@ each cap unlocks the bracketed count. `⏳` = not yet built.
 | **S11** Token-with-ability | `TokenSpec` carries an ability (Treasure `{T},Sac`; Pest attack→gain life) | 5 | ⏳ |
 | **S13** Restricted mana | mana usable "only to cast instant and sorcery spells" (spend-restriction tag) | 4 | ✅ **DONE** `ffcc0df` (`ManaSpec.restriction=InstantSorceryOnly` + `ManaPool.restricted` bucket + `allow_restricted` threaded through the payment path; spell casts pass card-is-I/S, ability costs pass false) → Hydro-Channeler |
 | **S16** Gain-life trigger | `EventPattern::GainLife` ("whenever you gain life, …") | 3 | ✅ **DONE** |
-| **S21** cast-with-{X} trigger | `SpellCast` filtered to "has {X} in its cost" | 2 | ⏳ |
+| **S21** cast-with-{X} trigger | `SpellCast` filtered to "has {X} in its cost" | 2 | ◑ **DONE for Matterbending Mage** (`134444d`) — added `HasXInCost` arm to `enter_filter_matches` (`SpellCast(All([ControlledBy, HasXInCost]))` now matches). Geometer's Arthropod still needs **S2 look-and-pick** + reading the *triggering spell's* X (top-X selection). |
 | **S19/S20/S22** | cards-drawn-this-turn value / counters-on-target value / cast-I/S-this-turn cond | 1 ea | ⏳ |
 | **misc one-offs** | GreatestMV, DistinctNames, SoftCounter (counter-unless-pay), DirectedDiscard, AltCost, PayXLife, NoMaxHand, GrantAbility | 1–3 ea | ⏳ |
 | **Native** | genuine one-offs via the `Native` escape hatch: Mathemagics (2^X), Pox Plague (halving), Steal the Show (wheel) | 4 | ⏳ |
