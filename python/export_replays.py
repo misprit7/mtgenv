@@ -33,7 +33,9 @@ def main():
     ap.add_argument("--n-envs", type=int, default=8)
     ap.add_argument("--pool-dir", default="/tmp/mtgenv_pool_export")
     ap.add_argument("--run-name", default=None,
-                    help="descriptive run label (else auto: '<deck>-selfplay-<steps>k-<mmdd-HHMM>')")
+                    help="override the full run name (else versioned '<M>.<m>-<deck>-selfplay-<steps>k')")
+    ap.add_argument("--run-major", type=int, default=None,
+                    help="bump the TB/replay version major (sticky via <tb-root>/.run_major); minor auto-increments")
     ap.add_argument("--shaping-coef", type=float, default=0.5,
                     help="initial potential-based shaping coef (annealed to 0 over 60%% of training; "
                          "0 disables — GYM_PLAN §5)")
@@ -46,9 +48,11 @@ def main():
                     help="freeform run description → TensorBoard 'run/notes' (TEXT tab)")
     args = ap.parse_args()
 
-    # Descriptive run name → TensorBoard run folder AND the replay run tag (the lobby groups by it).
-    # Pass --run-name to tag what changed between runs (e.g. 'demo-selfplay-deepnet').
-    run_name = args.run_name or f"{args.deck}-selfplay-{args.timesteps // 1000}k-{time.strftime('%m%d-%H%M')}"
+    # Versioned run name (<major>.<minor>-<slug>) → the TB run folder AND the lobby replay tag, so the
+    # two correlate 1:1 and sort in run order. --run-name overrides the whole thing.
+    from mtgenv_gym.tb_meta import versioned_run_name
+    run_name = versioned_run_name(args.tensorboard, f"{args.deck}-selfplay-{args.timesteps // 1000}k",
+                                  major=args.run_major, override=args.run_name)
 
     # SELF-PLAY: train against a growing pool of frozen selves (not random) — so both the training
     # AND the recorded replays are genuine self-play.

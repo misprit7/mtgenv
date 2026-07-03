@@ -220,7 +220,10 @@ def train_selfplay(deck="demo", timesteps=120_000, n_envs=8, pool_dir=DEFAULT_PO
         from mtgenv_gym.batched_selfplay import ShapingAnneal
 
         callbacks.append(ShapingAnneal(timesteps, coef0=shaping_coef, anneal_frac=0.6))
-    model.learn(total_timesteps=timesteps, callback=callbacks, progress_bar=False)
+    # run_name (a versioned `<major>.<minor>-<slug>`, set by main()) names the TB run dir too, so the
+    # TB run and the lobby replay tag match. tensorboard_log is the ROOT; SB3 makes <root>/<run_name>_N.
+    model.learn(total_timesteps=timesteps, callback=callbacks, progress_bar=False,
+                tb_log_name=(run_name or "MaskablePPO"))
     return model, ref_path
 
 
@@ -230,7 +233,7 @@ def main():
     ap.add_argument("--timesteps", type=int, default=120_000)
     ap.add_argument("--n-envs", type=int, default=8)
     ap.add_argument("--pool-dir", default=DEFAULT_POOL)
-    ap.add_argument("--tensorboard", default=None)
+    ap.add_argument("--tensorboard", default="/tmp/mtgenv_tb", help="TB ROOT; runs land as <root>/<version>-<slug>")
     ap.add_argument("--subproc", action="store_true", help="SubprocVecEnv (parallel workers)")
     ap.add_argument("--shaping-coef", type=float, default=0.5,
                     help="potential-based reward-shaping coef0 (annealed to 0); 0 disables. On by default.")
@@ -239,13 +242,20 @@ def main():
     ap.add_argument("--replay-every", type=int, default=25_000,
                     help="record one greedy self-play game every N steps → data/replays/ (lobby's AI "
                          "Training Replays). 0 disables. On by default so every run is watchable.")
-    ap.add_argument("--run-name", default=None, help="replay/lobby group name (default '<deck>-<steps>k')")
+    ap.add_argument("--run-name", default=None, help="override the full run name (else versioned '<M>.<m>-<deck>-<steps>k')")
+    ap.add_argument("--run-major", type=int, default=None,
+                    help="bump the TB/replay version major (sticky via <tb-root>/.run_major); minor auto-increments")
     args = ap.parse_args()
+
+    # Versioned run name (shared by the TB run dir + the lobby replay tag), unless --run-name overrides.
+    from mtgenv_gym.tb_meta import versioned_run_name
+    run_name = versioned_run_name(args.tensorboard, f"{args.deck}-{args.timesteps // 1000}k",
+                                  major=args.run_major, override=args.run_name)
 
     model, ref = train_selfplay(
         deck=args.deck, timesteps=args.timesteps, n_envs=args.n_envs, pool_dir=args.pool_dir,
         tensorboard_log=args.tensorboard, subproc=args.subproc, shaping_coef=args.shaping_coef,
-        notes=args.notes, replay_every=args.replay_every, run_name=args.run_name, verbose=1,
+        notes=args.notes, replay_every=args.replay_every, run_name=run_name, verbose=1,
     )
     wr_rand = play_winrate(model, args.deck, "random", 200, 9_000_000)
     wr_init = play_winrate(model, args.deck, ModelOpponent(ref), 200, 9_500_000)

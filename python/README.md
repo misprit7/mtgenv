@@ -47,6 +47,15 @@ PYTHONPATH=python python/.venv/bin/python python/train.py --deck burn_vs_bears -
 tensorboard --logdir runs/
 ```
 
+### Run naming (versioned)
+
+`selfplay_train.py` / `export_replays.py` name each run `<major>.<minor>-<slug>` (e.g. `2.7-bears-200k`)
+so TensorBoard runs **and** the lobby's AI-Training replay arcs sort in run order (not alphabetical)
+and correlate 1:1. The **minor auto-increments** (scan `--tensorboard` root for the highest
+`<major>.<minor>` and +1); the **major** is sticky (`<tb-root>/.run_major`) — bump it with `--run-major N`
+for a new reward/arch/deck era. `--run-name NAME` overrides the whole thing. The seam is
+`mtgenv_gym.tb_meta.versioned_run_name`.
+
 ## Layout
 
 - `mtgenv_gym/env.py` — `MtgEnv(gym.Env)`: single agent (`agent_seat`) vs a fixed opponent

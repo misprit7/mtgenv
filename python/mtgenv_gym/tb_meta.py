@@ -22,12 +22,57 @@ Import-light (only SB3 + stdlib) so it never pulls torch/mtg_py at module load.
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 from datetime import datetime, timezone
 
 from stable_baselines3.common.callbacks import BaseCallback
 
 _REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+
+# ── Versioned run names ─────────────────────────────────────────────────────────────────────────
+# Runs are named ``<major>.<minor>-<slug>`` (e.g. ``2.7-bears-live-60k``) so TensorBoard runs AND the
+# lobby's AiTraining replay arcs sort in run order (not alphabetical-by-description) and correlate
+# 1:1. The MINOR auto-increments — scan the TB root for the highest ``<major>.<minor>`` and +1 — so no
+# counter file is needed for it. The MAJOR is bumped manually (``--run-major`` / a sticky
+# ``<tb_root>/.run_major`` file) for a new reward/arch/deck era. ``versioned_run_name`` is the single
+# seam both selfplay_train and export_replays route through; ``--run-name`` overrides it verbatim.
+_VER_RE = re.compile(r"^(\d+)\.(\d+)-")
+
+
+def _existing_versions(tb_root: str) -> list[tuple[int, int]]:
+    try:
+        names = os.listdir(tb_root)
+    except OSError:
+        return []
+    return [(int(m.group(1)), int(m.group(2))) for d in names if (m := _VER_RE.match(d))]
+
+
+def _resolve_major(tb_root: str, major: int | None) -> int:
+    if major is not None:  # explicit --run-major: use it and make it sticky for later runs
+        try:
+            os.makedirs(tb_root, exist_ok=True)
+            with open(os.path.join(tb_root, ".run_major"), "w") as f:
+                f.write(str(int(major)))
+        except OSError:
+            pass
+        return int(major)
+    try:
+        with open(os.path.join(tb_root, ".run_major")) as f:
+            return int(f.read().strip())
+    except (OSError, ValueError):
+        pass
+    return max((mj for mj, _ in _existing_versions(tb_root)), default=2)  # infer, default to the 2.x era
+
+
+def versioned_run_name(tb_root: str, slug: str, major: int | None = None, override: str | None = None) -> str:
+    """``<major>.<minor>-<slug>`` with an auto-incrementing minor (see module comment). ``override``
+    (a ``--run-name``) short-circuits to that exact name."""
+    if override:
+        return override
+    m = _resolve_major(tb_root, major)
+    minor = max((mn for mj, mn in _existing_versions(tb_root) if mj == m), default=-1) + 1
+    return f"{m}.{minor}-{slug}"
 
 
 def git_sha() -> str:
