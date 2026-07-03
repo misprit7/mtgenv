@@ -75,6 +75,36 @@ def pygame_driver(deck, seed):
     return _PyGameDriver(deck, seed)
 
 
+class _FleetDriver:
+    """Drives a **1-env `Fleet`** per-decision through the same seam — so the batched fleet stepper
+    (M3.4) is scored against the exact same committed snapshot as PyGame. `submit([a])` applies the
+    factored action to env 0 and advances; the accessors read env 0's current sub-step."""
+
+    name = "fleet-1env"
+
+    def __init__(self, deck, seed):
+        import mtg_py
+
+        self.f = mtg_py.Fleet(deck, 1, True, int(seed))  # (deck, num_envs=1, auto_pass, base_seed)
+
+    def decision(self) -> Decision:
+        f = self.f
+        if f.terminal(0):
+            s = f.summary(0)  # (winner, turns, reason) | None
+            summary = {"winner": s[0], "turns": s[1], "reason": s[2]} if s else None
+            return Decision(0, "Terminal", 0, np.zeros(0, dtype=bool), True, summary)
+        return Decision(int(f.seat(0)), f.request(0), int(f.num_legal(0)),
+                        np.asarray(f.env_mask(0), dtype=bool), False, None)
+
+    def apply(self, action: int) -> None:
+        self.f.submit([int(action)])
+
+
+def fleet_driver(deck, seed):
+    """Fleet-transport driver factory — the M3.4 stepper through the equivalence seam."""
+    return _FleetDriver(deck, seed)
+
+
 def scripted_action(decision_index: int, mask: np.ndarray) -> int:
     """Deterministic, transport-independent policy: a pure function of (decision index, mask). Picks a
     legal action with a fixed hash so it varies through a game yet never depends on RNG state (which

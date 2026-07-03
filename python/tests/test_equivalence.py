@@ -39,3 +39,14 @@ def test_engine_equivalence_snapshot():
 def test_engine_is_deterministic():
     """The property the equivalence test rests on: two runs of the suite are byte-identical."""
     assert diff_suites(fingerprint_suite(), fingerprint_suite()) == []
+
+
+def test_fleet_transport_matches_snapshot():
+    """M3.4 gate: the batched Fleet stepper (via a 1-env `_FleetDriver`) reproduces the committed
+    decision-trajectory snapshot byte-for-byte — same behavior as the PyGame transport."""
+    from mtgenv_gym.equivalence import fleet_driver
+
+    with open(SNAPSHOT) as f:
+        expected = json.load(f)
+    diffs = diff_suites(expected, fingerprint_suite(make_driver=fleet_driver))
+    assert not diffs, "Fleet transport diverged from the committed snapshot:\n  " + "\n  ".join(diffs)

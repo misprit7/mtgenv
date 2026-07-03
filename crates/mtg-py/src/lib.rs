@@ -19,6 +19,7 @@
 
 mod codec;
 mod decision_stats;
+mod fleet;
 mod game;
 mod layout;
 mod obs;
@@ -349,7 +350,7 @@ fn zeros_obs(py: Python<'_>) -> PyObject {
 }
 
 /// Short stable name of a request variant (for the Python `info` / debugging).
-fn request_name(req: &DecisionRequest) -> &'static str {
+pub(crate) fn request_name(req: &DecisionRequest) -> &'static str {
     use DecisionRequest as Q;
     match req {
         Q::ChooseStartingPlayer { .. } => "ChooseStartingPlayer",
@@ -380,6 +381,7 @@ fn request_name(req: &DecisionRequest) -> &'static str {
 #[pymodule]
 fn mtg_py(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyGame>()?;
+    m.add_class::<fleet::Fleet>()?;
     m.add("ACTION_DIM", codec::ACTION_DIM)?;
     Ok(())
 }
