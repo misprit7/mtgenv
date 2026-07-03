@@ -484,7 +484,18 @@ when it resolves). Mirror warp site-for-site:
 Test: cast a sorcery from graveyard via Flashback → effect resolves → card is in Exile (not graveyard);
 and it's no longer offered for a second flashback.
 
-## S11 token-with-ability — scoped plan (synthetic token defs)
+## S11 token-with-ability — ✅ DONE (`bf22f6b`, synthetic token defs)
+
+**Decision (lead-approved):** `TokenSpec.grp_id` (0 = vanilla) + pre-registered token defs in the reserved
+**9000+** block (`grp::PEST_TOKEN = 9001`). Rationale: keeps token abilities in *defs* (card-agnostic
+law — no name-match), mirrors how MTGA ids tokens, and the reserved block sits far above organically
+growing real-card ids (~290) so no collision. **Confirmed** the `/api/cards` catalog filters
+`!supertypes.contains(Token)` (server.rs:500), so the Pest def does **not** leak into the deck-builder;
+token defs still flow into the art manifest (intended — tokens get art). `SelfAttacks` already fires,
+so the Pest's attack-trigger works via `def_of`. Shipped: Send in the Pest, Pestbrood Sloth (Essenceknit
+Scholar / Moseo defer — creature-died-this-turn / Infusion-X-reanimate clauses).
+
+### original plan (kept for reference)
 
 Problem: a token's ability lookup is `def_of(id)` → `CardDb.get(chars.grp_id)`; there is no
 object-level ability storage, and the db is `Arc<CardDb>`. Keywords already ride on
