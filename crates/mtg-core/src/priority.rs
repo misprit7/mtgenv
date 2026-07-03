@@ -2032,6 +2032,7 @@ impl Engine {
             }
             CardFilter::HasCardType(ct) => self.state.computed(*id).card_types.contains(ct),
             CardFilter::HasSubtype(s) => self.state.computed(*id).subtypes.contains(s),
+            CardFilter::HasKeyword(k) => self.state.computed(*id).has_keyword(*k),
             CardFilter::HasColor(c) => self.state.computed(*id).colors.contains(c),
             CardFilter::Colorless => self.state.computed(*id).colors.is_empty(),
             CardFilter::PowerAtMost(n) => self.state.computed(*id).power.unwrap_or(0) <= *n,

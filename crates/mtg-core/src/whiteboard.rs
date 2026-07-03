@@ -1795,6 +1795,7 @@ impl EngineCore {
             CardFilter::Any => true,
             CardFilter::HasCardType(t) => cc.card_types.contains(t),
             CardFilter::HasSubtype(s) => cc.subtypes.contains(s),
+            CardFilter::HasKeyword(k) => cc.has_keyword(*k),
             CardFilter::HasColor(c) => cc.colors.contains(c),
             CardFilter::Colorless => cc.colors.is_empty(),
             // Supertype (Basic/Legendary/Snow) reads base chars — not a layered characteristic.

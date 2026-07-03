@@ -64,6 +64,9 @@ pub enum CardFilter {
     Not(Box<CardFilter>),
     HasCardType(CardType),
     HasSubtype(Subtype),
+    /// Has a printed/granted keyword ability (CR 702), read from COMPUTED chars — e.g. "target
+    /// creature with flying" (Glorious Decay). Evaluated via `has_keyword`.
+    HasKeyword(Keyword),
     /// Matches a supertype on the object (CR 205.4) — `Basic`, `Legendary`, `Snow`, …
     /// e.g. a basic land = `All([HasCardType(Land), Supertype(Supertype::Basic)])`.
     Supertype(Supertype),

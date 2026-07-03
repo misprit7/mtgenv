@@ -40,6 +40,7 @@ pub mod follow_the_lumarets;
 pub mod foolish_fate;
 pub mod forum_of_amity;
 pub mod garrison_excavator;
+pub mod glorious_decay;
 pub mod graduation_day;
 pub mod grapple_with_death;
 pub mod harsh_annotation;
@@ -155,6 +156,7 @@ pub fn register(db: &mut CardDb) {
     foolish_fate::register(db);
     forum_of_amity::register(db);
     garrison_excavator::register(db);
+    glorious_decay::register(db);
     graduation_day::register(db);
     grapple_with_death::register(db);
     harsh_annotation::register(db);
