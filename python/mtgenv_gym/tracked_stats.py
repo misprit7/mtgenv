@@ -108,6 +108,11 @@ class TrackedStatsCallback(BaseCallback):
         return True
 
     def _on_rollout_end(self) -> None:
+        # Log only the ratio series to TB — the user asked to keep the raw stats/<name>_num /
+        # stats/<name>_den off the sidebar. `as_log_dict` still returns them (the ratio + programmatic
+        # readers use the counts), so we filter here rather than dropping the accumulation.
         for k, v in self.acc.as_log_dict().items():
+            if k.endswith("_num") or k.endswith("_den"):
+                continue
             self.logger.record(k, v)
         self.acc.reset()
