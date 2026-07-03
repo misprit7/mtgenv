@@ -382,7 +382,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Thornfist Striker | S4,S17 | `sos` | ⏳ | Ward cost plus Infusion |
 | Thunderdrum Soloist | S5 | `sos` | ✅ done | Opus cast-IS trigger, mana spent |
 | Titan's Grave | S1 | `sos` | ✅ done | activated surveil 1 |
-| Together as One | S7 | `sos` | ⏳ | converge, colors of mana spent |
+| Together as One | S7 | `sos` | ✅ done | converge, colors of mana spent |
 | Tome Blast | S10 | `sos` | ✅ done | Flashback |
 | Topiary Lecturer | S6 | `sos` | ⏳ | Increment; mana equal to power |
 | Tragedy Feaster | S4,S17 | `sos` | ⏳ | Ward—Discard plus Infusion |
