@@ -210,7 +210,20 @@ pub(crate) fn mana_cost(generic: u32, pips: &[(Color, u32)]) -> ManaCost {
     for &(c, n) in pips {
         *colored.entry(c).or_insert(0) += n;
     }
-    ManaCost { generic, colored, x: 0 }
+    ManaCost { generic, colored, x: 0, hybrid: Vec::new() }
+}
+
+/// As [`mana_cost`] but with two-colour **hybrid** pips (CR 107.4e) — e.g. `{B}{B/G}{G}` is
+/// `mana_cost_hybrid(0, &[(Black,1),(Green,1)], &[(Black,Green)])`. Each hybrid pip is payable by
+/// either colour.
+pub(crate) fn mana_cost_hybrid(
+    generic: u32,
+    pips: &[(Color, u32)],
+    hybrid: &[(Color, Color)],
+) -> ManaCost {
+    let mut cost = mana_cost(generic, pips);
+    cost.hybrid = hybrid.to_vec();
+    cost
 }
 
 /// A plain `{T}: Add {C}` mana ability (CR 605) as first-class Effect IR — the canonical way to
@@ -627,7 +640,7 @@ mod tests {
     #[test]
     fn starter_db_has_expected_cards() {
         let db = starter_db();
-        assert_eq!(db.len(), 146);
+        assert_eq!(db.len(), 147);
         // Forest is "type line only": a Basic Land with subtype Forest. Mana is intrinsic
         // (CR 305.6) — the engine derives {T}: Add {G} from the subtype, so the CardDef carries
         // no explicit mana ability (and `is_mana_source` only sees authored abilities).

@@ -72,10 +72,10 @@ impl Characteristics {
     pub fn is_permanent(&self) -> bool {
         self.card_types.iter().any(|t| t.is_permanent())
     }
-    /// Mana value (CR 202.3): generic + the sum of all colored pips.
+    /// Mana value (CR 202.3): generic + the sum of all colored pips + one per hybrid pip.
     pub fn mana_value(&self) -> u32 {
         match &self.mana_cost {
-            Some(c) => c.generic + c.colored.values().copied().sum::<u32>(),
+            Some(c) => c.generic + c.colored.values().copied().sum::<u32>() + c.hybrid.len() as u32,
             None => 0,
         }
     }

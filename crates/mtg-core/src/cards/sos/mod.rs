@@ -71,6 +71,7 @@ pub mod stadium_tidalmage;
 pub mod startled_relic_sloth;
 pub mod stress_dream;
 pub mod strixhaven_skycoach;
+pub mod stirring_honormancer;
 pub mod stirring_hopesinger;
 pub mod tackle_artist;
 pub mod thunderdrum_soloist;
@@ -158,6 +159,7 @@ pub fn register(db: &mut CardDb) {
     startled_relic_sloth::register(db);
     stress_dream::register(db);
     strixhaven_skycoach::register(db);
+    stirring_honormancer::register(db);
     stirring_hopesinger::register(db);
     tackle_artist::register(db);
     thunderdrum_soloist::register(db);

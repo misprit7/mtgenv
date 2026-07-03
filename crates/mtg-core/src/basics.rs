@@ -136,6 +136,11 @@ pub struct ManaCost {
     /// resolution context, not here.
     #[serde(default)]
     pub x: u32,
+    /// Two-colour **hybrid** pips (CR 107.4e), each payable by *either* colour — e.g. `{B/G}` is
+    /// `(Black, Green)`. Each pip counts 1 toward mana value. Monocolour hybrid (`{2/G}`) is not yet
+    /// modelled. Serialized `#[serde(default)]` so older saves/wire messages load as no-hybrid.
+    #[serde(default)]
+    pub hybrid: Vec<(Color, Color)>,
 }
 
 impl Color {

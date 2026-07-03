@@ -167,11 +167,13 @@ fn arena_default_stop(step: Phase, own_turn: bool) -> bool {
     matches!(step, Phase::PrecombatMain | Phase::PostcombatMain) && own_turn
 }
 
-/// The engine core: full [`GameState`] plus (transitionally) one [`Agent`] per seat (indexed by
-/// `PlayerId.0`). Being renamed from `Engine` as the first step of the resumable split
-/// (RESUMABLE_ENGINE.md M3.1): the game-logic methods live here and will run inside a fiber once
-/// the driver is separated in M3.2. `agents` is still held here for now (removed in M3.2 when
-/// `ask` yields to the driver instead of calling agents directly).
+/// The engine core: full [`GameState`], the card-agnostic rules logic, and one [`Agent`] per seat
+/// (indexed by `PlayerId.0`). This is the type that runs a game — either driven **blocking** (its
+/// `run_game`/`ask` consult the in-core agents) or **resumably** inside a [`Session`](crate::session::Session)
+/// fiber, where [`ask`](EngineCore::ask) *suspends* and yields each decision to the caller instead
+/// (RESUMABLE_ENGINE.md). `Engine` is a public alias for this type. Agents live here (not a separate
+/// driver): the resumable fleet is thread-pinned (§M3.3b), so nothing needs to be `Send` and the
+/// core stays one clean type.
 pub struct EngineCore {
     pub state: GameState,
     agents: Vec<Box<dyn Agent>>,
@@ -214,10 +216,12 @@ pub struct EngineCore {
     yielder: Option<*const corosensei::Yielder<DecisionResponse, crate::session::Step>>,
 }
 
-/// Transitional alias kept while the resumable split lands (RESUMABLE_ENGINE.md M3.1→M3.2): the
-/// public name stays `Engine` so every `impl Engine` / `Engine::new` site (here, combat.rs,
-/// whiteboard.rs, and the mtg-cli/gre-server/py crates) keeps working unchanged. In M3.2 `Engine`
-/// becomes the distinct blocking driver `{ core: EngineCore, agents }` and this alias is dropped.
+/// `Engine` is the public name for the engine core. It stays an alias for [`EngineCore`] (rather
+/// than a separate wrapper) by design: the resumable fleet is thread-pinned (RESUMABLE_ENGINE.md
+/// §M3.3b), so the core needs no `Send`/agent-removal split — one type serves both the blocking
+/// callers (`Engine::new`/`run_game`, and the `impl EngineCore` methods across combat.rs/whiteboard.rs)
+/// and the [`Session`](crate::session::Session) fiber. `mtg-py` depends on `Session::start(Engine)`,
+/// so this name is semver-real.
 pub type Engine = EngineCore;
 
 impl Engine {
@@ -1651,6 +1655,7 @@ impl Engine {
 
         // 601.2f–h: pay the total cost (auto-tap lands), with {X} settled to `chosen_x`.
         let pay = ManaCost {
+            hybrid: Vec::new(),
             generic: cost.generic + chosen_x * cost.x,
             colored: cost.colored.clone(),
             x: 0,
@@ -4974,14 +4979,14 @@ mod expect_tests {
             chars: Characteristics {
                 name: "Warp Creature (test)".into(),
                 card_types: vec![CardType::Creature],
-                mana_cost: Some(ManaCost { generic: 3, colored: BTreeMap::new(), x: 0 }),
+                mana_cost: Some(ManaCost { generic: 3, colored: BTreeMap::new(), x: 0, hybrid: Vec::new() }),
                 power: Some(2),
                 toughness: Some(2),
                 grp_id: 9950,
                 ..Default::default()
             },
             abilities: vec![Ability::Warp {
-                cost: ManaCost { generic: 1, colored: BTreeMap::new(), x: 0 },
+                cost: ManaCost { generic: 1, colored: BTreeMap::new(), x: 0, hybrid: Vec::new() },
             }],
             text: String::new(),
             ..Default::default()
@@ -6011,6 +6016,7 @@ mod expect_tests {
                 card_types: vec![CardType::Creature],
                 colors: vec![Color::Green],
                 mana_cost: Some(ManaCost {
+                    hybrid: Vec::new(),
                     generic: 2,
                     colored: BTreeMap::from([(Color::Green, 1)]),
                     x: 0,
@@ -6071,6 +6077,7 @@ mod expect_tests {
                 card_types: vec![CardType::Instant],
                 colors: vec![Color::Red],
                 mana_cost: Some(ManaCost {
+                    hybrid: Vec::new(),
                     generic: 0,
                     colored: BTreeMap::from([(Color::Red, 1)]),
                     x: 1,

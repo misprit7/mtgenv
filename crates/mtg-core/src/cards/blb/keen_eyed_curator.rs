@@ -113,6 +113,7 @@ mod tests {
                                 generic: 1,
                                 colored: {},
                                 x: 0,
+                                hybrid: [],
                             },
                         ),
                         components: [],

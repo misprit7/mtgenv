@@ -93,6 +93,7 @@ mod tests {
                                     Green: 1,
                                 },
                                 x: 0,
+                                hybrid: [],
                             },
                         ),
                         components: [],

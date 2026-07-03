@@ -214,6 +214,21 @@ fn select_payment(units: &[ManaUnit], cost: &ManaCost) -> Option<Vec<(usize, Col
             return None;
         }
     }
+    // Hybrid pips (CR 107.4e): each `{c1/c2}` is paid by a remaining unit that produces *either*
+    // colour (prefer `c1`). Done after fixed colour pips so those aren't starved.
+    for &(c1, c2) in &cost.hybrid {
+        let mut done = false;
+        for (i, u) in units.iter().enumerate() {
+            if assigned[i].is_none() && (u.colors.contains(&c1) || u.colors.contains(&c2)) {
+                assigned[i] = Some(if u.colors.contains(&c1) { c1 } else { c2 });
+                done = true;
+                break;
+            }
+        }
+        if !done {
+            return None;
+        }
+    }
     // Generic: any remaining unit, contributing its first colour (CR 202.1, generic = any mana).
     let mut generic_left = cost.generic;
     for (i, u) in units.iter().enumerate() {
@@ -398,7 +413,7 @@ mod tests {
         for &(c, n) in pips {
             colored.insert(c, n);
         }
-        ManaCost { generic, colored, x: 0 }
+        ManaCost { generic, colored, x: 0, hybrid: Vec::new() }
     }
 
     fn game_with_lands(forests: usize, mountains: usize) -> GameState {
@@ -704,6 +719,19 @@ mod tests {
         let mut one = game_with_lands(2, 0); // GG
         let colors = auto_pay(&mut one, PlayerId(0), &cost(1, &[(Color::Green, 1)])).unwrap();
         assert_eq!(colors.len(), 1, "{{1}}{{G}} paid all-green spends one colour");
+    }
+
+    #[test]
+    fn hybrid_pip_pays_with_either_color() {
+        use std::collections::BTreeMap;
+        let hybrid = |a: Color, b: Color| ManaCost { generic: 0, colored: BTreeMap::new(), x: 0, hybrid: vec![(a, b)] };
+        let state = game_with_lands(1, 0); // one Forest (G)
+        // {G/R} is payable — the Forest covers the G side.
+        assert!(can_pay(&state, PlayerId(0), &hybrid(Color::Green, Color::Red)));
+        // {R/G} too (order-independent).
+        assert!(can_pay(&state, PlayerId(0), &hybrid(Color::Red, Color::Green)));
+        // {W/U} is NOT payable — a green source is neither white nor blue.
+        assert!(!can_pay(&state, PlayerId(0), &hybrid(Color::White, Color::Blue)));
     }
 
     #[test]
