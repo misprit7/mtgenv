@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/mtg-core", "crates/mtg-cli", "crates/mtg-gre-server", "crates/mtg-py"]
+members = ["crates/mtg-core", "crates/mtg-cli", "crates/mtg-gre-server", "crates/mtg-py", "crates/mtg-coro-spike"]
 
 [workspace.package]
 version = "0.1.0"

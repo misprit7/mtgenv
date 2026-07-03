@@ -163,10 +163,10 @@ fiber, hands the `DecisionRequest` (+ `PlayerView` + seat) out, and resumes with
 - **Send/parallel — the one real risk.** A fiber's suspended stack isn't serializable (fine — no
   search) and cheap cloning does **not** fall out (a fiber has no clone — perfectly aligned with
   §0.1). Whether the coroutine is **`Send`** (needed to move a game between rayon workers)
-  depends on the crate; `corosensei` and `generator` advertise `Send` coroutines when
-  yield/resume/return types are `Send`. **De-risked twice:** (1) a spike (§4 M3.0) proves it;
-  (2) the **thread-pinned-groups** fleet model (§3.4) never moves a fiber between threads, so
-  `Send` is not even required — only the seed data to *create* fibers must be `Send`.
+  depends on the crate. **RESOLVED in M3.0 (§6.5):** `corosensei` is `!Send` by design but its
+  docs sanction a manual `unsafe impl Send` when the stack data is `Send`; the spike moves a live
+  suspended fiber across threads that way → **rayon fleet is viable**. The thread-pinned-groups
+  model (§3.4) remains a zero-`unsafe` fallback needing no `Send` at all.
 - **Blocking wrapper:** collapses to `let mut r=None; loop { match sess.step(r) { Suspend{seat,
   view,req} => r=Some(agents[seat].decide(&view,&req)), Done(o)=>break o } }`. Exactly the
   mandated shape.
@@ -399,12 +399,55 @@ recovers the parallelism `SubprocVecEnv` threw away, without its IPC penalty.**
 
 ---
 
+## 6.5 M3.0 spike results (measured — `crates/mtg-coro-spike`, throwaway, deleted in M3.4)
+
+All go-signals green. Spike = 6 passing tests; reproduce with `cargo test -p mtg-coro-spike --
+--nocapture`.
+
+- **Crate & offline build:** `corosensei = "=0.2.2"` (pinned) fetches and compiles here; deps are
+  just `scopeguard` (+ Windows-only shims, unused on Linux). Minimal footprint.
+- **API:** `Coroutine::new(|yielder, input| …)`, `yielder.suspend(y) -> next_input`, `resume(input)
+  -> CoroutineResult::{Yield,Return}` — exactly the `ask`-yields shape the design assumes.
+- **Real engine in a fiber:** a full random self-play game runs to completion on a fiber stack;
+  the engine is oblivious to being a fiber (no game-logic change needed).
+- **Fiber stack size — MEASURED 42 KiB worst-case.** Painted each fiber's stack with a sentinel
+  and scanned the high-water mark over **125 games** (5 preset decks × 25 seeds). Worst was
+  **42,080 B (~42 KiB)** on `selesnya` (the trigger/replacement-heavy deck — so triggers *are*
+  exercised). No unbounded recursion, so this is a tight bound. **Recommendation: 256 KiB per
+  fiber** (~6× headroom to cover deeper hand-constructed cascades the random population may not
+  reach). Memory: 512 fibers × 256 KiB = 128 MB; 4096 × 256 KiB = 1 GB — vs corosensei's 1 MiB
+  default (512 → 512 MB), so the explicit small size is what keeps a large fleet affordable.
+  corosensei installs a guard page → an overflow is a fault, so size conservatively; treat a
+  fiber overflow like a panicked game (§ below).
+- **Send — `!Send` by design, but manual `impl` is sanctioned & works.** `corosensei::Coroutine`
+  is deliberately `!Send` (a `PhantomData<*mut ()>`): the crate *can't prove* the suspended stack
+  is `Send`. Its docs explicitly permit a manual `unsafe impl Send` when all stack data is `Send`.
+  Our fiber stack holds only `EngineCore` + engine locals (all `Send`; the non-`Send` agents live
+  in the driver), so `unsafe impl Send for Session {}` is sound and sanctioned. The spike moves a
+  **live, suspended** fiber across a thread boundary and resumes it correctly, and runs a real
+  engine game on a worker thread. ⇒ **rayon fleet is viable** (not only thread-pinned groups); the
+  invariant to enforce in M3.1 is "`EngineCore: Send`" (keep agents out of the core).
+- **Panic isolation — confirmed.** A panic inside a fiber body propagates out of `resume`;
+  wrapping `resume` in `catch_unwind` contains it. A 5-fiber "fleet" where fiber #2 panics (stand-in
+  for sos-cards' unwired-leaf `debug_assert`) yields `[Ok, Ok, Err, Ok, Ok]` — the panicked game
+  reports a terminal error, the others finish. (Requires the default unwinding panic strategy — no
+  `panic=abort` in any Cargo.toml, confirmed. The fleet driver must `catch_unwind` each `resume`
+  and mark a caught game terminal-error.)
+
+### Unsafe surface (for the doc record, per lead)
+
+Option B introduces exactly two small, contained `unsafe` sites, both justified above:
+1. `unsafe impl Send for Session` — sound iff `EngineCore: Send` (agents excluded). Enforce with a
+   `fn _assert_send<T: Send>(){}` static check on `EngineCore` in M3.1.
+2. the `*const Yielder` deref in `ask` (§3.2) — sound because `ask` only runs while its fiber is
+   live. Plus corosensei's own (audited, wasmtime-grade) `unsafe` for stack switching.
+
 ## 6. Open questions / notes
 
-- **Coroutine crate + offline build** — `corosensei` vs `generator`; confirm vendoring/offline
-  build and `Send`. Blocking on M3.0.
-- **Fiber stack size** — measure deepest engine stack (agenda→resolve→ForEach→interpret→select,
-  or cast→modes→X→targets) to size fixed stacks + guard overflow.
+- ~~**Coroutine crate + offline build**~~ **RESOLVED (M3.0):** `corosensei = "=0.2.2"`, builds
+  offline, `!Send`-by-design but manual `unsafe impl Send` is sound & sanctioned (§6.5).
+- ~~**Fiber stack size**~~ **RESOLVED (M3.0):** measured 42 KiB worst-case; use **256 KiB/fiber**
+  (§6.5). Re-measure if a future card adds a deep effect-tree cascade.
 - **Event/`observe` delivery** across the fiber boundary (§3.3) — buffer vs `+ Send` callback.
 - **Agenda + coroutine coexistence** — the agenda (WHITEBOARD_MODEL §2.2) stays the home for
   *internal* ordered processing; the coroutine handles only *player-decision* suspension. They
