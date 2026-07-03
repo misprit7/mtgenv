@@ -76,6 +76,31 @@ each cap unlocks the bracketed count. `⏳` = not yet built.
 
 Building **S1, S4, S5, S6, S7, S8, S10** (the seven big-count caps) converts ~**79** T3 cards to authorable.
 
+## Engine reality-check — unimplemented effect leaves (E-caps) — **found during Phase 2**
+
+The Phase-1 rubric assumed several `Effect` variants were interpreted; grepping the whiteboard
+interpreter (`whiteboard.rs`) shows **six IR leaves are defined but interpreted nowhere** — a card
+using one silently no-ops. So the true near-term T2 pool is **smaller than the 68 tallied above**:
+some of those cards actually need one of these leaves wired first. These are the highest-leverage
+caps (each is a small, card-agnostic interpreter arm lowering to an already-existing `Action`).
+
+| E-cap | Effect leaf | Blocks (examples) | Status |
+|---|---|---|---|
+| **E1** | `Effect::MoveZone` (bounce / return-to-hand / reanimate) | Zealous Lorecaster, Banishing Betrayal, Proctor's Gaze, Prismari Charm, Matterbending Mage, Pull from the Grave, Moment of Reckoning, Lorehold Charm | ✅ **DONE** `0e85b76` (single-target; multi-target "up to two" still TODO) |
+| **E2** | `Effect::Counter` (counter target spell) | Essence Scatter, Brush Off, Mana Sculpt, Quandrix Charm | ⏳ |
+| **E3** | `Effect::Discard` (loot "then discard a card"; "target player discards") | Traumatic Critique, Stadium Tidalmage, Charging Strifeknight, Rubble Rouser, Colossus, Rapturous Moment, Borrowed Knowledge, Send in the Pest | ⏳ |
+| **E4** | `Effect::Sacrifice` (as an effect — "each player sacrifices", "sacrifice two lands") | Social Snub, Planar Engineering, Witherbloom Charm, Pox Plague | ⏳ |
+| **E5** | `Effect::Repeat` | (few) | ⏳ |
+| **E6** | `Effect::Distribute` | (few) | ⏳ |
+
+**Wired today (safe for T2 authoring):** DealDamage, Draw, Destroy, Exile, GainLife, LoseLife, PumpPT,
+GrantKeyword, GrantQualification, BecomeCreature, AddMana, PutCounters, CreateToken, Fight, Search,
+Tap, Modal, Optional, IfYouDo, ForEach, Conditional, Earthbend, **MoveZone (new)**.
+
+Next-highest leverage: **E2 Counter** (unblocks counterspells) and **E3 Discard** (unblocks the loot
+theme). Both are small arms over existing `Action`s (`Action::Discard` exists; Counter needs a stack
+removal action).
+
 ## Deferred subsystems (T4 — do NOT build now)
 
 | Subsystem | Cards | Count |
