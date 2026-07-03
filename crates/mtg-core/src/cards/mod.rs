@@ -68,6 +68,7 @@ pub mod tla;
 pub mod tmp;
 pub mod ulg;
 pub mod usg;
+pub mod vow;
 
 /// Oracle/printing ids (the `grp_id` linking an object to its [`CardDef`]). Per-set card ids move
 /// near their cards in the `<setcode>/` folders; the prototype/starter ids stay here.
@@ -237,6 +238,41 @@ pub(crate) fn basic_land(grp_id: u32, name: &str) -> CardDef {
     }
 }
 
+/// A "check land" / slow-land dual: it enters tapped **unless you control two or more other lands**
+/// (evaluated as it enters — it isn't on the battlefield yet, so the `CountAtLeast` counts your
+/// *other* lands, matching "two or more other lands"), and taps for one of two colours `a`/`b` via
+/// two explicit IR mana abilities (CR 605). Shared by the VOW slow-land cycle (Deathcap Glade,
+/// Dreamroot Cascade, Shattered Sanctum, Stormcarved Coast, Sundown Pass).
+pub(crate) fn checkland(grp_id: u32, name: &str, a: Color, b: Color) -> CardDef {
+    use crate::effects::ability::{ActionPattern, Rewrite};
+    use crate::effects::condition::Condition;
+    use crate::effects::target::CardFilter;
+    let chars = Characteristics {
+        name: name.to_string(),
+        card_types: vec![CardType::Land],
+        grp_id,
+        ..Default::default()
+    };
+    CardDef {
+        chars,
+        abilities: vec![
+            mana_ability(a),
+            mana_ability(b),
+            Ability::Replacement {
+                pattern: ActionPattern::WouldEnterBattlefield(CardFilter::ItSelf),
+                rewrite: Rewrite::EntersTappedUnless(Condition::CountAtLeast {
+                    zone: Zone::Battlefield,
+                    filter: CardFilter::HasCardType(CardType::Land),
+                    controller: Some(PlayerRef::Controller),
+                    n: ValueExpr::Fixed(2),
+                }),
+            },
+        ],
+        text: String::new(),
+        fully_implemented: true,
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn creature(
     grp_id: u32,
@@ -370,6 +406,7 @@ pub fn starter_db() -> CardDb {
     bro::register(&mut db);
     tdm::register(&mut db);
     blb::register(&mut db);
+    vow::register(&mut db);
     // Per-set folders for the prototype/starter pool (moved out of `misc`).
     aer::register(&mut db);
     ala::register(&mut db);
@@ -523,7 +560,7 @@ mod tests {
     #[test]
     fn starter_db_has_expected_cards() {
         let db = starter_db();
-        assert_eq!(db.len(), 93);
+        assert_eq!(db.len(), 98);
         // Forest is "type line only": a Basic Land with subtype Forest. Mana is intrinsic
         // (CR 305.6) — the engine derives {T}: Add {G} from the subtype, so the CardDef carries
         // no explicit mana ability (and `is_mana_source` only sees authored abilities).
