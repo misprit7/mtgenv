@@ -174,9 +174,11 @@ class BatchedSelfPlayVecEnv(VecEnv):
     @staticmethod
     def _phi_batch(obs):
         """Potential Φ(s) per env (shape ``(N,)``), from the learner's perspective, bounded in
-        ~[−1, 1]: a small tanh-squashed mix of life, board-power, and card-count differentials.
-        Each ``tanh`` keeps any one term from dominating; weights sum to 1. (Magician's caution:
-        a life-only baseline is weak — board + cards matter — but Φ is only a learning crutch.)"""
+        ~[−1, 1]: a small tanh-squashed mix of card-count, board-power, and life differentials.
+        **CARD-DOMINANT weighting** (0.5·cards / 0.3·power / 0.2·life): the exact inversion of the
+        old life-dominant mix, so trading a card to save a little life reads as locally BAD — the
+        lever for the swine chump-block experiment. Each ``tanh`` keeps any one term from dominating;
+        weights sum to 1. Φ is only a learning crutch (annealed to 0; eval is always the raw ±1)."""
         g = obs["globals"]                                            # (N, G)
         dlife = g[:, _G_MY_LIFE] - g[:, _G_OPP_LIFE]
         dcards = (g[:, _G_MY_HAND] + g[:, _G_MY_BF]) - (g[:, _G_OPP_HAND] + g[:, _G_OPP_BF])
@@ -184,9 +186,9 @@ class BatchedSelfPlayVecEnv(VecEnv):
         present = bf[:, :, 0] > 0.5
         mine = present & (bf[:, :, 1] > 0.5)
         dpower = (bf[:, :, 2] * mine).sum(1) - (bf[:, :, 2] * (present & ~mine)).sum(1)
-        phi = (0.5 * np.tanh(dlife / 10.0)
+        phi = (0.5 * np.tanh(dcards / 4.0)
                + 0.3 * np.tanh(dpower / 6.0)
-               + 0.2 * np.tanh(dcards / 4.0))
+               + 0.2 * np.tanh(dlife / 10.0))
         return phi.astype(np.float32)
 
     def _apply_shaping(self, obs, rewards, dones):
@@ -263,15 +265,18 @@ class BatchedSelfPlayVecEnv(VecEnv):
 
 
 class ShapingAnneal(BaseCallback):
-    """Linearly anneal the vec env's potential-based shaping coefficient from ``coef0`` to 0 over the
-    first ``anneal_frac`` of training (GYM_PLAN §5). After that the policy trains on the pure ±1
-    terminal reward. Locates the ``BatchedSelfPlayVecEnv`` under any ``VecEnvWrapper`` layers."""
+    """Anneal the vec env's potential-based shaping coefficient (GYM_PLAN §5): hold ``coef0`` at full
+    strength until ``anneal_start`` of training, then decay linearly to 0 across
+    ``[anneal_start, anneal_end]``, and exactly 0 after ``anneal_end``. Full-strength-then-late-taper
+    (default 0.5→0.8) gives the heuristic time to shape early exploration before the policy finishes
+    on the pure ±1 reward. Locates the base env under any ``VecEnvWrapper`` layers."""
 
-    def __init__(self, total_timesteps, coef0=0.5, anneal_frac=0.6, verbose=0):
+    def __init__(self, total_timesteps, coef0=0.1, anneal_start=0.5, anneal_end=0.8, verbose=0):
         super().__init__(verbose)
         self.total = max(int(total_timesteps), 1)
         self.coef0 = float(coef0)
-        self.anneal_frac = max(float(anneal_frac), 1e-6)
+        self.anneal_start = float(anneal_start)
+        self.anneal_end = max(float(anneal_end), self.anneal_start + 1e-6)
 
     def _base_env(self):
         env = self.training_env
@@ -280,8 +285,12 @@ class ShapingAnneal(BaseCallback):
         return env
 
     def _coef(self):
-        frac = self.num_timesteps / (self.total * self.anneal_frac)
-        return self.coef0 * max(0.0, 1.0 - frac)
+        frac = self.num_timesteps / self.total
+        if frac <= self.anneal_start:
+            return self.coef0
+        if frac >= self.anneal_end:
+            return 0.0
+        return self.coef0 * (1.0 - (frac - self.anneal_start) / (self.anneal_end - self.anneal_start))
 
     def _on_training_start(self) -> None:
         env = self._base_env()

@@ -170,7 +170,8 @@ class FleetSelfPlayVecEnv(VecEnv):
         present = bf[:, :, 0] > 0.5
         mine = present & (bf[:, :, 1] > 0.5)
         dpower = (bf[:, :, 2] * mine).sum(1) - (bf[:, :, 2] * (present & ~mine)).sum(1)
-        return (0.5 * np.tanh(dlife / 10.0) + 0.3 * np.tanh(dpower / 6.0) + 0.2 * np.tanh(dcards / 4.0)).astype(np.float32)
+        # CARD-DOMINANT Φ (0.5·cards / 0.3·power / 0.2·life) — matches batched_selfplay._phi_batch.
+        return (0.5 * np.tanh(dcards / 4.0) + 0.3 * np.tanh(dpower / 6.0) + 0.2 * np.tanh(dlife / 10.0)).astype(np.float32)
 
     def _apply_shaping(self, obs, rewards, dones):
         if self.shaping_coef == 0.0:

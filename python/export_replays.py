@@ -36,7 +36,7 @@ def main():
                     help="override the full run name (else versioned '<M>.<m>-<deck>-selfplay-<steps>k')")
     ap.add_argument("--run-major", type=int, default=None,
                     help="bump the TB/replay version major (sticky via <tb-root>/.run_major); minor auto-increments")
-    ap.add_argument("--shaping-coef", type=float, default=0.5,
+    ap.add_argument("--shaping-coef", type=float, default=0.1,
                     help="initial potential-based shaping coef (annealed to 0 over 60%% of training; "
                          "0 disables — GYM_PLAN §5)")
     ap.add_argument("--big-net", action="store_true",
@@ -104,7 +104,7 @@ def main():
     if args.shaping_coef > 0:
         from mtgenv_gym.batched_selfplay import ShapingAnneal
 
-        cbs.append(ShapingAnneal(args.timesteps, coef0=args.shaping_coef, anneal_frac=0.6))
+        cbs.append(ShapingAnneal(args.timesteps, coef0=args.shaping_coef))  # full to 50%, decay 50->80%
     for c in cbs:
         c.verbose = 1
 

@@ -169,15 +169,17 @@ def _clean(*paths):
 
 def train_selfplay(deck="demo", timesteps=120_000, n_envs=8, pool_dir=DEFAULT_POOL,
                    tensorboard_log=None, seed=0, pool_every=8000, eval_every=8000, subproc=False,
-                   shaping_coef=0.5, notes=None, replay_every=0, run_name=None,
+                   shaping_coef=0.1, notes=None, replay_every=0, run_name=None,
                    vecenv="batched", num_workers=8, verbose=0):
     # replay_every>0 records one greedy self-play game every that-many steps to data/replays/ (the
     # lobby's "AI Training Replays" learning progression). Default 0 (OFF) as a library call — the
     # CLI turns it on (~25k) so real runs record, but tests / ab_shaping stay clean.
-    # Heuristic reward shaping (potential-based, GYM_PLAN §5) is ON by default: coef0=0.5, annealed
-    # to 0 over the first 60% by `ShapingAnneal`. PBRS is policy-invariant, so the final policy still
-    # optimizes only the true ±1 terminal reward (eval is always on that). Pass shaping_coef=0 to
-    # disable. See `ab_shaping.py` for the shaped-vs-unshaped harness.
+    # Heuristic reward shaping (potential-based, GYM_PLAN §5) is ON by default: coef0=0.1, CARD-
+    # DOMINANT Φ (0.5·cards/0.3·power/0.2·life — see _phi_batch), held full to 50% of training then
+    # linearly annealed to 0 across 50%→80% by `ShapingAnneal`. coef 0.1 keeps the cumulative shaping
+    # (PBRS telescopes to ≈coef·(Φ_end−Φ_start), |Φ|≤1 ⇒ ≤~0.2) clearly subordinate to the ±1 terminal.
+    # PBRS is policy-invariant, so the final policy optimizes only the true ±1 (eval is always on that).
+    # Pass shaping_coef=0 to disable. See `ab_shaping.py` for the shaped-vs-unshaped harness.
     os.makedirs(pool_dir, exist_ok=True)
     ref_path = os.path.join(os.path.dirname(pool_dir.rstrip("/")) or ".", "mtgenv_ref_initial.zip")
     ladder_dir = pool_dir.rstrip("/") + "_ladder"
@@ -229,7 +231,7 @@ def train_selfplay(deck="demo", timesteps=120_000, n_envs=8, pool_dir=DEFAULT_PO
     if shaping_coef > 0:
         from mtgenv_gym.batched_selfplay import ShapingAnneal
 
-        callbacks.append(ShapingAnneal(timesteps, coef0=shaping_coef, anneal_frac=0.6))
+        callbacks.append(ShapingAnneal(timesteps, coef0=shaping_coef))  # full to 50%, decay 50->80%
     # run_name (a versioned `<major>.<minor>-<slug>`, set by main()) names the TB run dir too, so the
     # TB run and the lobby replay tag match. tensorboard_log is the ROOT; SB3 makes <root>/<run_name>_N.
     model.learn(total_timesteps=timesteps, callback=callbacks, progress_bar=False,
@@ -245,7 +247,7 @@ def main():
     ap.add_argument("--pool-dir", default=DEFAULT_POOL)
     ap.add_argument("--tensorboard", default="/tmp/mtgenv_tb", help="TB ROOT; runs land as <root>/<version>-<slug>")
     ap.add_argument("--subproc", action="store_true", help="SubprocVecEnv (parallel workers)")
-    ap.add_argument("--shaping-coef", type=float, default=0.5,
+    ap.add_argument("--shaping-coef", type=float, default=0.1,
                     help="potential-based reward-shaping coef0 (annealed to 0); 0 disables. On by default.")
     ap.add_argument("--notes", default=None,
                     help="freeform description of what this run tests → TensorBoard 'run/notes' (TEXT tab)")
