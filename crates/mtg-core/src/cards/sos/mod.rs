@@ -94,6 +94,7 @@ pub mod stress_dream;
 pub mod strixhaven_skycoach;
 pub mod stirring_honormancer;
 pub mod stirring_hopesinger;
+pub mod suspend_aggression;
 pub mod tackle_artist;
 pub mod thunderdrum_soloist;
 pub mod transcendent_archaic;
@@ -205,6 +206,7 @@ pub fn register(db: &mut CardDb) {
     strixhaven_skycoach::register(db);
     stirring_honormancer::register(db);
     stirring_hopesinger::register(db);
+    suspend_aggression::register(db);
     tackle_artist::register(db);
     thunderdrum_soloist::register(db);
     transcendent_archaic::register(db);
