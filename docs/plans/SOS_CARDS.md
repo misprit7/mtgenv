@@ -365,7 +365,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Spectacular Skywhale | S5 | `sos` | ✅ done | Opus cast-IS trigger, mana spent |
 | Spirit Mascot | S9 | `sos` | ⏳ | cards leave graveyard trigger |
 | Steal the Show | Native | `sos` | ⏳ | wheel: discard any number, draw that many |
-| Stirring Honormancer | S2 | `sos` | ⏳ | look at top X, pick one |
+| Stirring Honormancer | S2 | `sos` | ✅ done | look at top X, pick one |
 | Stirring Hopesinger | S8 | `sos` | ✅ done | Repartee: cast IS targeting creature |
 | Stone Docent | S1,S18 | `sos` | ⏳ | graveyard-activated gain-life + surveil |
 | Stress Dream | S2 | `sos` | ✅ done | look-and-pick top two |
@@ -549,3 +549,13 @@ cap** rather than ship engine infra (a field / Condition / ValueExpr) with no ca
 caps only with a card that lands them. (Established when the "creature-died-this-turn" flag's only user,
 Essenceknit Scholar, was found hybrid-mana-blocked — flag reverted, rebuild it *with* Essenceknit once
 hybrid lands.)
+
+## Hybrid mana — ✅ DONE (`8daf069`, `{X/Y}` two-colour pips)
+`ManaCost.hybrid: Vec<(Color,Color)>` (serde-default) + `select_payment` satisfies each hybrid pip with
+a unit of either colour (after fixed pips, before generic; shared by `can_pay`+`auto_pay`) + `mana_value`
+counts each hybrid pip as 1 + `mana_cost_hybrid()` builder. **Wire:** gym `obs.rs` doesn't encode raw
+ManaCost fields (transparent); the web client (`main.ts`) renders from `generic`/`colored` and ignores
+`hybrid` → a hybrid card shows its pip incomplete but **does not crash** (graceful, per lead). Follow-up
+(UI team): render `{X/Y}` pips in `main.ts`. Monocolour hybrid (`{2/G}`, Wildgrowth Archaic) still
+deferred. → Stirring Honormancer. Next: rebuild the creature-died flag *with* Essenceknit Scholar (now
+unblocked); then Moseo, Abstract Paintmage.

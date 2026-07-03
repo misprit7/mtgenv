@@ -555,14 +555,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mtg-coro-spike"
-version = "0.1.0"
-dependencies = [
- "corosensei",
- "mtg-core",
-]
-
-[[package]]
 name = "mtg-gre-server"
 version = "0.1.0"
 dependencies = [

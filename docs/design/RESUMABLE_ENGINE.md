@@ -1,8 +1,12 @@
 # The Resumable Engine: Pull, Don't Push
 
-> **Status:** Design proposal (M3, Phase A). Not yet implemented — awaiting lead sign-off before
-> Phase B. Source of truth once built: `crates/mtg-core/src/priority.rs` (the driver + `ask`
-> seam) and a new `session` module.
+> **Status: ✅ M3 COMPLETE (2026-07-03).** Shipped same-day: design → spike → `Session`
+> `resume`/`submit` (behaviour provably unchanged vs blocking `run_game`) → gym `PyGame`→`Session`
+> port → thread-pinned Rust fleet. **End-to-end throughput @ 512 envs: ~1.6–2.0k (old Python pump)
+> → ~2.25k (single-thread Session) → ~5.5k games/s (fleet) = 2.8× over the pump.** Deferred (gym's
+> roadmap): vectorize the pump loop toward fully-GPU-bound. Source of truth: `crates/mtg-core/src/`
+> `priority.rs` (the `ask` seam) + `session.rs` (the `Session` primitive); the fleet stepper lives
+> in `mtg-py`.
 > **Read first:** `docs/design/AGENT_INTERFACE.md` (the decision boundary this preserves),
 > `docs/design/WHITEBOARD_MODEL.md` §"Naps" (MTGA's GRE already suspends/resumes — this is that,
 > made explicit), `docs/plans/GYM_PLAN.md` §2.2-B + §8-M3 (the pre-agreed `resume`/`submit`
@@ -372,14 +376,22 @@ session.rs (no whiteboard.rs contact) and delivered a working primitive sooner. 
   The fleet stepper lives in `mtg-py` (gym-sanity's zone; same pattern as the M3.3a port, engine
   advisory): N owning worker threads each step a group of `Session`s in lockstep, batched obs into
   fixed-index shared buffers, one PyO3 crossing per micro-tick, GIL released during stepping.
-- **M3.4 — Benchmark + delete the migration scaffolding.** Measure vs baseline (§5); remove
-  thread-per-game, the Python-side `BatchedSelfPlayVecEnv` pump, the `ask` `None` branch (the
-  migration aid), and the spike crate, once parity + speedup are confirmed. mtg-gre-server: **no
-  change** (still `Engine::new().run_game()`).
+- **M3.4 — Benchmark + delete the migration scaffolding.** ✅ **DONE.** Fleet measured at **2.8×**
+  over the pump @ 512 envs (§5 / status). Deleted the `mtg-coro-spike` crate. **No `ask`-branch
+  removal was needed** — under the thread-pinned decision (§M3.3b) agents stay in the core, so
+  `ask`'s two arms (fiber `Fiber(yielder)` → suspend / else → in-core `agents[seat].decide`) are
+  both **permanent**, not a migration aid; likewise `type Engine = EngineCore` is load-bearing (one
+  clean type). mtg-gre-server + mtg-cli: **no change** (still `Engine::new().run_game()`).
 
 ---
 
 ## 5. Performance model
+
+> **✅ Measured outcome (M3 complete, @ 512 envs):** old Python pump **~1.6–2.0k games/s** →
+> single-thread `Session` **~2.25k** → thread-pinned fleet **~5.5k = 2.8×** over the pump, gates
+> green (byte-identical trajectories). The prediction below — "per-decision boundary µs→ns, GIL-free
+> CPU scaling, one PyO3 crossing per micro-tick" — held; the remaining ceiling is the policy forward,
+> so the deferred lever is vectorizing the pump loop toward fully-GPU-bound (gym's roadmap).
 
 **Baseline (what's actually recorded).** The lead-cited "7.3k decisions/s" and "584–717 fps @
 32 envs" are **fresh runs**, not persisted — `benchmark.py` prints `decisions/s` for
