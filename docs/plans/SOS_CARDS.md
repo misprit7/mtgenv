@@ -613,6 +613,55 @@ Rubble Rouser need reanimate-self / reflexive-mana — defer.)
 3. Paying: exile the card (move to Exile) as part of the cost, then the ability's effect resolves.
 4. Test: card in graveyard + mana → offered; activate → card exiled + effect ran (two Inklings).
 
+## S15 impulse-play — scoped plan (NEXT priority per lead; foundation already exists)
+"Exile [a card] — you may **play** it until [end of turn / end of your next turn]." **Good news:** the
+warp-recast mechanism already gives us most of it — `Object.castable_from_exile: bool`
+(`state/mod.rs:157`, reset on any zone change per CR 400.7) + an offer loop (`priority.rs:1029-1041`)
+that already offers *casting* an exiled card with that flag for its normal mana cost. S15 = **extend**
+that, don't rebuild:
+1. **Effect to exile-and-permit.** Add `Effect::ImpulseExile { source, count, until }` (or extend an
+   exile effect) that moves the card(s) to exile AND sets `castable_from_exile = true` + a new
+   `Object.play_until_turn: Option<u32>` marker (absolute turn number). `source` covers: top-of-library
+   (Elemental Mascot, Suspend Aggression's top card), a chosen target permanent (Suspend Aggression's
+   "exile target nonland permanent"), a target graveyard card (Practiced Scrollsmith).
+2. **Offer loop (`priority.rs:1029`) — three gaps to close vs warp-recast:**
+   - **Timing:** warp-recast is sorcery-speed only; impulse follows the *card's own* timing (instant/
+     Flash → instant speed) — mirror the flashback timing check at `priority.rs:1049-1051`.
+   - **Lands:** the flag currently only drives `Cast`; a *land* in exile with the flag needs a
+     `play_land`-from-exile offer (impulse "play", not just "cast").
+   - **Expiry:** skip the offer when `play_until_turn` has passed. Set it: "until end of turn" =
+     current turn number; "until end of your next turn" = your next turn's number (spans an opponent
+     turn — compute from turn order). Clear expired markers in `begin_turn` (`priority.rs:687`, next to
+     the `life_gained_this_turn = 0` resets) or leave them (expiry is checked at offer time anyway).
+3. **Zone note:** Tablet of Discovery plays a **milled** card (from the *graveyard*, not exile). Either
+   generalise the flag to "playable-from-current-zone" or scope Tablet separately; the exile cases
+   (Elemental Mascot, Suspend Aggression, Practiced Scrollsmith, Archaic's Agony, Ark of Hunger,
+   Suspend Aggression, Practiced Offense) are the clean first batch.
+4. **Cards:** Elemental Mascot (S5 Opus + impulse), Suspend Aggression, Practiced Scrollsmith
+   (mono-hybrid `{R/W}` — done), Archaic's Agony (S7 + impulse), Ark of Hunger (S9 + impulse), Tablet of
+   Discovery (S13 + impulse, graveyard-play). Test: exile top card → it's offered as a play → play it →
+   resolves; after expiry it's no longer offered.
+
+## S13 restricted-mana — scoped plan (deferred per lead: fresh start, do AFTER S15)
+"Add {U}{R}. **Spend this mana only to cast instant and sorcery spells.**" All 4 cards use the SAME
+restriction (I/S-only), so a bool suffices. The cost: threading "am I casting an I/S spell" through the
+payment path (the reason the lead flagged it for a fresh, non-tired start).
+1. `ManaSpec`: add `restriction: Option<SpendRestriction>` (enum, one variant `InstantSorceryOnly` for
+   now). `add_mana` (`whiteboard.rs:644`) routes restricted mana to a new bucket.
+2. `ManaPool` (`basics.rs:200`): add `restricted: BTreeMap<Color,u32>` (I/S-only mana). Empty it wherever
+   `amounts` empties (CR 500.5).
+3. **Thread `allow_restricted: bool`** through `payment_units` → `select_payment` → `auto_pay` /
+   `can_pay_excluding`. When true, fold the restricted bucket into the available units; when false, ignore
+   it. Keep `can_pay(state,p,cost)` as a thin wrapper defaulting `allow_restricted=false` so the ~8 test
+   call sites and non-spell payments are unaffected.
+4. **Call sites** (from the survey): spell-cast payment `priority.rs:1753` → pass `card` is instant|sorcery;
+   ability-cost `pay_cost`/`can_pay_cost` (`1434`,`1218`) → `false` (restricted mana can't pay ability
+   costs); offer gates (`1012`,`1019`,`1034`,`1055`) → per-card `is instant|sorcery`.
+5. **Cards:** Hydro-Channeler (`{T}:Add {U}` restricted — cleanest lander), Abstract Paintmage (mono-hybrid
+   `{U/R}` done + first-main-phase trigger adds restricted `{U}{R}`), Great Hall of the Biblioplex (also
+   needs land-animate — defer that clause), Tablet of Discovery (also needs S15). Ship the cap with
+   Hydro-Channeler. Test: restricted mana pays an I/S spell but NOT a creature spell / an ability cost.
+
 ## Session note (git hygiene)
 Shared **index** in this working tree: plain `git commit` (even after `git add <my paths>`) commits the
 WHOLE index and sweeps up teammates' pre-staged files. ALWAYS `git commit --only <explicit paths> -m`.
