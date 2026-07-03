@@ -143,7 +143,9 @@ function replaySource(s: Any): string {
 }
 function frameCount(): number { return replay && replay.frames ? replay.frames.length : 0; }
 function startReplay(): void {
+  document.body.classList.add("replay-mode"); // enables replay-only layout damping
   ($("replaybar") as HTMLElement).hidden = false;
+  homeReplayBar();
   setReplayControlsEnabled(false);
   loadReplay();
 }
@@ -277,8 +279,21 @@ function legalIdxs(id: number): number[] {
 }
 
 // ── render ───────────────────────────────────────────────────────────────────
+// Replay bar placement: on a phone during replay, re-parent it to the very top of the app (above the
+// board) so frame-to-frame board reflow can't move the controls. Desktop keeps it inline in .center.
+// Idempotent — only moves when it isn't already where it should be.
+function homeReplayBar(): void {
+  if (!replayId) return;
+  const bar = document.getElementById("replaybar");
+  const app = document.querySelector(".app");
+  const center = document.querySelector(".center");
+  if (!bar || !app || !center) return;
+  if (isMobile()) { if (bar.parentElement !== app) app.insertBefore(bar, app.firstChild); }
+  else if (bar.parentElement !== center) center.insertBefore(bar, document.getElementById("hand"));
+}
 function render(): void {
   if (!view) return;
+  homeReplayBar();
   $("turn").textContent = `Turn ${view.turn} · ${view.phase} · active P${view.active_player}` +
     (view.priority_player != null ? ` · priority P${view.priority_player}` : "");
   renderRail();
@@ -1180,7 +1195,7 @@ function drawArrows(): void {
 }
 // On resize/rotation re-run render so the player strip re-homes between the left rail (desktop) and
 // the sticky bottom sheet (mobile), then redraw the target arrows against the new layout.
-window.addEventListener("resize", () => { if (view) render(); else drawArrows(); });
+window.addEventListener("resize", () => { homeReplayBar(); if (view) render(); else drawArrows(); });
 window.addEventListener("scroll", drawArrows, true);
 
 function eventText(ev: Any): string | null {

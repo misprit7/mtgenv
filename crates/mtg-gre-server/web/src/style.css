@@ -363,6 +363,14 @@
     /* phase/step bar must never force the page wide — scroll it internally instead */
     .stepbar { overflow-x: auto; }
 
+    /* Replay bar: pin to the very top during replay (the client also re-parents it to the app root) so
+       board reflow between frames can't shove the controls — Pause stays under your thumb. */
+    .replaybar { order: -1; position: sticky; top: 0; z-index: 45; margin: 0; border-radius: 0;
+      border: none; border-bottom: 1px solid var(--line); }
+    /* Damp the jumping: hold the board block at a stable height during replay so frame-to-frame content
+       changes reflow the page far less. */
+    body.replay-mode .play { min-height: 46vh; }
+
     /* bottom sheet: your strip + the prompt are ALWAYS reachable (sticky bottom); log hides behind a
        toggle. Sheet order top→bottom: [log title, log] (when open) · your strip · prompt (thumb). */
     .logpanel { position: sticky; bottom: 0; z-index: 30; background: var(--rail);
