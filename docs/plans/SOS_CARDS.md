@@ -278,7 +278,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Deluge Virtuoso | S3,S5 | `sos` | ✅ done | stun counter ETB + Opus trigger |
 | Diary of Dreams | S12 | `sos` | ⏳ | activation cost scales down per counter |
 | Dig Site Inventory | S10 | `sos` | ✅ done | counter + vigilance, flashback |
-| Duel Tactics | S10 | `sos` | ⏳ | damage + can't-block, flashback |
+| Duel Tactics | S10 | `sos` | ✅ done | damage + can't-block, flashback |
 | Efflorescence | S4 | `sos` | ✅ done | Infusion gained-life-this-turn condition |
 | Elemental Mascot | S5,S15 | `sos` | ⏳ | Opus + impulse play top card |
 | Emil, Vastlands Roamer | DistinctNames | `sos` | ⏳ | X = differently-named lands you control |
@@ -344,7 +344,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Primary Research | S9 | `sos` | ✅ done | card-left-graveyard-this-turn condition |
 | Prismari Charm | S1 | `sos` | ⏳ | surveil mode |
 | Procrastinate | S3 | `sos` | ✅ done | stun counters (twice X) |
-| Pursue the Past | S10 | `sos` | ⏳ | flashback |
+| Pursue the Past | S10 | `sos` | ✅ done | flashback |
 | Quandrix Charm | SoftCounter | `sos` | ⏳ | counter-unless-pay mode |
 | Rabid Attack | GrantAbility | `sos` | ⏳ | grant ad-hoc dies-draw ability EOT |
 | Rancorous Archaic | S7 | `sos` | ⏳ | Converge counters equal colors spent |
