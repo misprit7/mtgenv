@@ -567,13 +567,24 @@ function symImg(code) {
   const i = el("img", "ms"); i.src = "https://svgs.scryfall.io/card-symbols/" + code + ".svg";
   i.alt = "{" + code + "}"; i.loading = "lazy"; return i;
 }
+// Scryfall's split-circle hybrid symbol files use ONE fixed pair order per pair (e.g. `WU.svg`,
+// never `UW.svg` — the wrong order 404s). Normalize each `(Color, Color)` pair to its canonical code.
+const HYBRID_CANON = new Set(["WU", "WB", "UB", "UR", "BR", "BG", "RG", "RW", "GW", "GU"]);
+function hybridCode(a, b) {
+  const ab = (CODE[a] || "") + (CODE[b] || ""), ba = (CODE[b] || "") + (CODE[a] || "");
+  return HYBRID_CANON.has(ba) && !HYBRID_CANON.has(ab) ? ba : ab;
+}
 function manaPips(c) {
   const out = []; const mc = c.mana_cost; if (!mc) return out;
   const colored = mc.colored || {};
+  const hybrid = mc.hybrid || [];
   const totalC = Object.values(colored).reduce((a, b) => a + b, 0);
   const land = (c.card_types || []).includes("Land");
-  if (!land && (mc.generic > 0 || totalC === 0)) out.push(symImg(String(mc.generic)));
+  // Generic pip: when > 0, or a lone {0} ONLY for a genuinely empty cost — a pure-hybrid cost
+  // (generic 0, no plain colored pips, but hybrid pairs) must not show a spurious {0}.
+  if (!land && (mc.generic > 0 || (totalC === 0 && hybrid.length === 0))) out.push(symImg(String(mc.generic)));
   WUBRG.forEach((col) => { const n = colored[col] || 0; for (let i = 0; i < n; i++) out.push(symImg(CODE[col])); });
+  hybrid.forEach((pair) => out.push(symImg(hybridCode(pair[0], pair[1]))));
   return out;
 }
 function typeLine(c) {
