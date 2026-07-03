@@ -648,6 +648,9 @@ pub enum GameEvent {
     LifeChanged { player: PlayerId, delta: i32, new_total: i32 },
     DamageDealt { target: Target, amount: u32, source: ObjId },
     SpellCast { spell: StackId, controller: PlayerId },
+    /// One or more cards left `player`'s graveyard during a single effect resolution (the SoS Lorehold
+    /// "whenever one or more cards leave your graveyard" trigger). Batched per resolution.
+    LeftGraveyard { player: PlayerId },
     ObjectMoved { obj: ObjId, to: Zone },
     PermanentDied { obj: ObjId },
     Revealed { to: PlayerId, objects: Vec<ObjId> },

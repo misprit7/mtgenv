@@ -448,6 +448,7 @@ impl Engine {
                     .unwrap_or_else(|| "a spell".to_string());
                 format!("P{} casts {sname}", controller.0)
             }
+            GameEvent::LeftGraveyard { player } => format!("cards leave P{}'s graveyard", player.0),
             GameEvent::ObjectMoved { obj, to } => format!("{} → {to:?}", name(*obj)),
             GameEvent::PermanentDied { obj } => format!("{} dies", name(*obj)),
             GameEvent::Revealed { to, objects } => {
@@ -2668,7 +2669,45 @@ impl Engine {
             GameEvent::SpellCast { spell, controller } => {
                 self.queue_watching_spellcast_triggers(*spell, *controller);
             }
+            GameEvent::LeftGraveyard { player } => {
+                self.queue_watching_graveyard_leave_triggers(*player);
+            }
             _ => {}
+        }
+    }
+
+    /// Queue the "whenever one or more cards leave your graveyard" triggers (SoS Lorehold) of the
+    /// permanents `owner` controls — the graveyard's owner is the "you".
+    fn queue_watching_graveyard_leave_triggers(&mut self, owner: PlayerId) {
+        let watchers: Vec<ObjId> = self.state.player(owner).battlefield.clone();
+        for watcher in watchers {
+            let indices: Vec<u32> = match self.state.def_of(watcher) {
+                Some(def) => def
+                    .abilities
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, a)| match a {
+                        Ability::Triggered { event: EventPattern::CardsLeaveYourGraveyard, .. } => {
+                            Some(i as u32)
+                        }
+                        _ => None,
+                    })
+                    .collect(),
+                None => continue,
+            };
+            let controller = self.state.object(watcher).controller;
+            for index in indices {
+                let id = self.state.mint_stack();
+                self.state.pending_triggers.push(StackObject {
+                    id,
+                    controller,
+                    source: Some(watcher),
+                    kind: StackObjectKind::Ability { index },
+                    targets: Vec::new(),
+                    x: None,
+                    modes: Vec::new(),
+                });
+            }
         }
     }
 

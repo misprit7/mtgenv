@@ -92,6 +92,9 @@ pub enum EventPattern {
     /// "Repartee" cycle's "whenever you cast an instant or sorcery spell that targets a creature."
     /// Like [`SpellCast`], but only fires when one of the cast spell's chosen targets is a creature.
     SpellCastTargetingCreature(CardFilter),
+    /// "Whenever one or more cards leave your graveyard" (SoS Lorehold): fires once per effect
+    /// resolution in which the controller's graveyard shrank.
+    CardsLeaveYourGraveyard,
     /// Damage was dealt (optionally of a given kind) to a matching object/player.
     DamageDealt { kind: Option<DamageKind> },
     /// The beginning of a step/phase (CR 500.6, a triggered — not turn-based — ability).

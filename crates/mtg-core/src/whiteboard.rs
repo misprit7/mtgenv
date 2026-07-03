@@ -78,11 +78,20 @@ impl EngineCore {
             _ => StackId(0),
         };
         self.searched_this_resolution.clear();
+        // Snapshot each player's graveyard size so we can fire the "cards leave your graveyard"
+        // trigger (CR — SoS Lorehold) once per resolution in which a graveyard shrank (batched).
+        let gy_before: Vec<usize> = self.state.players.iter().map(|p| p.graveyard.len()).collect();
         let mut wb = Whiteboard::new(reason, ctx.clone());
         let mut cursor = 0usize;
         self.interpret(effect, ctx, sid, &mut wb, &mut cursor);
         // (M4: run the replacement/prevention rewrite pass here.)
         self.commit(wb);
+        // Fire graveyard-leave for any player whose graveyard net-shrank this resolution.
+        for (i, before) in gy_before.iter().enumerate() {
+            if self.state.players.get(i).is_some_and(|p| p.graveyard.len() < *before) {
+                self.broadcast(GameEvent::LeftGraveyard { player: PlayerId(i as u32) });
+            }
+        }
     }
 
     /// Commit the deferred actions accumulated in `wb` SO FAR, then leave it empty (same reason/ctx)
