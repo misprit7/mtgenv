@@ -483,3 +483,28 @@ when it resolves). Mirror warp site-for-site:
 
 Test: cast a sorcery from graveyard via Flashback → effect resolves → card is in Exile (not graveyard);
 and it's no longer offered for a second flashback.
+
+## S11 token-with-ability — scoped plan (synthetic token defs)
+
+Problem: a token's ability lookup is `def_of(id)` → `CardDb.get(chars.grp_id)`; there is no
+object-level ability storage, and the db is `Arc<CardDb>`. Keywords already ride on
+`TokenSpec.keywords`; only *triggered/activated* token abilities (the Pest dies-trigger) need this.
+
+Approach — give ability-bearing tokens a real `grp_id` pointing at a pre-registered def:
+1. `effects/target.rs`: add `grp_id: u32` to `TokenSpec` (no `Default` derive, so **update all 8
+   existing `TokenSpec {…}` literals** in `cards/helpers.rs` with `grp_id: 0` — vanilla/keyword-only
+   tokens). Bump the `TokenSpec` serde/expect snapshots.
+2. `whiteboard.rs` `create_token`: set `chars.grp_id = spec.grp_id;` (0 → no def, as today).
+3. `cards/`: pre-register the **Pest token def** (`{}` 1/1 B/G Pest, `Triggered{SelfEnters? no —
+   SelfDies, GainLife 1}`) in `starter_db` under a reserved id (e.g. `grp::PEST_TOKEN = 90001`), and
+   set `helpers::pest_token().grp_id = PEST_TOKEN`. `SelfDies` is already wired (priority.rs 2539), so
+   the trigger fires once the token carries the ability via `def_of`.
+4. Cards (4): Send in the Pest, Essenceknit Scholar, Moseo (Vein's New Dean), Pestbrood Sloth.
+
+Test: create a Pest token, kill it (SBA), assert its controller gained 1 life (the dies-trigger fired
+through the synthetic def).
+
+## S14 token-copy — note
+"Create a token copy of target creature" snapshots the target's chars into the token. Extends the
+S11 machinery (the copy's abilities come from the copied creature's def, reachable by copying its
+`grp_id` onto the token). Do after S11.
