@@ -160,7 +160,10 @@ def _clean(*paths):
 
 def train_selfplay(deck="demo", timesteps=120_000, n_envs=8, pool_dir=DEFAULT_POOL,
                    tensorboard_log=None, seed=0, pool_every=8000, eval_every=8000, subproc=False,
-                   shaping_coef=0.5, notes=None, verbose=0):
+                   shaping_coef=0.5, notes=None, replay_every=0, run_name=None, verbose=0):
+    # replay_every>0 records one greedy self-play game every that-many steps to data/replays/ (the
+    # lobby's "AI Training Replays" learning progression). Default 0 (OFF) as a library call — the
+    # CLI turns it on (~25k) so real runs record, but tests / ab_shaping stay clean.
     # Heuristic reward shaping (potential-based, GYM_PLAN §5) is ON by default: coef0=0.5, annealed
     # to 0 over the first 60% by `ShapingAnneal`. PBRS is policy-invariant, so the final policy still
     # optimizes only the true ±1 terminal reward (eval is always on that). Pass shaping_coef=0 to
@@ -207,6 +210,12 @@ def train_selfplay(deck="demo", timesteps=120_000, n_envs=8, pool_dir=DEFAULT_PO
         GameLengthCallback(),    # game/turns_mean + end-reason mix (batched env bypasses Monitor)
         RunMetadataCallback(config, notes=notes),  # run/notes text + Custom Scalars dashboard
     ]
+    if replay_every > 0:
+        from mtgenv_gym.replays import ReplayCheckpoint
+
+        rname = run_name or f"{deck}-{timesteps // 1000}k"
+        callbacks.append(ReplayCheckpoint(deck, replay_every, n_envs, run_name=rname,
+                                          deterministic=True, verbose=verbose))
     if shaping_coef > 0:
         from mtgenv_gym.batched_selfplay import ShapingAnneal
 
@@ -227,12 +236,16 @@ def main():
                     help="potential-based reward-shaping coef0 (annealed to 0); 0 disables. On by default.")
     ap.add_argument("--notes", default=None,
                     help="freeform description of what this run tests → TensorBoard 'run/notes' (TEXT tab)")
+    ap.add_argument("--replay-every", type=int, default=25_000,
+                    help="record one greedy self-play game every N steps → data/replays/ (lobby's AI "
+                         "Training Replays). 0 disables. On by default so every run is watchable.")
+    ap.add_argument("--run-name", default=None, help="replay/lobby group name (default '<deck>-<steps>k')")
     args = ap.parse_args()
 
     model, ref = train_selfplay(
         deck=args.deck, timesteps=args.timesteps, n_envs=args.n_envs, pool_dir=args.pool_dir,
         tensorboard_log=args.tensorboard, subproc=args.subproc, shaping_coef=args.shaping_coef,
-        notes=args.notes, verbose=1,
+        notes=args.notes, replay_every=args.replay_every, run_name=args.run_name, verbose=1,
     )
     wr_rand = play_winrate(model, args.deck, "random", 200, 9_000_000)
     wr_init = play_winrate(model, args.deck, ModelOpponent(ref), 200, 9_500_000)
