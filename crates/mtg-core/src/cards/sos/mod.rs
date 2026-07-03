@@ -69,6 +69,7 @@ pub mod strixhaven_skycoach;
 pub mod stirring_hopesinger;
 pub mod tackle_artist;
 pub mod thunderdrum_soloist;
+pub mod tome_blast;
 pub mod titans_grave;
 pub mod tenured_concocter;
 pub mod textbook_tabulator;
@@ -148,6 +149,7 @@ pub fn register(db: &mut CardDb) {
     stirring_hopesinger::register(db);
     tackle_artist::register(db);
     thunderdrum_soloist::register(db);
+    tome_blast::register(db);
     titans_grave::register(db);
     tenured_concocter::register(db);
     textbook_tabulator::register(db);
