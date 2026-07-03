@@ -213,7 +213,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Grapple with Death | - | `sos` | ✅ done | destroy artifact/creature, gain life |
 | Harsh Annotation | - | `sos` | ✅ done | destroy; controller makes Inkling token |
 | Heated Argument | - | `sos` | ⏳ | damage; optional graveyard-exile extra damage |
-| Impractical Joke | - | `sos` | ⏳ | 3 damage up-to-one; prevention clause deferrable |
+| Impractical Joke | - | `sos` | ✅ done | 3 damage up-to-one; prevention clause deferrable |
 | Interjection | - | `sos` | ✅ done | pump plus first strike |
 | Last Gasp | - | `rav` | ✅ done | -3/-3 to target creature |
 | Lorehold Charm | - | `sos` | ⏳ | modal: opp-sac / reanimate MV<=2 / anthem |
