@@ -241,6 +241,14 @@ pub enum Effect {
         body: Box<Effect>,
     },
 
+    /// Declare a **"target player"** (CR 115.1) for the spell/ability — a targeting slot with no
+    /// effect of its own. The player-affecting effects that follow reference the chosen player via
+    /// `PlayerRef::ChosenTarget(n)` (e.g. "target player draws two and loses 2 life"). Collected as a
+    /// `TargetKind::Player` spec at cast (so the engine prompts for a player); at resolution it just
+    /// advances the target cursor so later `Target(...)` slots line up. Use `PlayerRef::Opponent` for
+    /// the forced "target opponent" case (single opponent in 2-player) rather than this.
+    TargetPlayer,
+
     /// No-op (e.g. an unchosen optional, or a placeholder mode).
     Nothing,
 

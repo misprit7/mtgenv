@@ -9,6 +9,7 @@ pub mod bogwater_lumaret;
 pub mod burrog_banemaker;
 pub mod chase_inspiration;
 pub mod chelonian_tackle;
+pub mod cost_of_brilliance;
 pub mod cuboid_colony;
 pub mod eager_glyphmage;
 pub mod efflorescence;
@@ -74,6 +75,7 @@ pub fn register(db: &mut CardDb) {
     burrog_banemaker::register(db);
     chase_inspiration::register(db);
     chelonian_tackle::register(db);
+    cost_of_brilliance::register(db);
     cuboid_colony::register(db);
     eager_glyphmage::register(db);
     efflorescence::register(db);

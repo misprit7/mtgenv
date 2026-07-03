@@ -2907,6 +2907,14 @@ fn collect_specs_into(effect: &Effect, out: &mut Vec<TargetSpec>) {
                 }
             }
         }
+        // "Target player" (CR 115.1) — a targeting slot the following effects reference via
+        // `PlayerRef::ChosenTarget`. Declares a single Player target.
+        Effect::TargetPlayer => out.push(TargetSpec {
+            kind: TargetKind::Player,
+            min: 1,
+            max: 1,
+            distinct: true,
+        }),
         // Earthbend targets "target land you control" (CR 601.2c).
         Effect::Earthbend { target: EffectTarget::Target(spec), .. } => out.push(spec.clone()),
         // Exile targets "target card from a graveyard" etc. (CR 601.2c).

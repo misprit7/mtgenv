@@ -924,6 +924,12 @@ impl EngineCore {
                     });
                 }
             }
+            // "Target player" declaration (CR 115.1): no action — it just consumes its target slot so
+            // later `Target(...)` slots line up. The player was chosen at cast (a `Player` spec) and is
+            // read by the following effects via `PlayerRef::ChosenTarget`.
+            Effect::TargetPlayer => {
+                *cursor += 1;
+            }
             // ── Leaves defined in the IR but not yet given a whiteboard runtime. These fail
             // LOUD in debug/tests so a card using one can never silently no-op — the exact bug
             // class that hid Traumatic Critique's "then discard a card" (a defined-but-unwired
