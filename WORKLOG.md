@@ -3,6 +3,41 @@
 Short, dated entries for future-agent consumption. Newest first. One line or a few bullets
 per unit of meaningful progress. Keep it terse — detail lives in `docs/` and git history.
 
+## 2026-07-03 (evening)
+
+- **UI (CMYK identity shipped, game+lobby):** user picked the "CMYK riso" direction from style
+  mockups → full reskin as pure CSS-token pass (no layout/JS-behavior change): indigo ink on paper
+  (light) / cream ink on indigo stock (dark), cyan/magenta/yellow spot-offset shadows carrying game
+  state (magenta+cyan=legal, yellow+magenta=attacking), no decorative tilts. Auto/Light/Dark toggle
+  (defaults to system, explicit picks persisted to shared localStorage `mtg_theme`, no-FOUC).
+  Contrast 12-14:1 both themes. (be430ae game+embedded, 0424d7f lobby)
+- **Replays end-to-end slim:** mtg-core versioned compact format — zone deltas (48108d4) +
+  characteristics dedup (d4ac691) → 23.3MB game = 504KB on disk (46×); server saves compact,
+  serves full for compat + opt-in `?format=compact` (3f5bd0d, e0444d6); client fetches compact +
+  reconstructs client-side with full-endpoint fallback, identity-verified vs full rendering
+  (084f726) → browser holds ~0.5MB decoded instead of 23MB (47-53×). Also fixed: replay ids with
+  dots (the 2.7 version tags) were 400ing on GET — id sanitizer widened, traversal still blocked
+  (2a44b65); fast-rate Pause unresponsive (event-loop starvation from setInterval) → self-scheduling
+  frame loop + pointerdown controls (e7c958a); replay bar pinned stationary on mobile (0d42825).
+- **gym (tier-3 swine verdict — training healthy, combat judgment did NOT emerge):** 2.7-swine-200k
+  converges (greedy 0.895 vs random base 0.535, productive 1.000) but greedy block_rate=1.000 — it
+  chump-blocks the trampler like bears. Key control: `block_double` metric shows the vanilla bears
+  mirror double-blocks MORE (0.21-0.28) than swine (0.13-0.18) → doubles are pile-on, not anti-trample
+  ganging. Finding: MIRROR self-play sits in a stable block-everything equilibrium (blocks rare,
+  ~2.4/game; sparse ±1 credit) — the lever is a non-mirror/asymmetric setup, not more steps.
+  (fc96f80 Deck::Swine, bb43627 block_double)
+- **engine (SOS 73 cards / 14 caps):** S5 Opus (SpellCast trigger queue + ManaSpentOnTrigger +
+  ctx-aware Conditional), S8 Repartee (SpellCastTargetingCreature), S6 Increment (Power/ToughnessOfSelf),
+  S9 flag, player-as-target (Effect::TargetPlayer → TargetKind::Player slots; Cost of Brilliance /
+  Dissection Practice / Exhibition Tidecaller). 377 mtg-core tests.
+- **M3 in flight:** Session::resume/submit landed earlier (17e9276); Send split holds the priority.rs
+  window; gym's PyGame→Session port staged (blocked only on a Session::replay() accessor);
+  equivalence-fingerprint + bench harness committed as the port's acceptance gate (77efbaf, 35789df).
+- **infra:** version-prefixed TB runs (`<major>.<minor>-slug`, e6d00d7, backfilled 2.0-2.6);
+  replay recording default-on per training run (--replay-every 25k, d501d24); run-notes TEXT +
+  Custom Scalars dashboards (4e0108d); n_envs probe: fps flat ~1.6k at 32/128/256, single Python
+  pump core pegged while GPU 13-25% → M3 fleet target.
+
 ## 2026-07-03 (afternoon)
 
 - **webui (deck builder shipped):** lobby "Decks" tab — create/duplicate/edit/save custom decks
