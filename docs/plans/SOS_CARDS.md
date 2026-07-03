@@ -6,11 +6,28 @@ per-card triage, modeled on `SELESNYA_LANDFALL_CARDS.md`.
 
 ## ▶ NEXT AGENT — start here (handoff from sos-cards-4, 2026-07-03)
 
-**sos-cards-5 update (2026-07-03):** S17 **Ward cap** (mana + discard) + **Colorstorm Stallion** (`96dbc35`)
-+ **Forum Necroscribe** (`c335bcd`, Ward—Discard) + **Tragedy Feaster** (`1ca6d8e`, Ward—Discard + Infusion).
-Also fixed `Effect::MoveZone` target collection (`collect_specs_into`) — reanimation now works through the real
-cast/trigger path. **3 Ward cards, 520 tests green.** The remaining 4 Ward cards each need a new secondary cap
-(see the S17 row + queue item 1); the mana/discard Ward paths are done.
+**▶▶ sos-cards-5 handoff (2026-07-03) — READ THIS, the older queue below is superseded.** Shipped **11 cards,
+3 caps, 2 engine fixes; 536 mtg-core tests green; tree clean, all pushed.** Caps: **S17 Ward** (`96dbc35` —
+`Effect::CounterUnlessPay` soft-counter + `EffectTarget::Triggering`, threaded via `GameEvent::Targeted.source`
+→ `state.trigger_targeting_source` → `ResolutionCtx.triggering_stack`; mana + discard cost paths; `CardFilter::
+ItSelf` now matches in `enter_filter_matches`); **S10 flashback FRONT-cap** `Condition::CastFromNotHand`
+(`8ed83b1`). Engine fixes: `Effect::MoveZone` was missing from `collect_specs_into` (reanimation/return targets
+never collected through the real cast/trigger path); `CreateToken` now flushes at the deferred→imperative
+boundary (#61) so "create tokens then affect them" works. Cards: 5 Ward (Colorstorm Stallion, Forum Necroscribe,
+Tragedy Feaster, Thornfist Striker, Inkshape Demonstrator), Antiquities on the Loose, Rancorous Archaic,
+Aberrant Manawurm, Topiary Lecturer, Hardened Academic (+ Ancestral Anger was already in `vow/`).
+
+**Two lessons that saved/cost time — apply them:** (1) **`git log -S "<mechanism>"` before scoping any ⏳ cap
+as new work** — 6 rows had drifted stale (S2/S3/S7/S10/S11/S18 were all done); a full audit reconciled them and
+a PROCESS RULE is now in the capability-ledger header (flip the Status cell in the SAME commit as the cap).
+(2) **Verify keyword/subsystem wiring by READING the code, not from memory** — "lifelink not combat-wired" was
+believed by two sources but `apply_damage` already gains life (CR 702.15) and reads the COMPUTED keyword set, so
+even a granted lifelink works; that unblocked 2 cards. Correspondingly, **double-strike / first-strike ARE
+genuinely unwired** (no first-strike combat step) — verified by reading `combat_damage`.
+
+**State of the pool: the no-cap / easy-card vein is MINED OUT.** Every remaining unauthored non-DFC card needs a
+genuinely-new cap (see the fresh cap queue below). The big deferred bucket is 36 modal-DFC + Lesson/planeswalker/
+named-keyword cards (out of first-pass scope per CLAUDE.md).
 
 Tree clean, **509 mtg-core tests green**, all pushed. This session (sos-cards-4) shipped **5 cards + 4 caps**,
 all with tests incl. real-turn-engine integration tests where a trigger fires. Handing off at a natural
@@ -25,44 +42,32 @@ boundary (still green — the small/clean caps are largely picked; what remains 
 - **`CreateToken.dynamic_counters`** (`9d2a856`) → **Wild Hypothesis** + **Snarl Song** (Snarl Song was FREE:
   cap + S7 `ColorsSpent`). The Quandrix "0/0 Fractal → X/X" pattern; reusable.
 
-**Fresh prioritized queue** (heavier caps now — each still: one cap, one card, one commit, a test):
+**Fresh cap queue (all GENUINELY-NEW — verified unbuilt 2026-07-03; each: one cap, one+ card, one commit, a
+real-path test; flip the ledger Status cell in the SAME commit).** Ordered by realistic yield/effort:
 
-1. **S17 Ward** — ◑ **mana variant DONE** (`96dbc35`, `Effect::CounterUnlessPay` + `EffectTarget::Triggering`;
-   see the S17 ledger row for the full seam). **Colorstorm Stallion** shipped fully-faithful (Ward {1} + haste
-   + Opus-copy) with real cast→target→ward→pay/decline integration tests. **Remaining Ward cards** (Ward now
-   works; each gated only by its *secondary*): **Thornfist Striker** `{2}{G}` Ward {1} — Infusion is a
-   *conditional anthem* ("creatures you control get +1/+0 and have trample as long as you gained life this
-   turn") = a static granting a keyword conditionally; not obviously expressible → likely author Ward-only,
-   `fully_implemented:false`. **Fractal Tender** `{3}{G}{U}` Ward {2} — Increment (S6 done) + end-step Fractal
-   token gated on "if you put a counter on this creature THIS TURN" (needs a per-turn counter-added tracker;
-   verify one exists before claiming faithful). **Inkshape Demonstrator** `{3}{W}` Ward {2} — Repartee grants
-   itself lifelink UEOT, but **lifelink isn't combat-wired** → can't be faithful yet. **Mica**/**Prismari**
-   are Ward—Pay-life but need (a) a `pay_cost` `PayLife` arm (currently a no-op) AND (b) their blocked
-   secondaries (spell-copy / storm). **Forum Necroscribe** ✅ DONE (`c335bcd` — Ward—Discard + Repartee
-   reanimation; the reanimation exposed & fixed the `MoveZone`/`collect_specs_into` gap). **Tragedy Feaster** ✅ DONE
-   (`1ca6d8e`, no new cap — trample + Ward—Discard + Infusion = `BeginningOfStep(End)` gated on `YourTurn` →
-   `Conditional{ GainedLifeThisTurn ? Nothing : Sacrifice a permanent }`). **Remaining Ward cards all need a
-   NEW secondary cap:** Thornfist Striker (conditional anthem static — `Ability::Static` has no condition
-   field), Fractal Tender (per-turn "put a counter on this creature" tracker), Inkshape Demonstrator (lifelink
-   not combat-wired), Mica/Prismari (`pay_cost` PayLife arm + spell-copy/storm). Cheapest is **Thornfist
-   Striker Ward-only** (`fully_implemented:false`); otherwise the Ward pool is exhausted until one of those
-   secondary caps lands — move to another ledger item (Flashback front caps / S2 look-and-pick).
-2. **Flashback front-side caps** (S10 DONE) — **Antiquities on the Loose** ✅ DONE (`8ed83b1`,
-   `Condition::CastFromNotHand` + the CreateToken commit-before-next fix). The remaining 4 are each blocked by
-   a DIFFERENT hard sub-cap (not "small front caps" as previously hoped): **Practiced Offense** — grants
-   double-strike/lifelink (NOT combat-wired); **Daydream** — self-blink needs an exiled-card reference (like
-   `Searched` but for exile); **Group Project** — non-mana flashback cost ("tap three creatures";
-   `Ability::Flashback{cost:ManaCost}` can't hold it → needs a `Cost`-typed flashback); **Flashback** (the
-   card) — *grants* flashback to a gy card (dynamic ability grant). So the flashback front-cap vein is now
-   mined out except behind those 4 distinct caps.
-3. **S2 Look-and-pick** — ✅ **already DONE** (the ledger was stale): `Effect::LookAndPick` is implemented and
-   used by 6 cards. Any remaining unauthored look-and-pick card is authorable NOW. (Geometer's Arthropod still
-   needs the *triggering spell's* X for its "top X" count — a separate need, not S2.) **A fresh unauthored-card
-   audit is running** (see the sos-cards-5 handoff note) — prefer its AUTHORABLE-NOW list over this stale queue.
-4. **Fractalize** (set-base-P/T, layer work — do carefully). "Target creature *becomes* a green-and-blue
-   Fractal, base P/T = X+1, **loses all other colors and creature types**." That's SET/replace color+type
-   layer semantics (not Earthbend's ADD): new `StaticContribution::{SetColors, SetCreatureTypes}` + a dynamic
-   `SetBasePT`. Also lays groundwork for other "becomes a Fractal" cards.
+1. **First-strike / double-strike combat wiring** (CR 702.7 / 702.4). No first-strike combat-damage step exists;
+   `Keyword::{FirstStrike,DoubleStrike}` are inert. Adds a combat-damage-step split (first-strikers deal in a
+   first sub-step, then normal). Unblocks **Practiced Offense** (its double-strike option; but that card ALSO
+   needs a modal keyword-pick + "counter on each creature target player controls" = target-player + ForEach, both
+   doable) and any future first/double-strike creatures. Moderate combat-subsystem work — do with fresh context.
+2. **Per-turn "counters put on THIS permanent this turn" tracker** → unblocks **Fractal Tender** (the last easy-ish
+   Ward card: Increment + end-step Fractal token gated on "if you put a counter on this creature this turn"). A
+   per-object counter, set in the counter-add action, reset each turn, + a `Condition` reading it. Smallish.
+3. **`pay_cost` `PayLife` arm** (tiny) + then Ward—Pay-life cards (**Mica**, **Prismari**) — BUT both are also
+   blocked by spell-copy/storm secondaries, so PayLife alone yields 0 cards. Build it only alongside a consumer.
+4. **Apply-to-each-of-a-variable-multi-target** → **Homesickness** (`{4}{U}{U}`: draw target-player + tap up-to-2
+   + stun each of those 0–2). No `ChosenIndex` covers a variable count. Small; 1 card.
+5. **Spell-copy** (S14, ⏳ — token-copy already done). A real subsystem: mint a StackObject copy of a spell above
+   the original (CR 707.10) + a "you may choose new targets" reselection. LOW practical yield — of its 7 cards,
+   most are ALSO blocked elsewhere (Aziza tap-3 cost, Choreographed Sparks modal+creature-copy-grants, Mica
+   Ward-pay-life, Prismari storm); alone it unblocks essentially only **Lumaret's Favor**. Build for the
+   subsystem, not the count.
+6. **Fractalize** (set-base-P/T + retype, layer work — do carefully). "Target creature *becomes* a green-and-blue
+   Fractal, base P/T = X+1, loses all other colors and creature types" = SET/replace color+type layers (not
+   Earthbend's ADD): new `StaticContribution::{SetColors,SetCreatureTypes}` + a one-shot `SetBasePT` on a target
+   (the current `BecomeCreature` carries no P/T/color/type). Groundwork for other "becomes a Fractal" cards.
+
+The DFC/Lesson/planeswalker/named-keyword bucket (~40 cards) stays DEFERRED per CLAUDE.md first-pass scope.
 
 **Assessed-and-deferred (don't re-derive — the analysis is done):**
 - **Mind into Matter** = **3 caps, not 1** (leave until a cheaper consumer): (a) dynamic-MV filter —
