@@ -457,3 +457,29 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Vastlands Scavenger // Bind to Life | DFC | `sos` | ⏳ | modal double-faced card |
 | Witherbloom, the Balancer | Affinity | `sos` | ⏳ | affinity keyword subsystem |
 | Zaffai and the Tempests | FreeCast | `sos` | ⏳ | once/turn free-cast permission |
+
+## S10 Flashback — scoped implementation plan (warp-mirror)
+
+Flashback is structurally the **warp** mechanic (alt-cost cast from a non-hand zone + a zone change
+when it resolves). Mirror warp site-for-site:
+
+1. `effects/ability.rs`: add `Ability::Flashback { cost: ManaCost }` (like `Ability::Warp`) and
+   `CastVariant::Flashback`.
+2. `state/mod.rs`: add `Object.flashback_cast: bool` (mirror `warp_cast`); reset it in `move_object`
+   (CR 400.7) alongside `warp_cast`.
+3. `priority.rs`:
+   - `flashback_cost(card)` helper (mirror `warp_cost`, reads `Ability::Flashback`).
+   - `legal_priority_actions` (~958): offer `CastVariant::Flashback` for cards **in the graveyard**
+     whose def has `Ability::Flashback`, at the card's normal timing (sorcery→sorcery-speed,
+     instant→instant-speed). Mirror the warp-from-hand block (~1009) but source = `Zone::Graveyard`.
+   - `cost_for_variant` (~1489): `CastVariant::Flashback => self.flashback_cost(card)`.
+   - source-zone removal (~1655): allow `Zone::Graveyard` for a flashback cast.
+   - set `o.flashback_cast = true` at cast (mirror warp_cast flag ~1508).
+   - `resolve_top` (~1928/1992): if `flashback_cast`, move the card to **Exile** instead of graveyard
+     (CR 702.34 — "instead of putting it anywhere else, exile it"). This is the one place flashback
+     *differs* from warp (warp arms an end-step exile; flashback exiles immediately on resolution).
+4. Cards: Daydream, Antiquities on the Loose, Dig Site Inventory, Duel Tactics, Practiced Offense,
+   Flashback (the card), etc. — each declares `Ability::Flashback { cost }` + its normal spell effect.
+
+Test: cast a sorcery from graveyard via Flashback → effect resolves → card is in Exile (not graveyard);
+and it's no longer offered for a second flashback.
