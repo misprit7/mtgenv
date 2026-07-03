@@ -3227,6 +3227,15 @@ impl Engine {
             CardFilter::HasColor(c) => cc.colors.contains(c),
             CardFilter::Colorless => cc.colors.is_empty(),
             CardFilter::Multicolored => cc.colors.len() >= 2,
+            // "a spell with {X} in its mana cost" (CR 107.3) — the SoS "whenever you cast a spell with
+            // {X} in its mana cost" cast-trigger (Matterbending Mage, Geometer's Arthropod). Reads the
+            // printed cost's `{X}` count, like `count_filter_matches`'s `HasXInCost`.
+            CardFilter::HasXInCost => self
+                .state
+                .objects
+                .get(&obj)
+                .and_then(|o| o.chars.mana_cost.as_ref())
+                .is_some_and(|mc| mc.x > 0),
             CardFilter::ControlledBy(pref) => {
                 let want = match pref {
                     PlayerRef::Opponent | PlayerRef::EachOpponent => self

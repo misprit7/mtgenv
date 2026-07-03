@@ -58,6 +58,7 @@ pub mod lorehold_charm;
 pub mod mage_tower_referee;
 pub mod magmablood_archaic;
 pub mod masterful_flourish;
+pub mod matterbending_mage;
 pub mod melancholic_poet;
 pub mod mindful_biomancer;
 pub mod molten_core_maestro;
@@ -178,6 +179,7 @@ pub fn register(db: &mut CardDb) {
     mage_tower_referee::register(db);
     magmablood_archaic::register(db);
     masterful_flourish::register(db);
+    matterbending_mage::register(db);
     melancholic_poet::register(db);
     mindful_biomancer::register(db);
     molten_core_maestro::register(db);
