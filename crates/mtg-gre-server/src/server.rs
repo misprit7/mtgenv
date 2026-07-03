@@ -249,6 +249,17 @@ async fn list_replays() -> impl IntoResponse {
     axum::Json(out)
 }
 
+/// Whether `id` is a safe replay filename stem: ASCII alphanumerics plus `-`, `_`, and `.` — the
+/// last is required because **gym exporters embed dotted tokens** (a version like `2.7` and a unix-ms
+/// timestamp), e.g. `aitrain-2.7-swine-…-1783094604932`. Any `..` and any path separator are
+/// rejected, so `id` can only ever name a file directly inside `replay_dir()` (no traversal). This
+/// is why such replays previously 400'd: the old check disallowed `.` and never reached the reader.
+fn valid_replay_id(id: &str) -> bool {
+    !id.is_empty()
+        && !id.contains("..")
+        && id.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+}
+
 /// Optional query for [`get_replay`]. `?format=compact` opts into the small v2 delta payload (the
 /// web player reconstructs it client-side); anything else / absent = the default full-frame JSON.
 #[derive(serde::Deserialize)]
@@ -268,7 +279,7 @@ async fn get_replay(
     axum::extract::Path(id): axum::extract::Path<String>,
     axum::extract::Query(q): axum::extract::Query<ReplayQuery>,
 ) -> axum::response::Response {
-    if id.is_empty() || !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+    if !valid_replay_id(&id) {
         return (axum::http::StatusCode::BAD_REQUEST, "bad replay id").into_response();
     }
     let text = match std::fs::read_to_string(replay_dir().join(format!("{id}.json"))) {
@@ -775,6 +786,41 @@ pub(crate) async fn run_player_socket(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Regression: gym-exported replays 400'd on GET because their id embeds dotted tokens (a
+    /// `2.7` version + a unix-ms timestamp) and the old sanitizer disallowed `.`. Dotted ids must
+    /// pass; traversal (`..`, path separators) must still be rejected.
+    #[test]
+    fn replay_id_allows_dotted_gym_names_but_blocks_traversal() {
+        // The exact failing file's stem, plus other real ids.
+        assert!(valid_replay_id("aitrain-2.7-swine-200k-swine-step0199936-1783094604932"));
+        assert!(valid_replay_id("42")); // numeric human game
+        assert!(valid_replay_id("aitrain-bears-step10"));
+        // Traversal / separators / empty rejected.
+        assert!(!valid_replay_id(""));
+        assert!(!valid_replay_id(".."));
+        assert!(!valid_replay_id("../../etc/passwd"));
+        assert!(!valid_replay_id("a/b"));
+        assert!(!valid_replay_id("a\\b"));
+        assert!(!valid_replay_id("foo..bar")); // no `..` anywhere (defense in depth)
+    }
+
+    /// Regression: a gym `AiTraining` export is the pre-v2 full-frame shape (`{meta,frames:[{state,
+    /// label}]}`, no `version`); `get_replay`'s reader (`AnyReplay`) must load it. (This was never the
+    /// actual 400 cause — the id was — but pin reader-tolerance so a gym file always deserializes.)
+    #[test]
+    fn gym_written_legacy_replay_loads_via_any_replay() {
+        let json = r#"{"meta":{"players":[{"seat":0,"name":"PPO","deck":"swine"}],"result":{"winner":0,"turns":16,"reason":"ZeroLife"},"source":{"AiTraining":{"step":199936}},"created_at":1783094604932},"frames":[{"state":{"turn":1,"active_player":0,"phase":"Untap","priority_player":null,"players":[{"player":0,"life":20,"poison":0,"mana_pool":{"amounts":{}},"counters":{"counts":{}},"hand":[],"library":[],"graveyard":[],"exile":[]}],"battlefield":[],"stack":[],"combat":null},"label":"start"}]}"#;
+        let any: mtg_core::replay::AnyReplay =
+            serde_json::from_str(json).expect("gym legacy replay must deserialize");
+        let replay = any.into_replay();
+        assert_eq!(replay.frames.len(), 1);
+        assert_eq!(replay.meta.result.unwrap().turns, 16);
+        assert_eq!(replay.meta.source, mtg_core::replay::ReplaySource::AiTraining { step: 199936 });
+        // And it re-serves in both formats (what get_replay does).
+        assert!(serde_json::to_string(&replay).is_ok()); // default full
+        assert!(serde_json::to_string(&replay.to_compact()).is_ok()); // ?format=compact
+    }
 
     /// Every card that can appear in a game must have baked-in art. This is the offline half of the
     /// startup warning: if a card is added to a deck without regenerating `card-art.json`, this
