@@ -150,10 +150,9 @@ impl CardDef {
     }
 
     /// Builder: mark this card as tracked-incomplete (a genuine subsystem is deferred). The
-    /// builders default `fully_implemented` to `true`; call this on a card that defers a clause.
-    /// Currently unused (every authored partial sets the flag inline / is now complete), but kept as
-    /// the canonical way to flag a future partial card.
-    #[allow(dead_code)]
+    /// builders default `fully_implemented` to `true`; call this on a card that defers a clause
+    /// (e.g. Wildgrowth Archaic, whose creature-cast counter-injection trigger needs an unbuilt
+    /// delayed-replacement mechanism).
     pub(crate) fn incomplete(mut self) -> Self {
         self.fully_implemented = false;
         self
@@ -653,7 +652,7 @@ mod tests {
     #[test]
     fn starter_db_has_expected_cards() {
         let db = starter_db();
-        assert_eq!(db.len(), 159);
+        assert_eq!(db.len(), 160);
         // Forest is "type line only": a Basic Land with subtype Forest. Mana is intrinsic
         // (CR 305.6) — the engine derives {T}: Add {G} from the subtype, so the CardDef carries
         // no explicit mana ability (and `is_mana_source` only sees authored abilities).
