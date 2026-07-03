@@ -5,6 +5,14 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-07-03 (night)
 
+- **engine+cards(sos) — CreateToken dynamic counters + Wild Hypothesis (`9d2a856`):** added
+  `Effect::CreateToken.dynamic_counters: Vec<(CounterKind, ValueExpr)>` — counter counts evaluated at
+  resolution and baked onto the token's spec at materialize, so a token can enter with e.g. **X** +1/+1
+  counters (the Quandrix "0/0 Fractal → X/X" pattern). Field added to all 13 existing CreateToken sites
+  (`Vec::new()`) + snapshot regen; blast radius verified contained to those card files. Consumer: **Wild
+  Hypothesis** (`{X}{G}` sorcery — 0/0 Fractal with X +1/+1 counters + Surveil 2); tests cover X=3 (enters a
+  3/3), X=0 (bare 0/0), and the IR. Reusable for Snarl Song / Fractal Anomaly / Emil once their X-value
+  ValueExprs (ColorsSpent exists; cards-drawn / distinct-names don't) land.
 - **engine+cards(sos) — S21 cast-with-{X} trigger + Matterbending Mage (`134444d`):** added a `HasXInCost`
   arm to `enter_filter_matches` (the SpellCast-trigger filter path), so `SpellCast(All([ControlledBy,
   HasXInCost]))` = "whenever you cast a spell with {X} in its mana cost" now fires. Consumer: **Matterbending

@@ -41,8 +41,17 @@ small-but-load-bearing cap; do each fresh, one commit, with a test.** Prioritize
    (b) **`Effect::MoveZone` from a `Select`** (put a card from hand → battlefield) — MoveZone only handles
    `EffectTarget::Target` today; (c) **enter-tapped** — `ZoneDest`/MoveZone has no tapped flag. Do these as
    separate caps if/when a cheaper consumer appears; not worth it for one card.
-4. **set-base-P/T (2 cards):** Fractalize, Wild Hypothesis — "becomes a Fractal with base P/T = X+1". Layer
-   system (higher risk — do carefully). See `BecomeCreature`/Earthbend animation for the P/T-set path.
+4. **set-base-P/T — split:** ✅ **Wild Hypothesis DONE** (`9d2a856`) — it does NOT need set-base-P/T; it's a
+   0/0 Fractal token entering with **X** +1/+1 counters + Surveil 2. Added `Effect::CreateToken.dynamic_counters:
+   Vec<(CounterKind, ValueExpr)>` (counter counts evaluated at resolution, baked onto the token's spec at
+   materialize — the token enters as an X/X). **New reusable cap** — the Quandrix "0/0 Fractal + N dynamic
+   counters" pattern; unlocks **Snarl Song** (X = `ValueExpr::ColorsSpent`, S7 DONE — still needs Converge cast
+   + 2 tokens + gain X life), **Fractal Anomaly** (X = cards-drawn-this-turn, needs S19), **Emil** (X =
+   differently-named-lands, needs a DistinctNames ValueExpr + its {T} activated ability) as those X-value
+   ValueExprs land. ⏳ **Fractalize** still needs true set-base-P/T: "target creature *becomes* a green-and-blue
+   Fractal with base P/T = X+1, loses all other colors and creature types" — that's SET (replace) color/type
+   layer semantics (not Earthbend's ADD), so new `StaticContribution::{SetColors,SetCreatureTypes}` + a dynamic
+   `SetBasePT`. Higher-risk layer work — do carefully.
 
 DEFERRED still (never build): DFC/modal, Lessons/Paradigm, planeswalkers, Casualty, Elder-Dragon grants;
 dies-triggers need LKI (Arnyn, Cauldron of Essence).
