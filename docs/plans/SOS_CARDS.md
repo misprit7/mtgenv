@@ -542,3 +542,10 @@ creature's controller at death), reset in begin_turn, `Condition::CreatureDiedTh
   activated-ability enumeration to scan the graveyard for a graveyard-source ability.
 - **S9-trigger** (graveyard-leave event), **CreatureDies trigger** (needs LKI), **S14 token-copy**
   (extends S11 — copy the target's `grp_id`+chars onto the token).
+
+## Precedent: revert-rather-than-ship-unused-cap
+When a scoped cap's *only* consumer turns out to be blocked by a different missing feature, **revert the
+cap** rather than ship engine infra (a field / Condition / ValueExpr) with no card exercising it. Ship
+caps only with a card that lands them. (Established when the "creature-died-this-turn" flag's only user,
+Essenceknit Scholar, was found hybrid-mana-blocked — flag reverted, rebuild it *with* Essenceknit once
+hybrid lands.)
