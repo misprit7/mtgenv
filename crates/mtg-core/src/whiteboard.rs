@@ -857,19 +857,35 @@ impl EngineCore {
                     wb.push(Action::ExileForPlay { obj, until });
                 }
             }
-            // Move a single targeted object to another zone (CR 400.7 / 608.2) — "return target
-            // permanent to its owner's hand" (bounce), "return target creature card from your
-            // graveyard to the battlefield" (reanimate), etc. Lowers to one `Action::MoveZone` with
+            // Move targeted object(s) to another zone (CR 400.7 / 608.2) — "return target permanent
+            // to its owner's hand" (bounce), "return target creature card from your graveyard to the
+            // battlefield" (reanimate), "return up to two target creature cards … to your hand"
+            // (Pull from the Grave), etc. Each object lowers to one `Action::MoveZone` with
             // `MoveCause::Returned` (a non-death leave, so LTB — not dies — triggers fire, and an
-            // enter fires ETB). Single-object only for now (one `target` word → one chosen slot).
+            // enter fires ETB).
+            //
+            // Multi-target: a `max > 1` slot flattens all its picks into `chosen_targets` (one entry
+            // per chosen candidate, in slot order — see `parse_targets`), so it occupies several
+            // consecutive cursor positions. Emit one move per chosen object, taking up to `max`.
+            // `max == 1` is the ordinary single-target return. Invariant: a `max > 1` slot must be
+            // the LAST targeting sub-effect of its spell — the flat cursor can't tell where one
+            // multi-slot's picks end and a following targeting slot begins; every real card ("return
+            // up to N …") satisfies this (later clauses are non-targeting, e.g. "You gain 2 life").
             Effect::MoveZone { what, to } => {
-                if let Some(Target::Object(obj)) = self.resolve_target(what, ctx, cursor) {
-                    wb.push(Action::MoveZone {
-                        obj,
-                        to: to.zone,
-                        pos: to.pos,
-                        cause: MoveCause::Returned,
-                    });
+                let max = match what {
+                    EffectTarget::Target(spec) => spec.max.max(1),
+                    _ => 1,
+                };
+                for _ in 0..max {
+                    match self.resolve_target(what, ctx, cursor) {
+                        Some(Target::Object(obj)) => wb.push(Action::MoveZone {
+                            obj,
+                            to: to.zone,
+                            pos: to.pos,
+                            cause: MoveCause::Returned,
+                        }),
+                        _ => break,
+                    }
                 }
             }
             Effect::Attach { what, to } => {

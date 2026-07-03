@@ -78,6 +78,7 @@ pub mod primary_research;
 pub mod procrastinate;
 pub mod proctors_gaze;
 pub mod pterafractyl;
+pub mod pull_from_the_grave;
 pub mod pursue_the_past;
 pub mod rapturous_moment;
 pub mod rearing_embermare;
@@ -196,6 +197,7 @@ pub fn register(db: &mut CardDb) {
     procrastinate::register(db);
     proctors_gaze::register(db);
     pterafractyl::register(db);
+    pull_from_the_grave::register(db);
     pursue_the_past::register(db);
     rapturous_moment::register(db);
     rearing_embermare::register(db);
