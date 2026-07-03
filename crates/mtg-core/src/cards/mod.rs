@@ -273,6 +273,44 @@ pub(crate) fn checkland(grp_id: u32, name: &str, a: Color, b: Color) -> CardDef 
     }
 }
 
+/// A SoS "surveil dual" tapland: it always enters tapped, taps for one of two colours `a`/`b` (two
+/// explicit IR mana abilities), and has a costed `{2}{a}{b}, {T}: Surveil 1` activated ability.
+/// Shared by the cycle (Fields of Strife, Forum of Amity, Paradox Gardens, Spectacle Summit,
+/// Titan's Grave).
+pub(crate) fn surveil_dual(grp_id: u32, name: &str, a: Color, b: Color) -> CardDef {
+    use crate::effects::ability::{ActionPattern, Rewrite};
+    use crate::effects::target::CardFilter;
+    let chars = Characteristics {
+        name: name.to_string(),
+        card_types: vec![CardType::Land],
+        grp_id,
+        ..Default::default()
+    };
+    CardDef {
+        chars,
+        abilities: vec![
+            mana_ability(a),
+            mana_ability(b),
+            Ability::Replacement {
+                pattern: ActionPattern::WouldEnterBattlefield(CardFilter::ItSelf),
+                rewrite: Rewrite::EntersTapped,
+            },
+            Ability::Activated {
+                cost: Cost {
+                    mana: Some(mana_cost(2, &[(a, 1), (b, 1)])),
+                    components: vec![CostComponent::TapSelf],
+                },
+                effect: Effect::Surveil { count: ValueExpr::Fixed(1) },
+                timing: Timing::Instant,
+                restriction: None,
+                is_mana: false,
+            },
+        ],
+        text: String::new(),
+        fully_implemented: true,
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn creature(
     grp_id: u32,
@@ -560,7 +598,7 @@ mod tests {
     #[test]
     fn starter_db_has_expected_cards() {
         let db = starter_db();
-        assert_eq!(db.len(), 98);
+        assert_eq!(db.len(), 103);
         // Forest is "type line only": a Basic Land with subtype Forest. Mana is intrinsic
         // (CR 305.6) — the engine derives {T}: Add {G} from the subtype, so the CardDef carries
         // no explicit mana ability (and `is_mana_source` only sees authored abilities).
