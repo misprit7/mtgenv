@@ -285,7 +285,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | End of the Hunt | GreatestMV | `sos` | ⏳ | select greatest-MV creature/pw |
 | Essenceknit Scholar | S11 | `sos` | ⏳ | Pest token with attack-lifegain ability |
 | Eternal Student | S18 | `sos` | ⏳ | {1}{B},exile-from-graveyard activated ability |
-| Exhibition Tidecaller | S5 | `sos` | ⏳ | Opus mill trigger, mana-spent threshold |
+| Exhibition Tidecaller | S5 | `sos` | ✅ done | Opus mill trigger, mana-spent threshold |
 | Expressive Firedancer | S5 | `sos` | ✅ done | Opus self-pump, mana-spent threshold |
 | Fields of Strife | S1 | `sos` | ✅ done | land ability surveil 1 |
 | Fix What's Broken | PayXLife | `sos` | ⏳ | additional cost pay X life; reanimate MV=X |
@@ -323,7 +323,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Melancholic Poet | S8 | `sos` | ✅ done | Repartee drain |
 | Mica, Reader of Ruins | S14,S17 | `sos` | ⏳ | Ward-pay-life; copy I/S on sacrifice |
 | Molten Note | S10 | `sos` | ⏳ | flashback; damage equals mana spent |
-| Molten-Core Maestro | S5 | `sos` | ⏳ | Opus cast-trigger with mana-spent condition |
+| Molten-Core Maestro | S5 | `sos` | ✅ done | Opus cast-trigger with mana-spent condition |
 | Moseo, Vein's New Dean | S4,S11 | `sos` | ⏳ | Pest token with ability + Infusion reanimate |
 | Muse Seeker | S5 | `sos` | ✅ done | Opus cast-trigger |
 | Muse's Encouragement | S1 | `sos` | ✅ done | surveil 2 (keyword-only token) |
