@@ -642,11 +642,16 @@ impl EngineCore {
     /// `any_color` asks the player to pick. (The simplified payment path taps sources directly,
     /// so this is used by explicit mana-ability activation / ritual effects.)
     fn add_mana(&mut self, player: PlayerId, mana: &ManaSpec, ctx: &ResolutionCtx) {
+        // Restricted mana (CR 106.6, "spend only to cast instant/sorcery spells") floats in the pool's
+        // separate `restricted` bucket so it can't later pay a creature spell or an ability cost.
+        let restricted = mana.restriction.is_some();
         let mut changed = false;
         for (color, amount) in &mana.produces {
             let amt = self.eval_value(amount, ctx).max(0) as u32;
             if amt > 0 {
-                *self.state.player_mut(player).mana_pool.amounts.entry(*color).or_insert(0) += amt;
+                let pool = &mut self.state.player_mut(player).mana_pool;
+                let bucket = if restricted { &mut pool.restricted } else { &mut pool.amounts };
+                *bucket.entry(*color).or_insert(0) += amt;
                 changed = true;
             }
         }
@@ -669,7 +674,9 @@ impl EngineCore {
                     }
                     _ => Color::White,
                 };
-                *self.state.player_mut(player).mana_pool.amounts.entry(color).or_insert(0) += amt;
+                let pool = &mut self.state.player_mut(player).mana_pool;
+                let bucket = if restricted { &mut pool.restricted } else { &mut pool.amounts };
+                *bucket.entry(color).or_insert(0) += amt;
             }
         }
     }

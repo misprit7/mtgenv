@@ -199,12 +199,18 @@ impl std::fmt::Display for ManaCost {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ManaPool {
     pub amounts: BTreeMap<Color, u32>,
+    /// Mana with a spend restriction (CR 106.6) — currently only "spend only to cast instant and
+    /// sorcery spells" (SoS: Hydro-Channeler etc.). Kept in a separate bucket so the payment path can
+    /// count it toward an instant/sorcery cost but never toward a creature spell or an ability cost.
+    /// Empties alongside `amounts` at end of step (CR 500.5). `#[serde(default)]` so old data loads.
+    #[serde(default)]
+    pub restricted: BTreeMap<Color, u32>,
 }
 
 impl ManaPool {
-    /// Total mana of all colors currently in the pool.
+    /// Total mana of all colors currently in the pool, including restricted mana.
     pub fn total(&self) -> u32 {
-        self.amounts.values().copied().sum()
+        self.amounts.values().copied().sum::<u32>() + self.restricted.values().copied().sum::<u32>()
     }
 }
 

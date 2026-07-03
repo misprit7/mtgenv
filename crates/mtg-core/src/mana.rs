@@ -22,6 +22,20 @@ use crate::subtypes::{LandType, Subtype};
 /// (`Ability::Activated{is_mana}`, condition-aware), and the **intrinsic** basic-land-type mana
 /// derived from the permanent's COMPUTED subtypes (CR 305.6 — see [`basic_land_type_color`]).
 fn mana_sources(state: &GameState, p: PlayerId) -> Vec<(ObjId, Vec<Color>)> {
+    mana_sources_kind(state, p, false)
+}
+
+/// The untapped mana sources `p` controls that produce **restricted** mana (CR 106.6, "spend only to
+/// cast instant and sorcery spells" — SoS Hydro-Channeler). Intrinsic basic-land-type mana is never
+/// restricted, so only authored `AddMana` abilities carrying a `SpendRestriction` contribute here.
+fn restricted_mana_sources(state: &GameState, p: PlayerId) -> Vec<(ObjId, Vec<Color>)> {
+    mana_sources_kind(state, p, true)
+}
+
+/// Shared source enumeration. `restricted == false` yields each source's *unrestricted* colours
+/// (unrestricted `AddMana` abilities + intrinsic basic-land-type mana); `restricted == true` yields
+/// only colours from `AddMana` abilities carrying a `SpendRestriction` (no intrinsic mana).
+fn mana_sources_kind(state: &GameState, p: PlayerId, restricted: bool) -> Vec<(ObjId, Vec<Color>)> {
     state
         .player(p)
         .battlefield
@@ -39,15 +53,18 @@ fn mana_sources(state: &GameState, p: PlayerId) -> Vec<(ObjId, Vec<Color>)> {
                 return None;
             }
             let def = state.card_db.get(o.chars.grp_id)?;
-            let mut colors = producible_colors(state, def, p);
+            let mut colors = producible_colors(state, def, p, restricted);
             // CR 305.6: any land with a basic land type has an intrinsic `{T}: Add <colour>`
             // ability per type, NOT authored on the card. We read the COMPUTED subtypes
             // (post-layer-system) so type-changing effects flow through for free — an animated
             // land keeps its mana, Spreading Seas / Urborg-style subtype changes are honoured.
-            for st in &computed.subtypes {
-                if let Some(c) = basic_land_type_color(st) {
-                    if !colors.contains(&c) {
-                        colors.push(c);
+            // Intrinsic mana is always unrestricted.
+            if !restricted {
+                for st in &computed.subtypes {
+                    if let Some(c) = basic_land_type_color(st) {
+                        if !colors.contains(&c) {
+                            colors.push(c);
+                        }
                     }
                 }
             }
@@ -78,7 +95,12 @@ fn basic_land_type_color(subtype: &Subtype) -> Option<Color> {
 /// The colours `def` can currently produce for controller `p` — from its IR mana abilities whose
 /// activation restriction/condition holds. (Intrinsic basic-land-type mana is added by the caller
 /// from the permanent's computed subtypes; see [`mana_sources`].)
-fn producible_colors(state: &GameState, def: &crate::cards::CardDef, p: PlayerId) -> Vec<Color> {
+fn producible_colors(
+    state: &GameState,
+    def: &crate::cards::CardDef,
+    p: PlayerId,
+    restricted: bool,
+) -> Vec<Color> {
     let mut colors: Vec<Color> = Vec::new();
     let push = |c: Color, v: &mut Vec<Color>| {
         if !v.contains(&c) {
@@ -93,6 +115,11 @@ fn producible_colors(state: &GameState, def: &crate::cards::CardDef, p: PlayerId
             ..
         } = ab
         {
+            // Select abilities by whether their produced mana carries a spend restriction (CR 106.6):
+            // the unrestricted pass wants `mana.restriction == None`, the restricted pass the rest.
+            if mana.restriction.is_some() != restricted {
+                continue;
+            }
             let legal = restriction
                 .as_ref()
                 .is_none_or(|r| restriction_holds(state, r, p));
@@ -135,6 +162,9 @@ struct ManaUnit {
     source: Option<ObjId>,
     colors: Vec<Color>,
     bonus: bool,
+    /// Spend-restricted mana (CR 106.6) — from the pool's `restricted` bucket or a restricted source.
+    /// Only offered as a payment unit when the cost being paid allows it (an instant/sorcery cast).
+    restricted: bool,
 }
 
 /// The colours every `TapCreatureForMana` (Badgermole-type) ability on `p`'s battlefield grants per
@@ -166,26 +196,52 @@ fn tap_bonus_colors(state: &GameState, p: PlayerId) -> Vec<Color> {
 /// `excluded` sources are omitted — so a source already committed to a non-mana cost component
 /// (e.g. Ba Sing Se tapped for its own `{T}`) can't also produce mana (#57). The mutating `auto_pay`
 /// instead relies on those sources already being tapped (so `mana_sources` skips them).
-fn payment_units(state: &GameState, p: PlayerId, excluded: &[ObjId]) -> Vec<ManaUnit> {
+///
+/// `allow_restricted` (CR 106.6) folds in restricted mana — the pool's `restricted` bucket and
+/// restricted mana sources (Hydro-Channeler) — usable only when the cost being paid is an instant or
+/// sorcery cast. When false, restricted mana is invisible, so it can never pay a creature spell or an
+/// ability cost.
+fn payment_units(
+    state: &GameState,
+    p: PlayerId,
+    excluded: &[ObjId],
+    allow_restricted: bool,
+) -> Vec<ManaUnit> {
     let mut units: Vec<ManaUnit> = Vec::new();
     // Floating pool mana — spent first (CR 106.4: it stays in the pool until end of step).
     for (color, n) in &state.player(p).mana_pool.amounts {
         for _ in 0..*n {
-            units.push(ManaUnit { source: None, colors: vec![*color], bonus: false });
+            units.push(ManaUnit { source: None, colors: vec![*color], bonus: false, restricted: false });
+        }
+    }
+    // Floating RESTRICTED pool mana (only when the cost allows it).
+    if allow_restricted {
+        for (color, n) in &state.player(p).mana_pool.restricted {
+            for _ in 0..*n {
+                units.push(ManaUnit { source: None, colors: vec![*color], bonus: false, restricted: true });
+            }
         }
     }
     let sources = mana_sources(state, p);
     let bonus_colors = tap_bonus_colors(state, p);
     for (id, colors) in &sources {
         if !excluded.contains(id) {
-            units.push(ManaUnit { source: Some(*id), colors: colors.clone(), bonus: false });
+            units.push(ManaUnit { source: Some(*id), colors: colors.clone(), bonus: false, restricted: false });
+        }
+    }
+    // Restricted mana sources (Hydro-Channeler) — tappable only for an instant/sorcery cast.
+    if allow_restricted {
+        for (id, colors) in restricted_mana_sources(state, p) {
+            if !excluded.contains(&id) {
+                units.push(ManaUnit { source: Some(id), colors, bonus: false, restricted: true });
+            }
         }
     }
     if !bonus_colors.is_empty() {
         for (id, _) in &sources {
             if !excluded.contains(id) && state.computed(*id).is_creature() {
                 for c in &bonus_colors {
-                    units.push(ManaUnit { source: Some(*id), colors: vec![*c], bonus: true });
+                    units.push(ManaUnit { source: Some(*id), colors: vec![*c], bonus: true, restricted: false });
                 }
             }
         }
@@ -275,27 +331,38 @@ fn select_payment(units: &[ManaUnit], cost: &ManaCost) -> Option<Vec<(usize, Col
 }
 
 /// Whether `p` can pay `cost` from floating mana + untapped sources (CR 118.3), counting the
-/// TapCreatureForMana bonus. See [`can_pay_excluding`] to omit a cost-committed source.
+/// TapCreatureForMana bonus. Restricted mana is **excluded** (CR 106.6) — use [`can_pay_ex`] with
+/// `allow_restricted = true` for an instant/sorcery cast. See [`can_pay_excluding`] to omit a
+/// cost-committed source.
 pub fn can_pay(state: &GameState, p: PlayerId, cost: &ManaCost) -> bool {
-    can_pay_excluding(state, p, cost, &[])
+    can_pay_excluding(state, p, cost, &[], false)
+}
+
+/// As [`can_pay`], but `allow_restricted` folds in restricted mana (CR 106.6) — pass the "is this an
+/// instant/sorcery cast?" answer at spell-offer sites so I/S-only mana counts toward affordability.
+pub fn can_pay_ex(state: &GameState, p: PlayerId, cost: &ManaCost, allow_restricted: bool) -> bool {
+    can_pay_excluding(state, p, cost, &[], allow_restricted)
 }
 
 /// As [`can_pay`], but with `excluded` sources removed from the mana set — for affordability of a
 /// cost whose non-mana components (e.g. a `{T}` TapSelf) commit those permanents before the mana is
-/// paid, so they can't double as mana sources (#57).
+/// paid, so they can't double as mana sources (#57). `allow_restricted` (CR 106.6) counts I/S-only
+/// mana (false for ability costs — restricted mana can't pay them).
 pub fn can_pay_excluding(
     state: &GameState,
     p: PlayerId,
     cost: &ManaCost,
     excluded: &[ObjId],
+    allow_restricted: bool,
 ) -> bool {
-    select_payment(&payment_units(state, p, excluded), cost).is_some()
+    select_payment(&payment_units(state, p, excluded, allow_restricted), cost).is_some()
 }
 
 /// The total mana `p` could put toward a cost right now — floating pool + every untapped source's
 /// base + each creature's TapCreatureForMana bonus. A loose upper bound for the `{X}` choice.
+/// (Excludes restricted mana — a conservative under-count; no `{X}` spell in the pool spends it.)
 pub fn available_mana(state: &GameState, p: PlayerId) -> u32 {
-    payment_units(state, p, &[]).len() as u32
+    payment_units(state, p, &[], false).len() as u32
 }
 
 /// The untapped mana sources `p` controls right now, each paired with the colours it can tap for —
@@ -348,8 +415,20 @@ pub fn produce_mana(state: &mut GameState, p: PlayerId, source: ObjId, color: Co
 /// spell"), or `None` if the cost can't be paid (nothing is tapped in that case). The colours are the
 /// payment plan's assigned colours, so `{3}` paid with three green is one colour, `{W}{U}` is two.
 pub fn auto_pay(state: &mut GameState, p: PlayerId, cost: &ManaCost) -> Option<Vec<Color>> {
+    auto_pay_ex(state, p, cost, false)
+}
+
+/// As [`auto_pay`], but `allow_restricted` (CR 106.6) lets restricted (I/S-only) mana pay `cost` —
+/// pass the "is this an instant/sorcery cast?" answer. A tapped restricted source's output is routed
+/// to the pool's `restricted` bucket, and [`spend_from_pool`] spends restricted mana first.
+pub fn auto_pay_ex(
+    state: &mut GameState,
+    p: PlayerId,
+    cost: &ManaCost,
+    allow_restricted: bool,
+) -> Option<Vec<Color>> {
     use std::collections::{BTreeMap, BTreeSet};
-    let units = payment_units(state, p, &[]);
+    let units = payment_units(state, p, &[], allow_restricted);
     let chosen = match select_payment(&units, cost) {
         Some(c) => c,
         None => return None,
@@ -372,6 +451,11 @@ pub fn auto_pay(state: &mut GameState, p: PlayerId, cost: &ManaCost) -> Option<V
         .filter(|u| u.source.is_some() && !u.bonus)
         .map(|u| (u.source.unwrap(), u.colors.clone()))
         .collect();
+    // Sources whose chosen unit is restricted (their output funds the `restricted` bucket).
+    let restricted_taps: BTreeSet<ObjId> = chosen
+        .iter()
+        .filter_map(|&(i, _)| units[i].source.filter(|_| units[i].restricted))
+        .collect();
     // Tap every distinct source backing a chosen produced unit.
     let taps: BTreeSet<ObjId> = chosen.iter().filter_map(|&(i, _)| units[i].source).collect();
     for &id in &taps {
@@ -381,15 +465,21 @@ pub fn auto_pay(state: &mut GameState, p: PlayerId, cost: &ManaCost) -> Option<V
     }
     // Add each tapped source's FULL real output to the pool: its base mana (in the colour the plan
     // assigned it, else its first colour for a bonus-only tap), plus the bonus per creature tapped.
+    // A restricted source's base mana goes to the `restricted` bucket; bonus mana is unrestricted.
     let bonus_colors = tap_bonus_colors(state, p);
     let mut additions: BTreeMap<Color, u32> = BTreeMap::new();
+    let mut restricted_additions: BTreeMap<Color, u32> = BTreeMap::new();
     for &id in &taps {
         let base = base_color_of
             .get(&id)
             .copied()
             .or_else(|| source_base_colors.get(&id).and_then(|cs| cs.first().copied()));
         if let Some(c) = base {
-            *additions.entry(c).or_insert(0) += 1;
+            if restricted_taps.contains(&id) {
+                *restricted_additions.entry(c).or_insert(0) += 1;
+            } else {
+                *additions.entry(c).or_insert(0) += 1;
+            }
         }
         if !bonus_colors.is_empty() && state.computed(id).is_creature() {
             for c in &bonus_colors {
@@ -400,32 +490,54 @@ pub fn auto_pay(state: &mut GameState, p: PlayerId, cost: &ManaCost) -> Option<V
     for (c, n) in additions {
         *state.player_mut(p).mana_pool.amounts.entry(c).or_insert(0) += n;
     }
-    spend_from_pool(state, p, cost);
+    for (c, n) in restricted_additions {
+        *state.player_mut(p).mana_pool.restricted.entry(c).or_insert(0) += n;
+    }
+    spend_from_pool(state, p, cost, allow_restricted);
     Some(colors_spent)
 }
 
 /// Deduct `cost` from `p`'s mana pool: each coloured pip from its colour, then the generic component
 /// from any remaining mana (CR 202.1). Assumes affordability was checked (the pool covers it). Drops
-/// emptied colour entries so the pool stays canonical for the view.
-fn spend_from_pool(state: &mut GameState, p: PlayerId, cost: &ManaCost) {
-    let pool = &mut state.player_mut(p).mana_pool.amounts;
-    for (color, need) in &cost.colored {
-        let avail = pool.get(color).copied().unwrap_or(0);
-        let spent = (*need).min(avail);
-        if let Some(v) = pool.get_mut(color) {
+/// emptied colour entries so the pool stays canonical for the view. When `allow_restricted` (an I/S
+/// cast, CR 106.6), the pool's `restricted` bucket is spent **first** (so restricted mana isn't wasted
+/// while unrestricted mana pays); when false, restricted mana is untouched.
+fn spend_from_pool(state: &mut GameState, p: PlayerId, cost: &ManaCost, allow_restricted: bool) {
+    // Spend `need` mana of `color` from a bucket, returning how much remains unpaid.
+    fn take_color(bucket: &mut std::collections::BTreeMap<Color, u32>, color: Color, need: u32) -> u32 {
+        let avail = bucket.get(&color).copied().unwrap_or(0);
+        let spent = need.min(avail);
+        if let Some(v) = bucket.get_mut(&color) {
             *v -= spent;
         }
+        need - spent
+    }
+    // Spend up to `need` mana of any colour from a bucket, returning how much remains unpaid.
+    fn take_any(bucket: &mut std::collections::BTreeMap<Color, u32>, mut need: u32) -> u32 {
+        for v in bucket.values_mut() {
+            if need == 0 {
+                break;
+            }
+            let spent = (*v).min(need);
+            *v -= spent;
+            need -= spent;
+        }
+        need
+    }
+    for (color, need) in &cost.colored {
+        let mut left = *need;
+        if allow_restricted {
+            left = take_color(&mut state.player_mut(p).mana_pool.restricted, *color, left);
+        }
+        take_color(&mut state.player_mut(p).mana_pool.amounts, *color, left);
     }
     let mut generic_left = cost.generic;
-    for v in pool.values_mut() {
-        if generic_left == 0 {
-            break;
-        }
-        let spent = (*v).min(generic_left);
-        *v -= spent;
-        generic_left -= spent;
+    if allow_restricted {
+        generic_left = take_any(&mut state.player_mut(p).mana_pool.restricted, generic_left);
     }
-    pool.retain(|_, v| *v > 0);
+    take_any(&mut state.player_mut(p).mana_pool.amounts, generic_left);
+    state.player_mut(p).mana_pool.amounts.retain(|_, v| *v > 0);
+    state.player_mut(p).mana_pool.restricted.retain(|_, v| *v > 0);
 }
 
 #[cfg(test)]
@@ -498,6 +610,7 @@ mod tests {
                     mana: ManaSpec {
                         produces: vec![(Color::Green, ValueExpr::Fixed(1))],
                         any_color: None,
+                        restriction: None,
                     },
                 },
             }],
@@ -570,6 +683,7 @@ mod tests {
                         mana: ManaSpec {
                             produces: vec![(Color::Green, ValueExpr::Fixed(1))],
                             any_color: None,
+                            restriction: None,
                         },
                     },
                 }],
@@ -687,6 +801,7 @@ mod tests {
                     mana: ManaSpec {
                         produces: vec![(Color::Green, ValueExpr::Fixed(1))],
                         any_color: None,
+                        restriction: None,
                     },
                 },
             }],
@@ -845,6 +960,7 @@ mod tests {
                     mana: ManaSpec {
                         produces: vec![(Color::White, ValueExpr::Fixed(1))],
                         any_color: None,
+                        restriction: None,
                     },
                 },
                 timing: Timing::Instant,

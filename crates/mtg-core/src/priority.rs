@@ -1020,15 +1020,17 @@ impl Engine {
             if !self.card_castable_targets(card, p) {
                 continue;
             }
+            // Restricted (I/S-only) mana (CR 106.6) counts toward affordability iff casting an I/S.
+            let is_is = chars.has_type(CardType::Instant) || chars.has_type(CardType::Sorcery);
             // Normal cast for the mana cost.
-            if chars.mana_cost.as_ref().is_some_and(|c| mana::can_pay(s, p, c)) {
+            if chars.mana_cost.as_ref().is_some_and(|c| mana::can_pay_ex(s, p, c, is_is)) {
                 actions.push(PlayableAction::Cast { spell: card, variant: CastVariant::Normal });
             }
             // Warp (CR 702.x): an alternative cast cost from hand at sorcery speed — offered even
             // when the normal cost is unaffordable (the discount is the whole point).
             if sorcery_speed {
                 if let Some(wcost) = self.warp_cost(card) {
-                    if mana::can_pay(s, p, &wcost) {
+                    if mana::can_pay_ex(s, p, &wcost, is_is) {
                         actions.push(PlayableAction::Cast { spell: card, variant: CastVariant::Warp });
                     }
                 }
@@ -1059,7 +1061,9 @@ impl Engine {
             if !timing_ok {
                 continue;
             }
-            let affordable = o.chars.mana_cost.as_ref().is_some_and(|c| mana::can_pay(s, p, c));
+            let is_is = chars.has_type(CardType::Instant) || chars.has_type(CardType::Sorcery);
+            let affordable =
+                o.chars.mana_cost.as_ref().is_some_and(|c| mana::can_pay_ex(s, p, c, is_is));
             if !affordable {
                 continue;
             }
@@ -1079,7 +1083,9 @@ impl Engine {
                 continue;
             }
             if let Some(fcost) = self.flashback_cost(card) {
-                if mana::can_pay(s, p, &fcost) && self.card_castable_targets(card, p) {
+                // Flashback casts an instant/sorcery, so restricted (I/S-only) mana may pay it.
+                let is_is = chars.has_type(CardType::Instant) || chars.has_type(CardType::Sorcery);
+                if mana::can_pay_ex(s, p, &fcost, is_is) && self.card_castable_targets(card, p) {
                     actions.push(PlayableAction::Cast {
                         spell: card,
                         variant: CastVariant::Flashback,
@@ -1242,7 +1248,8 @@ impl Engine {
                 .then_some(source)
                 .into_iter()
                 .collect();
-            if !mana::can_pay_excluding(&self.state, p, m, &excluded) {
+            // Ability costs can't be paid with restricted (I/S-only) mana (CR 106.6) — `false`.
+            if !mana::can_pay_excluding(&self.state, p, m, &excluded, false) {
                 return false;
             }
         }
@@ -1826,7 +1833,12 @@ impl Engine {
             mono_hybrid: cost.mono_hybrid.clone(),
             x: 0,
         };
-        let colors_spent = mana::auto_pay(&mut self.state, p, &pay).unwrap_or_default();
+        // Restricted (I/S-only) mana (CR 106.6) may pay this cost iff it's an instant/sorcery cast.
+        let is_is = {
+            let ch = &self.state.object(card).chars;
+            ch.has_type(CardType::Instant) || ch.has_type(CardType::Sorcery)
+        };
+        let colors_spent = mana::auto_pay_ex(&mut self.state, p, &pay, is_is).unwrap_or_default();
         // Record the total mana spent (incl. {X}) on the spell, for an enters-with-counters-equal-
         // to-mana-spent replacement to read when it resolves (CR 601.2f–h; Dyadrine), plus the number
         // of distinct colours spent (CR 702.75 Converge).
@@ -2594,6 +2606,7 @@ impl Engine {
     fn empty_mana_pools(&mut self) {
         for pl in &mut self.state.players {
             pl.mana_pool.amounts.clear();
+            pl.mana_pool.restricted.clear();
         }
     }
 
@@ -6346,6 +6359,7 @@ mod expect_tests {
                 mana: ManaSpec {
                     produces: vec![(Color::Green, ValueExpr::Fixed(2))],
                     any_color: None,
+                    restriction: None,
                 },
             },
             &ResolutionCtx { controller: Some(PlayerId(0)), ..Default::default() },

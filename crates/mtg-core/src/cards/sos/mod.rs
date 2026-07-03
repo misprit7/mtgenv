@@ -43,6 +43,7 @@ pub mod graduation_day;
 pub mod grapple_with_death;
 pub mod harsh_annotation;
 pub mod hungry_graffalon;
+pub mod hydro_channeler;
 pub mod imperious_inkmage;
 pub mod impractical_joke;
 pub mod informed_inkwright;
@@ -155,6 +156,7 @@ pub fn register(db: &mut CardDb) {
     grapple_with_death::register(db);
     harsh_annotation::register(db);
     hungry_graffalon::register(db);
+    hydro_channeler::register(db);
     imperious_inkmage::register(db);
     impractical_joke::register(db);
     informed_inkwright::register(db);

@@ -254,6 +254,7 @@ pub(crate) fn mana_ability(color: Color) -> Ability {
             mana: ManaSpec {
                 produces: vec![(color, ValueExpr::Fixed(1))],
                 any_color: None,
+                restriction: None,
             },
         },
         timing: Timing::Instant,
@@ -652,7 +653,7 @@ mod tests {
     #[test]
     fn starter_db_has_expected_cards() {
         let db = starter_db();
-        assert_eq!(db.len(), 171);
+        assert_eq!(db.len(), 172);
         // Forest is "type line only": a Basic Land with subtype Forest. Mana is intrinsic
         // (CR 305.6) — the engine derives {T}: Add {G} from the subtype, so the CardDef carries
         // no explicit mana ability (and `is_mana_source` only sees authored abilities).

@@ -48,6 +48,7 @@ pub fn register(db: &mut CardDb) {
                         mana: ManaSpec {
                             produces: vec![(Color::Red, ValueExpr::PowerOfSelf)],
                             any_color: None,
+                            restriction: None,
                         },
                     }),
                     otherwise: None,
@@ -115,6 +116,7 @@ mod tests {
                                             ),
                                         ],
                                         any_color: None,
+                                        restriction: None,
                                     },
                                 },
                                 otherwise: None,

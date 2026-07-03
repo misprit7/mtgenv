@@ -64,6 +64,7 @@ mod tests {
                                 ),
                             ],
                             any_color: None,
+                            restriction: None,
                         },
                     },
                     timing: Instant,

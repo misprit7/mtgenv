@@ -98,6 +98,15 @@ pub enum CardFilter {
     AttachedHost,
 }
 
+/// A spend restriction on produced mana (CR 106.6) — "spend this mana only to …". Carried on the
+/// `ManaSpec` so the payment path can gate where the mana is usable. One variant for now.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SpendRestriction {
+    /// "Spend this mana only to cast instant and sorcery spells." (SoS: Hydro-Channeler, Abstract
+    /// Paintmage, Great Hall of the Biblioplex.)
+    InstantSorceryOnly,
+}
+
 /// Mana an ability/effect produces (CR 605/106). A simple bag; one entry per produced color.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ManaSpec {
@@ -105,6 +114,10 @@ pub struct ManaSpec {
     pub produces: Vec<(Color, ValueExpr)>,
     /// "Any one color"-style production: the controller chooses the color when it resolves.
     pub any_color: Option<ValueExpr>,
+    /// A spend restriction on the produced mana (CR 106.6, e.g. "only to cast instant and sorcery
+    /// spells"). `None` = unrestricted. `#[serde(default)]` so existing serialized data round-trips.
+    #[serde(default)]
+    pub restriction: Option<SpendRestriction>,
 }
 
 /// A token's defining characteristics (CR 111.3). Used by both the `CreateToken` effect and
