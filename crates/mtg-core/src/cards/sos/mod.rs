@@ -56,6 +56,7 @@ pub mod imperious_inkmage;
 pub mod impractical_joke;
 pub mod informed_inkwright;
 pub mod inkling_mascot;
+pub mod inkshape_demonstrator;
 pub mod interjection;
 pub mod lecturing_scornmage;
 pub mod lorehold_charm;
@@ -187,6 +188,7 @@ pub fn register(db: &mut CardDb) {
     impractical_joke::register(db);
     informed_inkwright::register(db);
     inkling_mascot::register(db);
+    inkshape_demonstrator::register(db);
     interjection::register(db);
     lecturing_scornmage::register(db);
     lorehold_charm::register(db);
