@@ -5,6 +5,17 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-07-03 (night)
 
+- **engine+cards(sos) — S10 flashback front-cap + Antiquities on the Loose + CreateToken ordering fix (`8ed83b1`):**
+  `Condition::CastFromNotHand` reads the source spell's `flashback_cast` flag ("if this spell was cast from
+  anywhere other than your hand" — the only non-hand cast the engine tracks). Antiquities `{1}{W}{W}` = two 2/2
+  Spirit tokens + `Conditional{CastFromNotHand}` → `ForEach` your Spirits `PutCounters(+1/+1)` + Flashback
+  {4}{W}{W}; first `spirit_token()` consumer. **The card's flashback test exposed a #61 ordering bug**:
+  `CreateToken` staged its tokens as a DEFERRED whiteboard action, so a LATER same-resolution step (the counter
+  ForEach) read live battlefield state and didn't see them → 0 counters. Fix: added a `CreateToken` arm to
+  `interpret` that flushes (commits) after staging — the deferred→imperative boundary (#61), so "create tokens
+  then affect them" works; rewrite pass still runs on the flushed batch (enters-with-counters unaffected). No
+  regression across the 13 existing CreateToken cards. Ledger audit (below) found this vein mined out otherwise
+  (Practiced Offense/Daydream/Group Project/Flashback each need a distinct hard cap). 523 tests.
 - **cards(sos) — Tragedy Feaster (`1ca6d8e`, no new cap):** third Ward card — `{2}{B}{B}` 7/6 Demon, Trample +
   Ward—Discard a card (2nd non-mana Ward) + Infusion downside modeled as a `BeginningOfStep(End)` trigger gated
   on `Condition::YourTurn` (so it fires only on your end step) whose effect is `Conditional{ GainedLifeThisTurn

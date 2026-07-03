@@ -47,17 +47,14 @@ boundary (still green — the small/clean caps are largely picked; what remains 
    not combat-wired), Mica/Prismari (`pay_cost` PayLife arm + spell-copy/storm). Cheapest is **Thornfist
    Striker Ward-only** (`fully_implemented:false`); otherwise the Ward pool is exhausted until one of those
    secondary caps lands — move to another ledger item (Flashback front caps / S2 look-and-pick).
-2. **Flashback front-side caps** (S10 the cap is already DONE — offer + mana-cost + exile-on-resolve all wired;
-   5 cards authored). The 5 UNAUTHORED SOS flashback cards each need a small FRONT-side cap (verified oracle):
-   **Practiced Offense** `{2}{W}` = "counter on *each* creature target player controls" (target-PLAYER +
-   ForEach) + "target creature gains your CHOICE of double strike or lifelink" (modal keyword pick);
-   **Antiquities on the Loose** `{1}{W}{W}` = 2 Spirit tokens + "if cast from other than hand" (cast-zone
-   condition — note S10 sets `flashback_cast`, so the flag exists) + ForEach counter on your Spirits;
-   **Daydream** `{W}` = self-blink (exile a creature you control, return it with a +1/+1 counter — needs an
-   exiled-card reference, like `Searched` but for exile); **Group Project** `{1}{W}` = trivial 2/2 Spirit
-   front BUT its flashback cost is **non-mana** ("tap three creatures") — `Ability::Flashback{cost:ManaCost}`
-   can't hold it (would need a `Cost`-typed flashback); **Flashback** (the card) `{R}` = *grants* flashback to
-   a gy card (dynamic ability grant — bigger). Pick Practiced Offense or Antiquities (both mana-flashback).
+2. **Flashback front-side caps** (S10 DONE) — **Antiquities on the Loose** ✅ DONE (`8ed83b1`,
+   `Condition::CastFromNotHand` + the CreateToken commit-before-next fix). The remaining 4 are each blocked by
+   a DIFFERENT hard sub-cap (not "small front caps" as previously hoped): **Practiced Offense** — grants
+   double-strike/lifelink (NOT combat-wired); **Daydream** — self-blink needs an exiled-card reference (like
+   `Searched` but for exile); **Group Project** — non-mana flashback cost ("tap three creatures";
+   `Ability::Flashback{cost:ManaCost}` can't hold it → needs a `Cost`-typed flashback); **Flashback** (the
+   card) — *grants* flashback to a gy card (dynamic ability grant). So the flashback front-cap vein is now
+   mined out except behind those 4 distinct caps.
 3. **S2 Look-and-pick** — ✅ **already DONE** (the ledger was stale): `Effect::LookAndPick` is implemented and
    used by 6 cards. Any remaining unauthored look-and-pick card is authorable NOW. (Geometer's Arthropod still
    needs the *triggering spell's* X for its "top X" count — a separate need, not S2.) **A fresh unauthored-card
@@ -159,7 +156,7 @@ each cap unlocks the bracketed count. `⏳` = not yet built.
 | **S5** Opus | `SpellCast(I/S you control)` trigger + `ValueExpr::ManaSpentOnTrigger` + `≥5` condition | 13 | ✅ **DONE** `e85771e` |
 | **S8** Repartee | `SpellCast(I/S you control **that targets a creature**)` trigger (inspect cast targets) | 12 | ✅ **DONE** |
 | **S4** Infusion | per-turn per-player "gained life this turn" state + a `Condition` reading it | 12 | ✅ **DONE** `89b3581` |
-| **S10** Flashback | alt-cast from graveyard for a flashback cost, then exile (Warp-analogue) | 11 | ✅ **DONE** (offer at priority.rs ~1075 `flashback_cost`/`CastVariant::Flashback`; exile-on-resolve ~1718; `Ability::Flashback{cost:ManaCost}`). **5 cards authored** (Dig Site Inventory, Duel Tactics, Molten Note, Pursue the Past, Tome Blast). ⚠️ **cost is mana-only** — a non-mana flashback cost (Group Project's "tap three creatures") is NOT expressible; a card that *grants* flashback (the card "Flashback") needs a dynamic-ability-grant cap. Remaining 5 unauthored each need a FRONT-side cap (see handoff). |
+| **S10** Flashback | alt-cast from graveyard for a flashback cost, then exile (Warp-analogue) | 11 | ✅ **DONE** (offer at priority.rs ~1075 `flashback_cost`/`CastVariant::Flashback`; exile-on-resolve ~1718; `Ability::Flashback{cost:ManaCost}`). **6 cards authored** (Dig Site Inventory, Duel Tactics, Molten Note, Pursue the Past, Tome Blast, **Antiquities on the Loose** `8ed83b1` — front-cap: `Condition::CastFromNotHand` reads the spell's `flashback_cast` flag; that commit ALSO fixed a #61 bug where `CreateToken` staged deferred so a later same-resolution step couldn't see the tokens — CreateToken now flushes/commits at the boundary, unblocking "create tokens then affect them"). ⚠️ **cost is mana-only** — a non-mana flashback cost (Group Project's "tap three creatures") is NOT expressible; a card that *grants* flashback (the card "Flashback") needs a dynamic-ability-grant cap. Remaining 4 front-cap cards: **Practiced Offense** (blocked — grants double-strike/lifelink, not combat-wired), **Daydream** (needs an exiled-card reference for its self-blink), **Group Project** (non-mana flashback cost), **Flashback** (dynamic ability grant). |
 | **S6** Increment | `SpellCast(you)` trigger + condition "mana spent > this creature's power OR toughness" | 9 | ✅ **DONE** |
 | **S7** Converge | `ValueExpr::ColorsOfManaSpent` (ETB counters / X in Converge spells) | 9 | ✅ **DONE** `ba8c183` (`ValueExpr::ColorsSpent` — `Object.colors_spent` recorded at cast; consumers Arcane Omens, Together as One, Magmablood/Transcendent/Wildgrowth Archaic) |
 | **S9** Graveyard-leave | "cards leave your graveyard" trigger + "a card left your graveyard this turn" cond | 8 | ✅ **DONE** (flag `f9b5584` + trigger: LeftGraveyard event snapshot in resolve_effect → Spirit Mascot, Owlin Historian, Garrison Excavator) |
