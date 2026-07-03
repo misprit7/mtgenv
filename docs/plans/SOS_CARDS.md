@@ -182,19 +182,19 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 
 | Card | Caps | Folder | Status | Gating clause |
 |---|---|---|---|---|
-| Additive Evolution | - | `sos` | ⏳ | fractal token + combat counter, all IR |
+| Additive Evolution | - | `sos` | ✅ done | fractal token + combat counter, all IR |
 | Ancestral Anger | - | `vow` | ⏳ | grant trample, named-card-count pump, draw |
 | Arnyn, Deathbloom Botanist | - | `sos` | ⏳ | deathtouch, filtered dies-trigger drain |
 | Artistic Process | - | `sos` | ⏳ | modal damage + flying token, all IR |
 | Ascendant Dustspeaker | - | `sos` | ⏳ | flying, ETB counter, exile graveyard card |
 | Bogwater Lumaret | - | `sos` | ✅ done | creature-ETB gain-life trigger, IR |
 | Borrowed Knowledge | - | `sos` | ⏳ | modal discard hand, draw by count |
-| Burrog Banemaker | - | `sos` | ⏳ | deathtouch + activated pump |
+| Burrog Banemaker | - | `sos` | ✅ done | deathtouch + activated pump |
 | Burrog Barrage | - | `sos` | ⏳ | conditional pump + power-based damage |
 | Cauldron of Essence | - | `sos` | ⏳ | dies-drain + activated reanimation |
 | Charging Strifeknight | - | `sos` | ⏳ | haste + tap/discard loot activated |
 | Chase Inspiration | - | `sos` | ✅ done | pump + grant hexproof |
-| Chelonian Tackle | - | `sos` | ⏳ | pump + fight up to one |
+| Chelonian Tackle | - | `sos` | ✅ done | pump + fight up to one |
 | Colossus of the Blood Age | - | `sos` | ⏳ | ETB drain + dies rummage draw |
 | Cost of Brilliance | - | `sos` | ⏳ | draw, lose life, counter |
 | Deathcap Glade | - | `vow` | ⏳ | checkland conditional tap + mana |
@@ -202,7 +202,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Dissection Practice | - | `sos` | ⏳ | drain + pump modal, all IR |
 | Divergent Equation | - | `sos` | ⏳ | X return instant/sorcery cards, exile self |
 | Dreamroot Cascade | - | `vow` | ⏳ | checkland conditional tap + mana |
-| Eager Glyphmage | - | `sos` | ⏳ | ETB Inkling keyword token |
+| Eager Glyphmage | - | `sos` | ✅ done | ETB Inkling keyword token |
 | Embrace the Paradox | - | `sos` | ⏳ | draw three + put land from hand |
 | Ennis, Debate Moderator | - | `sos` | ⏳ | blink ETB + conditional end-step counter |
 | Environmental Scientist | - | `sos` | ✅ done | ETB search basic land to hand |
@@ -211,14 +211,14 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Fractalize | - | `sos` | ⏳ | becomes Fractal, base P/T X+1 |
 | Glorious Decay | - | `sos` | ⏳ | modal destroy/damage/exile-draw |
 | Grapple with Death | - | `sos` | ✅ done | destroy artifact/creature, gain life |
-| Harsh Annotation | - | `sos` | ⏳ | destroy; controller makes Inkling token |
+| Harsh Annotation | - | `sos` | ✅ done | destroy; controller makes Inkling token |
 | Heated Argument | - | `sos` | ⏳ | damage; optional graveyard-exile extra damage |
 | Impractical Joke | - | `sos` | ⏳ | 3 damage up-to-one; prevention clause deferrable |
 | Interjection | - | `sos` | ✅ done | pump plus first strike |
-| Last Gasp | - | `rav` | ⏳ | -3/-3 to target creature |
+| Last Gasp | - | `rav` | ✅ done | -3/-3 to target creature |
 | Lorehold Charm | - | `sos` | ⏳ | modal: opp-sac / reanimate MV<=2 / anthem |
 | Mage Tower Referee | - | `sos` | ⏳ | multicolored-cast trigger self-counter |
-| Masterful Flourish | - | `sos` | ⏳ | pump plus indestructible |
+| Masterful Flourish | - | `sos` | ✅ done | pump plus indestructible |
 | Mind Roots | - | `sos` | ⏳ | discard two, put discarded land onto battlefield tapped |
 | Mind into Matter | - | `sos` | ⏳ | draw X, put permanent from hand into play |
 | Mindful Biomancer | - | `sos` | ✅ done | ETB gain life; once-per-turn pump |
@@ -226,21 +226,21 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Noxious Newt | - | `sos` | ✅ done | deathtouch plus mana ability |
 | Oracle's Restoration | - | `sos` | ✅ done | pump, draw, gain life |
 | Planar Engineering | - | `sos` | ⏳ | sacrifice lands, search basics onto battlefield |
-| Proctor's Gaze | - | `sos` | ⏳ | bounce plus search basic to battlefield |
+| Proctor's Gaze | - | `sos` | ✅ done | bounce plus search basic to battlefield |
 | Pterafractyl | - | `sos` | ⏳ | enters with X counters, ETB gain life |
 | Pull from the Grave | - | `sos` | ⏳ | return creatures to hand, gain life |
 | Quick Study | - | `woe` | ⏳ | draw two cards |
-| Rapturous Moment | - | `sos` | ⏳ | draw, discard, add mana ritual |
+| Rapturous Moment | - | `sos` | ✅ done | draw, discard, add mana ritual |
 | Rubble Rouser | - | `sos` | ⏳ | discard/draw ETB; mana ability with damage |
-| Shattered Acolyte | - | `sos` | ⏳ | lifelink; sac to destroy artifact/enchantment |
+| Shattered Acolyte | - | `sos` | ✅ done | lifelink; sac to destroy artifact/enchantment |
 | Shattered Sanctum | - | `vow` | ⏳ | conditional enters-tapped dual land |
 | Shopkeeper's Bane | - | `sos` | ✅ done | attack trigger gain life |
 | Silverquill Charm | - | `sos` | ✅ done | modal counters/exile/drain |
 | Sneering Shadewriter | - | `sos` | ✅ done | ETB lose/gain life |
 | Splatter Technique | - | `sos` | ⏳ | modal draw/area damage |
-| Stadium Tidalmage | - | `sos` | ⏳ | ETB/attack loot draw-discard |
+| Stadium Tidalmage | - | `sos` | ✅ done | ETB/attack loot draw-discard |
 | Stand Up for Yourself | - | `sos` | ⏳ | destroy target power-3+ creature |
-| Startled Relic Sloth | - | `sos` | ⏳ | combat trigger exile graveyard card |
+| Startled Relic Sloth | - | `sos` | ✅ done | combat trigger exile graveyard card |
 | Stormcarved Coast | - | `vow` | ⏳ | conditional enters-tapped dual |
 | Strixhaven Skycoach | - | `sos` | ⏳ | vehicle crew, ETB land search |
 | Sundown Pass | - | `vow` | ⏳ | conditional enters-tapped dual |
