@@ -3,6 +3,24 @@
 Short, dated entries for future-agent consumption. Newest first. One line or a few bullets
 per unit of meaningful progress. Keep it terse — detail lives in `docs/` and git history.
 
+## 2026-07-03 (late night)
+
+- **Stochastic MuZero on swine: CONCLUDED — two-config honest negative** (experiments/
+  stochastic_muzero/, findings #1+#2). Both pure-sparse (3.0) and gym-Φ-shaped (3.1) collapse into
+  an always-mulligan losing basin (value ≈ −0.8 everywhere, 0/30 vs random at the 10%-gate) — the
+  pre-flagged crux confirmed: factored sub-decisions dilute lookahead so 50–100 sims can't reach
+  winning lines to bootstrap from sparse ±1. Shaping measurably pressured the mulligan attractor
+  (visit split 36/14 → 25/25) but couldn't escape the basin. Future-work recorded: macro-composed
+  decisions, ~10× budget, Gumbel few-sim, warm-start from the PPO checkpoint. Runs on shared TB.
+- **SOS chain summary (agents 4–5): ~126 → ~150 cards, 536 tests.** Ward (CounterUnlessPay on the
+  BecomesTargeted seam, 5/8 cards), multi-target MoveZone, Not(ItSelf), cast-{X} trigger,
+  dynamic token counters, CastFromNotHand; two more real-path engine fixes (MoveZone targets
+  never collected via real casting; CreateToken staging invisible to same-resolution steps) →
+  six real-path bugs killed today. **Ledger-vs-git audit: SIX stale cap rows fixed** + header
+  PROCESS RULE (status flips in the cap's own commit). Honest remainder: first/double-strike
+  wiring, per-turn counter tracker, PayLife, multi-target-each, spell-copy, Fractalize. Agent 6
+  spawned on first-strike.
+
 ## 2026-07-03 (night)
 
 - **cards(sos) — Inkshape Demonstrator (5th Ward card) + Hardened Academic (`9be0eb3`), no new cap — LIFELINK
