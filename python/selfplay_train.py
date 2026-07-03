@@ -160,14 +160,15 @@ def _clean(*paths):
 
 def train_selfplay(deck="demo", timesteps=120_000, n_envs=8, pool_dir=DEFAULT_POOL,
                    tensorboard_log=None, seed=0, pool_every=8000, eval_every=8000, subproc=False,
-                   shaping_coef=0.5, verbose=0):
+                   shaping_coef=0.5, notes=None, verbose=0):
     # Heuristic reward shaping (potential-based, GYM_PLAN §5) is ON by default: coef0=0.5, annealed
     # to 0 over the first 60% by `ShapingAnneal`. PBRS is policy-invariant, so the final policy still
     # optimizes only the true ±1 terminal reward (eval is always on that). Pass shaping_coef=0 to
     # disable. See `ab_shaping.py` for the shaped-vs-unshaped harness.
     os.makedirs(pool_dir, exist_ok=True)
     ref_path = os.path.join(os.path.dirname(pool_dir.rstrip("/")) or ".", "mtgenv_ref_initial.zip")
-    _clean(os.path.join(pool_dir, "*.zip"), ref_path)  # fresh league each run
+    ladder_dir = pool_dir.rstrip("/") + "_ladder"
+    _clean(os.path.join(pool_dir, "*.zip"), ref_path, os.path.join(ladder_dir, "*.zip"))  # fresh league
 
     venv = make_vecenv(deck, pool_dir, n_envs, seed, subproc=subproc)
     model = MaskablePPO(
@@ -188,11 +189,23 @@ def train_selfplay(deck="demo", timesteps=120_000, n_envs=8, pool_dir=DEFAULT_PO
     model.save(os.path.join(pool_dir, "ckpt_000000000"))
 
     from mtgenv_gym.tracked_stats import TrackedStatsCallback
+    from mtgenv_gym.tb_meta import GameLengthCallback, RunMetadataCallback
 
+    config = dict(deck=deck, timesteps=timesteps, n_envs=n_envs, seed=seed,
+                  shaping_coef0=shaping_coef, shaping_anneal_frac=(0.6 if shaping_coef > 0 else None),
+                  learning_rate="3e-4 (SB3 default)", n_steps=256, batch_size=256, gamma=0.999,
+                  ent_coef=0.01, pool_every=pool_every, eval_every=eval_every, max_pool=12,
+                  p_random=0.2, vec_env="BatchedSelfPlayVecEnv")
     callbacks = [
         PoolCheckpoint(pool_dir, pool_every, n_envs, max_pool=12, verbose=verbose),
         SelfPlayEval(deck, ref_path, eval_every, n_envs, verbose=verbose),
+        # %-trained ladder: current policy vs its own 10/25/50/75%-of-budget snapshots (non-saturating
+        # self-relative progress). Historically defined but NOT added here — only export_replays.py
+        # wired it — so plain `selfplay_train` runs logged no `ladder/*`. Wired into the default set now.
+        LadderEval(deck, timesteps, eval_every, n_envs, save_dir=ladder_dir, n_games=40, verbose=verbose),
         TrackedStatsCallback(),  # action-rate summary stats → stats/* (#68)
+        GameLengthCallback(),    # game/turns_mean + end-reason mix (batched env bypasses Monitor)
+        RunMetadataCallback(config, notes=notes),  # run/notes text + Custom Scalars dashboard
     ]
     if shaping_coef > 0:
         from mtgenv_gym.batched_selfplay import ShapingAnneal
@@ -212,12 +225,14 @@ def main():
     ap.add_argument("--subproc", action="store_true", help="SubprocVecEnv (parallel workers)")
     ap.add_argument("--shaping-coef", type=float, default=0.5,
                     help="potential-based reward-shaping coef0 (annealed to 0); 0 disables. On by default.")
+    ap.add_argument("--notes", default=None,
+                    help="freeform description of what this run tests → TensorBoard 'run/notes' (TEXT tab)")
     args = ap.parse_args()
 
     model, ref = train_selfplay(
         deck=args.deck, timesteps=args.timesteps, n_envs=args.n_envs, pool_dir=args.pool_dir,
         tensorboard_log=args.tensorboard, subproc=args.subproc, shaping_coef=args.shaping_coef,
-        verbose=1,
+        notes=args.notes, verbose=1,
     )
     wr_rand = play_winrate(model, args.deck, "random", 200, 9_000_000)
     wr_init = play_winrate(model, args.deck, ModelOpponent(ref), 200, 9_500_000)

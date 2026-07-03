@@ -115,12 +115,18 @@ def random_baseline(deck="demo", auto_pass=True, n_games=400, seed0=2_000_000):
 
 
 def train_and_eval(deck="demo", timesteps=60_000, eval_games=400, n_envs=8, seed=0,
-                   tensorboard_log=None, tb_eval_freq=4000):
+                   tensorboard_log=None, tb_eval_freq=4000, notes=None):
     model = make_model(deck=deck, n_envs=n_envs, seed=seed, tensorboard_log=tensorboard_log)
     callback = None
     if tensorboard_log is not None:
-        # Log eval/mean_reward (= win-rate − loss-rate vs random) periodically to TensorBoard.
-        callback = eval_callback(deck=deck, eval_freq=max(tb_eval_freq // n_envs, 1))
+        from mtgenv_gym.tb_meta import RunMetadataCallback
+        # Log eval/mean_reward (= win-rate − loss-rate vs random) periodically to TensorBoard, plus a
+        # run/notes text block. layout=None: this vs-random trainer logs a different metric set than
+        # the self-play Custom Scalars dashboard, so it gets notes only.
+        config = dict(deck=deck, timesteps=timesteps, n_envs=n_envs, seed=seed,
+                      opponent="random", trainer="train.py (M1 vs-random)")
+        callback = [eval_callback(deck=deck, eval_freq=max(tb_eval_freq // n_envs, 1)),
+                    RunMetadataCallback(config, notes=notes, layout=None)]
     model.learn(total_timesteps=timesteps, progress_bar=False, callback=callback)
     w, d, l = evaluate(model, deck=deck, n_games=eval_games)
     bw, bd, bl = random_baseline(deck=deck, n_games=eval_games)
@@ -140,11 +146,13 @@ def main():
     ap.add_argument("--save", default=None)
     ap.add_argument("--tensorboard", default=None, help="TensorBoard log dir (enables curves)")
     ap.add_argument("--tb-eval-freq", type=int, default=4000, help="eval-vs-random every N steps")
+    ap.add_argument("--notes", default=None,
+                    help="freeform run description → TensorBoard 'run/notes' (TEXT tab)")
     args = ap.parse_args()
 
     res = train_and_eval(
         args.deck, args.timesteps, args.eval_games, args.n_envs,
-        tensorboard_log=args.tensorboard, tb_eval_freq=args.tb_eval_freq,
+        tensorboard_log=args.tensorboard, tb_eval_freq=args.tb_eval_freq, notes=args.notes,
     )
     t, b = res["trained"], res["baseline"]
     print(f"deck={args.deck}  timesteps={args.timesteps}  eval_games={args.eval_games}")

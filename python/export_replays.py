@@ -33,10 +33,13 @@ def _now_ms() -> int:
     return int(time.time() * 1000)
 
 
-def record_game(model, deck, step, out_dir, run_name=None, seed=12_345, self_play=True):
+def record_game(model, deck, step, out_dir, run_name=None, seed=12_345, self_play=True,
+                deterministic=False):
     """Record one game with the current policy on seat 0. With ``self_play`` the opponent (seat 1)
-    is the *same* policy (true self-play — the agent vs itself); otherwise a random opponent."""
-    opponent = ModelOpponent(model, deterministic=False) if self_play else "random"
+    is the *same* policy (true self-play — the agent vs itself); otherwise a random opponent.
+    ``deterministic`` records the greedy (argmax) policy — the same play the greedy diagnostics
+    analyze — rather than the sampled rollout policy."""
+    opponent = ModelOpponent(model, deterministic=deterministic) if self_play else "random"
     # Explicit per-game decision cap (defense-in-depth): truncates a between-games non-terminating
     # game to a draw. (It can't catch an in-engine, in-step loop — control never returns to Python —
     # but the recording env should carry the same cap the training env does.)
@@ -44,7 +47,7 @@ def record_game(model, deck, step, out_dir, run_name=None, seed=12_345, self_pla
     obs, info = env.reset(seed=seed + step)
     done = False
     while not done:
-        action, _ = model.predict(obs, action_masks=info["action_mask"], deterministic=False)
+        action, _ = model.predict(obs, action_masks=info["action_mask"], deterministic=deterministic)
         obs, _r, term, trunc, info = env.step(int(action))
         done = term or trunc
     sides = deck.split("_vs_") if "_vs_" in deck else [deck, deck]
@@ -72,22 +75,25 @@ def _run_name(model) -> str:
 class ReplayCheckpoint(BaseCallback):
     """Record one replay every ``record_every`` env-steps during a single continuous ``learn()``."""
 
-    def __init__(self, deck, out_dir, record_every, n_envs):
+    def __init__(self, deck, out_dir, record_every, n_envs, deterministic=False):
         super().__init__()
         self.deck = deck
         self.out_dir = out_dir
         self.every_calls = max(record_every // n_envs, 1)
         self.run_name = "run"
+        self.deterministic = deterministic
 
     def _on_training_start(self) -> None:
         self.run_name = _run_name(self.model)
         # An initial, pre-training (random-policy) checkpoint at step 0.
-        record_game(self.model, self.deck, 0, self.out_dir, run_name=self.run_name)
+        record_game(self.model, self.deck, 0, self.out_dir, run_name=self.run_name,
+                    deterministic=self.deterministic)
 
     def _on_step(self) -> bool:
         if self.n_calls % self.every_calls == 0:
             path = record_game(
-                self.model, self.deck, self.num_timesteps, self.out_dir, run_name=self.run_name
+                self.model, self.deck, self.num_timesteps, self.out_dir, run_name=self.run_name,
+                deterministic=self.deterministic,
             )
             if self.verbose and path:
                 print(f"  step {self.num_timesteps:>6}: {os.path.basename(path)}")
@@ -110,6 +116,10 @@ def main():
     ap.add_argument("--big-net", action="store_true",
                     help="attention-based AttnEntityExtractor + [256,256] heads (~630k params) "
                          "instead of the DeepSets mean-pool baseline (~144k) — A/B for net capacity")
+    ap.add_argument("--greedy", action="store_true",
+                    help="record greedy (argmax) games — the same play the greedy diagnostics analyze")
+    ap.add_argument("--notes", default=None,
+                    help="freeform run description → TensorBoard 'run/notes' (TEXT tab)")
     args = ap.parse_args()
 
     # Descriptive run name → TensorBoard run folder AND the replay run tag (the lobby groups by it).
@@ -142,9 +152,16 @@ def main():
     ref_path = args.pool_dir.rstrip("/") + "_ref.zip"
     model.save(os.path.join(args.pool_dir, "ckpt_000000000"))  # seed the league
     model.save(ref_path[:-4])
+    from mtgenv_gym.tb_meta import GameLengthCallback, RunMetadataCallback
+
+    config = dict(deck=args.deck, timesteps=args.timesteps, n_envs=args.n_envs,
+                  shaping_coef0=args.shaping_coef, learning_rate=lr, big_net=args.big_net,
+                  record_every=args.record_every, greedy_replays=args.greedy, run_name=run_name)
     cbs = [
         PoolCheckpoint(args.pool_dir, max(args.record_every // 2, 4000), args.n_envs, max_pool=12),
-        ReplayCheckpoint(args.deck, REPLAY_DIR, args.record_every, args.n_envs),
+        ReplayCheckpoint(args.deck, REPLAY_DIR, args.record_every, args.n_envs, deterministic=args.greedy),
+        RunMetadataCallback(config, notes=args.notes),  # run/notes text + Custom Scalars dashboard
+        GameLengthCallback(),                            # game/turns_mean + end-reason mix
         # Self-play progress curves: winrate vs random AND vs the initial (random-init) self. The
         # vs-initial curve is the real "self-play is improving" signal — the mirror rollout reward
         # sits at ~0 by symmetry, and vs-random plateaus once the policy beats a weak baseline.
