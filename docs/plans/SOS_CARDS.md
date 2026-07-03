@@ -87,19 +87,23 @@ caps (each is a small, card-agnostic interpreter arm lowering to an already-exis
 | E-cap | Effect leaf | Blocks (examples) | Status |
 |---|---|---|---|
 | **E1** | `Effect::MoveZone` (bounce / return-to-hand / reanimate) | Zealous Lorecaster, Banishing Betrayal, Proctor's Gaze, Prismari Charm, Matterbending Mage, Pull from the Grave, Moment of Reckoning, Lorehold Charm | ✅ **DONE** `0e85b76` (single-target; multi-target "up to two" still TODO) |
-| **E2** | `Effect::Counter` (counter target spell) | Essence Scatter, Brush Off, Mana Sculpt, Quandrix Charm | ⏳ |
-| **E3** | `Effect::Discard` (loot "then discard a card"; "target player discards") | Traumatic Critique, Stadium Tidalmage, Charging Strifeknight, Rubble Rouser, Colossus, Rapturous Moment, Borrowed Knowledge, Send in the Pest | ⏳ |
+| **E2** | `Effect::Counter` (counter target spell), respecting `CantBeCountered` | Essence Scatter, Brush Off, Mana Sculpt, Quandrix Charm | ✅ **DONE** `eb2b364` (+ stack-zone static gathering; closed Surrak's deferral) |
+| **E3** | `Effect::Discard` (loot "then discard a card"; "target player discards") | Traumatic Critique, Stadium Tidalmage, Charging Strifeknight, Rubble Rouser, Colossus, Rapturous Moment, Borrowed Knowledge, Send in the Pest | ✅ **DONE** `506baf9` |
 | **E4** | `Effect::Sacrifice` (as an effect — "each player sacrifices", "sacrifice two lands") | Social Snub, Planar Engineering, Witherbloom Charm, Pox Plague | ⏳ |
 | **E5** | `Effect::Repeat` | (few) | ⏳ |
 | **E6** | `Effect::Distribute` | (few) | ⏳ |
 
+**Loud guard (`8604b34`):** `materialize()` is now an **exhaustive** match — a defined-but-unwired
+`Effect` leaf `debug_assert!`s loudly in debug/tests instead of silently no-oping (the bug class that
+hid Traumatic Critique's discard), and a NEW IR variant with no arm is a *compile* error. The
+remaining loud-assert leaves are E4 `Sacrifice`, E5 `Repeat`, E6 `Distribute`, and `Native` (no runtime yet).
+
 **Wired today (safe for T2 authoring):** DealDamage, Draw, Destroy, Exile, GainLife, LoseLife, PumpPT,
 GrantKeyword, GrantQualification, BecomeCreature, AddMana, PutCounters, CreateToken, Fight, Search,
-Tap, Modal, Optional, IfYouDo, ForEach, Conditional, Earthbend, **MoveZone (new)**.
+Tap, Modal, Optional, IfYouDo, ForEach, Conditional, Earthbend, **MoveZone, Discard, Counter (new)**.
 
-Next-highest leverage: **E2 Counter** (unblocks counterspells) and **E3 Discard** (unblocks the loot
-theme). Both are small arms over existing `Action`s (`Action::Discard` exists; Counter needs a stack
-removal action).
+Next-highest leverage: **E4 Sacrifice** (each-player-sacrifices / sac-as-effect), then the S-caps
+(S1 Surveil, S4 Infusion, S5 Opus, …).
 
 ## Deferred subsystems (T4 — do NOT build now)
 
@@ -203,7 +207,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Ennis, Debate Moderator | - | `sos` | ⏳ | blink ETB + conditional end-step counter |
 | Environmental Scientist | - | `sos` | ✅ done | ETB search basic land to hand |
 | Erode | - | `sos` | ✅ done (sos) | destroy + opponent fetches basic land |
-| Essence Scatter | - | `m10` | ⏳ | counter target creature spell |
+| Essence Scatter | - | `m10` | ✅ done | counter target creature spell |
 | Fractalize | - | `sos` | ⏳ | becomes Fractal, base P/T X+1 |
 | Glorious Decay | - | `sos` | ⏳ | modal destroy/damage/exile-draw |
 | Grapple with Death | - | `sos` | ✅ done | destroy artifact/creature, gain life |
@@ -241,7 +245,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Strixhaven Skycoach | - | `sos` | ⏳ | vehicle crew, ETB land search |
 | Sundown Pass | - | `vow` | ⏳ | conditional enters-tapped dual |
 | Terramorphic Expanse | - | `tsp` | ⏳ | fetch basic land, tapped |
-| Traumatic Critique | - | `sos` | ⏳ | X damage, draw then discard |
+| Traumatic Critique | - | `sos` | ✅ done | X damage, draw then discard |
 | Vibrant Outburst | - | `sos` | ✅ done | damage plus tap creature |
 | Wander Off | - | `sos` | ✅ done | exile target creature |
 | Witherbloom Charm | - | `sos` | ⏳ | modal sac-draw/life/destroy |

@@ -81,6 +81,10 @@ cards/
 > — there is no counterspell in the pool, so it has nothing to act on). Every substantial clause on
 > every card is implemented. **No card is husked or approximated.**
 >
+> **Update (SOS push, `eb2b364`):** the lone deferral (**G** — Surrak's "can't be countered") is now
+> **closed** — stack-zone static gathering + `Effect::Counter` were built for the SOS card push, so the
+> deck is now a true **18/18 fully faithful**. See the G row in the upgrade-tail table below.
+>
 > This is the authoritative capability index (the original C-plan, reconciled to reality):
 > ✅ built · ⏳ deferred. Commit refs given for the recent/subsystem caps.
 
@@ -145,7 +149,7 @@ pool), a documented standing gap per the lead. Strikethrough = landed + card fli
 | ~~**D** searched-permanent reference + `Effect::Tap{tap:false}`~~ ✅ **DONE** `bcff1cd` | ~~Fabled Passage~~ ✓ flipped `968036e` | "if you control 4+ lands, untap that land" |
 | ~~**E** `Qualification::CantBeBlocked` + power≤2 filter + grant-qual-for-duration~~ ✅ **DONE** `7dd18a9` | ~~Escape Tunnel~~ ✓ flipped `5a55600` | "{T},Sac: target power≤2 creature can't be blocked this turn" |
 | ~~**F** `Target::Stack` in `BecomesTargeted`~~ ✅ **DONE** `d3ee9e9` (no card change — same filter matches creature spells on the stack) | Surrak, Elusive Hunter | "or a creature spell you control" trigger half |
-| **G** stack-zone static gathering + a counter subsystem | Surrak, Elusive Hunter | "This spell can't be countered" — **the lone remaining gap; deferred per lead** (inert: no counterspell in the pool) |
+| ~~**G** stack-zone static gathering + a counter subsystem~~ ✅ **DONE** `eb2b364` | ~~Surrak, Elusive Hunter~~ ✓ flipped `eb2b364` | "This spell can't be countered" — closed by the SOS push: `chars::gather_statics` now gathers stack-zone statics + `Effect::Counter` (Essence Scatter) checks `CantBeCountered` (CR 701.5f). Regression: `essence_scatter_cannot_counter_surrak`. **Surrak is now 18/18 fully faithful.** |
 | ~~**C18** static land-play permissions~~ ✅ **DONE** `3ca7fef` | ~~Icetill Explorer~~ ✓ flipped `7350a74` | "play an additional land" + "play lands from your graveyard" |
 | ~~**H** "tapped a creature for mana" event + reflexive mana trigger~~ ✅ **DONE** `23242f2` | ~~Badgermole Cub~~ ✓ flipped `c2ef012` | "whenever you tap a creature for mana, add {G}" |
 
