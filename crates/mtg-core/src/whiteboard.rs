@@ -1798,6 +1798,7 @@ impl EngineCore {
             CardFilter::HasKeyword(k) => cc.has_keyword(*k),
             CardFilter::HasColor(c) => cc.colors.contains(c),
             CardFilter::Colorless => cc.colors.is_empty(),
+            CardFilter::Multicolored => cc.colors.len() >= 2,
             // Supertype (Basic/Legendary/Snow) reads base chars — not a layered characteristic.
             CardFilter::Supertype(s) => {
                 self.state.objects.get(&id).is_some_and(|o| o.chars.supertypes.contains(s))

@@ -72,6 +72,9 @@ pub enum CardFilter {
     Supertype(Supertype),
     HasColor(Color),
     Colorless,
+    /// Two or more colors (CR 105.4b) — "a multicolored spell" (Mage Tower Referee). Reads computed
+    /// colors, so a color-adding effect flows through.
+    Multicolored,
     /// Mana value within `[min, max]` (inclusive); `None` = unbounded.
     ManaValue { min: Option<u32>, max: Option<u32> },
     /// Computed power at most `n` (CR — "creature with power 2 or less"). Escape Tunnel.

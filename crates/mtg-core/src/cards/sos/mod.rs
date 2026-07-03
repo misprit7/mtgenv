@@ -54,6 +54,7 @@ pub mod inkling_mascot;
 pub mod interjection;
 pub mod lecturing_scornmage;
 pub mod lorehold_charm;
+pub mod mage_tower_referee;
 pub mod magmablood_archaic;
 pub mod masterful_flourish;
 pub mod melancholic_poet;
@@ -170,6 +171,7 @@ pub fn register(db: &mut CardDb) {
     interjection::register(db);
     lecturing_scornmage::register(db);
     lorehold_charm::register(db);
+    mage_tower_referee::register(db);
     magmablood_archaic::register(db);
     masterful_flourish::register(db);
     melancholic_poet::register(db);

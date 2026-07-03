@@ -2035,6 +2035,7 @@ impl Engine {
             CardFilter::HasKeyword(k) => self.state.computed(*id).has_keyword(*k),
             CardFilter::HasColor(c) => self.state.computed(*id).colors.contains(c),
             CardFilter::Colorless => self.state.computed(*id).colors.is_empty(),
+            CardFilter::Multicolored => self.state.computed(*id).colors.len() >= 2,
             CardFilter::PowerAtMost(n) => self.state.computed(*id).power.unwrap_or(0) <= *n,
             CardFilter::Supertype(s) => o.chars.supertypes.contains(s),
             CardFilter::All(fs) => fs.iter().all(|f| self.target_matches_filter(t, f, caster)),
@@ -3207,6 +3208,7 @@ impl Engine {
             CardFilter::HasSubtype(s) => cc.subtypes.contains(s),
             CardFilter::HasColor(c) => cc.colors.contains(c),
             CardFilter::Colorless => cc.colors.is_empty(),
+            CardFilter::Multicolored => cc.colors.len() >= 2,
             CardFilter::ControlledBy(pref) => {
                 let want = match pref {
                     PlayerRef::Opponent | PlayerRef::EachOpponent => self
