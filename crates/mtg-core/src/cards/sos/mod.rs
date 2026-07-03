@@ -2,6 +2,7 @@
 
 use crate::cards::CardDb;
 
+pub mod abstract_paintmage;
 pub mod additive_evolution;
 pub mod applied_geometry;
 pub mod arcane_omens;
@@ -116,6 +117,7 @@ pub mod witherbloom_charm;
 pub mod zealous_lorecaster;
 
 pub fn register(db: &mut CardDb) {
+    abstract_paintmage::register(db);
     additive_evolution::register(db);
     applied_geometry::register(db);
     arcane_omens::register(db);
