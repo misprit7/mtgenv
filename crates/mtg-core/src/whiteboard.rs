@@ -1540,6 +1540,15 @@ impl EngineCore {
                 .and_then(|s| self.state.objects.get(&s))
                 .map(|o| o.counters.get(kind) as i64)
                 .unwrap_or(0),
+            // The computed power/toughness of the source itself (Increment's stat comparison).
+            ValueExpr::PowerOfSelf => ctx
+                .source
+                .map(|s| self.state.computed(s).power.unwrap_or(0) as i64)
+                .unwrap_or(0),
+            ValueExpr::ToughnessOfSelf => ctx
+                .source
+                .map(|s| self.state.computed(s).toughness.unwrap_or(0) as i64)
+                .unwrap_or(0),
             // C15: the computed power of the Nth chosen target, read once at resolution (608.2h).
             ValueExpr::PowerOfTarget(n) => match ctx.chosen_targets.get(*n as usize) {
                 Some(Target::Object(id)) => self.state.computed(*id).power.unwrap_or(0) as i64,

@@ -46,6 +46,11 @@ pub enum ValueExpr {
     },
     /// Sum of `a` and `b` (composition so simple arithmetic is expressible without new nodes).
     Sum(Box<ValueExpr>, Box<ValueExpr>),
+    /// The **computed power** of the effect's source object at resolution (CR 613) — used by the SoS
+    /// "Increment" check ("mana spent > this creature's power or toughness"). `0` if no source.
+    PowerOfSelf,
+    /// The **computed toughness** of the effect's source object at resolution. `0` if no source.
+    ToughnessOfSelf,
     /// The number of counters of `kind` on **this object** — the resolving effect's source at
     /// resolution time, or the object being computed in a layer-7a CDA (`SetBasePTValue`). Used
     /// for "P/T = the number of +1/+1 counters on it" and "double the counters on this" effects.

@@ -7,7 +7,8 @@
 //! That keeps every card module a leaf node — no card-to-card tangle as the pool grows.
 
 use crate::basics::{CardType, Color, CounterKind, Zone, ZoneDest, ZonePos};
-use crate::effects::ability::Keyword;
+use crate::effects::ability::{Ability, EventPattern, Keyword};
+use crate::effects::condition::Condition;
 use crate::effects::target::{CardFilter, SelectSpec, TargetKind, TargetSpec, TokenSpec};
 use crate::effects::value::{PlayerRef, ValueExpr};
 use crate::effects::{Effect, EffectTarget};
@@ -33,6 +34,33 @@ pub(crate) fn lands_you_control() -> ValueExpr {
             CardFilter::ControlledBy(PlayerRef::Controller),
         ]),
         controller: Some(PlayerRef::Controller),
+    }
+}
+
+/// **Increment** (SoS keyword): "Whenever you cast a spell, if the amount of mana you spent is
+/// greater than this creature's power or toughness, put a +1/+1 counter on this creature." Modeled as
+/// a `SpellCast(Any)` trigger whose effect is a resolution-time `Conditional` comparing
+/// `ManaSpentOnTrigger` against the source's own power/toughness (either one). Shared by every
+/// Increment creature (Hungry Graffalon, Cuboid Colony, Textbook Tabulator, …).
+pub(crate) fn increment_ability() -> Ability {
+    let mana = ValueExpr::ManaSpentOnTrigger;
+    let gt = |stat: ValueExpr| {
+        // mana > stat  ⇔  mana >= stat + 1
+        Condition::ValueAtLeast(mana.clone(), ValueExpr::Sum(Box::new(stat), Box::new(ValueExpr::Fixed(1))))
+    };
+    Ability::Triggered {
+        event: EventPattern::SpellCast(CardFilter::Any),
+        condition: None,
+        intervening_if: false,
+        effect: Effect::Conditional {
+            cond: Condition::AnyOf(vec![gt(ValueExpr::PowerOfSelf), gt(ValueExpr::ToughnessOfSelf)]),
+            then: Box::new(Effect::PutCounters {
+                what: EffectTarget::SourceSelf,
+                kind: CounterKind::PlusOnePlusOne,
+                n: ValueExpr::Fixed(1),
+            }),
+            otherwise: None,
+        },
     }
 }
 
