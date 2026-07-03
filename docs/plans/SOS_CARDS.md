@@ -67,7 +67,7 @@ each cap unlocks the bracketed count. `⏳` = not yet built.
 | **S3** Stun counters | `CounterKind::Stun` + "would untap → remove a stun counter instead" replacement | 6 | ⏳ |
 | **S18** Graveyard-activated | an ability that functions while its card is in the graveyard (recursion) | 6 | ⏳ |
 | **S11** Token-with-ability | `TokenSpec` carries an ability (Treasure `{T},Sac`; Pest attack→gain life) | 5 | ⏳ |
-| **S13** Restricted mana | mana usable "only to cast instant and sorcery spells" (spend-restriction tag) | 4 | ⏳ |
+| **S13** Restricted mana | mana usable "only to cast instant and sorcery spells" (spend-restriction tag) | 4 | ✅ **DONE** `ffcc0df` (`ManaSpec.restriction=InstantSorceryOnly` + `ManaPool.restricted` bucket + `allow_restricted` threaded through the payment path; spell casts pass card-is-I/S, ability costs pass false) → Hydro-Channeler |
 | **S16** Gain-life trigger | `EventPattern::GainLife` ("whenever you gain life, …") | 3 | ✅ **DONE** |
 | **S21** cast-with-{X} trigger | `SpellCast` filtered to "has {X} in its cost" | 2 | ⏳ |
 | **S19/S20/S22** | cards-drawn-this-turn value / counters-on-target value / cast-I/S-this-turn cond | 1 ea | ⏳ |
@@ -307,7 +307,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Hardened Academic | S9 | `sos` | ⏳ | cards-leave-graveyard trigger grants counter |
 | Homesickness | S3 | `sos` | ⏳ | draw, tap, stun counters |
 | Hungry Graffalon | S6 | `sos` | ✅ done | Increment mechanic |
-| Hydro-Channeler | S13 | `sos` | ⏳ | mana only for instants/sorceries |
+| Hydro-Channeler | S13 | `sos` | ◑ partial | `{T}: Add {U}` I/S-restricted (S13 lander) done; `{1},{T}: Add any` restricted deferred (mana-ability-with-mana-cost, unmodeled) via `.incomplete()` |
 | Imperious Inkmage | S1 | `sos` | ✅ done | ETB surveil 2 |
 | Informed Inkwright | S8 | `sos` | ✅ done | Repartee makes Inkling token |
 | Inkling Mascot | S8,S1 | `sos` | ✅ done | Repartee grants flying, surveil |
@@ -672,7 +672,30 @@ that, don't rebuild:
    Discovery (S13 + impulse, graveyard-play). Test: exile top card → it's offered as a play → play it →
    resolves; after expiry it's no longer offered.
 
-## S13 restricted-mana — scoped plan (deferred per lead: fresh start, do AFTER S15)
+## S13 restricted-mana — ✅ DONE (`ffcc0df`)
+
+Implemented per the scoped plan below, with one scope note. `ManaSpec.restriction: Option<SpendRestriction>`
+(`InstantSorceryOnly`) + a separate `ManaPool.restricted` bucket (empties with the pool). `allow_restricted`
+is threaded `payment_units → can_pay_excluding/auto_pay_ex` (thin `can_pay`/`can_pay_ex`/`auto_pay` wrappers
+keep the ~26 existing `can_pay` call sites untouched); restricted pool mana + restricted mana sources
+(`restricted_mana_sources`, split out of `producible_colors`) fold in only when the cost is an instant/sorcery
+cast. Cast/offer sites pass `card is I/S`; ability-cost sites pass `false`. `spend_from_pool` spends restricted
+mana first (no waste); `add_mana` routes restricted production to the bucket. → **Hydro-Channeler** (`{T}: Add
+{U}` restricted). Tests prove restricted mana pays an I/S cost but not a creature spell / ability cost, both
+from a source tap and from floating mana.
+
+**Scope notes:**
+- **Hydro-Channeler's 2nd ability** (`{1},{T}: Add any color`, restricted) is **deferred** — it's a mana ability
+  with a *mana activation cost*, which the auto-pay source model treats as free-to-tap (would offer free rainbow
+  mana). Omitted rather than shipped broken; needs a mana-ability-with-activation-cost cap (also blocks filter lands).
+- **Manual `produce_mana`/`usable_mana_sources`** (UI-only path) still don't expose restricted sources — a documented
+  UI follow-up (like the hybrid-pip one); the engine/gym auto-pay path is fully correct.
+- **Remaining S13 consumers:** Abstract Paintmage (mono-hybrid done + a first-main-phase trigger that floats
+  restricted `{U}{R}` — the bucket already handles floating restricted mana, so this is just the trigger + `add_mana`,
+  already wired), Great Hall of the Biblioplex (also needs land-animate — defer that clause), Tablet of Discovery
+  (also needs S15 graveyard-play).
+
+### original scoped plan (kept for reference)
 "Add {U}{R}. **Spend this mana only to cast instant and sorcery spells.**" All 4 cards use the SAME
 restriction (I/S-only), so a bool suffices. The cost: threading "am I casting an I/S spell" through the
 payment path (the reason the lead flagged it for a fresh, non-tired start).

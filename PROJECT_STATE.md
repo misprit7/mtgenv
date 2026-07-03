@@ -74,8 +74,8 @@ MTGA client.
   55 deferred (MDFCs + big subsystems). Agent grinding easiest-first. Latest: **S15 impulse-play DONE for
   exile cases** (`d079eb0` base [adopted from an orphaned predecessor WIP, hardened + tested] + `0e17d3e`
   top-of-library source + land-play-from-exile) → Practiced Scrollsmith, Elemental Mascot, Suspend
-  Aggression. Only graveyard-play (Ark of Hunger) + 2 cap-blocked cards remain in S15. 473 mtg-core tests
-  green.
+  Aggression. Then **S13 restricted-mana DONE** (`ffcc0df`, `ManaSpec.restriction` + `ManaPool.restricted`
+  bucket, `allow_restricted` threaded through payment) → Hydro-Channeler. 477 mtg-core tests green.
 - **✅ #60 END-TO-END AUDIT COMPLETE — all 18 cards driven through the REAL cast→pay→resolve loop.** The
   prior behaviour tests called `resolve_effect` directly, bypassing casting + mana payment, so "18/18
   fully implemented" was *asserted, not proven*. This audit rebuilt a harness on the engine's `pub(crate)`

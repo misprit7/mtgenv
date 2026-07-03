@@ -21,7 +21,18 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
   permanent + top of library; per-owner "their next turn" windows fall out of the owner-keyed arm — a
   `Sequence` of two `ExileForPlay`, no new cap). S15 now DONE for all exile cases (3 cards); only
   graveyard-play (Ark of Hunger, milled-card-from-gy) remains, plus 2 cap-blocked cards (S7, S13). 473
-  mtg-core tests green (+11 over baseline). Next: S13 restricted-mana (Hydro-Channeler).
+  mtg-core tests green (+11 over baseline).
+- **engine+cards(sos) — S13 restricted mana (`ffcc0df`):** "spend this mana only to cast instant and sorcery
+  spells" (CR 106.6). `ManaSpec.restriction = InstantSorceryOnly` + a separate `ManaPool.restricted` bucket
+  (empties with the pool); `allow_restricted` threaded through the payment path (`payment_units →
+  can_pay_excluding/auto_pay_ex`, with thin `can_pay`/`auto_pay` wrappers so the ~26 existing call sites are
+  untouched). Restricted pool mana + restricted sources (`restricted_mana_sources`, split from
+  `producible_colors`) fold in only for an I/S cast; cast/offer sites pass card-is-I/S, ability costs pass
+  false; `spend_from_pool` spends restricted-first; `add_mana` routes restricted production to the bucket.
+  → **Hydro-Channeler** (`{T}: Add {U}` restricted; its `{1},{T}: Add any` restricted deferred — mana ability
+  with a mana cost, unmodeled). Tests: restricted mana pays an I/S but not a creature/ability, from both a
+  source tap and floating mana. 477 mtg-core tests green. Next: S13 riders (Abstract Paintmage) or S15
+  graveyard-play (Ark of Hunger).
 - **gym (the combat-judgment ladder — cause definitively isolated):** three controlled experiments
   on "why does it chump-block the trampler at high life": (1) 2.8-swine-500k = user's reshaped
   reward (card-dominant Φ 0.5/0.3/0.2, coef 0.1, 50→80% anneal) → small directional nudge
