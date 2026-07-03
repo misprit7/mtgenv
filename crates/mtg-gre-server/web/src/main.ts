@@ -292,6 +292,8 @@ function toggleStop(phase: string, own: boolean, on: boolean): void {
   if (ws) ws.send(JSON.stringify({ type: "setStop", step: phase, own, on }));
 }
 
+// Narrow-viewport (mobile reflow) check — mirrors the `@media (max-width:760px)` breakpoint.
+function isMobile(): boolean { return window.matchMedia("(max-width: 760px)").matches; }
 function renderRail(): void {
   const rail = $("rail");
   rail.innerHTML = "";
@@ -302,7 +304,13 @@ function renderRail(): void {
   if (view.stops) phHtml += `<br><span class="stopline">${stopsSummary(view.stops)}</span>`;
   ph.innerHTML = phHtml;
   rail.appendChild(ph);
-  rail.appendChild(pinfoEl(pub(meSeat()), true));
+  // Your player strip: on desktop it lives at the bottom of the left rail; on mobile it's mounted into
+  // the sticky bottom sheet (#selfSlot inside .logpanel) so your life/piles ride along with the prompt.
+  const selfPanel = pinfoEl(pub(meSeat()), true);
+  const slot = document.getElementById("selfSlot");
+  if (slot) slot.innerHTML = "";
+  if (isMobile() && slot) slot.appendChild(selfPanel);
+  else rail.appendChild(selfPanel);
 }
 
 const STEP_ABBR: Any = {
@@ -1043,7 +1051,9 @@ function drawArrows(): void {
     });
   });
 }
-window.addEventListener("resize", drawArrows);
+// On resize/rotation re-run render so the player strip re-homes between the left rail (desktop) and
+// the sticky bottom sheet (mobile), then redraw the target arrows against the new layout.
+window.addEventListener("resize", () => { if (view) render(); else drawArrows(); });
 window.addEventListener("scroll", drawArrows, true);
 
 function eventText(ev: Any): string | null {

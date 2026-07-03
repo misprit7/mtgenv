@@ -300,6 +300,9 @@
     box-shadow: 0 14px 50px rgba(0,0,0,.8); }
   .preview-overlay .preview-close { position: fixed; top: 10px; right: 16px; color: #fff;
     font-size: 30px; line-height: 1; font-weight: 700; cursor: pointer; text-shadow: 0 1px 4px #000; }
+  /* Bottom-sheet slot for your player strip (mobile only). Empty & inert on desktop; on mobile the
+     client mounts your life/piles panel here so it rides the sticky prompt sheet. */
+  #selfSlot:empty { display: none; }
 
   /* ── mobile reflow (iPhone portrait ~390×844; landscape secondary) ──────────────
      Everything is scoped to narrow viewports; the desktop layout above is untouched. */
@@ -320,7 +323,6 @@
     .phasebar { display: none; }
     .pinfo.opp  { order: 1; }
     .center     { order: 2; }
-    .pinfo.self { order: 3; }
     .logpanel   { order: 4; }
 
     /* player panels → compact horizontal strips */
@@ -338,14 +340,16 @@
     /* phase/step bar must never force the page wide — scroll it internally instead */
     .stepbar { overflow-x: auto; }
 
-    /* bottom sheet: the prompt is ALWAYS reachable (sticky bottom); the log hides behind a toggle */
+    /* bottom sheet: your strip + the prompt are ALWAYS reachable (sticky bottom); log hides behind a
+       toggle. Sheet order top→bottom: [log title, log] (when open) · your strip · prompt (thumb). */
     .logpanel { position: sticky; bottom: 0; z-index: 30; background: var(--rail);
       border-left: none; border-top: 1px solid var(--line);
       display: flex; flex-direction: column; }
-    .promptbox { order: 2; border-bottom: none; max-height: 46vh; overflow: auto;
-      box-shadow: 0 -6px 20px rgba(0,0,0,.5); }
     .logtitle { order: 0; display: none; }
     #log { order: 1; display: none; max-height: 40vh; }
+    #selfSlot { order: 2; }
+    .promptbox { order: 3; border-bottom: none; max-height: 46vh; overflow: auto;
+      box-shadow: 0 -6px 20px rgba(0,0,0,.5); }
     body.show-log .logtitle { display: block; }
     body.show-log #log { display: block; }
 
