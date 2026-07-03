@@ -7,9 +7,9 @@ has a known, stubborn failure (it chump-blocks the trampling 3/3 even at high li
 Everything here is **isolated**: this dir has its own venv, README, and `.gitignore`. It only
 *reads/imports* `python/mtgenv_gym/` and `crates/` — it never modifies them.
 
-> Status: **M0 ✅ · M1 ✅ · M2 ✅ · M3 (pure) run ⚠️ COLD-START COLLAPSE** — the pure sparse-reward
-> run (`3.0-muzero-swine`) trains mechanically but the policy **anti-learns** (see "M3 finding"
-> below). A shaped variant (`3.1`, potential-based reward) is prepped as the remedy. M4 harness ready.
+> Status: **M0 ✅ · M1 ✅ · M2 ✅ · M3 finding #1 = pure run COLD-START COLLAPSE** (killed at ~67k
+> steps, 0% win — see below). **M3 run #2 = `3.1-muzero-swine-shaped` NOW TRAINING** (PBRS remedy;
+> 10%-gate at ~25k env-steps decides ride-or-kill). M4 harness ready.
 
 ## M3 finding (pure sparse-reward run) — the sub-decision cold-start collapse
 
