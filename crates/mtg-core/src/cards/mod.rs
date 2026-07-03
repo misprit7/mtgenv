@@ -516,6 +516,18 @@ pub fn heralds_deck() -> Vec<u32> {
     deck
 }
 
+/// "Swine": 25 Forest + 10 Argothian Swine (`{3}{G}` 3/3 trample) + 25 Grizzly Bears (60) — the
+/// user's tier-3 RL sanity deck. A step up from Bears: the Swine's Trample makes chump-blocking
+/// leak damage, so optimal play still reduces to "curve out and attack." Preset: `"swine"`.
+pub fn swine_deck() -> Vec<u32> {
+    use std::iter::repeat;
+    let mut deck = Vec::new();
+    deck.extend(repeat(grp::FOREST).take(25));
+    deck.extend(repeat(grp::ARGOTHIAN_SWINE).take(10));
+    deck.extend(repeat(grp::GRIZZLY_BEARS).take(25));
+    deck
+}
+
 /// The **real** mtggoldfish "Standard Selesnya Landfall" 60 — all 18 distinct nonbasic cards at their
 /// decklist quantities + 7 Forest + 2 Plains. Every card is now implemented (most fully; a few as
 /// faithful tracked-partials — Mightform's warp, Dyadrine's attack ability, Surrak's stack-spell half),
@@ -550,14 +562,15 @@ pub fn selesnya_landfall_deck() -> Vec<u32> {
     deck
 }
 
-/// A preset deck by name (`"burn"`, `"bears"`, `"demo"`, `"heralds"`, `"selesnya"`/`"landfall"`),
-/// case-insensitive. For the harness/CLI/web.
+/// A preset deck by name (`"burn"`, `"bears"`, `"demo"`, `"heralds"`, `"swine"`,
+/// `"selesnya"`/`"landfall"`), case-insensitive. For the harness/CLI/web.
 pub fn preset_deck(name: &str) -> Option<Vec<u32>> {
     match name.to_ascii_lowercase().as_str() {
         "burn" => Some(burn_deck()),
         "bears" => Some(bears_deck()),
         "demo" => Some(demo_deck()),
         "heralds" => Some(heralds_deck()),
+        "swine" => Some(swine_deck()),
         "selesnya" | "landfall" => Some(selesnya_landfall_deck()),
         _ => None,
     }
@@ -678,5 +691,13 @@ mod tests {
         );
         assert_eq!(preset_deck("heralds").unwrap().len(), 60);
         assert_eq!(preset_deck("HERALDS").unwrap().len(), 60);
+        // Swine (tier-3 RL sanity): 60 = 25 Forest + 10 Argothian Swine + 25 Grizzly Bears, all in the DB.
+        let swine = swine_deck();
+        assert_eq!(swine.len(), 60);
+        assert_eq!(swine.iter().filter(|&&g| g == grp::ARGOTHIAN_SWINE).count(), 10, "10 Argothian Swine");
+        assert_eq!(swine.iter().filter(|&&g| g == grp::GRIZZLY_BEARS).count(), 25, "25 Grizzly Bears");
+        assert!(swine.iter().all(|&g| db.get(g).is_some()), "every Swine card resolves in the starter DB");
+        assert_eq!(preset_deck("swine").unwrap().len(), 60);
+        assert_eq!(preset_deck("SWINE").unwrap().len(), 60);
     }
 }
