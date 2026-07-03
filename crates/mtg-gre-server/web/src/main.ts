@@ -863,6 +863,13 @@ function typeLine(chars: Any): string {
 }
 const WUBRG = ["White", "Blue", "Black", "Red", "Green", "Colorless"];
 const CODE: Any = { White: "W", Blue: "U", Black: "B", Red: "R", Green: "G", Colorless: "C" };
+// Scryfall's ten canonical two-colour hybrid symbol codes ({W/U}=WU etc). Keyed by either pip order so
+// a (Green,Black) pair still resolves to the real "BG" symbol (a G+B concat has no Scryfall SVG).
+const HYBRID_CODE: Any = {
+  WU: "WU", UW: "WU", WB: "WB", BW: "WB", UB: "UB", BU: "UB", UR: "UR", RU: "UR", BR: "BR", RB: "BR",
+  BG: "BG", GB: "BG", RG: "RG", GR: "RG", RW: "RW", WR: "RW", GW: "GW", WG: "GW", GU: "GU", UG: "GU",
+};
+function hybridCode(a: string, b: string): string { const k = (CODE[a] || "") + (CODE[b] || ""); return HYBRID_CODE[k] || k; }
 // A real Magic mana/cost symbol from Scryfall's official SVG set.
 function symImg(code: string, cls?: string): HTMLElement {
   const i = el("img", "ms" + (cls ? " " + cls : "")) as HTMLImageElement;
@@ -877,9 +884,13 @@ function manaPips(chars: Any): HTMLElement[] {
   const mc = chars.mana_cost; // exact structured cost when the view carries it
   if (mc) {
     const colored = mc.colored || {};
+    const hybrid: Any[] = mc.hybrid || [];
     const totalC = (Object.values(colored) as number[]).reduce((a, b) => a + b, 0);
-    if (mc.generic > 0 || (mc.generic === 0 && totalC === 0)) out.push(symImg(String(mc.generic)));
+    // Show a lone "0" only for a genuinely zero cost (no colored AND no hybrid pips).
+    if (mc.generic > 0 || (mc.generic === 0 && totalC === 0 && hybrid.length === 0)) out.push(symImg(String(mc.generic)));
     WUBRG.forEach((c) => { const n = colored[c] || 0; for (let i = 0; i < n; i++) out.push(symImg(CODE[c])); });
+    // Hybrid pips ({W/U} etc) — a two-colour split circle from Scryfall's symbol set.
+    hybrid.forEach((pair: Any) => out.push(symImg(hybridCode(pair[0], pair[1]))));
     return out;
   }
   // No structured mana cost in the view → the card has NO cost (a token, an ability on the stack, or
