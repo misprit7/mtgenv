@@ -171,7 +171,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Island | - | `lea` | ✅ basic (misc) | basic land |
 | Mountain | - | `lea` | ✅ basic (misc) | basic land |
 | Plains | - | `lea` | ✅ basic (misc) | basic land |
-| Rearing Embermare | - | `sos` | ⏳ | reach, haste french-vanilla |
+| Rearing Embermare | - | `sos` | ✅ done | reach, haste french-vanilla |
 | Swamp | - | `lea` | ✅ basic (misc) | basic land |
 
 ### T2 — 68 cards
@@ -189,7 +189,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Burrog Barrage | - | `sos` | ⏳ | conditional pump + power-based damage |
 | Cauldron of Essence | - | `sos` | ⏳ | dies-drain + activated reanimation |
 | Charging Strifeknight | - | `sos` | ⏳ | haste + tap/discard loot activated |
-| Chase Inspiration | - | `sos` | ⏳ | pump + grant hexproof |
+| Chase Inspiration | - | `sos` | ✅ done | pump + grant hexproof |
 | Chelonian Tackle | - | `sos` | ⏳ | pump + fight up to one |
 | Colossus of the Blood Age | - | `sos` | ⏳ | ETB drain + dies rummage draw |
 | Cost of Brilliance | - | `sos` | ⏳ | draw, lose life, counter |
@@ -201,16 +201,16 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Eager Glyphmage | - | `sos` | ⏳ | ETB Inkling keyword token |
 | Embrace the Paradox | - | `sos` | ⏳ | draw three + put land from hand |
 | Ennis, Debate Moderator | - | `sos` | ⏳ | blink ETB + conditional end-step counter |
-| Environmental Scientist | - | `sos` | ⏳ | ETB search basic land to hand |
+| Environmental Scientist | - | `sos` | ✅ done | ETB search basic land to hand |
 | Erode | - | `sos` | ✅ done (sos) | destroy + opponent fetches basic land |
 | Essence Scatter | - | `m10` | ⏳ | counter target creature spell |
 | Fractalize | - | `sos` | ⏳ | becomes Fractal, base P/T X+1 |
 | Glorious Decay | - | `sos` | ⏳ | modal destroy/damage/exile-draw |
-| Grapple with Death | - | `sos` | ⏳ | destroy artifact/creature, gain life |
+| Grapple with Death | - | `sos` | ✅ done | destroy artifact/creature, gain life |
 | Harsh Annotation | - | `sos` | ⏳ | destroy; controller makes Inkling token |
 | Heated Argument | - | `sos` | ⏳ | damage; optional graveyard-exile extra damage |
 | Impractical Joke | - | `sos` | ⏳ | 3 damage up-to-one; prevention clause deferrable |
-| Interjection | - | `sos` | ⏳ | pump plus first strike |
+| Interjection | - | `sos` | ✅ done | pump plus first strike |
 | Last Gasp | - | `rav` | ⏳ | -3/-3 to target creature |
 | Lorehold Charm | - | `sos` | ⏳ | modal: opp-sac / reanimate MV<=2 / anthem |
 | Mage Tower Referee | - | `sos` | ⏳ | multicolored-cast trigger self-counter |
@@ -220,7 +220,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Mindful Biomancer | - | `sos` | ⏳ | ETB gain life; once-per-turn pump |
 | Moment of Reckoning | - | `sos` | ⏳ | modal choose-up-to-four destroy/reanimate |
 | Noxious Newt | - | `sos` | ⏳ | deathtouch plus mana ability |
-| Oracle's Restoration | - | `sos` | ⏳ | pump, draw, gain life |
+| Oracle's Restoration | - | `sos` | ✅ done | pump, draw, gain life |
 | Planar Engineering | - | `sos` | ⏳ | sacrifice lands, search basics onto battlefield |
 | Proctor's Gaze | - | `sos` | ⏳ | bounce plus search basic to battlefield |
 | Pterafractyl | - | `sos` | ⏳ | enters with X counters, ETB gain life |
@@ -230,9 +230,9 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Rubble Rouser | - | `sos` | ⏳ | discard/draw ETB; mana ability with damage |
 | Shattered Acolyte | - | `sos` | ⏳ | lifelink; sac to destroy artifact/enchantment |
 | Shattered Sanctum | - | `vow` | ⏳ | conditional enters-tapped dual land |
-| Shopkeeper's Bane | - | `sos` | ⏳ | attack trigger gain life |
-| Silverquill Charm | - | `sos` | ⏳ | modal counters/exile/drain |
-| Sneering Shadewriter | - | `sos` | ⏳ | ETB lose/gain life |
+| Shopkeeper's Bane | - | `sos` | ✅ done | attack trigger gain life |
+| Silverquill Charm | - | `sos` | ✅ done | modal counters/exile/drain |
+| Sneering Shadewriter | - | `sos` | ✅ done | ETB lose/gain life |
 | Splatter Technique | - | `sos` | ⏳ | modal draw/area damage |
 | Stadium Tidalmage | - | `sos` | ⏳ | ETB/attack loot draw-discard |
 | Stand Up for Yourself | - | `sos` | ⏳ | destroy target power-3+ creature |
@@ -242,10 +242,10 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Sundown Pass | - | `vow` | ⏳ | conditional enters-tapped dual |
 | Terramorphic Expanse | - | `tsp` | ⏳ | fetch basic land, tapped |
 | Traumatic Critique | - | `sos` | ⏳ | X damage, draw then discard |
-| Vibrant Outburst | - | `sos` | ⏳ | damage plus tap creature |
-| Wander Off | - | `sos` | ⏳ | exile target creature |
+| Vibrant Outburst | - | `sos` | ✅ done | damage plus tap creature |
+| Wander Off | - | `sos` | ✅ done | exile target creature |
 | Witherbloom Charm | - | `sos` | ⏳ | modal sac-draw/life/destroy |
-| Zealous Lorecaster | - | `sos` | ⏳ | return IS from graveyard |
+| Zealous Lorecaster | - | `sos` | ✅ done | return IS from graveyard |
 
 ### T3 — 142 cards
 
