@@ -292,21 +292,23 @@ loop {
 keep a `+ Send` observer callback in the core. Detail for M3.2. The GRE/replay live-sink already
 runs "on the game thread," which is now the fiber — semantics unchanged.
 
-### 3.4 Fleet stepping (the endgame)
+### 3.4 Fleet stepping (the endgame) — **thread-pinned groups (DECIDED, §4 M3.3b)**
 
-Two models; pick per the spike:
+**Thread-pinned groups — no `Send` needed anywhere.** `std::thread::scope` with P workers;
+partition N sessions into P groups, each **created and stepped only on its owning thread** (fibers
+never migrate). For batched inference, each micro-tick: every thread `resume`s its games to their
+next `Decision`, writing obs (`obs::encode`, already Rust) into a shared `[N × obs_dim]` buffer at
+fixed indices; barrier; Python runs **one** batched forward; scatter actions into per-session
+response slots; every thread `submit`s + `resume`s; barrier; repeat. `Done` games reset in place.
+Only the obs buffer + response slots are shared (disjoint `&mut [T]` slices — safe); never a fiber
+across threads. Balance groups by count (game lengths are uniform, ~40–130 decisions) + a periodic
+rebalance; the micro-tick barrier means the tick is bounded by the slowest group, so balance is all
+that matters.
 
-- **Thread-pinned groups (safe default; no `Send` fiber needed).** `std::thread::scope` with P
-  workers; partition N sessions into P groups, each **created and stepped only on its owning
-  thread** (fibers never migrate). For batched inference, each micro-tick: every thread
-  `resume`s its games to their next `Decision`, writing obs (`obs::encode`, already Rust) into a
-  shared `[N × obs_dim]` buffer at fixed indices; barrier; Python runs **one** batched forward;
-  scatter actions into per-session response slots; every thread `submit`s + `resume`s; barrier;
-  repeat. `Done` games reset in place. Only the obs buffer + response slots are shared (disjoint
-  `&mut [T]` slices — safe); never a fiber across threads.
-- **rayon over `Vec<Session>` (simpler; needs `Send` fibers).** If the spike shows the coroutine
-  is soundly `Send`, `par_chunks_mut` the sessions; work-stealing balances uneven game lengths.
-  Preferred *iff* Send is clean.
+> **rayon over `Vec<Session>` was considered and rejected** (§4 M3.3b): work-stealing would smooth
+> uneven game lengths, but it requires `Session: Send`, which costs either the Agent-LAW change or
+> the `Deref` dealbreaker — not worth a few percent for a uniform-length pool. Thread-pinning keeps
+> the `Send` surface (and the spike's `unsafe impl Send`) out of production entirely.
 
 Either way, **Python never touches per-game control flow.** It calls one Rust entry
 (`fleet.step(actions) -> (obs, masks, rewards, dones)`); all envs advance GIL-free in Rust;
@@ -347,22 +349,29 @@ session.rs (no whiteboard.rs contact) and delivered a working primitive sooner. 
   channels + `PyAgent`); gated by a byte-identical trajectory-fingerprint harness, **1.5–1.67×**
   throughput single-threaded. `mtg-py` now depends on `Session::start(Engine)` in production
   (semver-real). Also added `Session::replay()` (`5f272f3`) for training-replay export.
-- **M3.3b — `Send` core → Rust fleet.** ⚠ **BLOCKED on an architecture choice** (touches the Agent
-  LAW). Implementation surfaced hard costs on each Send path:
-  - **Agent-removal + `Engine` wrapper + Deref** (the original plan) — **dealbreaker.** A user
-    `Deref` breaks Rust's two-phase borrows for the pervasive `e.method(e.state…)` test pattern
-    (e.g. `e.cast_spell(P0, e.state.players[0].hand[0], v)` → E0502), across many tests including
-    un-editable sos-cards card files. Would need inherent `Engine::` wrappers for *every* such
-    method. Rejected.
-  - **`trait Agent: Send`** — works (`EngineCore` Send with agents in place, static `assert_send`
-    passes, tests green), but is a change to the boundary trait and forces even the deliberately
-    single-threaded CLI agents to be `Send` (`HumanAgent`'s `Rc<RefCell<CliIo>>` + `CliIo`'s
-    non-`Send` `Box<dyn BufRead/Write>` → `Arc<Mutex>` + `+ Send` across cli/driver/human).
-  - **Thread-pinned groups (§3.4)** — **needs no `Send` at all** (games created + stepped on one
-    owning thread, never moved): no LAW change, no wrapper, no Deref, and **zero engine work** —
-    the fleet is a `mtg-py`-side stepper over `Session`s with shared batched-obs buffers. Recommended.
-  Once chosen: the fleet stepper (rayon *iff* `Agent: Send`, else thread-pinned) with batched obs via
-  existing `obs.rs`/`codec.rs`.
+- **M3.3b — Fleet.** ✅ **DECIDED: thread-pinned groups (Option 3) — NO `Send` needed, zero engine
+  work.** Implementation priced all three Send paths first; the decision (throughput is the only
+  goal, so rayon's work-stealing edge is a few percent at most over balanced groups + rebalance —
+  not worth the costs below):
+  - **Agent-removal + `Engine` wrapper + `Deref`** (the original plan) — **DEALBREAKER, do not
+    revisit.** A user `Deref` on `Engine` breaks Rust's **two-phase borrows** for the pervasive
+    `e.method(e.state…)` test pattern — e.g. `e.cast_spell(P0, e.state.players[0].hand[0], v)`
+    fails with E0502 once `cast_spell` is reached through `DerefMut`. This pattern is everywhere,
+    including un-editable sos-cards card tests (earthbender_ascension.rs:366, …). "Fixing" it needs
+    an inherent `Engine::` wrapper for *every* such method (fragile enumeration) or editing others'
+    files. **Rejected.**
+  - **`trait Agent: Send`** — works (`EngineCore` `Send` with agents in place; static `assert_send`
+    passes; tests green), **but changes the boundary trait (§0 LAW)** and forces even the
+    deliberately single-threaded CLI agents to be `Send` (`HumanAgent`'s `Rc<RefCell<CliIo>>` +
+    `CliIo`'s non-`Send` `Box<dyn BufRead/Write>` → `Arc<Mutex>` + `+ Send` across cli/driver/human).
+    **Rejected** — not worth touching the Agent LAW for a throughput-only win.
+  - **Thread-pinned groups (§3.4) — CHOSEN.** Games are created **and** stepped on one owning
+    thread and never move between threads, so **nothing needs to be `Send`**: no LAW change, no
+    wrapper, no `Deref`, no `Rc→Arc`, and it retires even the spike's `unsafe impl Send` (the whole
+    soundness story simplifies). **Zero engine work** — `Session` as-landed already supports it.
+  The fleet stepper lives in `mtg-py` (gym-sanity's zone; same pattern as the M3.3a port, engine
+  advisory): N owning worker threads each step a group of `Session`s in lockstep, batched obs into
+  fixed-index shared buffers, one PyO3 crossing per micro-tick, GIL released during stepping.
 - **M3.4 — Benchmark + delete the migration scaffolding.** Measure vs baseline (§5); remove
   thread-per-game, the Python-side `BatchedSelfPlayVecEnv` pump, the `ask` `None` branch (the
   migration aid), and the spike crate, once parity + speedup are confirmed. mtg-gre-server: **no
@@ -447,8 +456,10 @@ All go-signals green. Spike = 6 passing tests; reproduce with `cargo test -p mtg
   Our fiber stack holds only `EngineCore` + engine locals (all `Send`; the non-`Send` agents live
   in the driver), so `unsafe impl Send for Session {}` is sound and sanctioned. The spike moves a
   **live, suspended** fiber across a thread boundary and resumes it correctly, and runs a real
-  engine game on a worker thread. ⇒ **rayon fleet is viable** (not only thread-pinned groups); the
-  invariant to enforce in M3.1 is "`EngineCore: Send`" (keep agents out of the core).
+  engine game on a worker thread. ⇒ rayon fleet is *technically* viable. **However — NOT used in
+  production:** M3.3b chose thread-pinned groups, which need no `Send` at all, so this `unsafe impl
+  Send` stays **spike-only** and the production build carries zero `Send` surface. (Pricing it here
+  was still worth it — it's how we knew rayon was possible before rejecting it on cost, §4 M3.3b.)
 - **Panic isolation — confirmed.** A panic inside a fiber body propagates out of `resume`;
   wrapping `resume` in `catch_unwind` contains it. A 5-fiber "fleet" where fiber #2 panics (stand-in
   for sos-cards' unwired-leaf `debug_assert`) yields `[Ok, Ok, Err, Ok, Ok]` — the panicked game
