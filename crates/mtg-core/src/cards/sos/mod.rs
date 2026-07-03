@@ -48,6 +48,7 @@ pub mod garrison_excavator;
 pub mod glorious_decay;
 pub mod graduation_day;
 pub mod grapple_with_death;
+pub mod hardened_academic;
 pub mod harsh_annotation;
 pub mod heated_argument;
 pub mod hungry_graffalon;
@@ -180,6 +181,7 @@ pub fn register(db: &mut CardDb) {
     glorious_decay::register(db);
     graduation_day::register(db);
     grapple_with_death::register(db);
+    hardened_academic::register(db);
     harsh_annotation::register(db);
     heated_argument::register(db);
     hungry_graffalon::register(db);
