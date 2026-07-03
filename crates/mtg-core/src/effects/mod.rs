@@ -56,6 +56,15 @@ pub struct Mode {
     pub effect: Effect,
 }
 
+/// How long an impulse-exiled card stays playable (SoS impulse-play, `Effect::ExileForPlay`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlayWindow {
+    /// "until end of turn" — playable through the current turn only (e.g. Tablet of Discovery).
+    ThisTurn,
+    /// "until the end of your next turn" — through the owner's next turn (e.g. Practiced Scrollsmith).
+    YourNextTurn,
+}
+
 /// The effect vocabulary. Leaves lower to `Action`s; interior nodes are control flow and choice
 /// points (each choice point becomes a `DecisionRequest` — see `agent`). Contains `NativeFn`
 /// function pointers, so it derives `Debug`/`Clone` but not `serde` (card data, not state).
@@ -183,6 +192,15 @@ pub enum Effect {
     },
     Exile {
         what: EffectTarget,
+    },
+    /// Impulse-play (SoS): exile `what` and grant its owner permission to **play** it (cast it / play
+    /// it as a land) from exile until the end of `window` (CR — "you may play that card until …").
+    /// Sets `Object.castable_from_exile` + `play_until_turn`; the offer loop honours the card's own
+    /// timing and the expiry. e.g. Practiced Scrollsmith exiles a graveyard card castable until the end
+    /// of your next turn.
+    ExileForPlay {
+        what: EffectTarget,
+        window: PlayWindow,
     },
     /// Attach `what` onto `to` (sets `what`'s `attached_to`). `what` is usually `SourceSelf` (the
     /// Equipment equip ability, `{cost}: attach this to target creature you control`, sorcery-

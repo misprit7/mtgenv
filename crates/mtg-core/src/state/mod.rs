@@ -155,6 +155,12 @@ pub struct Object {
     /// Set on a card warp-exiled at its end step (CR 702.x) — it may be cast from exile on a later
     /// turn (for its normal cost). Reset on any zone change (cast it, or it leaves exile).
     pub castable_from_exile: bool,
+    /// The last turn number on which an **impulse-exiled** card may be played (inclusive) — "you may
+    /// play it until end of turn / your next turn" (SoS impulse-play). `None` = no turn limit (a
+    /// warp-exiled card, playable any later turn). Read alongside `castable_from_exile` at the offer;
+    /// reset on any zone change (CR 400.7).
+    #[serde(default)]
+    pub play_until_turn: Option<u32>,
 }
 
 impl Object {
@@ -561,6 +567,7 @@ impl GameState {
             warp_cast: false,
             flashback_cast: false,
             castable_from_exile: false,
+            play_until_turn: None,
         };
         self.objects.insert(id, obj);
         if let Some(v) = self.player_mut(owner).zone_vec_mut(zone) {
@@ -630,6 +637,7 @@ impl GameState {
             o.warp_cast = false; // a fresh object identity (CR 400.7)
             o.flashback_cast = false; // a fresh object identity (CR 400.7)
             o.castable_from_exile = false; // re-granted only by a fresh warp-exile (400.7)
+            o.play_until_turn = None; // impulse-play window drops on any zone change (400.7)
             if to == Zone::Battlefield {
                 o.controller = to_owner;
                 o.summoning_sick = o.chars.is_creature();

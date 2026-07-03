@@ -78,6 +78,12 @@ pub enum Action {
     WarpExile {
         obj: ObjId,
     },
+    /// Impulse-play (SoS): exile `obj` and grant its owner permission to play it from exile through
+    /// turn `until` (inclusive). Sets `castable_from_exile` + `play_until_turn = Some(until)`.
+    ExileForPlay {
+        obj: ObjId,
+        until: u32,
+    },
     /// Grant a continuous effect created by resolution (CR 611) over a fixed set of objects —
     /// "until end of turn" pumps, animations (Earthbend's land→creature), etc. Applied by pushing
     /// a [`crate::chars::ContinuousEffect`] into game state, where the layer system folds it in

@@ -807,6 +807,25 @@ impl EngineCore {
                     wb.push(Action::Exile { obj, source: ctx.source });
                 }
             }
+            // Impulse-play: exile the target and grant its owner play-from-exile permission through
+            // the end of `window` (CR 400.7 turn arithmetic; 2-player alternation).
+            Effect::ExileForPlay { what, window } => {
+                if let Some(Target::Object(obj)) = self.resolve_target(what, ctx, cursor) {
+                    let owner = self.state.object(obj).owner;
+                    let until = match window {
+                        crate::effects::PlayWindow::ThisTurn => self.state.turn_number,
+                        // The owner's next turn: +2 if it's already their turn, else +1 (2-player).
+                        crate::effects::PlayWindow::YourNextTurn => {
+                            if self.state.active_player == owner {
+                                self.state.turn_number + 2
+                            } else {
+                                self.state.turn_number + 1
+                            }
+                        }
+                    };
+                    wb.push(Action::ExileForPlay { obj, until });
+                }
+            }
             // Move a single targeted object to another zone (CR 400.7 / 608.2) — "return target
             // permanent to its owner's hand" (bounce), "return target creature card from your
             // graveyard to the battlefield" (reanimate), etc. Lowers to one `Action::MoveZone` with
@@ -1463,6 +1482,20 @@ impl EngineCore {
                     // Warp grants recast-from-exile permission (CR 702.x).
                     if let Some(o) = self.state.objects.get_mut(&obj) {
                         o.castable_from_exile = true;
+                    }
+                    self.broadcast(GameEvent::ObjectMoved { obj, to: Zone::Exile });
+                }
+            }
+            Action::ExileForPlay { obj, until } => {
+                let owner = match self.state.objects.get(&obj) {
+                    Some(o) => o.owner,
+                    None => return,
+                };
+                // move_object resets the flags (400.7), so set them AFTER the move.
+                if self.state.move_object(obj, Zone::Exile, owner) {
+                    if let Some(o) = self.state.objects.get_mut(&obj) {
+                        o.castable_from_exile = true;
+                        o.play_until_turn = Some(until);
                     }
                     self.broadcast(GameEvent::ObjectMoved { obj, to: Zone::Exile });
                 }

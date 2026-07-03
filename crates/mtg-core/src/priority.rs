@@ -1023,21 +1023,36 @@ impl Engine {
             }
         }
 
-        // Cast a warp-exiled card from exile on a later turn (CR 702.x), at sorcery speed for its
-        // normal mana cost — the warp recast.
-        if sorcery_speed {
-            for &card in &s.player(p).exile {
-                let o = s.object(card);
-                if !o.castable_from_exile {
-                    continue;
-                }
-                let affordable = o.chars.mana_cost.as_ref().is_some_and(|c| mana::can_pay(s, p, c));
-                if !affordable {
-                    continue;
-                }
-                if self.card_castable_targets(card, p) {
-                    actions.push(PlayableAction::Cast { spell: card, variant: CastVariant::Normal });
-                }
+        // Cast a card from exile that has recast/impulse permission (`castable_from_exile`), for its
+        // normal mana cost. Warp recast (CR 702.x): sorcery speed, any later turn. Impulse-play (SoS):
+        // the card's own timing, through its `play_until_turn` window. (Playing an impulse-exiled *land*
+        // from exile is deferred — no such card in the pool yet; this offers casts only.)
+        for &card in &s.player(p).exile {
+            let o = s.object(card);
+            if !o.castable_from_exile {
+                continue;
+            }
+            let chars = &o.chars;
+            if chars.is_land() {
+                continue; // a land is played, not cast — impulse land-play is deferred.
+            }
+            let instant_speed =
+                chars.has_type(CardType::Instant) || chars.keywords.contains(&Keyword::Flash);
+            let timing_ok = match o.play_until_turn {
+                // Impulse: the card's own timing, and only within its window (not past `until`).
+                Some(until) => s.turn_number <= until && (instant_speed || sorcery_speed),
+                // Warp recast: sorcery speed only.
+                None => sorcery_speed,
+            };
+            if !timing_ok {
+                continue;
+            }
+            let affordable = o.chars.mana_cost.as_ref().is_some_and(|c| mana::can_pay(s, p, c));
+            if !affordable {
+                continue;
+            }
+            if self.card_castable_targets(card, p) {
+                actions.push(PlayableAction::Cast { spell: card, variant: CastVariant::Normal });
             }
         }
 
@@ -3166,6 +3181,8 @@ fn collect_specs_into(effect: &Effect, out: &mut Vec<TargetSpec>) {
         Effect::Earthbend { target: EffectTarget::Target(spec), .. } => out.push(spec.clone()),
         // Exile targets "target card from a graveyard" etc. (CR 601.2c).
         Effect::Exile { what: EffectTarget::Target(spec) } => out.push(spec.clone()),
+        // Impulse-play exiles a targeted card (Practiced Scrollsmith's graveyard card).
+        Effect::ExileForPlay { what: EffectTarget::Target(spec), .. } => out.push(spec.clone()),
         // "Create a token that's a copy of target permanent" — its source is a chosen target.
         Effect::CreateTokenCopy { source: EffectTarget::Target(spec), .. } => out.push(spec.clone()),
         // "Put a +1/+1 counter on target creature" / "target creature gains trample" — the targeted

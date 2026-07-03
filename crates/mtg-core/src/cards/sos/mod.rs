@@ -67,6 +67,7 @@ pub mod owlin_historian;
 pub mod paradox_surveyor;
 pub mod pestbrood_sloth;
 pub mod poisoners_apprentice;
+pub mod practiced_scrollsmith;
 pub mod primary_research;
 pub mod procrastinate;
 pub mod proctors_gaze;
@@ -176,6 +177,7 @@ pub fn register(db: &mut CardDb) {
     paradox_surveyor::register(db);
     pestbrood_sloth::register(db);
     poisoners_apprentice::register(db);
+    practiced_scrollsmith::register(db);
     primary_research::register(db);
     procrastinate::register(db);
     proctors_gaze::register(db);
