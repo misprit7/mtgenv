@@ -68,7 +68,7 @@ each cap unlocks the bracketed count. `⏳` = not yet built.
 | **S18** Graveyard-activated | an ability that functions while its card is in the graveyard (recursion) | 6 | ⏳ |
 | **S11** Token-with-ability | `TokenSpec` carries an ability (Treasure `{T},Sac`; Pest attack→gain life) | 5 | ⏳ |
 | **S13** Restricted mana | mana usable "only to cast instant and sorcery spells" (spend-restriction tag) | 4 | ⏳ |
-| **S16** Gain-life trigger | `EventPattern::GainLife` ("whenever you gain life, …") | 3 | ⏳ |
+| **S16** Gain-life trigger | `EventPattern::GainLife` ("whenever you gain life, …") | 3 | ✅ **DONE** |
 | **S21** cast-with-{X} trigger | `SpellCast` filtered to "has {X} in its cost" | 2 | ⏳ |
 | **S19/S20/S22** | cards-drawn-this-turn value / counters-on-target value / cast-I/S-this-turn cond | 1 ea | ⏳ |
 | **misc one-offs** | GreatestMV, DistinctNames, SoftCounter (counter-unless-pay), DirectedDiscard, AltCost, PayXLife, NoMaxHand, GrantAbility | 1–3 ea | ⏳ |
@@ -267,7 +267,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Aziza, Mage Tower Captain | S14 | `sos` | ⏳ | copy your instant/sorcery spell |
 | Banishing Betrayal | S1 | `sos` | ✅ done | bounce + Surveil 1 |
 | Berta, Wise Extrapolator | S6 | `sos` | ⏳ | Increment + counters-placed mana trigger |
-| Blech, Loafing Pest | S16 | `sos` | ⏳ | whenever-you-gain-life counter trigger |
+| Blech, Loafing Pest | S16 | `sos` | ✅ done | whenever-you-gain-life counter trigger |
 | Brush Off | S12 | `sos` | ⏳ | conditional cost reduction if targets a spell |
 | Choreographed Sparks | S14 | `sos` | ⏳ | copy instant/sorcery or creature spell |
 | Colorstorm Stallion | S5,S14,S17 | `sos` | ⏳ | Ward cost + Opus + token-copy |
@@ -333,7 +333,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Paradox Gardens | S1 | `sos` | ⏳ | surveil activated ability |
 | Paradox Surveyor | S2 | `sos` | ⏳ | look-and-pick ETB selection |
 | Pensive Professor | S6 | `sos` | ⏳ | Increment (plus counter-added trigger) |
-| Pest Mascot | S16 | `sos` | ⏳ | whenever-you-gain-life trigger |
+| Pest Mascot | S16 | `sos` | ✅ done | whenever-you-gain-life trigger |
 | Pestbrood Sloth | S11 | `sos` | ⏳ | Pest token with attack ability |
 | Poisoner's Apprentice | S4 | `sos` | ⏳ | Infusion gained-life-this-turn condition |
 | Postmortem Professor | S18 | `sos` | ⏳ | exile-from-graveyard recursion + attack drain |
