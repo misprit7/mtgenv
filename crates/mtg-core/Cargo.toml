@@ -7,6 +7,9 @@ description = "Headless Magic: The Gathering rules engine (whiteboard model)."
 [dependencies]
 serde.workspace = true
 thiserror.workspace = true
+# Resumable step API (M3): the game runs inside a stackful coroutine so `ask` can yield to a
+# driver instead of blocking. Pure-Rust execution primitive — no IO/GUI/Python deps.
+corosensei.workspace = true
 
 [dev-dependencies]
 # Used only by tests to exercise the §1.1 serde contract on the boundary types.

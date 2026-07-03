@@ -202,6 +202,16 @@ pub struct EngineCore {
     /// thread; the engine re-reads the config at every priority window. RL/headless play never
     /// touches these (auto-pass stays off), so the lock is uncontended there.
     stops: Vec<Arc<Mutex<StopConfig>>>,
+    /// The resumable-step seam (RESUMABLE_ENGINE.md §3.2). When the game runs inside a [`Session`]
+    /// fiber this holds a pointer to that fiber's `Yielder`, and [`EngineCore::ask`] **suspends**
+    /// (yielding the decision to the driver) instead of calling an in-core agent. `None` on the
+    /// blocking path (direct `run_game` / direct-call unit tests), where `ask` calls `agents`.
+    /// A raw pointer because the `Yielder` lives on the fiber's own stack; it is only ever
+    /// dereferenced from `ask` while that fiber is running (so never dangling). Set/cleared by
+    /// [`EngineCore::run_in_fiber`].
+    ///
+    /// [`Session`]: crate::session::Session
+    yielder: Option<*const corosensei::Yielder<DecisionResponse, crate::session::Step>>,
 }
 
 /// Transitional alias kept while the resumable split lands (RESUMABLE_ENGINE.md M3.1→M3.2): the
@@ -234,7 +244,23 @@ impl Engine {
             replay_sink: None,
             started: false,
             stops,
+            yielder: None,
         }
+    }
+
+    /// Run this core's whole game **inside a fiber**, suspending at each decision (RESUMABLE_ENGINE.md
+    /// §3.2). Sets the [`yielder`](Self::yielder) seam so `ask` yields to the driver, plays the game,
+    /// then clears the seam and returns the finished core (for outcome/state inspection). Called only
+    /// by [`Session`](crate::session::Session); the pointer is valid for the whole call because the
+    /// `Yielder` lives on this fiber's stack.
+    pub(crate) fn run_in_fiber(
+        mut self,
+        yielder: &corosensei::Yielder<DecisionResponse, crate::session::Step>,
+    ) -> Self {
+        self.yielder = Some(yielder as *const _);
+        self.run_game();
+        self.yielder = None; // never leave a dangling stack pointer in the returned core
+        self
     }
 
     // ── Stop policy (one knob: full control vs the fixed rule; MTGA-style elision) ───────────
@@ -2341,7 +2367,17 @@ impl Engine {
         );
         let mut view = self.view_for_seat(p);
         self.reveal_request_objects(&mut view, req);
-        self.agents[p.0 as usize].decide(&view, req)
+        // The one decision seam (RESUMABLE_ENGINE.md §3.2): inside a `Session` fiber, SUSPEND and
+        // hand the decision to the driver; on the blocking path, call the in-core agent directly.
+        match self.yielder {
+            Some(y) => {
+                // SAFETY: `y` points at this fiber's `Yielder`, which is live for the whole fiber
+                // body; `ask` only runs while the fiber is running, so the pointer is never dangling.
+                let step = crate::session::Step::Decision { seat: p, view, request: req.clone() };
+                unsafe { (*y).suspend(step) }
+            }
+            None => self.agents[p.0 as usize].decide(&view, req),
+        }
     }
 
     /// Surface, in the deciding seat's view, the characteristics of any objects the
