@@ -216,7 +216,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Impractical Joke | - | `sos` | ✅ done | 3 damage up-to-one; prevention clause deferrable |
 | Interjection | - | `sos` | ✅ done | pump plus first strike |
 | Last Gasp | - | `rav` | ✅ done | -3/-3 to target creature |
-| Lorehold Charm | - | `sos` | ⏳ | modal: opp-sac / reanimate MV<=2 / anthem |
+| Lorehold Charm | - | `sos` | ✅ done | modal: each-opp-sac artifact / reanimate MV<=2 from your gy / mass +1/+1+trample |
 | Mage Tower Referee | - | `sos` | ⏳ | multicolored-cast trigger self-counter |
 | Masterful Flourish | - | `sos` | ✅ done | pump plus indestructible |
 | Mind Roots | - | `sos` | ⏳ | discard two, put discarded land onto battlefield tapped |
