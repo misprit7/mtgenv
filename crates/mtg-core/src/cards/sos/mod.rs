@@ -44,6 +44,7 @@ pub mod masterful_flourish;
 pub mod melancholic_poet;
 pub mod mindful_biomancer;
 pub mod molten_core_maestro;
+pub mod molten_note;
 pub mod muse_seeker;
 pub mod muses_encouragement;
 pub mod noxious_newt;
@@ -135,6 +136,7 @@ pub fn register(db: &mut CardDb) {
     melancholic_poet::register(db);
     mindful_biomancer::register(db);
     molten_core_maestro::register(db);
+    molten_note::register(db);
     muse_seeker::register(db);
     muses_encouragement::register(db);
     noxious_newt::register(db);
