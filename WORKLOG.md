@@ -12,9 +12,16 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
   landed the first consumer card. Ships `Effect`/`Action::ExileForPlay` + `Object.play_until_turn` (reset
   on any zone change) + a unified exile-cast offer loop honouring warp-recast (sorcery-speed) vs impulse
   (card's own timing within the window). **Practiced Scrollsmith** (`{R}{R/W}{W}` 3/2 first strike; ETB
-  impulse-exile a target noncreature/nonland from your gy, castable until end of your next turn). 466
-  mtg-core tests green (+4). Still deferred (no consumer yet): top-of-library source, land-play-from-exile,
-  graveyard-play. Next: S13 restricted-mana (Hydro-Channeler).
+  impulse-exile a target noncreature/nonland from your gy, castable until end of your next turn).
+- **cards(sos) — S15 extended: top-of-library source + land-play (`0e17d3e`, `f7bb2c1`):** added
+  `EffectTarget::TopOfLibrary(PlayerRef)` (resolve_target → `library.last()`) so `ExileForPlay` can source
+  the top card, and a `PlayLand`-from-exile offer for impulse-exiled lands (land-drop-limited, window-gated;
+  `play_land`→`move_object` already handled the zone). → **Elemental Mascot** (Opus: cast I/S → +1/+0; if
+  5+ mana, impulse-exile top card until your next turn) and **Suspend Aggression** (exile target nonland
+  permanent + top of library; per-owner "their next turn" windows fall out of the owner-keyed arm — a
+  `Sequence` of two `ExileForPlay`, no new cap). S15 now DONE for all exile cases (3 cards); only
+  graveyard-play (Ark of Hunger, milled-card-from-gy) remains, plus 2 cap-blocked cards (S7, S13). 473
+  mtg-core tests green (+11 over baseline). Next: S13 restricted-mana (Hydro-Channeler).
 - **gym (the combat-judgment ladder — cause definitively isolated):** three controlled experiments
   on "why does it chump-block the trampler at high life": (1) 2.8-swine-500k = user's reshaped
   reward (card-dominant Φ 0.5/0.3/0.2, coef 0.1, 50→80% anneal) → small directional nudge

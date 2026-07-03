@@ -63,7 +63,7 @@ each cap unlocks the bracketed count. `⏳` = not yet built.
 | **S12** Cost-reduction cond. | "costs {N} less if it targets X / you control Y / a card left your gy" (cast-time) | 7 | ⏳ |
 | **S14** Copy spell/perm | "copy target spell", "create a token that's a copy of" (heavier small-cap) | 7 | ⏳ **token-copy DONE** (`Effect::CreateTokenCopy`+`TokenCopyMods`, `a8c8a2d` → Applied Geometry); **spell-copy** portion still ⏳ |
 | **S17** Ward {cost} | Ward N / Ward—Pay life / Ward—Discard (counter-unless-pay on becoming targeted) | 7 | ⏳ |
-| **S15** Impulse play | exile/mill → "you may play it until end of turn / your next turn" | 6 | ◑ **base DONE** `d079eb0` (Effect/Action::ExileForPlay + `Object.play_until_turn` window + unified exile-cast offer w/ timing+expiry → Practiced Scrollsmith; land-play-from-exile + top-of-library source + graveyard-play still ⏳) |
+| **S15** Impulse play | exile/mill → "you may play it until end of turn / your next turn" | 6 | ◑ **DONE for exile cases** (`d079eb0` base + `0e17d3e` top-of-library source + land-play) → Practiced Scrollsmith, Elemental Mascot, Suspend Aggression (3). Only **graveyard-play** (milled card played from gy — Ark of Hunger, Tablet) still ⏳; the other 2 S15 cards are cap-blocked (Archaic's Agony=S7, Tablet=S13) |
 | **S3** Stun counters | `CounterKind::Stun` + "would untap → remove a stun counter instead" replacement | 6 | ⏳ |
 | **S18** Graveyard-activated | an ability that functions while its card is in the graveyard (recursion) | 6 | ⏳ |
 | **S11** Token-with-ability | `TokenSpec` carries an ability (Treasure `{T},Sac`; Pest attack→gain life) | 5 | ⏳ |
@@ -280,7 +280,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Dig Site Inventory | S10 | `sos` | ✅ done | counter + vigilance, flashback |
 | Duel Tactics | S10 | `sos` | ✅ done | damage + can't-block, flashback |
 | Efflorescence | S4 | `sos` | ✅ done | Infusion gained-life-this-turn condition |
-| Elemental Mascot | S5,S15 | `sos` | ⏳ | Opus + impulse play top card |
+| Elemental Mascot | S5,S15 | `sos` | ✅ done | Opus cast-trigger: +1/+0; if 5+ mana spent, impulse-exile top card (`ExileForPlay{TopOfLibrary}`) castable until your next turn |
 | Emil, Vastlands Roamer | DistinctNames | `sos` | ⏳ | X = differently-named lands you control |
 | End of the Hunt | GreatestMV | `sos` | ⏳ | select greatest-MV creature/pw |
 | Essenceknit Scholar | S11 | `sos` | ✅ done | Pest token with attack-lifegain ability |
@@ -371,7 +371,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Stress Dream | S2 | `sos` | ✅ done | look-and-pick top two |
 | Summoned Dromedary | S18 | `sos` | ⏳ | {1}{W} return this from graveyard to hand |
 | Sundering Archaic | S7 | `sos` | ⏳ | converge, colors of mana spent |
-| Suspend Aggression | S15 | `sos` | ⏳ | impulse play exiled cards |
+| Suspend Aggression | S15 | `sos` | ✅ done | exile target nonland permanent + top of library; each playable through its OWNER's next turn (Sequence of two `ExileForPlay`, per-owner window) |
 | Tablet of Discovery | S13,S15 | `sos` | ⏳ | impulse-play milled card; restricted mana |
 | Tackle Artist | S5 | `sos` | ✅ done | Opus cast-IS trigger, mana spent |
 | Teacher's Pest | S18 | `sos` | ⏳ | {B}{G} return this from graveyard |
@@ -628,16 +628,20 @@ within `play_until_turn`). Whiteboard interpreter arm handles the **`Target`** s
 "your next turn" arithmetic (+2 if it's already your turn, else +1). → **Practiced Scrollsmith** (ETB
 exile a target noncreature/nonland card from your gy, castable until end of your next turn).
 
-**Still ⏳ (deferred — no consumer landed yet; wire each WITH its card, revert-unused-cap precedent):**
-- **Top-of-library source** — the interpreter arm only handles `EffectTarget::Target`; a "top card of
-  your library" exile (Elemental Mascot, Suspend Aggression) needs a non-`Target` source path.
-- **Land-play-from-exile** — the offer loop `continue`s on lands (a land is *played*, not cast); a
-  `PlayLand`-from-exile offer keyed to `castable_from_exile`/`play_until_turn` is needed for cards whose
-  exiled card can be a land (Elemental Mascot, Suspend Aggression, Ark of Hunger). Note `legal_priority_
-  actions` already has a `PlayLand`-from-exile branch gated on a separate `PlayLandsFrom` permission
-  (priority.rs ~977) — reconcile with that.
-- **Graveyard-play** (`PlayWindow::ThisTurn` from the graveyard) — Ark of Hunger / Tablet of Discovery
-  play a **milled** card (graveyard, not exile); needs a zone-general "playable-from-current-zone" flag.
+**Top-of-library source — ✅ DONE (`0e17d3e`):** `EffectTarget::TopOfLibrary(PlayerRef)` + a `resolve_target`
+arm (returns the top card = `library.last()`, no-op on empty); the existing `ExileForPlay` arm handles it
+unchanged → Elemental Mascot, Suspend Aggression.
+
+**Land-play-from-exile — ✅ DONE (`0e17d3e`):** the land-drop block in `legal_priority_actions` now also
+offers `PlayLand` for an impulse-exiled land (`castable_from_exile` + `play_until_turn` within window),
+respecting the land-per-turn limit; `play_land`→`MoveZone`→`move_object` already handles the exile source
+zone. (Distinct from the pre-existing `PlayLandsFrom`-permission branch at priority.rs ~977.)
+
+**Still ⏳ — Graveyard-play** (`PlayWindow::ThisTurn` from the graveyard) — Ark of Hunger / Tablet of
+Discovery play a **milled** card (graveyard, not exile); `castable_from_exile`/the offer loop scan only
+exile. Needs a graveyard analog (a `play_from_graveyard_until` flag + a graveyard scan in the offer loop,
+OR generalise the flag zone-agnostically). Defer to a fresh increment WITH Ark of Hunger (Tablet also
+needs S13). Revert-unused-cap precedent.
 
 ### original scoped plan (foundation already existed)
 "Exile [a card] — you may **play** it until [end of turn / end of your next turn]." **Good news:** the

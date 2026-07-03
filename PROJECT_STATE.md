@@ -71,9 +71,11 @@ MTGA client.
   (hover gated to real mice), on-screen pass-turn button. Desktop unchanged.
 - **▶ SOS card push (long-term, active):** Secrets of Strixhaven 271 cards triaged in
   `docs/plans/SOS_CARDS.md` — 74 authorable now, 142 behind ~small caps (7 caps unlock ~79),
-  55 deferred (MDFCs + big subsystems). Agent grinding easiest-first. Latest: **S15 impulse-play base
-  landed** (`d079eb0`, `Effect::ExileForPlay` + `play_until_turn` window; base adopted from an orphaned
-  predecessor WIP, hardened + tested) → Practiced Scrollsmith. 466 mtg-core tests green.
+  55 deferred (MDFCs + big subsystems). Agent grinding easiest-first. Latest: **S15 impulse-play DONE for
+  exile cases** (`d079eb0` base [adopted from an orphaned predecessor WIP, hardened + tested] + `0e17d3e`
+  top-of-library source + land-play-from-exile) → Practiced Scrollsmith, Elemental Mascot, Suspend
+  Aggression. Only graveyard-play (Ark of Hunger) + 2 cap-blocked cards remain in S15. 473 mtg-core tests
+  green.
 - **✅ #60 END-TO-END AUDIT COMPLETE — all 18 cards driven through the REAL cast→pay→resolve loop.** The
   prior behaviour tests called `resolve_effect` directly, bypassing casting + mana payment, so "18/18
   fully implemented" was *asserted, not proven*. This audit rebuilt a harness on the engine's `pub(crate)`
