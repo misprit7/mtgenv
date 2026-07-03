@@ -1557,6 +1557,9 @@ impl EngineCore {
             power: Some(spec.power),
             toughness: Some(spec.toughness),
             keywords: spec.keywords.clone(),
+            // A registered token def (reserved 9000+ block) supplies the token's triggered/activated
+            // abilities via `def_of`; `0` = vanilla/keyword-only.
+            grp_id: spec.grp_id,
             ..Default::default()
         };
         let is_creature = chars.is_creature();

@@ -4275,6 +4275,7 @@ mod expect_tests {
         e.resolve_effect(
             &Effect::CreateToken {
                 spec: TokenSpec {
+                    grp_id: 0,
                     name: "Bird".into(),
                     card_types: vec![CardType::Creature],
                     subtypes: vec![crate::subtypes::CreatureType::Bird.into()],
@@ -5274,6 +5275,7 @@ mod expect_tests {
                 Effect::Draw { who: PlayerRef::Controller, count: ValueExpr::Fixed(1) },
                 Effect::CreateToken {
                     spec: TokenSpec {
+                        grp_id: 0,
                         name: "Robot".into(),
                         card_types: vec![CardType::Artifact, CardType::Creature],
                         subtypes: vec![],

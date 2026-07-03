@@ -145,6 +145,7 @@ pub(crate) fn fetch_basic_tapped() -> Effect {
 /// every card that makes one (Eager Glyphmage, Harsh Annotation, Informed Inkwright, …).
 pub(crate) fn inkling_token() -> TokenSpec {
     TokenSpec {
+        grp_id: 0,
         name: "Inkling".to_string(),
         card_types: vec![CardType::Creature],
         subtypes: vec![CreatureType::Inkling.into()],
@@ -160,6 +161,7 @@ pub(crate) fn inkling_token() -> TokenSpec {
 /// +1/+1 counters. Shared by every Fractal-maker (Additive Evolution, Wild Hypothesis, Snarl Song, …).
 pub(crate) fn fractal_token(counters: u32) -> TokenSpec {
     TokenSpec {
+        grp_id: 0,
         name: "Fractal".to_string(),
         card_types: vec![CardType::Creature],
         subtypes: vec![CreatureType::Fractal.into()],
@@ -179,6 +181,7 @@ pub(crate) fn fractal_token(counters: u32) -> TokenSpec {
 /// Elemental-maker (Muse's Encouragement, Artistic Process, Visionary's Dance, …).
 pub(crate) fn elemental_token() -> TokenSpec {
     TokenSpec {
+        grp_id: 0,
         name: "Elemental".to_string(),
         card_types: vec![CardType::Creature],
         subtypes: vec![CreatureType::Elemental.into()],
@@ -195,12 +198,30 @@ pub(crate) fn elemental_token() -> TokenSpec {
 #[allow(dead_code)]
 pub(crate) fn spirit_token() -> TokenSpec {
     TokenSpec {
+        grp_id: 0,
         name: "Spirit".to_string(),
         card_types: vec![CardType::Creature],
         subtypes: vec![CreatureType::Spirit.into()],
         colors: vec![Color::Red, Color::White],
         power: 2,
         toughness: 2,
+        keywords: vec![],
+        counters: vec![],
+    }
+}
+
+/// The "Pest" token — a 1/1 black-and-green Pest with "Whenever this token attacks, you gain 1 life".
+/// Its triggered ability comes from the registered [`grp::PEST_TOKEN`](crate::cards::grp::PEST_TOKEN)
+/// def (via `grp_id`); shared by every Pest-maker (Send in the Pest, Pestbrood Sloth, …).
+pub(crate) fn pest_token() -> TokenSpec {
+    TokenSpec {
+        grp_id: crate::cards::grp::PEST_TOKEN,
+        name: "Pest".to_string(),
+        card_types: vec![CardType::Creature],
+        subtypes: vec![CreatureType::Pest.into()],
+        colors: vec![Color::Black, Color::Green],
+        power: 1,
+        toughness: 1,
         keywords: vec![],
         counters: vec![],
     }

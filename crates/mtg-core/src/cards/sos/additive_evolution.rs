@@ -102,6 +102,7 @@ mod tests {
                                     3,
                                 ),
                             ],
+                            grp_id: 0,
                         },
                         count: Fixed(
                             1,

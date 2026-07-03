@@ -107,6 +107,7 @@ pub fn register(db: &mut CardDb) {
                         Effect::Draw { who: PlayerRef::Controller, count: ValueExpr::Fixed(1) },
                         Effect::CreateToken {
                             spec: TokenSpec {
+                                grp_id: 0,
                                 name: "Robot".to_string(),
                                 card_types: vec![CardType::Artifact, CardType::Creature],
                                 subtypes: vec![Subtype::Creature(CreatureType::Robot)],
@@ -226,6 +227,7 @@ mod tests {
                                         toughness: 2,
                                         keywords: [],
                                         counters: [],
+                                        grp_id: 0,
                                     },
                                     count: Fixed(
                                         1,

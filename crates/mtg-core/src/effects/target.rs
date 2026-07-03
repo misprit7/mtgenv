@@ -119,4 +119,10 @@ pub struct TokenSpec {
     pub keywords: Vec<Keyword>,
     /// Counters the token enters with (CR 614.1e), as `(kind, count)`.
     pub counters: Vec<(CounterKind, u32)>,
+    /// The `grp_id` of a registered token def (in the reserved 9000+ block) supplying this token's
+    /// **triggered/activated abilities** — e.g. a Pest token's "whenever this attacks, gain 1 life".
+    /// `0` = a vanilla / keyword-only token (abilities come solely from `keywords`). Stamped onto the
+    /// created object's chars so `def_of` finds the abilities (CR 111.4 — tokens carry their abilities
+    /// as their defining data, not name-matched by the core).
+    pub grp_id: u32,
 }

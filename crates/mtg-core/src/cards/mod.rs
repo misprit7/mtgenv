@@ -32,6 +32,9 @@ pub mod helpers;
 
 pub mod misc;
 
+/// Registered token defs (the reserved 9000+ `grp_id` block) — abilities for tokens that have them.
+pub mod tokens;
+
 // Per-first-printing-set folders (real card pool).
 pub mod aer;
 pub mod ala;
@@ -110,6 +113,14 @@ pub mod grp {
     pub const GLADECOVER_SCOUT: u32 = 62;
     pub const BONESPLITTER: u32 = 64;
     pub const PACIFISM: u32 = 65;
+
+    // ── Reserved token-def block (9000+) ──────────────────────────────────────────────────────
+    // Registered *token* defs live here, far above organically-growing real-card ids (~260+ and
+    // climbing), so they never collide. A `TokenSpec.grp_id` points a created token at one of these
+    // so `def_of` supplies its triggered/activated abilities (keywords ride on `TokenSpec.keywords`).
+    // These defs carry `Supertype::Token`, so the deck-builder / `/api/cards` catalog filters them out.
+    /// 1/1 B/G Pest token — "Whenever this token attacks, you gain 1 life." (SoS Witherbloom Pests).
+    pub const PEST_TOKEN: u32 = 9001;
 }
 
 /// A card definition: its printed characteristics + abilities (the Effect IR). Card *data*, not
@@ -431,6 +442,7 @@ pub(crate) fn deal_to_any(amount: i64) -> Effect {
 pub fn starter_db() -> CardDb {
     let mut db = CardDb::default();
     misc::register(&mut db);
+    tokens::register(&mut db);
     // Per-set real cards (Selesnya Landfall push).
     lea::register(&mut db);
     dsk::register(&mut db);
@@ -615,7 +627,7 @@ mod tests {
     #[test]
     fn starter_db_has_expected_cards() {
         let db = starter_db();
-        assert_eq!(db.len(), 140);
+        assert_eq!(db.len(), 143);
         // Forest is "type line only": a Basic Land with subtype Forest. Mana is intrinsic
         // (CR 305.6) — the engine derives {T}: Add {G} from the subtype, so the CardDef carries
         // no explicit mana ability (and `is_mana_source` only sees authored abilities).

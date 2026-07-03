@@ -81,6 +81,7 @@ mod tests {
                                 Flying,
                             ],
                             counters: [],
+                            grp_id: 0,
                         },
                         count: Fixed(
                             1,
