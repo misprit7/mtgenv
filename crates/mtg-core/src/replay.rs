@@ -117,6 +117,199 @@ impl ReplayMeta {
     }
 }
 
+// ── Compact (delta) replay wire format — v2 ─────────────────────────────────────────────────
+//
+// A full [`GodView`] per frame is dominated by each seat's **ordered library** (~40 objects) plus
+// the battlefield — zones that change rarely — so raw replays run 15–73 MB (~60 KB/frame). The
+// compact format keeps the small scalars (turn/phase/priority/life/mana/counters/stack/combat) in
+// full each frame but **omits any large Vec zone** (battlefield + each seat's hand/library/
+// graveyard/exile) that is byte-identical to the previous frame, cutting raw size 100×+. Frame 0 is
+// a full keyframe (no previous ⇒ every zone stored). Reconstruction carries each omitted zone
+// forward.
+//
+// Consumers serialize [`Replay::to_compact`] for the slim on-disk/wire form and read either format
+// via [`AnyReplay`] (v2 compact OR the pre-v2 full-frame files) — so **old replays still load**.
+// The in-memory [`Replay`]/[`ReplayFrame`]/[`GodView`] types are unchanged, so every consumer that
+// walks full frames (the frame player, spectator streaming) is untouched.
+
+/// Format version for [`CompactReplay`]; its presence in the JSON distinguishes compact from the
+/// pre-v2 full-frame files. Bump when the compact schema changes.
+pub const COMPACT_REPLAY_VERSION: u32 = 2;
+
+/// The compact, delta-encoded wire form of a [`Replay`] (see the module notes). Build with
+/// [`Replay::to_compact`]; reconstruct the full replay with [`CompactReplay::into_replay`].
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CompactReplay {
+    /// Always [`COMPACT_REPLAY_VERSION`]. A required field so a legacy (versionless) file can't be
+    /// mistaken for compact by [`AnyReplay`].
+    pub version: u32,
+    pub meta: ReplayMeta,
+    pub frames: Vec<CompactFrame>,
+}
+
+/// One delta frame: full scalars + stack/combat, with the large Vec zones present only when they
+/// changed from the previous frame (absent ⇒ unchanged; carried forward on reconstruction).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CompactFrame {
+    pub label: String,
+    pub turn: u32,
+    pub active_player: PlayerId,
+    pub phase: Phase,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub priority_player: Option<PlayerId>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub stack: Vec<StackObjView>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub combat: Option<CombatView>,
+    pub players: Vec<CompactPlayer>,
+    /// `None` ⇒ the battlefield is unchanged from the previous frame.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub battlefield: Option<Vec<ObjView>>,
+}
+
+/// One seat in a [`CompactFrame`]: scalars in full, the four hidden zones delta-encoded
+/// (`None` ⇒ unchanged from the previous frame).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CompactPlayer {
+    pub player: PlayerId,
+    pub life: i32,
+    pub poison: u32,
+    pub mana_pool: ManaPool,
+    pub counters: CounterBag,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hand: Option<Vec<ObjView>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub library: Option<Vec<ObjView>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub graveyard: Option<Vec<ObjView>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exile: Option<Vec<ObjView>>,
+}
+
+/// `Some(clone)` if `cur` differs from `prev` (or there is no previous frame), `None` if identical
+/// (so the encoder omits an unchanged zone). An empty zone (`[]`) is distinct from `None`/absent.
+fn delta_zone(prev: Option<&Vec<ObjView>>, cur: &[ObjView]) -> Option<Vec<ObjView>> {
+    match prev {
+        Some(p) if p.as_slice() == cur => None,
+        _ => Some(cur.to_vec()),
+    }
+}
+
+impl Replay {
+    /// Delta-encode into the compact wire form (module notes) — the slim thing to serialize to
+    /// disk / send over the wire (100×+ smaller raw). Reconstruct with [`CompactReplay::into_replay`].
+    pub fn to_compact(&self) -> CompactReplay {
+        let mut frames = Vec::with_capacity(self.frames.len());
+        let mut prev: Option<&GodView> = None;
+        for f in &self.frames {
+            let g = &f.state;
+            let players = g
+                .players
+                .iter()
+                .enumerate()
+                .map(|(i, p)| {
+                    let pp = prev.and_then(|pg| pg.players.get(i));
+                    CompactPlayer {
+                        player: p.player,
+                        life: p.life,
+                        poison: p.poison,
+                        mana_pool: p.mana_pool.clone(),
+                        counters: p.counters.clone(),
+                        hand: delta_zone(pp.map(|x| &x.hand), &p.hand),
+                        library: delta_zone(pp.map(|x| &x.library), &p.library),
+                        graveyard: delta_zone(pp.map(|x| &x.graveyard), &p.graveyard),
+                        exile: delta_zone(pp.map(|x| &x.exile), &p.exile),
+                    }
+                })
+                .collect();
+            frames.push(CompactFrame {
+                label: f.label.clone(),
+                turn: g.turn,
+                active_player: g.active_player,
+                phase: g.phase,
+                priority_player: g.priority_player,
+                stack: g.stack.clone(),
+                combat: g.combat.clone(),
+                players,
+                battlefield: delta_zone(prev.map(|pg| &pg.battlefield), &g.battlefield),
+            });
+            prev = Some(g);
+        }
+        CompactReplay { version: COMPACT_REPLAY_VERSION, meta: self.meta.clone(), frames }
+    }
+}
+
+impl CompactReplay {
+    /// Reconstruct the full-frame [`Replay`] (module notes), carrying each omitted (unchanged) zone
+    /// forward from the previous frame. Inverse of [`Replay::to_compact`].
+    pub fn into_replay(self) -> Replay {
+        let mut frames = Vec::with_capacity(self.frames.len());
+        let mut prev: Option<GodView> = None;
+        for cf in self.frames {
+            let players = cf
+                .players
+                .into_iter()
+                .enumerate()
+                .map(|(i, cp)| {
+                    let pp = prev.as_ref().and_then(|pg| pg.players.get(i));
+                    let carry = |delta: Option<Vec<ObjView>>, pick: fn(&GodPlayerView) -> &Vec<ObjView>| {
+                        delta.or_else(|| pp.map(|x| pick(x).clone())).unwrap_or_default()
+                    };
+                    GodPlayerView {
+                        player: cp.player,
+                        life: cp.life,
+                        poison: cp.poison,
+                        mana_pool: cp.mana_pool,
+                        counters: cp.counters,
+                        hand: carry(cp.hand, |x| &x.hand),
+                        library: carry(cp.library, |x| &x.library),
+                        graveyard: carry(cp.graveyard, |x| &x.graveyard),
+                        exile: carry(cp.exile, |x| &x.exile),
+                    }
+                })
+                .collect();
+            let battlefield = cf
+                .battlefield
+                .or_else(|| prev.as_ref().map(|pg| pg.battlefield.clone()))
+                .unwrap_or_default();
+            let g = GodView {
+                turn: cf.turn,
+                active_player: cf.active_player,
+                phase: cf.phase,
+                priority_player: cf.priority_player,
+                players,
+                battlefield,
+                stack: cf.stack,
+                combat: cf.combat,
+            };
+            frames.push(ReplayFrame { state: g.clone(), label: cf.label });
+            prev = Some(g);
+        }
+        Replay { meta: self.meta, frames }
+    }
+}
+
+/// Reads EITHER a v2 [`CompactReplay`] or a pre-v2 full-frame [`Replay`] (old saved files), so old
+/// replays keep loading. Deserialize this from disk/wire, then [`AnyReplay::into_replay`].
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub enum AnyReplay {
+    /// v2 compact (discriminated by its required `version` field).
+    Compact(CompactReplay),
+    /// Pre-v2 full-frame replay (no `version`; each frame carries a full `state`).
+    Legacy(Replay),
+}
+
+impl AnyReplay {
+    /// The reconstructed full-frame replay, whichever format it was stored in.
+    pub fn into_replay(self) -> Replay {
+        match self {
+            AnyReplay::Compact(c) => c.into_replay(),
+            AnyReplay::Legacy(r) => r,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -197,5 +390,168 @@ mod tests {
         // And the typed values survive the round-trip unchanged.
         assert_eq!(counters.get(&CounterKind::PlusOnePlusOne), 3);
         assert_eq!(counters.get(&CounterKind::Named("quest".into())), 1);
+    }
+
+    // ── Compact (delta) format ──────────────────────────────────────────────────────────────
+
+    use crate::agent::CharacteristicsView;
+    use crate::basics::{Status, Zone};
+    use crate::ids::ObjId;
+
+    /// A chunky `ObjView` (with oracle text, like a real card) so the size test is meaningful.
+    fn ov(id: u64, zone: Zone) -> ObjView {
+        ObjView::Visible {
+            id: ObjId(id),
+            chars: CharacteristicsView {
+                name: format!("Card {id}"),
+                grp_id: id as u32,
+                rules_text: "whenever this creature attacks, do a thing. ".repeat(3),
+                ..Default::default()
+            },
+            controller: PlayerId(0),
+            owner: PlayerId(0),
+            zone,
+            status: Status::default(),
+            counters: CounterBag::default(),
+            damage_marked: 0,
+            attachments: Vec::new(),
+            summoning_sick: false,
+        }
+    }
+
+    fn seat(s: u32, life: i32, library: Vec<ObjView>, hand: Vec<ObjView>) -> GodPlayerView {
+        GodPlayerView {
+            player: PlayerId(s),
+            life,
+            poison: 0,
+            mana_pool: ManaPool::default(),
+            counters: CounterBag::default(),
+            hand,
+            library,
+            graveyard: Vec::new(),
+            exile: Vec::new(),
+        }
+    }
+
+    /// `to_compact` → `into_replay` reconstructs the replay exactly (lossless), and the compact
+    /// form is far smaller because unchanged libraries/battlefield aren't re-stored per frame.
+    #[test]
+    fn compact_delta_round_trips_and_shrinks() {
+        // Constant 40-card libraries — the per-frame redundancy the delta kills.
+        let p0_lib: Vec<ObjView> = (0..40).map(|i| ov(i, Zone::Library)).collect();
+        let p1_lib: Vec<ObjView> = (100..140).map(|i| ov(i, Zone::Library)).collect();
+        let land = ov(500, Zone::Battlefield);
+
+        let gv = |turn, phase, life0, bf: Vec<ObjView>, p0lib: Vec<ObjView>, p0hand: Vec<ObjView>| GodView {
+            turn,
+            active_player: PlayerId(0),
+            phase,
+            priority_player: Some(PlayerId(0)),
+            players: vec![seat(0, life0, p0lib, p0hand), seat(1, 20, p1_lib.clone(), Vec::new())],
+            battlefield: bf,
+            stack: Vec::new(),
+            combat: None,
+        };
+
+        let mut frames = vec![ReplayFrame {
+            state: gv(1, Phase::PrecombatMain, 20, Vec::new(), p0_lib.clone(), Vec::new()),
+            label: "turn 1 main".into(),
+        }];
+        // 16 "nothing big changed" frames (only life ticks) — the common case in a real game.
+        for i in 0..16 {
+            frames.push(ReplayFrame {
+                state: gv(1, Phase::DeclareAttackers, 20 - i, Vec::new(), p0_lib.clone(), Vec::new()),
+                label: format!("chip {i}"),
+            });
+        }
+        // A land drop: battlefield changes, libraries don't.
+        frames.push(ReplayFrame {
+            state: gv(1, Phase::PostcombatMain, 4, vec![land.clone()], p0_lib.clone(), Vec::new()),
+            label: "played a land".into(),
+        });
+        // A draw: P0's library + hand change, battlefield + P1 don't.
+        frames.push(ReplayFrame {
+            state: gv(2, Phase::PrecombatMain, 4, vec![land.clone()], p0_lib[1..].to_vec(), vec![ov(0, Zone::Hand)]),
+            label: "turn 2 draw".into(),
+        });
+        let replay = Replay { meta: ReplayMeta::new(2, ReplaySource::Human), frames };
+
+        // Lossless: compact → reconstruct equals the original (compared via the full-frame JSON).
+        let full_json = serde_json::to_string(&replay).unwrap();
+        let compact = replay.to_compact();
+        let reconstructed = compact.clone().into_replay();
+        assert_eq!(
+            full_json,
+            serde_json::to_string(&reconstructed).unwrap(),
+            "compact→reconstruct must be lossless"
+        );
+
+        // Big shrink: unchanged libraries are stored ~twice (keyframe + the draw), not 19×.
+        let compact_json = serde_json::to_string(&compact).unwrap();
+        assert!(
+            compact_json.len() * 5 < full_json.len(),
+            "compact ({}) should be far smaller than full ({})",
+            compact_json.len(),
+            full_json.len()
+        );
+
+        // The delta actually omitted unchanged zones: a life-only-change frame carries no zone Vecs.
+        let mid = &compact.frames[5];
+        assert!(mid.battlefield.is_none());
+        assert!(mid.players.iter().all(|p| p.library.is_none() && p.hand.is_none()));
+        // The draw frame re-sends P0's library + hand, but not the battlefield or P1's library.
+        let draw = compact.frames.last().unwrap();
+        assert!(draw.players[0].library.is_some() && draw.players[0].hand.is_some());
+        assert!(draw.battlefield.is_none() && draw.players[1].library.is_none());
+    }
+
+    /// `AnyReplay` reads BOTH the new v2 compact JSON and the pre-v2 full-frame JSON to the same
+    /// replay — so old saved files keep loading (versioned format).
+    #[test]
+    fn any_replay_reads_v2_compact_and_legacy_full_frames() {
+        let replay = Replay {
+            meta: ReplayMeta::new(2, ReplaySource::Human),
+            frames: vec![
+                ReplayFrame {
+                    state: GodView {
+                        turn: 1,
+                        active_player: PlayerId(0),
+                        phase: Phase::PrecombatMain,
+                        priority_player: None,
+                        players: vec![seat(0, 20, vec![ov(1, Zone::Library)], Vec::new()), seat(1, 20, Vec::new(), Vec::new())],
+                        battlefield: Vec::new(),
+                        stack: Vec::new(),
+                        combat: None,
+                    },
+                    label: "start".into(),
+                },
+                ReplayFrame {
+                    state: GodView {
+                        turn: 1,
+                        active_player: PlayerId(0),
+                        phase: Phase::DeclareAttackers,
+                        priority_player: Some(PlayerId(1)),
+                        players: vec![seat(0, 18, vec![ov(1, Zone::Library)], Vec::new()), seat(1, 20, Vec::new(), Vec::new())],
+                        battlefield: Vec::new(),
+                        stack: Vec::new(),
+                        combat: None,
+                    },
+                    label: "combat".into(),
+                },
+            ],
+        };
+        let expected = serde_json::to_string(&replay).unwrap();
+
+        // v2 compact JSON round-trips through AnyReplay.
+        let compact_json = serde_json::to_string(&replay.to_compact()).unwrap();
+        let via_compact: AnyReplay = serde_json::from_str(&compact_json).unwrap();
+        assert!(matches!(via_compact, AnyReplay::Compact(_)), "v2 JSON parses as the compact variant");
+        assert_eq!(expected, serde_json::to_string(&via_compact.into_replay()).unwrap());
+
+        // Legacy (pre-v2) full-frame JSON — the exact shape older files on disk have — still loads.
+        let legacy_json = serde_json::to_string(&replay).unwrap(); // Replay's derived serde = full frames
+        let via_legacy: AnyReplay = serde_json::from_str(&legacy_json).unwrap();
+        assert!(matches!(via_legacy, AnyReplay::Legacy(_)), "versionless JSON parses as legacy");
+        assert_eq!(expected, serde_json::to_string(&via_legacy.into_replay()).unwrap());
     }
 }

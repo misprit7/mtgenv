@@ -97,7 +97,8 @@ pub struct PlayerPrivateView {
 // `Visible` is intentionally the large, common variant (full perceived characteristics); the
 // view is built fresh each decision, not stored long-term, so the size gap is not worth boxing.
 #[allow(clippy::large_enum_variant)]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+// `PartialEq` lets the replay delta-encoder detect unchanged zones frame-to-frame (replay.rs).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ObjView {
     Visible {
         id: ObjId,
@@ -121,7 +122,7 @@ pub enum ObjView {
 
 /// The post-layer computed characteristics an agent sees (the CR 613 output projected for the
 /// view). Distinct from the engine-internal characteristics cache (`chars`).
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct CharacteristicsView {
     pub name: String,
     pub card_types: Vec<String>,
