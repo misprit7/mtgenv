@@ -2670,37 +2670,41 @@ impl Engine {
     /// its mana-spent at resolution (SoS Opus / Repartee / Increment). Only the *caster's* permanents
     /// watch (the "you" in "whenever you cast …").
     fn queue_watching_spellcast_triggers(&mut self, spell: StackId, caster: PlayerId) {
-        let card = self
-            .state
-            .stack
-            .items
-            .iter()
-            .find(|s| s.id == spell)
-            .and_then(|s| match s.kind {
-                StackObjectKind::Spell(o) => Some(o),
-                _ => None,
-            });
-        let Some(card) = card else {
-            return;
+        let (card, targets) = match self.state.stack.items.iter().find(|s| s.id == spell) {
+            Some(s) => match s.kind {
+                StackObjectKind::Spell(o) => (o, s.targets.clone()),
+                _ => return,
+            },
+            None => return,
         };
+        // "targets a creature" (CR 603.2, Repartee): any chosen object target that's a creature.
+        let targets_a_creature = targets.iter().any(|t| {
+            matches!(t, Target::Object(o) if self.state.computed(*o).card_types.contains(&CardType::Creature))
+        });
         let watchers: Vec<ObjId> = self.state.player(caster).battlefield.clone();
         for watcher in watchers {
-            let candidates: Vec<(u32, CardFilter)> = match self.state.def_of(watcher) {
+            // (index, filter, needs_creature_target)
+            let candidates: Vec<(u32, CardFilter, bool)> = match self.state.def_of(watcher) {
                 Some(def) => def
                     .abilities
                     .iter()
                     .enumerate()
                     .filter_map(|(i, a)| match a {
                         Ability::Triggered { event: EventPattern::SpellCast(f), .. } => {
-                            Some((i as u32, f.clone()))
+                            Some((i as u32, f.clone(), false))
                         }
+                        Ability::Triggered {
+                            event: EventPattern::SpellCastTargetingCreature(f), ..
+                        } => Some((i as u32, f.clone(), true)),
                         _ => None,
                     })
                     .collect(),
                 None => continue,
             };
-            for (index, filter) in candidates {
-                if self.enter_filter_matches(card, &filter, caster) {
+            for (index, filter, needs_creature_target) in candidates {
+                if (!needs_creature_target || targets_a_creature)
+                    && self.enter_filter_matches(card, &filter, caster)
+                {
                     let id = self.state.mint_stack();
                     self.state.pending_triggers.push(StackObject {
                         id,

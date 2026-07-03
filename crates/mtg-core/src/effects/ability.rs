@@ -79,6 +79,10 @@ pub enum EventPattern {
     CreatureDies(CardFilter),
     /// A spell matching the filter was cast (CR 601.2i).
     SpellCast(CardFilter),
+    /// A spell matching `filter` that **targets a creature** was cast (CR 601.2i) — the SoS
+    /// "Repartee" cycle's "whenever you cast an instant or sorcery spell that targets a creature."
+    /// Like [`SpellCast`], but only fires when one of the cast spell's chosen targets is a creature.
+    SpellCastTargetingCreature(CardFilter),
     /// Damage was dealt (optionally of a given kind) to a matching object/player.
     DamageDealt { kind: Option<DamageKind> },
     /// The beginning of a step/phase (CR 500.6, a triggered — not turn-based — ability).
