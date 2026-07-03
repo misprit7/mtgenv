@@ -29,6 +29,7 @@ pub mod oracles_restoration;
 pub mod paradox_gardens;
 pub mod pest_mascot;
 pub mod planar_engineering;
+pub mod poisoners_apprentice;
 pub mod proctors_gaze;
 pub mod rapturous_moment;
 pub mod rearing_embermare;
@@ -77,6 +78,7 @@ pub fn register(db: &mut CardDb) {
     paradox_gardens::register(db);
     pest_mascot::register(db);
     planar_engineering::register(db);
+    poisoners_apprentice::register(db);
     proctors_gaze::register(db);
     rapturous_moment::register(db);
     rearing_embermare::register(db);
