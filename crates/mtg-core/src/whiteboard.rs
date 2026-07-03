@@ -179,6 +179,15 @@ impl Engine {
             // sacrifices a creature of their choice." Imperative + asks each sacrificing player which
             // of their own permanents to sacrifice, so it lives here. Flush staged actions first.
             // Performed iff at least one permanent was sacrificed (an unmet min sacrifices what it can).
+            // Surveil N (CR 701.42): look at the top N of your library, bin any number to the
+            // graveyard, keep the rest on top. Imperative (asks which to bin). Flush first.
+            Effect::Surveil { count } => {
+                self.flush_pending(wb);
+                let player = ctx.controller.unwrap_or(PlayerId(0));
+                let n = self.eval_value(count, ctx).max(0) as usize;
+                self.interpret_surveil(player, n);
+                true
+            }
             Effect::Sacrifice { who, what } => {
                 self.flush_pending(wb);
                 let controller = ctx.controller.unwrap_or(PlayerId(0));
@@ -354,6 +363,39 @@ impl Engine {
             self.broadcast(GameEvent::ObjectMoved { obj: card, to: Zone::Graveyard });
         }
         discarded
+    }
+
+    /// Surveil N (CR 701.42): show `pl` the top `n` cards of their library (top-first — the library's
+    /// last element is the top), let them put any number into the graveyard, and leave the rest on
+    /// top. The kept cards stay in their current order (surveil permits any order).
+    fn interpret_surveil(&mut self, pl: PlayerId, n: usize) {
+        let lib = &self.state.player(pl).library;
+        let count = n.min(lib.len());
+        if count == 0 {
+            return;
+        }
+        let top: Vec<ObjId> = lib.iter().rev().take(count).copied().collect();
+        let req = DecisionRequest::SelectCards {
+            reason: SelectReason::ScryStage,
+            from: top.clone(),
+            min: 0,
+            max: count as u32,
+            description: "Surveil".into(),
+        };
+        let mut seen = std::collections::BTreeSet::new();
+        let to_gy: Vec<ObjId> = match self.ask(pl, &req) {
+            DecisionResponse::Indices(idxs) => idxs
+                .iter()
+                .filter_map(|&i| top.get(i as usize).copied())
+                .filter(|o| seen.insert(*o))
+                .collect(),
+            _ => Vec::new(),
+        };
+        for card in to_gy {
+            let owner = self.state.object(card).owner;
+            self.state.move_object(card, Zone::Graveyard, owner);
+            self.broadcast(GameEvent::ObjectMoved { obj: card, to: Zone::Graveyard });
+        }
     }
 
     /// Have `pl` sacrifice permanents matching `spec` (CR 701.17), choosing which of their own (up
@@ -884,6 +926,7 @@ impl Engine {
             | Effect::Discard { .. }
             | Effect::Counter { .. }
             | Effect::Sacrifice { .. }
+            | Effect::Surveil { .. }
             | Effect::Nothing => {}
         }
     }

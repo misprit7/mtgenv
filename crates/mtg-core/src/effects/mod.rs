@@ -82,6 +82,12 @@ pub enum Effect {
         who: PlayerRef,
         count: ValueExpr,
     },
+    /// Surveil N (CR 701.42): look at the top `count` cards of your library, then put any number of
+    /// them into your graveyard and the rest back on top in any order. The controller chooses which
+    /// go to the graveyard (a resolution-time decision, so it's driven imperatively).
+    Surveil {
+        count: ValueExpr,
+    },
     GainLife {
         who: PlayerRef,
         amount: ValueExpr,
