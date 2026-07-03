@@ -477,6 +477,21 @@ impl Engine {
                     wb.push(Action::Exile { obj, source: ctx.source });
                 }
             }
+            // Move a single targeted object to another zone (CR 400.7 / 608.2) — "return target
+            // permanent to its owner's hand" (bounce), "return target creature card from your
+            // graveyard to the battlefield" (reanimate), etc. Lowers to one `Action::MoveZone` with
+            // `MoveCause::Returned` (a non-death leave, so LTB — not dies — triggers fire, and an
+            // enter fires ETB). Single-object only for now (one `target` word → one chosen slot).
+            Effect::MoveZone { what, to } => {
+                if let Some(Target::Object(obj)) = self.resolve_target(what, ctx, cursor) {
+                    wb.push(Action::MoveZone {
+                        obj,
+                        to: to.zone,
+                        pos: to.pos,
+                        cause: MoveCause::Returned,
+                    });
+                }
+            }
             Effect::Attach { what, to } => {
                 // `what` (usually SourceSelf) is resolved first; `to` consumes the chosen target.
                 let attachment = self.resolve_target(what, ctx, cursor);

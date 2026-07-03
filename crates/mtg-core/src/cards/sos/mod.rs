@@ -11,6 +11,7 @@ pub mod rearing_embermare;
 pub mod shopkeepers_bane;
 pub mod sneering_shadewriter;
 pub mod wander_off;
+pub mod zealous_lorecaster;
 
 pub fn register(db: &mut CardDb) {
     chase_inspiration::register(db);
@@ -22,4 +23,5 @@ pub fn register(db: &mut CardDb) {
     shopkeepers_bane::register(db);
     sneering_shadewriter::register(db);
     wander_off::register(db);
+    zealous_lorecaster::register(db);
 }
