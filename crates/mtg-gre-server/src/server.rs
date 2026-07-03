@@ -249,10 +249,24 @@ async fn list_replays() -> impl IntoResponse {
     axum::Json(out)
 }
 
-/// `GET /api/replays/:id` — the full replay JSON (the viewer plays its `frames`). `id` is a bare
-/// filename stem, sanitized to block path traversal. 404 if absent.
+/// Optional query for [`get_replay`]. `?format=compact` opts into the small v2 delta payload (the
+/// web player reconstructs it client-side); anything else / absent = the default full-frame JSON.
+#[derive(serde::Deserialize)]
+struct ReplayQuery {
+    format: Option<String>,
+}
+
+/// `GET /api/replays/:id` — the replay JSON the viewer plays. `id` is a bare filename stem,
+/// sanitized to block path traversal. 404 if absent.
+///
+/// **Format negotiation (opt-in, no deploy coupling):** the bare endpoint always returns
+/// **reconstructed full frames** (`frames[].state.…`) — the shape every existing consumer expects,
+/// forever. `?format=compact` returns the **v2 compact** (delta + interned characteristics) payload
+/// (~46× smaller) for a client that knows how to reconstruct it. Files are stored compact; pre-v2
+/// full-frame files also load, so old saved replays keep working either way.
 async fn get_replay(
     axum::extract::Path(id): axum::extract::Path<String>,
+    axum::extract::Query(q): axum::extract::Query<ReplayQuery>,
 ) -> axum::response::Response {
     if id.is_empty() || !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
         return (axum::http::StatusCode::BAD_REQUEST, "bad replay id").into_response();
@@ -261,14 +275,22 @@ async fn get_replay(
         Ok(t) => t,
         Err(_) => return (axum::http::StatusCode::NOT_FOUND, "no such replay").into_response(),
     };
-    // Files are stored compact (delta-encoded); reconstruct the full-frame replay the viewer plays.
-    // `AnyReplay` also accepts pre-v2 full-frame files, so old saved replays keep working.
-    let full = match serde_json::from_str::<mtg_core::replay::AnyReplay>(&text) {
-        Ok(any) => any.into_replay(),
+    let any = match serde_json::from_str::<mtg_core::replay::AnyReplay>(&text) {
+        Ok(a) => a,
         Err(_) => return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "corrupt replay").into_response(),
     };
-    match serde_json::to_string(&full) {
-        Ok(json) => ([(axum::http::header::CONTENT_TYPE, "application/json")], json).into_response(),
+    let json = if q.format.as_deref() == Some("compact") {
+        // Emit v2 compact: cheap when the file is already compact; convert a legacy file if needed.
+        match any {
+            mtg_core::replay::AnyReplay::Compact(c) => serde_json::to_string(&c),
+            mtg_core::replay::AnyReplay::Legacy(r) => serde_json::to_string(&r.to_compact()),
+        }
+    } else {
+        // Default: reconstruct full frames (unchanged behaviour for the current web player etc.).
+        serde_json::to_string(&any.into_replay())
+    };
+    match json {
+        Ok(j) => ([(axum::http::header::CONTENT_TYPE, "application/json")], j).into_response(),
         Err(_) => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "replay serialize error").into_response(),
     }
 }
