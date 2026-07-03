@@ -240,14 +240,29 @@ function playReplay(): void {
   if (!frameCount()) return;
   if (frameIdx >= frameCount() - 1) frameIdx = -1; // at end → restart from the top
   playing = true; $("rbPlay").textContent = "❚❚";
-  playTimer = setInterval(() => showFrame(frameIdx + 1), Math.round(1000 / frameRate));
+  // Self-scheduling timeout, NOT setInterval: each frame schedules the next only AFTER its (heavy)
+  // render finishes, so the event loop always gets a gap to process input. A tight setInterval whose
+  // per-frame render outruns the interval (at high rates) back-to-backs the ticks and starves the
+  // thread — the Pause tap then never lands. This is the real fix for "Pause dead at >10 fps".
+  const tick = (): void => {
+    showFrame(frameIdx + 1);                       // may hit the end → showFrame() calls pauseReplay()
+    if (playing) playTimer = setTimeout(tick, Math.max(16, Math.round(1000 / frameRate)));
+  };
+  playTimer = setTimeout(tick, Math.max(16, Math.round(1000 / frameRate)));
 }
-function pauseReplay(): void { playing = false; $("rbPlay").textContent = "▶"; if (playTimer) { clearInterval(playTimer); playTimer = null; } }
+function pauseReplay(): void { playing = false; $("rbPlay").textContent = "▶"; if (playTimer) { clearTimeout(playTimer); playTimer = null; } }
 function togglePlay(): void { playing ? pauseReplay() : playReplay(); }
+// Bind bar controls on pointerdown (fires before the click, so Pause registers instantly even while a
+// heavy render is in flight) directly on the stable #replaybar buttons — the bar is never rebuilt per
+// frame, so these handlers never get torn out from under a tap.
+function bindBarBtn(id: string, fn: () => void): void {
+  const b = $(id) as HTMLButtonElement;
+  b.addEventListener("pointerdown", (ev) => { if (b.disabled) return; ev.preventDefault(); fn(); });
+}
 if (replayId) {
-  $("rbBack").onclick = () => stepReplay(-1);
-  $("rbFwd").onclick = () => stepReplay(1);
-  $("rbPlay").onclick = togglePlay;
+  bindBarBtn("rbBack", () => stepReplay(-1));
+  bindBarBtn("rbFwd", () => stepReplay(1));
+  bindBarBtn("rbPlay", togglePlay);
   ($("rbScrub") as HTMLInputElement).oninput = (e) => { pauseReplay(); showFrame(+(e.target as HTMLInputElement).value); };
   ($("rbRate") as HTMLInputElement).oninput = (e) => {
     frameRate = +(e.target as HTMLInputElement).value || 1; $("rbRateV").textContent = `${frameRate}`;
