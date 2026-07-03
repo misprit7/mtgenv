@@ -2428,6 +2428,14 @@ impl Engine {
                 // Delayed "when this dies …" abilities (CR 603.7) fire on death.
                 self.fire_delayed_triggers(*obj);
             }
+            // "Whenever you gain life" (CR 603.2) — a positive life change fires each GainLife
+            // trigger on a permanent the gaining player controls, once per gain event.
+            GameEvent::LifeChanged { player, delta, .. } if *delta > 0 => {
+                let watchers: Vec<ObjId> = self.state.player(*player).battlefield.clone();
+                for w in watchers {
+                    self.queue_self_triggers(w, EventPattern::GainLife);
+                }
+            }
             // Delayed "when this … is exiled" abilities fire when the watched object reaches exile.
             GameEvent::ObjectMoved { obj, to: Zone::Exile } => {
                 self.fire_delayed_triggers(*obj);

@@ -4,6 +4,7 @@ use crate::cards::CardDb;
 
 pub mod additive_evolution;
 pub mod banishing_betrayal;
+pub mod blech_loafing_pest;
 pub mod bogwater_lumaret;
 pub mod burrog_banemaker;
 pub mod chase_inspiration;
@@ -23,6 +24,7 @@ pub mod muses_encouragement;
 pub mod noxious_newt;
 pub mod old_growth_educator;
 pub mod oracles_restoration;
+pub mod pest_mascot;
 pub mod planar_engineering;
 pub mod proctors_gaze;
 pub mod rapturous_moment;
@@ -45,6 +47,7 @@ pub mod zealous_lorecaster;
 pub fn register(db: &mut CardDb) {
     additive_evolution::register(db);
     banishing_betrayal::register(db);
+    blech_loafing_pest::register(db);
     bogwater_lumaret::register(db);
     burrog_banemaker::register(db);
     chase_inspiration::register(db);
@@ -64,6 +67,7 @@ pub fn register(db: &mut CardDb) {
     noxious_newt::register(db);
     old_growth_educator::register(db);
     oracles_restoration::register(db);
+    pest_mascot::register(db);
     planar_engineering::register(db);
     proctors_gaze::register(db);
     rapturous_moment::register(db);
