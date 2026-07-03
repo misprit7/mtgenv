@@ -2,8 +2,9 @@
 
 use crate::cards::CardDb;
 
-pub mod bogwater_lumaret;
 pub mod additive_evolution;
+pub mod banishing_betrayal;
+pub mod bogwater_lumaret;
 pub mod burrog_banemaker;
 pub mod chase_inspiration;
 pub mod chelonian_tackle;
@@ -16,6 +17,7 @@ pub mod imperious_inkmage;
 pub mod interjection;
 pub mod masterful_flourish;
 pub mod mindful_biomancer;
+pub mod muses_encouragement;
 pub mod noxious_newt;
 pub mod oracles_restoration;
 pub mod planar_engineering;
@@ -37,6 +39,7 @@ pub mod zealous_lorecaster;
 
 pub fn register(db: &mut CardDb) {
     additive_evolution::register(db);
+    banishing_betrayal::register(db);
     bogwater_lumaret::register(db);
     burrog_banemaker::register(db);
     chase_inspiration::register(db);
@@ -50,6 +53,7 @@ pub fn register(db: &mut CardDb) {
     interjection::register(db);
     masterful_flourish::register(db);
     mindful_biomancer::register(db);
+    muses_encouragement::register(db);
     noxious_newt::register(db);
     oracles_restoration::register(db);
     planar_engineering::register(db);

@@ -138,6 +138,21 @@ pub(crate) fn fractal_token(counters: u32) -> TokenSpec {
     }
 }
 
+/// The "Elemental" token (CR 111.3): a 3/3 blue-and-red Elemental with flying. Shared by every
+/// Elemental-maker (Muse's Encouragement, Artistic Process, Visionary's Dance, …).
+pub(crate) fn elemental_token() -> TokenSpec {
+    TokenSpec {
+        name: "Elemental".to_string(),
+        card_types: vec![CardType::Creature],
+        subtypes: vec![CreatureType::Elemental.into()],
+        colors: vec![Color::Blue, Color::Red],
+        power: 3,
+        toughness: 3,
+        keywords: vec![Keyword::Flying],
+        counters: vec![],
+    }
+}
+
 /// The "Spirit" token (CR 111.3): a 2/2 red-and-white Spirit. Shared by every Spirit-maker (Group
 /// Project, Living History, Garrison Excavator, …). Ready for the next Spirit-maker card.
 #[allow(dead_code)]
