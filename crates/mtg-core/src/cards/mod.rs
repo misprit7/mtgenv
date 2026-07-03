@@ -175,6 +175,12 @@ impl CardDb {
     pub fn insert(&mut self, def: CardDef) {
         self.defs.insert(def.chars.grp_id, def);
     }
+    /// Iterate every registered card as `(grp_id, &CardDef)`, in ascending `grp_id` order (the
+    /// `BTreeMap` key order). Lets callers enumerate the **whole pool** — e.g. the lobby deck-builder
+    /// catalog and the card-art pipeline — rather than only the cards reachable through deck presets.
+    pub fn iter(&self) -> impl Iterator<Item = (u32, &CardDef)> {
+        self.defs.iter().map(|(&id, def)| (id, def))
+    }
     pub fn len(&self) -> usize {
         self.defs.len()
     }
@@ -540,6 +546,22 @@ mod tests {
             "Lightning Bolt deals 3 damage to any target."
         );
         assert!(db.get(grp::GRIZZLY_BEARS).unwrap().text.is_empty());
+    }
+
+    #[test]
+    fn card_db_iter_covers_the_whole_pool() {
+        let db = starter_db();
+        // `iter()` yields every registered card, keyed by its grp_id — count matches `len()`.
+        assert_eq!(db.iter().count(), db.len());
+        // Ascending grp_id order, and each entry's key matches its def's grp_id.
+        let ids: Vec<u32> = db.iter().map(|(id, _)| id).collect();
+        assert!(ids.windows(2).all(|w| w[0] < w[1]), "grp_ids are strictly ascending");
+        assert!(db.iter().all(|(id, def)| id == def.chars.grp_id), "key == def.grp_id");
+        // The catalog reaches SOS cards that no preset deck references (e.g. Wander Off).
+        assert!(
+            db.iter().any(|(id, _)| id == sos::wander_off::WANDER_OFF),
+            "iter() surfaces SOS cards not in any preset deck"
+        );
     }
 
     #[test]
