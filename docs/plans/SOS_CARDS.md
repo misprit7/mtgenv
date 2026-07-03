@@ -57,7 +57,7 @@ each cap unlocks the bracketed count. `⏳` = not yet built.
 | **S4** Infusion | per-turn per-player "gained life this turn" state + a `Condition` reading it | 12 | ✅ **DONE** `89b3581` |
 | **S10** Flashback | alt-cast from graveyard for a flashback cost, then exile (Warp-analogue) | 11 | ⏳ |
 | **S6** Increment | `SpellCast(you)` trigger + condition "mana spent > this creature's power OR toughness" | 9 | ✅ **DONE** |
-| **S7** Converge | `ValueExpr::ColorsOfManaSpent` (ETB counters / X in Converge spells) | 9 | ⏳ |
+| **S7** Converge | `ValueExpr::ColorsOfManaSpent` (ETB counters / X in Converge spells) | 9 | ✅ **DONE** `ba8c183` (`ValueExpr::ColorsSpent` — `Object.colors_spent` recorded at cast; consumers Arcane Omens, Together as One, Magmablood/Transcendent/Wildgrowth Archaic) |
 | **S9** Graveyard-leave | "cards leave your graveyard" trigger + "a card left your graveyard this turn" cond | 8 | ✅ **DONE** (flag `f9b5584` + trigger: LeftGraveyard event snapshot in resolve_effect → Spirit Mascot, Owlin Historian, Garrison Excavator) |
 | **S2** Look-and-pick | look at top N, put one/some in hand, rest on bottom (impulse selection) | 8 | ⏳ |
 | **S12** Cost-reduction cond. | "costs {N} less if it targets X / you control Y / a card left your gy" (cast-time) | 7 | ⏳ |
@@ -290,7 +290,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Antiquities on the Loose | S10 | `sos` | ⏳ | flashback + cast-from-zone condition |
 | Applied Geometry | S14 | `sos` | ✅ done | create token copy of permanent |
 | Arcane Omens | S7 | `sos` | ✅ done | Converge colors-of-mana discard |
-| Archaic's Agony | S7,S15 | `sos` | ⏳ | Converge damage + impulse-play exiled cards |
+| Archaic's Agony | S7,S15,ExcessDamage,multi-top-exile | `sos` | ⏳ | S7+S15 now DONE, but still needs: (a) an **excess-damage** value (damage beyond the creature's toughness) and (b) **multi-card** top-of-library impulse-exile (`TopOfLibrary` is single-card) — "exile cards equal to the excess damage, play them until your next turn" |
 | Ark of Hunger | S9,S15 | `sos` | ⏳ | graveyard-leave trigger + impulse play |
 | Aziza, Mage Tower Captain | S14 | `sos` | ⏳ | copy your instant/sorcery spell |
 | Banishing Betrayal | S1 | `sos` | ✅ done | bounce + Surveil 1 |
