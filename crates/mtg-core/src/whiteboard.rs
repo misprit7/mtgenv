@@ -1644,6 +1644,12 @@ impl EngineCore {
                 .and_then(|s| self.state.objects.get(&s))
                 .map(|o| o.mana_spent as i64)
                 .unwrap_or(0),
+            // The number of distinct colours of mana spent to cast the source — Converge (Archaic).
+            ValueExpr::ColorsSpent => ctx
+                .source
+                .and_then(|s| self.state.objects.get(&s))
+                .map(|o| o.colors_spent as i64)
+                .unwrap_or(0),
             // The mana spent to cast the triggering spell of a "whenever you cast …" ability — Opus.
             ValueExpr::ManaSpentOnTrigger => ctx
                 .triggering_spell

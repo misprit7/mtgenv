@@ -130,6 +130,10 @@ pub struct Object {
     /// the battlefield (Dyadrine). Reset to 0 on every zone change (a fresh object, CR 400.7), so a
     /// permanent put onto the battlefield without being cast reads 0.
     pub mana_spent: u32,
+    /// The number of **distinct colours of mana spent** to cast this object (CR 702.75 Converge),
+    /// recorded by `cast_spell` alongside `mana_spent`. Reset to 0 on every zone change (CR 400.7).
+    #[serde(default)]
+    pub colors_spent: u32,
     /// While this card is in exile, the permanent that exiled it (Keen-Eyed Curator's "cards exiled
     /// **with** this creature") — set by `Action::Exile` from the exiling source, `None` otherwise.
     /// Reset on every zone change (a card leaving exile drops the link, CR 400.7).
@@ -540,6 +544,7 @@ impl GameState {
             attached_to: None,
             used_once_per_turn: false,
             mana_spent: 0,
+            colors_spent: 0,
             exiled_with: None,
             warp_cast: false,
             flashback_cast: false,
@@ -608,6 +613,7 @@ impl GameState {
             o.dealt_deathtouch = false;
             o.used_once_per_turn = false; // a fresh object identity (CR 400.7)
             o.mana_spent = 0; // re-recorded only by a fresh cast (CR 400.7)
+            o.colors_spent = 0; // re-recorded only by a fresh cast (CR 400.7)
             o.exiled_with = None; // the exile-association is dropped on any zone change (400.7)
             o.warp_cast = false; // a fresh object identity (CR 400.7)
             o.flashback_cast = false; // a fresh object identity (CR 400.7)

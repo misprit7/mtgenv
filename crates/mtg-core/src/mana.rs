@@ -300,13 +300,20 @@ pub fn produce_mana(state: &mut GameState, p: PlayerId, source: ObjId, color: Co
 /// the cost from the pool — spending floating mana first. Surplus stays FLOATING (CR 106.4, emptied
 /// at end of step). Returns false (changing nothing) if unpayable. `{0}` is always payable. Callers
 /// pay any non-mana cost components (TapSelf/Sacrifice) FIRST so those permanents are excluded here.
-pub fn auto_pay(state: &mut GameState, p: PlayerId, cost: &ManaCost) -> bool {
+/// Auto-tap and pay `cost` (CR 601.2f–h). Returns `Some(colors)` with the **distinct colours of mana
+/// spent** to pay it (for Converge, CR 702.75 — "the number of colors of mana spent to cast this
+/// spell"), or `None` if the cost can't be paid (nothing is tapped in that case). The colours are the
+/// payment plan's assigned colours, so `{3}` paid with three green is one colour, `{W}{U}` is two.
+pub fn auto_pay(state: &mut GameState, p: PlayerId, cost: &ManaCost) -> Option<Vec<Color>> {
     use std::collections::{BTreeMap, BTreeSet};
     let units = payment_units(state, p, &[]);
     let chosen = match select_payment(&units, cost) {
         Some(c) => c,
-        None => return false,
+        None => return None,
     };
+    // The distinct colours of the mana this plan spends (CR 702.75 Converge).
+    let colors_spent: Vec<Color> =
+        chosen.iter().map(|&(_, c)| c).collect::<BTreeSet<Color>>().into_iter().collect();
     // The colour the plan assigned each chosen BASE source-unit (so we add the right colour), and
     // every source's base colours (to colour a creature tapped only for its bonus). Captured BEFORE
     // tapping, since tapping removes the source from `mana_sources`.
@@ -351,7 +358,7 @@ pub fn auto_pay(state: &mut GameState, p: PlayerId, cost: &ManaCost) -> bool {
         *state.player_mut(p).mana_pool.amounts.entry(c).or_insert(0) += n;
     }
     spend_from_pool(state, p, cost);
-    true
+    Some(colors_spent)
 }
 
 /// Deduct `cost` from `p`'s mana pool: each coloured pip from its colour, then the generic component
@@ -466,7 +473,7 @@ mod tests {
         }
         state.objects.get_mut(&dork).unwrap().summoning_sick = false; // may tap for mana
 
-        let paid = auto_pay(&mut state, PlayerId(0), &cost(0, &[(Color::Green, 1)]));
+        let paid = auto_pay(&mut state, PlayerId(0), &cost(0, &[(Color::Green, 1)])).is_some();
         assert!(paid, "the {{G}} cost was paid by tapping the creature dork");
         assert!(state.object(dork).status.tapped, "the dork tapped for mana");
         assert_eq!(
@@ -567,7 +574,7 @@ mod tests {
             can_pay(&state, PlayerId(0), &cost(2, &[(Color::Green, 1)])),
             "the Badgermole bonus makes {{2}}{{G}} affordable"
         );
-        assert!(auto_pay(&mut state, PlayerId(0), &cost(2, &[(Color::Green, 1)])));
+        assert!(auto_pay(&mut state, PlayerId(0), &cost(2, &[(Color::Green, 1)])).is_some());
         assert!(state.object(dork).status.tapped, "the dork tapped (its bonus was needed)");
         assert_eq!(
             state.player(PlayerId(0)).mana_pool.amounts.get(&Color::Green).copied().unwrap_or(0),
@@ -590,7 +597,7 @@ mod tests {
             can_pay(&s2, PlayerId(0), &cost(2, &[(Color::Green, 2)])),
             "two creature sources each get a bonus {{G}} → {{2}}{{G}}{{G}} affordable"
         );
-        assert!(auto_pay(&mut s2, PlayerId(0), &cost(2, &[(Color::Green, 2)])));
+        assert!(auto_pay(&mut s2, PlayerId(0), &cost(2, &[(Color::Green, 2)])).is_some());
     }
 
     #[test]
@@ -658,12 +665,12 @@ mod tests {
             |s: &GameState| s.player(PlayerId(0)).mana_pool.amounts.get(&Color::Green).copied().unwrap_or(0);
 
         // First {G}: the dork taps → {G}{G} produced → spend {G} → 1 floats.
-        assert!(auto_pay(&mut state, PlayerId(0), &cost(0, &[(Color::Green, 1)])));
+        assert!(auto_pay(&mut state, PlayerId(0), &cost(0, &[(Color::Green, 1)])).is_some());
         assert_eq!(green(&state), 1, "the Badgermole bonus {{G}} floats after paying {{G}}");
         assert!(state.object(dork).status.tapped, "the dork is now tapped");
         // Second {G} in the same step: paid from the FLOATING mana — the dork is already tapped, so
         // there is no other source; this only succeeds because floating mana persisted.
-        assert!(auto_pay(&mut state, PlayerId(0), &cost(0, &[(Color::Green, 1)])));
+        assert!(auto_pay(&mut state, PlayerId(0), &cost(0, &[(Color::Green, 1)])).is_some());
         assert_eq!(green(&state), 0, "the floating {{G}} paid the second cost — no new source tapped");
     }
 
@@ -682,9 +689,21 @@ mod tests {
         // Paying {1}{G} taps exactly two lands.
         let untapped_before = state.player(PlayerId(0)).battlefield.iter().filter(|&&id| !state.objects[&id].status.tapped).count();
         assert_eq!(untapped_before, 4);
-        assert!(auto_pay(&mut state, PlayerId(0), &cost(1, &[(Color::Green, 1)])));
+        assert!(auto_pay(&mut state, PlayerId(0), &cost(1, &[(Color::Green, 1)])).is_some());
         let untapped_after = state.player(PlayerId(0)).battlefield.iter().filter(|&&id| !state.objects[&id].status.tapped).count();
         assert_eq!(untapped_after, 2, "two lands tapped to pay {{1}}{{G}}");
+    }
+
+    #[test]
+    fn auto_pay_reports_distinct_colors_spent() {
+        // Converge (CR 702.75): the count of distinct colours the payment plan spends.
+        let mut two = game_with_lands(1, 1); // Forest (G) + Mountain (R)
+        let colors = auto_pay(&mut two, PlayerId(0), &cost(0, &[(Color::Green, 1), (Color::Red, 1)])).unwrap();
+        assert_eq!(colors.len(), 2, "{{G}}{{R}} spends two colours");
+
+        let mut one = game_with_lands(2, 0); // GG
+        let colors = auto_pay(&mut one, PlayerId(0), &cost(1, &[(Color::Green, 1)])).unwrap();
+        assert_eq!(colors.len(), 1, "{{1}}{{G}} paid all-green spends one colour");
     }
 
     #[test]

@@ -65,6 +65,11 @@ pub enum ValueExpr {
     /// the mana spent to cast it" (Dyadrine). `0` if the source wasn't cast (token / put onto the
     /// battlefield).
     ManaSpent,
+    /// The number of **distinct colours of mana spent** to cast the effect's source object (CR 702.75
+    /// Converge), recorded as it was cast and read when it enters/resolves. For the SoS "Archaic"
+    /// cycle ("enters with a +1/+1 counter for each color of mana spent to cast it"). `0` if the source
+    /// wasn't cast.
+    ColorsSpent,
     /// The total mana spent to cast the **triggering spell** of a "whenever you cast …" ability (the
     /// SoS "Opus" cycle) — read from `ResolutionCtx::triggering_spell`. `0` outside such a trigger.
     ManaSpentOnTrigger,

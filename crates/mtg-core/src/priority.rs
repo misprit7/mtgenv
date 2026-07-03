@@ -1655,12 +1655,14 @@ impl Engine {
             colored: cost.colored.clone(),
             x: 0,
         };
-        mana::auto_pay(&mut self.state, p, &pay);
+        let colors_spent = mana::auto_pay(&mut self.state, p, &pay).unwrap_or_default();
         // Record the total mana spent (incl. {X}) on the spell, for an enters-with-counters-equal-
-        // to-mana-spent replacement to read when it resolves (CR 601.2f–h; Dyadrine).
+        // to-mana-spent replacement to read when it resolves (CR 601.2f–h; Dyadrine), plus the number
+        // of distinct colours spent (CR 702.75 Converge).
         let spent = pay.generic + pay.colored.values().copied().sum::<u32>();
         if let Some(o) = self.state.objects.get_mut(&card) {
             o.mana_spent = spent;
+            o.colors_spent = colors_spent.len() as u32;
         }
 
         // 601.2i: the spell has been cast.
