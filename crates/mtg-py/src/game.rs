@@ -35,6 +35,11 @@ pub enum Deck {
     Demo,
     BurnVsBears,
     Selesnya,
+    /// "Heralds": an intentionally degenerate RL sanity mirror — 40 Mist-Cloaked Herald ({U} 1/1,
+    /// can't be blocked) + 20 Island. Optimal play is trivial (always play a land, cast every
+    /// Herald, attack with everything), so a converging policy should drive playland/cast/attack
+    /// rates → ~1.0. Used to verify training actually learns.
+    Heralds,
 }
 
 impl Deck {
@@ -44,6 +49,7 @@ impl Deck {
             "demo" => Some(Deck::Demo),
             "burn_vs_bears" | "burnvsbears" | "bvb" => Some(Deck::BurnVsBears),
             "selesnya" | "landfall" => Some(Deck::Selesnya),
+            "heralds" => Some(Deck::Heralds),
             _ => None,
         }
     }
@@ -56,6 +62,11 @@ impl Deck {
             Deck::Selesnya => {
                 // Mirror of the engine's Selesnya landfall preset (one library per seat).
                 let d = mtg_core::cards::preset_deck("selesnya").expect("selesnya preset deck");
+                mtg_core::cards::build_game(seed, &[d.as_slice(), d.as_slice()])
+            }
+            Deck::Heralds => {
+                // Mirror of the degenerate "heralds" sanity preset (one library per seat).
+                let d = mtg_core::cards::preset_deck("heralds").expect("heralds preset deck");
                 mtg_core::cards::build_game(seed, &[d.as_slice(), d.as_slice()])
             }
         }
@@ -75,6 +86,7 @@ impl Deck {
                 preset_deck("bears").unwrap_or_default(),
             ],
             Deck::Selesnya => vec![preset_deck("selesnya").unwrap_or_default()],
+            Deck::Heralds => vec![preset_deck("heralds").unwrap_or_default()],
             Deck::LandsOnly => vec![], // basics-only deck-out test; no spell pool to identify
         };
         let mut set = std::collections::BTreeSet::new();
@@ -305,6 +317,7 @@ mod tests {
         assert_eq!(Deck::parse("lands"), Some(Deck::LandsOnly));
         assert_eq!(Deck::parse("Demo"), Some(Deck::Demo));
         assert_eq!(Deck::parse("burn-vs-bears"), Some(Deck::BurnVsBears));
+        assert_eq!(Deck::parse("heralds"), Some(Deck::Heralds));
         assert_eq!(Deck::parse("nope"), None);
     }
 
