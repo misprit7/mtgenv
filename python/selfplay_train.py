@@ -40,11 +40,20 @@ def make_env(deck, pool_dir, seed):
     return thunk
 
 
-def make_vecenv(deck, pool_dir, n_envs, seed, subproc=False, batched=True, p_random=0.2, device=None):
-    """Self-play vec env. Default = ``BatchedSelfPlayVecEnv`` (#41): all games stepped in lockstep
-    with opponent inference batched across games (~1.2–1.4× at n_envs 32–64, scales with n_envs and
-    net size). ``batched=False`` falls back to the legacy ``DummyVecEnv`` of per-env ``OpponentPool``
-    envs (one synchronous opponent ``predict`` each). ``subproc`` only applies to the legacy path."""
+def make_vecenv(deck, pool_dir, n_envs, seed, subproc=False, batched=True, p_random=0.2, device=None,
+                vecenv="batched", num_workers=8):
+    """Self-play vec env. ``vecenv``: ``"batched"`` (#41, single-threaded Python pump) or ``"fleet"``
+    (M3.4, ``mtg_py.Fleet`` worker-thread parallel stepping — same self-play regime, stepping in Rust).
+    ``batched=False`` is the legacy ``DummyVecEnv`` per-env path (``subproc`` applies only there)."""
+    if vecenv == "fleet":
+        from mtgenv_gym import FleetSelfPlayVecEnv
+
+        if device is None:
+            import torch
+
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+        return FleetSelfPlayVecEnv(deck, pool_dir, n_envs, num_workers=num_workers, p_random=p_random,
+                                   seed=seed, device=device)
     if batched:
         from mtgenv_gym import BatchedSelfPlayVecEnv
 
@@ -160,7 +169,8 @@ def _clean(*paths):
 
 def train_selfplay(deck="demo", timesteps=120_000, n_envs=8, pool_dir=DEFAULT_POOL,
                    tensorboard_log=None, seed=0, pool_every=8000, eval_every=8000, subproc=False,
-                   shaping_coef=0.5, notes=None, replay_every=0, run_name=None, verbose=0):
+                   shaping_coef=0.5, notes=None, replay_every=0, run_name=None,
+                   vecenv="batched", num_workers=8, verbose=0):
     # replay_every>0 records one greedy self-play game every that-many steps to data/replays/ (the
     # lobby's "AI Training Replays" learning progression). Default 0 (OFF) as a library call — the
     # CLI turns it on (~25k) so real runs record, but tests / ab_shaping stay clean.
@@ -173,7 +183,7 @@ def train_selfplay(deck="demo", timesteps=120_000, n_envs=8, pool_dir=DEFAULT_PO
     ladder_dir = pool_dir.rstrip("/") + "_ladder"
     _clean(os.path.join(pool_dir, "*.zip"), ref_path, os.path.join(ladder_dir, "*.zip"))  # fresh league
 
-    venv = make_vecenv(deck, pool_dir, n_envs, seed, subproc=subproc)
+    venv = make_vecenv(deck, pool_dir, n_envs, seed, subproc=subproc, vecenv=vecenv, num_workers=num_workers)
     model = MaskablePPO(
         "MultiInputPolicy",
         venv,

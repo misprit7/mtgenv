@@ -50,7 +50,8 @@ def _steady_fps(tb_dir: str) -> tuple[float, list[int]]:
     return steady, [round(f) for f in fps]
 
 
-def bench_one(deck: str, n_envs: int, rollouts: int, seed: int = 0) -> dict:
+def bench_one(deck: str, n_envs: int, rollouts: int, seed: int = 0,
+              vecenv: str = "batched", num_workers: int = 8) -> dict:
     """One config: run `rollouts` PPO rollouts of pure self-play training, return steady fps + wall."""
     from selfplay_train import train_selfplay
 
@@ -62,8 +63,9 @@ def bench_one(deck: str, n_envs: int, rollouts: int, seed: int = 0) -> dict:
     t0 = time.perf_counter()
     train_selfplay(deck=deck, timesteps=timesteps, n_envs=n_envs, pool_dir=pool, tensorboard_log=tb,
                    seed=seed, pool_every=10**9, eval_every=10**9, replay_every=0,
+                   vecenv=vecenv, num_workers=num_workers,
                    run_name=f"bench-{deck}-{n_envs}",
-                   notes=f"throughput bench: {deck}, n_envs={n_envs}, {rollouts} rollouts, eval/pool/replay off.")
+                   notes=f"throughput bench: {deck}, n_envs={n_envs}, {rollouts} rollouts, vecenv={vecenv}.")
     wall = time.perf_counter() - t0
     steady, series = _steady_fps(tb)
     return {"n_envs": n_envs, "timesteps": timesteps, "rollouts": rollouts,
@@ -77,12 +79,16 @@ def main():
                     help="one or more n_envs to sweep (default 32 128 256)")
     ap.add_argument("--rollouts", type=int, default=4, help="PPO rollouts per config (steady state)")
     ap.add_argument("--label", default="baseline", help="tag for this bench (e.g. m3-before / m3-after)")
+    ap.add_argument("--vecenv", default="batched", choices=["batched", "fleet"],
+                    help="'batched' = single-threaded Python pump; 'fleet' = worker-thread parallel stepping")
+    ap.add_argument("--num-workers", type=int, default=8, help="fleet worker threads")
     args = ap.parse_args()
 
-    print(f"throughput bench: deck={args.deck} n_envs={args.n_envs} rollouts={args.rollouts} label={args.label}")
+    print(f"throughput bench: deck={args.deck} n_envs={args.n_envs} rollouts={args.rollouts} "
+          f"vecenv={args.vecenv} workers={args.num_workers} label={args.label}")
     results = []
     for n in args.n_envs:
-        r = bench_one(args.deck, n, args.rollouts)
+        r = bench_one(args.deck, n, args.rollouts, vecenv=args.vecenv, num_workers=args.num_workers)
         results.append(r)
         print(f"  n_envs={n:4d}: {r['steady_fps']:6d} fps  wall={r['wall_s']:6.1f}s  series={r['fps_series']}", flush=True)
 
@@ -99,7 +105,8 @@ def main():
         "git_sha": _git_sha(),
         "host": socket.gethostname(),
         "config": {"deck": args.deck, "n_steps": N_STEPS, "rollouts": args.rollouts,
-                   "vec_env": "BatchedSelfPlayVecEnv", "callbacks": "eval/pool/replay OFF"},
+                   "vecenv": args.vecenv, "num_workers": args.num_workers,
+                   "callbacks": "eval/pool/replay OFF"},
         "results": results,
     }
     out = os.path.join(BENCH_DIR, f"throughput_{args.label}_{stamp}.json")

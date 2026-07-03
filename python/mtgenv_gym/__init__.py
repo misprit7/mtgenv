@@ -10,7 +10,8 @@ from .selfplay import GameStats, play_random_game
 __all__ = ["MtgEnv", "random_action", "GameStats", "play_random_game"]
 
 # League + batched inference are imported lazily (they pull torch); expose the names for discovery.
-__all__ += ["OpponentPool", "ModelOpponent", "PoolCheckpoint", "BatchedPolicy", "BatchedSelfPlayVecEnv"]
+__all__ += ["OpponentPool", "ModelOpponent", "PoolCheckpoint", "BatchedPolicy",
+            "BatchedSelfPlayVecEnv", "FleetSelfPlayVecEnv"]
 
 
 def __getattr__(name):  # PEP 562 — lazy so `import mtgenv_gym` stays torch-free
@@ -26,6 +27,10 @@ def __getattr__(name):  # PEP 562 — lazy so `import mtgenv_gym` stays torch-fr
         from .batched_selfplay import BatchedSelfPlayVecEnv
 
         return BatchedSelfPlayVecEnv
+    if name == "FleetSelfPlayVecEnv":
+        from .fleet_selfplay import FleetSelfPlayVecEnv
+
+        return FleetSelfPlayVecEnv
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 # Optional Gymnasium registration (so `gym.make("Mtg-v0")` works); harmless if gym is absent.
