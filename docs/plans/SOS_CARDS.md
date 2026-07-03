@@ -58,9 +58,10 @@ boundary (still green — the small/clean caps are largely picked; what remains 
    front BUT its flashback cost is **non-mana** ("tap three creatures") — `Ability::Flashback{cost:ManaCost}`
    can't hold it (would need a `Cost`-typed flashback); **Flashback** (the card) `{R}` = *grants* flashback to
    a gy card (dynamic ability grant — bigger). Pick Practiced Offense or Antiquities (both mana-flashback).
-3. **S2 Look-and-pick** (⏳, **8** cards) — "look at top N, put one/some in hand, rest on bottom." Distinct
-   from S15 impulse (which plays from exile); this is a hidden top-N selection into hand. Unlocks
-   **Geometer's Arthropod** (with S21 done + reading the *triggering spell's* X for the "top X" count).
+3. **S2 Look-and-pick** — ✅ **already DONE** (the ledger was stale): `Effect::LookAndPick` is implemented and
+   used by 6 cards. Any remaining unauthored look-and-pick card is authorable NOW. (Geometer's Arthropod still
+   needs the *triggering spell's* X for its "top X" count — a separate need, not S2.) **A fresh unauthored-card
+   audit is running** (see the sos-cards-5 handoff note) — prefer its AUTHORABLE-NOW list over this stale queue.
 4. **Fractalize** (set-base-P/T, layer work — do carefully). "Target creature *becomes* a green-and-blue
    Fractal, base P/T = X+1, **loses all other colors and creature types**." That's SET/replace color+type
    layer semantics (not Earthbend's ADD): new `StaticContribution::{SetColors, SetCreatureTypes}` + a dynamic
@@ -155,7 +156,7 @@ each cap unlocks the bracketed count. `⏳` = not yet built.
 | **S6** Increment | `SpellCast(you)` trigger + condition "mana spent > this creature's power OR toughness" | 9 | ✅ **DONE** |
 | **S7** Converge | `ValueExpr::ColorsOfManaSpent` (ETB counters / X in Converge spells) | 9 | ✅ **DONE** `ba8c183` (`ValueExpr::ColorsSpent` — `Object.colors_spent` recorded at cast; consumers Arcane Omens, Together as One, Magmablood/Transcendent/Wildgrowth Archaic) |
 | **S9** Graveyard-leave | "cards leave your graveyard" trigger + "a card left your graveyard this turn" cond | 8 | ✅ **DONE** (flag `f9b5584` + trigger: LeftGraveyard event snapshot in resolve_effect → Spirit Mascot, Owlin Historian, Garrison Excavator) |
-| **S2** Look-and-pick | look at top N, put one/some in hand, rest on bottom (impulse selection) | 8 | ⏳ |
+| **S2** Look-and-pick | look at top N, put one/some in hand, rest on bottom (impulse selection) | 8 | ✅ **DONE** (`Effect::LookAndPick{ count, take, take_to, rest_to, take_filter }` — implemented; consumers Flow State, Stress Dream, Stirring Honormancer, Paradox Surveyor, Follow the Lumarets, Visionary's Dance). The ledger previously mis-listed this as ⏳. Geometer's Arthropod still needs "top-X" = reading the *triggering spell's* X (a separate need). |
 | **S12** Cost-reduction cond. | "costs {N} less if it targets X / you control Y / a card left your gy" (cast-time) | 7 | ⏳ |
 | **S14** Copy spell/perm | "copy target spell", "create a token that's a copy of" (heavier small-cap) | 7 | ⏳ **token-copy DONE** (`Effect::CreateTokenCopy`+`TokenCopyMods`, `a8c8a2d` → Applied Geometry); **spell-copy** portion still ⏳ |
 | **S17** Ward {cost} | Ward N / Ward—Pay life / Ward—Discard (counter-unless-pay on becoming targeted) | 7 | ◑ **mana DONE** `96dbc35` — `Effect::CounterUnlessPay{ what, cost:Cost }` soft-counter + `EffectTarget::Triggering` (the targeting spell/ability, threaded via `GameEvent::Targeted.source` → `state.trigger_targeting_source` → `ResolutionCtx.triggering_stack`); `CardFilter::ItSelf` now matches in `enter_filter_matches` (source-threaded, opt-in from the targeted path). Reuses `Cost`+`can_pay_cost`/`pay_cost`. Ward constructors live in `cards/helpers.rs` (`ward`/`ward_mana`/`ward_discard`). → **Colorstorm Stallion** (Ward {1}, mana) + **Forum Necroscribe** (Ward—Discard, the non-mana path — reuses the `Discard` cost arms). **Ward—Pay life** (Mica/Prismari): `pay_cost` has NO `PayLife` arm yet (falls to `_ => {}`, so life isn't deducted) — add it first; their *secondaries* are also blocked (spell-copy/storm). Side-fix landed here: `Effect::MoveZone`'s target was missing from `collect_specs_into` (never collected through the REAL cast/trigger path — prior MoveZone tests bypassed casting), now fixed. |
