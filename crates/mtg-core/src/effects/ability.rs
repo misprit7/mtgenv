@@ -45,6 +45,11 @@ pub enum CostComponent {
     /// abilities is **per planeswalker, across all its loyalty abilities** (606.3) — enforced
     /// by the engine, not by this cost.
     Loyalty(i32),
+    /// "Exile this card from your graveyard" — both the cost (exile the source) AND the marker that
+    /// this `Activated` ability is usable **from the graveyard** (CR 601.3e / graveyard-activated:
+    /// Eternal Student, Stone Docent). `legal_priority_actions` scans the graveyard for abilities
+    /// carrying this component; paying it moves the source card to exile.
+    ExileSelfFromGraveyard,
 }
 
 /// Timing restriction for casting/activating (CR 117.1a, 602.5d/e).

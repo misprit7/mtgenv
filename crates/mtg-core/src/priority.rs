@@ -1102,6 +1102,43 @@ impl Engine {
             }
         }
 
+        // Graveyard-activated abilities (CR 601.3e): a card in your graveyard whose `Activated`
+        // ability carries `ExileSelfFromGraveyard` (Eternal Student, Stone Docent). Same gates as the
+        // battlefield scan (timing / restriction / mana / targets), but the source lives in the
+        // graveyard and paying the cost exiles it.
+        for &gy in &s.player(p).graveyard {
+            let Some(def) = s.def_of(gy) else { continue };
+            for (i, ab) in def.abilities.iter().enumerate() {
+                let Ability::Activated { cost, effect, timing, restriction, is_mana } = ab else {
+                    continue;
+                };
+                if *is_mana
+                    || !cost.components.iter().any(|c| matches!(c, CostComponent::ExileSelfFromGraveyard))
+                {
+                    continue;
+                }
+                let timing_ok = match timing {
+                    Timing::Instant => true,
+                    Timing::Sorcery => sorcery_speed,
+                };
+                if !timing_ok {
+                    continue;
+                }
+                if matches!(restriction, Some(Restriction::OnlyYourTurn)) && p != s.active_player {
+                    continue;
+                }
+                if !self.can_pay_cost(p, gy, cost) {
+                    continue;
+                }
+                let has_targets = collect_target_specs(effect)
+                    .iter()
+                    .all(|spec| self.target_candidates(spec, p).len() as u32 >= spec.min.max(1));
+                if has_targets {
+                    actions.push(PlayableAction::Activate { source: gy, ability: AbilityRef(i as u32) });
+                }
+            }
+        }
+
         // Manual mana abilities (CR 605.3a). Offered ONLY to a seat with manual mana on (a UI
         // session): one `ActivateMana` per untapped usable source, so a human can tap specific
         // lands to control which sources fund a spell. Headless/agent seats leave this off and
@@ -1340,6 +1377,12 @@ impl Engine {
                 }
                 CostComponent::Sacrifice(spec) => self.pay_sacrifice(p, source, spec),
                 CostComponent::Crew(n) => self.pay_crew(p, source, *n),
+                // "Exile this card from your graveyard" — move the source to exile as the cost.
+                CostComponent::ExileSelfFromGraveyard => {
+                    let owner = self.state.object(source).owner;
+                    self.state.move_object(source, Zone::Exile, owner);
+                    self.broadcast(GameEvent::ObjectMoved { obj: source, to: Zone::Exile });
+                }
                 _ => {}
             }
         }
