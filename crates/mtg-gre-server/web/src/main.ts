@@ -157,11 +157,18 @@ async function loadReplay(): Promise<void> {
     `<div class="rs-title">Loading replay #${esc(replayId as string)}…</div>` +
     `<div class="rs-prog" id="rsProg">connecting…</div>`);
   try {
-    const resp = await fetch(`/api/replays/${encodeURIComponent(replayId as string)}`);
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}` + (resp.status === 404 ? " — no such replay" : ""));
-    const text = await readBodyWithProgress(resp);
-    const rep = JSON.parse(text);
-    replay = rep;
+    let rep: Any;
+    try {
+      // Preferred: the small v2 compact payload (~46× smaller decoded), reconstructed client-side.
+      rep = await fetchReplayJson(true);
+      replay = reconstructReplay(rep);
+    } catch (err: Any) {
+      // The compact format is young — fall back to the full-frame endpoint ONCE before giving up.
+      log(`compact replay path failed (${(err && err.message) || err}); retrying the full endpoint`);
+      updateReplayProgress(0, 0, "retrying (full)…");
+      rep = await fetchReplayJson(false);
+      replay = isCompactReplay(rep) ? reconstructReplay(rep) : rep;
+    }
     const meta = rep.meta || {};
     if (meta.players) $("decks").textContent = `▶ Replay #${replayId} · ` +
       meta.players.map((p: Any) => `P${p.seat} ${p.deck || "?"}`).join(" vs ");
@@ -172,6 +179,12 @@ async function loadReplay(): Promise<void> {
   } catch (e: Any) {
     showReplayError((e && e.message) || "network error");
   }
+}
+async function fetchReplayJson(compact: boolean): Promise<Any> {
+  const url = `/api/replays/${encodeURIComponent(replayId as string)}` + (compact ? "?format=compact" : "");
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}` + (resp.status === 404 ? " — no such replay" : ""));
+  return JSON.parse(await readBodyWithProgress(resp));
 }
 // Read the body via a streaming reader so we can report progress. Falls back to resp.text() where
 // streams aren't available.
@@ -190,6 +203,54 @@ async function readBodyWithProgress(resp: Response): Promise<string> {
   const buf = new Uint8Array(loaded); let off = 0;
   for (const c of chunks) { buf.set(c, off); off += c.length; }
   return new TextDecoder("utf-8").decode(buf);
+}
+function isCompactReplay(rep: Any): boolean { return !!rep && rep.version === 2 && Array.isArray(rep.chars); }
+// Invert the v2 compact (delta + interned-chars) payload into the full-frame replay the player already
+// reads. Mirrors the Rust `CompactReplay::into_replay`: an omitted zone carries forward from the
+// previous reconstructed frame; each lean object's `chars` is a dict lookup. Field keys match Rust
+// serde exactly (v/h + i,c,k,o,z,s,n,d,a,m). Distinctions matter — use `!= null`/`?? null`, never `||`,
+// so an absent zone vs an empty [] vs priority_player=0 all stay distinct.
+function reconstructReplay(rep: Any): Any {
+  if (!isCompactReplay(rep)) throw new Error("not a v2 compact replay");
+  const dict: Any[] = rep.chars || [];
+  const fullObj = (o: Any): Any => {
+    if (o.h) return { Hidden: { id: o.h.i, zone: o.h.z, controller: o.h.k } };
+    const v = o.v;
+    return { Visible: {
+      id: v.i, chars: dict[v.c], controller: v.k, owner: v.o, zone: v.z, status: v.s,
+      counters: v.n != null ? v.n : { counts: {} },
+      damage_marked: v.d != null ? v.d : 0,
+      attachments: v.a != null ? v.a : [],
+      summoning_sick: v.m != null ? v.m : false,
+    } };
+  };
+  // delta present → rebuild full objects; absent → carry the previous (already-full) zone forward.
+  const resolve = (delta: Any, carried: Any): Any[] => delta != null ? delta.map(fullObj) : (carried != null ? carried : []);
+  const frames: Any[] = [];
+  let prev: Any = null;
+  for (const cf of (rep.frames || [])) {
+    const players = (cf.players || []).map((cp: Any, i: number) => {
+      const pp = prev ? (prev.players[i] ?? null) : null;
+      return {
+        player: cp.player, life: cp.life, poison: cp.poison,
+        mana_pool: cp.mana_pool, counters: cp.counters,
+        hand: resolve(cp.hand, pp ? pp.hand : null),
+        library: resolve(cp.library, pp ? pp.library : null),
+        graveyard: resolve(cp.graveyard, pp ? pp.graveyard : null),
+        exile: resolve(cp.exile, pp ? pp.exile : null),
+      };
+    });
+    const g = {
+      turn: cf.turn, active_player: cf.active_player, phase: cf.phase,
+      priority_player: cf.priority_player != null ? cf.priority_player : null,
+      players, battlefield: resolve(cf.battlefield, prev ? prev.battlefield : null),
+      stack: cf.stack != null ? cf.stack : [],
+      combat: cf.combat != null ? cf.combat : null,
+    };
+    frames.push({ state: g, label: cf.label });
+    prev = g;
+  }
+  return { meta: rep.meta, frames };
 }
 function mb(n: number): string { return (n / 1048576).toFixed(1); }
 function updateReplayProgress(loaded: number, total: number, note?: string): void {
