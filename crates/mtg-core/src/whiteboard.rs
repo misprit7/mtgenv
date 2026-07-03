@@ -614,15 +614,24 @@ impl EngineCore {
     /// matching its filter, narrowed to `[min, max]` (asking which when there are more than `max`).
     /// Returns empty if fewer than `min` candidates exist (the "for each of two …" can't be met).
     fn select_for_each(&mut self, selector: &SelectSpec, ctx: &ResolutionCtx) -> Vec<ObjId> {
-        let chooser = self.eval_player(selector.chooser, ctx);
         let min = self.eval_value(&selector.min, ctx).max(0) as usize;
         let max = self.eval_value(&selector.max, ctx).max(0) as usize;
-        let candidates: Vec<ObjId> = self
-            .state
-            .player(chooser)
-            .zone_ids(selector.zone)
+        // Which players' objects the selector spans, and who decides when there's a real choice.
+        // `EachPlayer` spans ALL players (an "each creature and planeswalker" area effect — Splatter
+        // Technique); every other `PlayerRef` is a single player who is both the source and the decider.
+        let (source_players, decider): (Vec<PlayerId>, PlayerId) = match selector.chooser {
+            PlayerRef::EachPlayer => (
+                (0..self.state.players.len() as u32).map(PlayerId).collect(),
+                ctx.controller.unwrap_or(PlayerId(0)),
+            ),
+            other => {
+                let p = self.eval_player(other, ctx);
+                (vec![p], p)
+            }
+        };
+        let candidates: Vec<ObjId> = source_players
             .iter()
-            .copied()
+            .flat_map(|&p| self.state.player(p).zone_ids(selector.zone).to_vec())
             .filter(|&id| self.count_filter_matches(id, &selector.filter))
             .collect();
         if candidates.len() < min {
@@ -640,7 +649,7 @@ impl EngineCore {
             description: "choose".into(),
         };
         let mut seen = std::collections::BTreeSet::new();
-        let idxs: Vec<usize> = match self.ask(chooser, &req) {
+        let idxs: Vec<usize> = match self.ask(decider, &req) {
             DecisionResponse::Indices(i) => i
                 .iter()
                 .map(|&x| x as usize)

@@ -93,6 +93,7 @@ pub mod spectacle_summit;
 pub mod stadium_tidalmage;
 pub mod stand_up_for_yourself;
 pub mod spirit_mascot;
+pub mod splatter_technique;
 pub mod startled_relic_sloth;
 pub mod stone_docent;
 pub mod stress_dream;
@@ -210,6 +211,7 @@ pub fn register(db: &mut CardDb) {
     stadium_tidalmage::register(db);
     stand_up_for_yourself::register(db);
     spirit_mascot::register(db);
+    splatter_technique::register(db);
     startled_relic_sloth::register(db);
     stone_docent::register(db);
     stress_dream::register(db);
