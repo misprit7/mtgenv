@@ -167,9 +167,12 @@ fn arena_default_stop(step: Phase, own_turn: bool) -> bool {
     matches!(step, Phase::PrecombatMain | Phase::PostcombatMain) && own_turn
 }
 
-/// The engine: full [`GameState`] plus one [`Agent`] per seat (indexed by `PlayerId.0`).
-/// All player choices flow through the agents; nothing else asks a player anything.
-pub struct Engine {
+/// The engine core: full [`GameState`] plus (transitionally) one [`Agent`] per seat (indexed by
+/// `PlayerId.0`). Being renamed from `Engine` as the first step of the resumable split
+/// (RESUMABLE_ENGINE.md M3.1): the game-logic methods live here and will run inside a fiber once
+/// the driver is separated in M3.2. `agents` is still held here for now (removed in M3.2 when
+/// `ask` yields to the driver instead of calling agents directly).
+pub struct EngineCore {
     pub state: GameState,
     agents: Vec<Box<dyn Agent>>,
     /// Append-only record of every public event broadcast this game (the same stream sent
@@ -200,6 +203,12 @@ pub struct Engine {
     /// touches these (auto-pass stays off), so the lock is uncontended there.
     stops: Vec<Arc<Mutex<StopConfig>>>,
 }
+
+/// Transitional alias kept while the resumable split lands (RESUMABLE_ENGINE.md M3.1→M3.2): the
+/// public name stays `Engine` so every `impl Engine` / `Engine::new` site (here, combat.rs,
+/// whiteboard.rs, and the mtg-cli/gre-server/py crates) keeps working unchanged. In M3.2 `Engine`
+/// becomes the distinct blocking driver `{ core: EngineCore, agents }` and this alias is dropped.
+pub type Engine = EngineCore;
 
 impl Engine {
     /// `agents` must have one entry per seat in `state`, in `PlayerId` order.
