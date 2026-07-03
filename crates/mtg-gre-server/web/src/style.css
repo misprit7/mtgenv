@@ -305,8 +305,9 @@
   #selfSlot:empty { display: none; }
 
   /* ── mobile reflow (iPhone portrait ~390×844; landscape secondary) ──────────────
-     Everything is scoped to narrow viewports; the desktop layout above is untouched. */
-  @media (max-width: 760px) {
+     Scoped to narrow OR short viewports so a phone reflows in both orientations (landscape iPhone is
+     ~≤430px tall); real desktops (≥1000px wide AND tall) are untouched. */
+  @media (max-width: 760px), (max-height: 500px) {
     html, body { height: auto; }
     body { overflow: auto; }
     /* single column, whole page scrolls — kills the play-area-squeezed-between-two-sidebars complaint */
@@ -314,7 +315,7 @@
 
     /* compact, wrapping top bar + a Log toggle */
     .topbar { order: 0; flex-wrap: wrap; height: auto; gap: 4px 10px; padding: 6px 10px; }
-    .topbar a { padding: 3px 3px; }
+    .topbar a { padding: 4px 5px; }
     .logtoggle { display: inline-block; }
 
     /* flatten the rail so its opponent panel / phasebar / your panel become direct flex items we can
@@ -359,8 +360,8 @@
     body.show-log #log { display: block; }
 
     /* bigger touch targets */
-    .step .sdotrow { height: 34px; }
-    .step .sdot { width: 15px; height: 15px; }
+    .step .sdotrow { height: 36px; }
+    .step .sdot { width: 16px; height: 16px; }
     .decklist { min-width: 0; }
     button.opt, button.act, button.pass { padding: 9px 12px; }
     .pile { padding: 6px 5px; }

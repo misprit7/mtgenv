@@ -292,8 +292,9 @@ function toggleStop(phase: string, own: boolean, on: boolean): void {
   if (ws) ws.send(JSON.stringify({ type: "setStop", step: phase, own, on }));
 }
 
-// Narrow-viewport (mobile reflow) check — mirrors the `@media (max-width:760px)` breakpoint.
-function isMobile(): boolean { return window.matchMedia("(max-width: 760px)").matches; }
+// Mobile-reflow check — mirrors the `@media (max-width:760px),(max-height:500px)` breakpoint (narrow
+// OR short, so a phone counts in both orientations).
+function isMobile(): boolean { return window.matchMedia("(max-width: 760px), (max-height: 500px)").matches; }
 function renderRail(): void {
   const rail = $("rail");
   rail.innerHTML = "";
