@@ -196,10 +196,10 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Chase Inspiration | - | `sos` | ✅ done | pump + grant hexproof |
 | Chelonian Tackle | - | `sos` | ✅ done | pump + fight up to one |
 | Colossus of the Blood Age | - | `sos` | ⏳ | ETB drain + dies rummage draw |
-| Cost of Brilliance | - | `sos` | ⏳ | draw, lose life, counter |
+| Cost of Brilliance | - | `sos` | ✅ done | draw, lose life, counter |
 | Deathcap Glade | - | `vow` | ✅ done | checkland conditional tap + mana |
 | Dina's Guidance | - | `sos` | ⏳ | search creature to hand/graveyard |
-| Dissection Practice | - | `sos` | ⏳ | drain + pump modal, all IR |
+| Dissection Practice | - | `sos` | ✅ done | drain + pump modal, all IR |
 | Divergent Equation | - | `sos` | ⏳ | X return instant/sorcery cards, exile self |
 | Dreamroot Cascade | - | `vow` | ✅ done | checkland conditional tap + mana |
 | Eager Glyphmage | - | `sos` | ✅ done | ETB Inkling keyword token |
