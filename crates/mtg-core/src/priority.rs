@@ -711,7 +711,7 @@ impl Engine {
 
     // ── steps & turn-based actions ────────────────────────────────────────────────────────
 
-    fn run_step(&mut self, step: Phase) {
+    pub(crate) fn run_step(&mut self, step: Phase) {
         self.state.phase = step;
         let ev = GameEvent::PhaseBegan {
             turn: self.state.turn_number,
@@ -741,8 +741,25 @@ impl Engine {
                 let ap = self.state.active_player;
                 let perms = self.state.player(ap).battlefield.clone();
                 for id in perms {
+                    let stun = match self.state.objects.get(&id) {
+                        Some(o) if o.status.tapped => o.counters.get(&CounterKind::Stun),
+                        _ => continue, // already untapped → nothing to do
+                    };
                     if let Some(o) = self.state.objects.get_mut(&id) {
-                        o.status.tapped = false;
+                        if stun > 0 {
+                            // Stun counters (CR 702.171): a permanent that would untap instead has a
+                            // stun counter removed and stays tapped.
+                            match stun - 1 {
+                                0 => {
+                                    o.counters.counts.remove(&CounterKind::Stun);
+                                }
+                                rem => {
+                                    o.counters.counts.insert(CounterKind::Stun, rem);
+                                }
+                            }
+                        } else {
+                            o.status.tapped = false;
+                        }
                     }
                 }
             }

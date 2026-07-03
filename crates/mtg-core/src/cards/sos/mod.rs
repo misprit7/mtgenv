@@ -47,6 +47,7 @@ pub mod pest_mascot;
 pub mod planar_engineering;
 pub mod poisoners_apprentice;
 pub mod primary_research;
+pub mod procrastinate;
 pub mod proctors_gaze;
 pub mod rapturous_moment;
 pub mod rearing_embermare;
@@ -121,6 +122,7 @@ pub fn register(db: &mut CardDb) {
     planar_engineering::register(db);
     poisoners_apprentice::register(db);
     primary_research::register(db);
+    procrastinate::register(db);
     proctors_gaze::register(db);
     rapturous_moment::register(db);
     rearing_embermare::register(db);
