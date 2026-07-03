@@ -9,7 +9,7 @@
 //! is dealt simultaneously (CR 510.2), then the agenda's SBAs (sba.rs) destroy creatures
 //! with lethal damage.
 //!
-//! The data types ([`CombatState`]) live in `GameState`; the step logic is `impl Engine`.
+//! The data types ([`CombatState`]) live in `GameState`; the step logic is `impl EngineCore`.
 
 use serde::{Deserialize, Serialize};
 
@@ -20,7 +20,7 @@ use crate::basics::{CardType, DamageKind, Target, Zone};
 use crate::effects::ability::{Keyword, Qualification};
 use crate::effects::action::{Action, ResolutionCtx, Whiteboard, WbReason};
 use crate::ids::{ObjId, PlayerId};
-use crate::priority::Engine;
+use crate::priority::EngineCore;
 
 /// One declared attack (CR 508): a creature and what it is attacking.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -65,7 +65,7 @@ impl CombatState {
     }
 }
 
-impl Engine {
+impl EngineCore {
     /// The non-active player in a two-player game (the defender).
     pub(crate) fn opponent_of(&self, p: PlayerId) -> PlayerId {
         self.state
@@ -530,6 +530,9 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    // The public engine type (the alias for `EngineCore` today; the blocking driver wrapper after
+    // the M3 agent-removal split). Tests construct games via `Engine::new(state, agents)`.
+    use crate::priority::Engine;
     use crate::agent::{Agent, DecisionRequest, DecisionResponse, PlayerView, RandomAgent};
     use crate::basics::Zone;
     use crate::cards::{self, grp};
