@@ -1,7 +1,7 @@
 //! `mtg_py` — the PyO3 extension module: a thin Python handle ([`PyGame`]) over the `mtg-core`
-//! `Agent` boundary (GYM_PLAN L3). **No rules logic lives here** (repo law) — the engine runs on
-//! its own thread ([`game`]) and this crate only ferries decisions across the FFI seam, projecting
-//! each through the swappable observation encoder ([`obs`]) and action codec ([`codec`]).
+//! `Agent` boundary (GYM_PLAN L3). **No rules logic lives here** (repo law) — the engine runs as a
+//! resumable [`Session`] ([`game`]) and this crate only ferries decisions across the FFI seam,
+//! projecting each through the swappable observation encoder ([`obs`]) and action codec ([`codec`]).
 //!
 //! Python surface (GYM_PLAN §2.3), all on `PyGame`:
 //! - `reset(seed) -> StepTuple` — start a fresh game, advance to the first decision (sub-step)
@@ -29,28 +29,32 @@ use pyo3::types::PyDict;
 
 use mtg_core::agent::DecisionRequest;
 use mtg_core::replay::Replay;
+use mtg_core::session::{Session, Step};
 
 use codec::Interaction;
-use game::{Deck, FromGame, GameConn};
+use game::{start_session, Deck};
 
 /// `(obs_dict, mask, seat, request_name, num_legal, terminal)`.
 type StepTuple = (PyObject, Vec<bool>, i64, String, usize, bool);
 
-/// A single in-process game, driven pull-style from Python. Owns the game thread (`conn`), the
-/// request receiver (`from_game`, owned here so it can be moved into the GIL-released blocking
-/// recv — `std`'s channels are `Send` but `!Sync`), and the in-flight decision's autoregressive
+/// A single in-process game, driven pull-style from Python via a resumable [`Session`] (M3): each
+/// engine decision is reached by [`Session::resume`] and answered by [`Session::submit`], so no OS
+/// thread or channels are involved. Holds the live session + the in-flight decision's autoregressive
 /// [`Interaction`].
 ///
-/// `unsendable`: this handle owns OS threads + channel ends, so it is pinned to its creating thread
-/// (PyO3 raises if touched from another) — the normal one-env-per-thread / per-subprocess Gym use.
+/// `unsendable`: a `Session` runs a stackful fiber pinned to its creating thread, so this handle is
+/// too (PyO3 raises if touched from another) — the normal one-env-per-thread / per-subprocess Gym use.
 #[pyclass(unsendable)]
 pub struct PyGame {
     deck: Deck,
     auto_pass: bool,
     record_replay: bool,
     replay_step: u64,
-    conn: Option<GameConn>,
-    from_game: Option<std::sync::mpsc::Receiver<FromGame>>,
+    /// The live resumable game (`None` before `reset`). Advanced by `resume`, answered by `submit`.
+    session: Option<Session>,
+    /// Object count at game start, captured by `start_session` — a `Session` yields the outcome +
+    /// final state but not the initial count, which `end_summary_from` needs for the conservation check.
+    initial_object_count: usize,
     /// The current engine decision, decomposed into factored sub-steps. `Some` while a decision is
     /// in flight (possibly mid-autoregression); cleared when its response is committed.
     interaction: Option<Interaction>,
@@ -82,8 +86,8 @@ impl PyGame {
             auto_pass,
             record_replay,
             replay_step,
-            conn: None,
-            from_game: None,
+            session: None,
+            initial_object_count: 0,
             interaction: None,
             seat: -1,
             terminal: false,
@@ -102,8 +106,7 @@ impl PyGame {
     /// Tear down any running game, start a fresh one for `seed`, and advance to the first decision
     /// sub-step.
     fn reset(&mut self, py: Python<'_>, seed: u64) -> PyResult<StepTuple> {
-        self.conn = None;
-        self.from_game = None;
+        self.session = None; // drop the old fiber (frees its stack) before starting a fresh game
         self.interaction = None;
         self.seat = -1;
         self.terminal = false;
@@ -111,10 +114,10 @@ impl PyGame {
         self.replay = None;
         self.last_stats.clear();
 
-        let (conn, from_game) =
-            GameConn::spawn(self.deck, seed, self.auto_pass, self.record_replay, self.replay_step);
-        self.conn = Some(conn);
-        self.from_game = Some(from_game);
+        let (session, initial_object_count) =
+            start_session(self.deck, seed, self.auto_pass, self.record_replay, self.replay_step);
+        self.session = Some(session);
+        self.initial_object_count = initial_object_count;
         self.advance(py)
     }
 
@@ -140,10 +143,8 @@ impl PyGame {
             // so the next advance pulls anew.
             let stats = decision_stats::summarize(inter.req(), &resp);
             self.last_stats = stats.into_iter().map(|(k, v)| (k.to_string(), v)).collect();
-            match &self.conn {
-                Some(conn) => {
-                    conn.respond(resp);
-                }
+            match &mut self.session {
+                Some(session) => session.submit(resp),
                 None => return Err(PyRuntimeError::new_err("apply() before reset()")),
             }
             self.interaction = None;
@@ -257,41 +258,42 @@ impl PyGame {
 }
 
 impl PyGame {
-    /// Either continue the in-flight decision's next sub-step (no game-thread round-trip) or, when
-    /// the previous decision committed, block (GIL released) for the next engine request.
+    /// Either continue the in-flight decision's next sub-step (no engine round-trip) or, when the
+    /// previous decision committed, `resume` the session to the next engine decision (or game-over).
     fn advance(&mut self, py: Python<'_>) -> PyResult<StepTuple> {
         // Continuation: an interaction is in flight and not yet committed → next sub-step.
         if self.interaction.is_some() {
             return Ok(self.decision_tuple(py));
         }
 
-        let rx = self
-            .from_game
-            .take()
-            .ok_or_else(|| PyRuntimeError::new_err("no game running (call reset() first)"))?;
-        let (rx, msg) = py.allow_threads(move || {
-            let m = rx.recv();
-            (rx, m)
-        });
-        self.from_game = Some(rx);
+        let step = self
+            .session
+            .as_mut()
+            .ok_or_else(|| PyRuntimeError::new_err("no game running (call reset() first)"))?
+            .resume();
 
-        match msg {
-            Ok(FromGame::Decision { seat, view, req }) => {
+        match step {
+            Step::Decision { seat, view, request } => {
                 self.seat = seat.0 as i64;
-                self.interaction = Some(Interaction::new(&view, &req));
+                self.interaction = Some(Interaction::new(&view, &request));
                 Ok(self.decision_tuple(py))
             }
-            Ok(FromGame::GameOver { summary, replay }) => {
+            Step::GameOver { outcome } => {
                 self.terminal = true;
+                // The finished session yields the outcome and exposes its final state; assemble the
+                // summary + drain the replay from those (initial_object_count was captured at build).
+                let (summary, replay) = {
+                    let session = self.session.as_ref().expect("session present after resume");
+                    let state = session.state().expect("finished session exposes its state");
+                    let summary =
+                        game::end_summary_from(&outcome, state, self.initial_object_count);
+                    let replay = if self.record_replay { session.replay() } else { None };
+                    (summary, replay)
+                };
                 self.summary = Some(summary);
                 self.replay = replay;
                 self.interaction = None;
                 Ok(self.terminal_tuple(py, "GameOver"))
-            }
-            Err(_) => {
-                self.terminal = true;
-                self.interaction = None;
-                Ok(self.terminal_tuple(py, "Closed"))
             }
         }
     }
