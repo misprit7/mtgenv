@@ -57,6 +57,10 @@ REGISTRY: list[StatDef] = [
     # squanders a priority window. It's OR-combined per window in decision_stats.rs (not derivable
     # from the summed cast/land/activate fields), which is why it needs its own record fields.
     StatDef("productive_rate", _ratio("productive_taken", "productive_legal")),
+    # Fraction of blocked attackers that were DOUBLE-blocked (≥2 blockers ganging one attacker). On a
+    # trample deck (swine) this is the sophisticated play — gang the 3/3 instead of chumping it — so it
+    # separates "single-block everything" (→0) from "gang the trampler" (→>0) even when block_rate=1.0.
+    StatDef("block_double_rate", _ratio("block_double", "attackers_blocked")),
 ]
 
 

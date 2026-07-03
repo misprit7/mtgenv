@@ -66,12 +66,36 @@ pub fn summarize(req: &DecisionRequest, resp: &DecisionResponse) -> Vec<(&'stati
             ("attack_eligible", eligible.len() as f64),
             ("attack_declared", declared(resp)),
         ],
-        Q::DeclareBlockers { eligible, .. } => vec![
-            ("block_eligible", eligible.len() as f64),
-            ("block_declared", declared(resp)),
-        ],
+        Q::DeclareBlockers { eligible, .. } => {
+            // Also the *shape* of the blocks: how many distinct attackers were blocked, and how many
+            // were DOUBLE-blocked (≥2 blockers ganging one attacker). Double-blocking is the
+            // sophisticated anti-trample play — two 2/2s kill a 3/3 Swine instead of one chumping into
+            // it — so `block_double` distinguishes "gang the trampler" from "single-block everything"
+            // even when `block_rate` is 1.0. Read off the response `Pairs` only (no game state).
+            let (attackers_blocked, block_double) = block_shape(resp);
+            vec![
+                ("block_eligible", eligible.len() as f64),
+                ("block_declared", declared(resp)),
+                ("attackers_blocked", attackers_blocked),
+                ("block_double", block_double),
+            ]
+        }
         _ => vec![],
     }
+}
+
+/// From a block response `Pairs((blocker, attacker))`: (# distinct attackers blocked, # attackers
+/// assigned ≥2 blockers). Data-only — groups by the attacker element, no characteristics needed.
+fn block_shape(resp: &DecisionResponse) -> (f64, f64) {
+    let mut per_attacker: std::collections::BTreeMap<u32, u32> = std::collections::BTreeMap::new();
+    if let DecisionResponse::Pairs(p) = resp {
+        for (_blocker, attacker) in p {
+            *per_attacker.entry(*attacker).or_insert(0) += 1;
+        }
+    }
+    let blocked = per_attacker.len() as f64;
+    let doubles = per_attacker.values().filter(|&&c| c >= 2).count() as f64;
+    (blocked, doubles)
 }
 
 /// How many declarers a combat response committed (the codec commits `Pairs`, one per declarer).
@@ -86,7 +110,7 @@ fn declared(resp: &DecisionResponse) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mtg_core::agent::{AttackerOption, CastVariant};
+    use mtg_core::agent::{AttackerOption, BlockerOption, CastVariant};
     use mtg_core::ids::ObjId;
 
     fn field(rec: &[(&'static str, f64)], key: &str) -> f64 {
@@ -134,5 +158,20 @@ mod tests {
         let rec = summarize(&req, &DecisionResponse::Pairs(vec![(0, 0), (1, 0)]));
         assert_eq!(field(&rec, "attack_eligible"), 3.0);
         assert_eq!(field(&rec, "attack_declared"), 2.0);
+    }
+
+    #[test]
+    fn blockers_shape_counts_double_blocks() {
+        let blk = |id| BlockerOption { creature: ObjId(id), may_block: vec![], required: false, block_cost: None };
+        let req = DecisionRequest::DeclareBlockers {
+            eligible: vec![blk(1), blk(2), blk(3)],
+            attackers: vec![ObjId(10), ObjId(11)],
+        };
+        // Pairs (blocker, attacker): blockers 0 & 1 gang attacker 0 (double-block), blocker 2 blocks attacker 1.
+        let rec = summarize(&req, &DecisionResponse::Pairs(vec![(0, 0), (1, 0), (2, 1)]));
+        assert_eq!(field(&rec, "block_eligible"), 3.0);
+        assert_eq!(field(&rec, "block_declared"), 3.0);
+        assert_eq!(field(&rec, "attackers_blocked"), 2.0); // attackers 0 and 1
+        assert_eq!(field(&rec, "block_double"), 1.0);      // only attacker 0 is ganged
     }
 }
