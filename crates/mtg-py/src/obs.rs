@@ -50,8 +50,13 @@ pub const NUM_REQUESTS: usize = 21;
 /// The two per-row decision flags every entity table carries (Tier 1): `is_decision_source`,
 /// `is_decision_candidate` for the *current* decision.
 pub const DECISION_FLAGS: usize = 2;
+/// Combat linkage (Tier 2): a per-permanent "blocked-by count" = how many blockers are ganging this
+/// attacker, counting both blocks committed in the engine AND blocks assigned so far in the current
+/// DeclareBlockers decision (pending). This is what makes deliberate double-blocking observable — the
+/// binary `blocking` flag flattens gang (≥2) vs single (1) away (CR 509). Appended, so no index shifts.
+pub const COMBAT_LINK: usize = 1;
 /// Per-battlefield-row feature width (excludes `grp_id`, which rides in `bf_ids`).
-pub const F_PERM: usize = 9 + N_CARD_TYPES + N_COLORS + N_KEYWORDS + 4 + DECISION_FLAGS;
+pub const F_PERM: usize = 9 + N_CARD_TYPES + N_COLORS + N_KEYWORDS + 4 + DECISION_FLAGS + COMBAT_LINK;
 /// Per-hand-row feature width.
 pub const F_HAND: usize = 3 + N_CARD_TYPES + N_COLORS + DECISION_FLAGS;
 /// Per-stack-row feature width.
@@ -97,11 +102,21 @@ pub fn spec() -> Vec<(&'static str, usize, usize, bool)> {
 }
 
 /// Encode `view` + the current request (and its legal-option count) into the structured [`Obs`].
-pub fn encode(view: &PlayerView, req: &DecisionRequest, num_legal: usize) -> Obs {
-    let di = decision_info(view, req);
+///
+/// `pending_blocks` / `block_source` come from the in-flight [`Interaction`](crate::codec::Interaction)
+/// (`pending_block_view`): the `(blocker, attacker)` pairs assigned so far in the current
+/// DeclareBlockers decision and the blocker being assigned. They surface mid-decision gang structure
+/// the frozen `view` snapshot can't; pass `(&[], None)` for any non-block decision.
+pub fn encode(view: &PlayerView, req: &DecisionRequest, num_legal: usize,
+              pending_blocks: &[(ObjId, ObjId)], block_source: Option<ObjId>) -> Obs {
+    let mut di = decision_info(view, req);
+    if let Some(src) = block_source {
+        di.src_objs.insert(src); // (Tier 2c) light is_decision_source on the blocker being assigned
+    }
+    let blocked_by = blocked_by_counts(view, pending_blocks);
     Obs {
         globals: encode_globals(view, req, num_legal, &di),
-        bf_feat: encode_battlefield(view, &di),
+        bf_feat: encode_battlefield(view, &di, &blocked_by),
         bf_ids: ids(&view.battlefield, MAX_PERM),
         hand_feat: encode_hand(view, req, &di),
         hand_ids: ids(&view.me.hand, MAX_HAND),
@@ -356,7 +371,27 @@ fn controller_of(o: &ObjView) -> Option<mtg_core::ids::PlayerId> {
     }
 }
 
-fn encode_battlefield(view: &PlayerView, di: &DecisionInfo) -> Vec<f32> {
+/// Per-attacker "blocked-by count": how many blockers gang each attacker, from BOTH the engine's
+/// committed blocks (`view.combat.blockers`) AND the blocks assigned so far in the current
+/// DeclareBlockers decision (`pending_blocks`, from the in-flight Interaction). During the decision the
+/// committed set is empty and pending fills up; after it commits, pending is empty and the committed
+/// set carries them — so the sum is right in both phases without double-counting.
+fn blocked_by_counts(view: &PlayerView, pending_blocks: &[(ObjId, ObjId)])
+    -> std::collections::BTreeMap<ObjId, u32> {
+    let mut m = std::collections::BTreeMap::new();
+    if let Some(c) = &view.combat {
+        for (_blk, atk) in &c.blockers {
+            *m.entry(*atk).or_insert(0) += 1;
+        }
+    }
+    for (_blk, atk) in pending_blocks {
+        *m.entry(*atk).or_insert(0) += 1;
+    }
+    m
+}
+
+fn encode_battlefield(view: &PlayerView, di: &DecisionInfo,
+                      blocked_by: &std::collections::BTreeMap<ObjId, u32>) -> Vec<f32> {
     let me = view.seat;
     let (attacking, blocking) = combat_sets(view);
     let mut out = Vec::with_capacity(MAX_PERM * F_PERM);
@@ -391,6 +426,8 @@ fn encode_battlefield(view: &PlayerView, di: &DecisionInfo) -> Vec<f32> {
                 out.push(blocking.contains(id) as u8 as f32);
                 out.push(di.src_objs.contains(id) as u8 as f32); // source of current decision
                 out.push(di.cand_objs.contains(id) as u8 as f32); // legal candidate of it
+                // (Tier 2) blocked-by count: blockers ganging this attacker (committed + pending).
+                out.push(*blocked_by.get(id).unwrap_or(&0) as f32);
             }
             ObjView::Hidden { .. } => {
                 // Hidden permanent (e.g. a face-down): present but featureless.
@@ -574,7 +611,7 @@ mod tests {
     #[test]
     fn shapes_match_spec_and_are_finite() {
         let req = DecisionRequest::Priority { actions: vec![], can_pass: true };
-        let o = encode(&view(), &req, 1);
+        let o = encode(&view(), &req, 1, &[], None);
         assert_eq!(o.globals.len(), G);
         assert_eq!(o.bf_feat.len(), MAX_PERM * F_PERM);
         assert_eq!(o.bf_ids.len(), MAX_PERM);
@@ -595,8 +632,9 @@ mod tests {
             assert!(rows * cols > 0);
         }
         // F_PERM / F_HAND / F_STACK pinned so a vocab edit that desyncs obs↔codec is caught.
-        // (Each grew by DECISION_FLAGS=2 for the Tier-1 source/candidate per-row flags.)
-        assert_eq!(F_PERM, 43);
+        // (Each grew by DECISION_FLAGS=2 for the Tier-1 source/candidate per-row flags; F_PERM grew a
+        // further COMBAT_LINK=1 for the Tier-2 per-attacker blocked-by count.)
+        assert_eq!(F_PERM, 44);
         assert_eq!(F_HAND, 18);
         assert_eq!(F_STACK, 18);
         assert_eq!(G, 69);
@@ -646,14 +684,15 @@ mod tests {
             }],
         };
 
-        let o = encode(&v, &req, 2);
+        let o = encode(&v, &req, 2, &[], None);
         // (a) source card identity = the spell's grp_id.
         assert_eq!(o.decision_ids, vec![555], "decision_ids carries the source spell's grp_id");
         // (b) the stack row (row 0) is flagged is_src (the last-but-one feature of F_STACK).
         assert_eq!(o.stack_feat[F_STACK - 2], 1.0, "source spell's stack row flagged is_src");
-        // (c) the creature row (row 0) is flagged is_cand (the last feature of F_PERM).
-        assert_eq!(o.bf_feat[F_PERM - 1], 1.0, "legal-target creature flagged is_cand");
-        assert_eq!(o.bf_feat[F_PERM - 2], 0.0, "the opponent's creature is not the source");
+        // (c) the creature row (row 0) is flagged is_cand (now the last-but-one feature of F_PERM —
+        // the Tier-2 blocked-by count is the new last feature).
+        assert_eq!(o.bf_feat[F_PERM - 2], 1.0, "legal-target creature flagged is_cand");
+        assert_eq!(o.bf_feat[F_PERM - 3], 0.0, "the opponent's creature is not the source");
         // and the opponent is a player-candidate (last global), self is not (second-last).
         assert_eq!(o.globals[G - 1], 1.0, "opponent is a legal player target");
         assert_eq!(o.globals[G - 2], 0.0, "self is not a legal target here");
@@ -710,10 +749,55 @@ mod tests {
             }],
         };
 
-        let o = encode(&v, &req, 1);
+        let o = encode(&v, &req, 1, &[], None);
         assert_eq!(o.decision_ids, vec![114], "source grp recovered from the off-stack trigger source");
-        // row 0 = the enchantment, flagged is_src (F_PERM-2); row 1 = the creature, flagged is_cand.
-        assert_eq!(o.bf_feat[F_PERM - 2], 1.0, "triggering permanent flagged is_src");
-        assert_eq!(o.bf_feat[2 * F_PERM - 1], 1.0, "target creature flagged is_cand");
+        // row 0 = the enchantment, flagged is_src (F_PERM-3); row 1 = the creature, flagged is_cand
+        // (F_PERM-2) — both shifted back one by the appended Tier-2 blocked-by count (the new last).
+        assert_eq!(o.bf_feat[F_PERM - 3], 1.0, "triggering permanent flagged is_src");
+        assert_eq!(o.bf_feat[2 * F_PERM - 2], 1.0, "target creature flagged is_cand");
+    }
+
+    /// Tier 2 — the learnability proof: the per-attacker blocked-by count on an attacker's row
+    /// distinguishes 0 (unblocked) / 1 (single-block) / 2 (GANGED). Without this the obs can't tell a
+    /// deliberate double-block from a chump single-block — the frozen view snapshot never shows the
+    /// pending assignments. `block_source` also lights is_decision_source on the blocker being assigned.
+    #[test]
+    fn blocked_by_count_makes_ganging_observable() {
+        use mtg_core::agent::{BlockerOption, CharacteristicsView};
+        use mtg_core::basics::Status;
+        use mtg_core::ids::ObjId;
+
+        let attacker = ObjId(30); // an opponent 3/3 trampler on the battlefield (row 0)
+        let blk_a = ObjId(10);
+        let blk_b = ObjId(11);
+        let mut v = view();
+        v.battlefield = vec![ObjView::Visible {
+            id: attacker,
+            chars: CharacteristicsView { grp_id: 300, power: Some(3), toughness: Some(3), ..Default::default() },
+            controller: PlayerId(1),
+            owner: PlayerId(1),
+            zone: mtg_core::basics::Zone::Battlefield,
+            status: Status::default(),
+            counters: CounterBag::default(),
+            damage_marked: 0,
+            attachments: vec![],
+            summoning_sick: false,
+        }];
+        let req = DecisionRequest::DeclareBlockers {
+            eligible: vec![
+                BlockerOption { creature: blk_a, may_block: vec![attacker], required: false, block_cost: None },
+                BlockerOption { creature: blk_b, may_block: vec![attacker], required: false, block_cost: None },
+            ],
+            attackers: vec![attacker],
+        };
+        let last = F_PERM - 1; // the appended blocked-by count is the last per-permanent feature
+
+        // No blocks assigned yet → 0 on the attacker's row.
+        assert_eq!(encode(&v, &req, 3, &[], None).bf_feat[last], 0.0, "unblocked → 0");
+        // One blocker → single-block → 1.
+        assert_eq!(encode(&v, &req, 3, &[(blk_a, attacker)], None).bf_feat[last], 1.0, "single → 1");
+        // TWO blockers ganging the SAME attacker (pending) → 2: double-blocking is now observable.
+        let o2 = encode(&v, &req, 3, &[(blk_a, attacker), (blk_b, attacker)], Some(blk_b));
+        assert_eq!(o2.bf_feat[last], 2.0, "pending gang → 2 (the double-block signal)");
     }
 }

@@ -170,7 +170,10 @@ fn encode_group(slots: &[GameSlot]) -> GroupBatch {
             None => b.mask.extend(std::iter::repeat(0u8).take(ad)),
         }
         // obs arrays (encode, or zero rows when terminal)
-        let o = slot.interaction.as_ref().map(|i| obs::encode(i.view(), i.req(), i.num_legal()));
+        let o = slot.interaction.as_ref().map(|i| {
+            let (pb, bs) = i.pending_block_view();
+            obs::encode(i.view(), i.req(), i.num_legal(), &pb, bs)
+        });
         match o {
             Some(o) => {
                 b.globals.extend_from_slice(&o.globals);

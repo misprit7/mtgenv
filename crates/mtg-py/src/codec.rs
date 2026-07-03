@@ -159,6 +159,30 @@ impl Interaction {
         self.legal_slots().len()
     }
 
+    /// In-flight DeclareBlockers state for the observation encoder: the `(blocker, attacker)` ObjId
+    /// pairs assigned SO FAR this decision (pending, not yet committed) plus the blocker currently
+    /// awaiting its attacker pick (the "decision source"). `(empty, None)` for every other state. Lets
+    /// the obs show pending gang structure the frozen `Interaction::new` view snapshot cannot — the
+    /// signal that makes deliberate double-blocking conditionable. Resolves `chosen`'s
+    /// `(blocker_idx, attacker_local_idx)` through `eligible[bi].may_block[ai]` (combat/mod.rs:280).
+    pub fn pending_block_view(&self) -> (Vec<(ObjId, ObjId)>, Option<ObjId>) {
+        if let (DecisionRequest::DeclareBlockers { eligible, .. },
+                IState::Blockers { chosen, pending_atk, .. }) = (&self.req, &self.state)
+        {
+            let pairs = chosen
+                .iter()
+                .filter_map(|&(bi, ai)| {
+                    let opt = eligible.get(bi as usize)?;
+                    Some((opt.creature, *opt.may_block.get(ai as usize)?))
+                })
+                .collect();
+            let source = pending_atk.and_then(|i| eligible.get(i as usize)).map(|o| o.creature);
+            (pairs, source)
+        } else {
+            (Vec::new(), None)
+        }
+    }
+
     pub fn mask(&self) -> Vec<bool> {
         let legal = self.legal_slots();
         let set: BTreeSet<usize> = legal.into_iter().collect();

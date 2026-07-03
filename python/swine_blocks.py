@@ -26,15 +26,16 @@ from mtgenv_gym import MtgEnv
 from mtgenv_gym.league import ModelOpponent
 
 _MY_LIFE = 16  # globals index (matches batched_selfplay._G_MY_LIFE)
-# bf_feat per-permanent columns (obs.rs): [0]=present [1]=is_mine [2]=power; the last four are
-# attacking / blocking / is_src / is_cand — so attacking = width-4. A swine is the only 3-power
-# creature in the deck (bears are 2/2), so an ENEMY attacking creature with power==3 is a trampler.
+# bf_feat per-permanent columns (obs.rs): [0]=present [1]=is_mine [2]=power; the tail is
+# attacking / blocking / is_src / is_cand / blocked_by_count — so attacking = width-5 (the Tier-2
+# blocked-by count is the new last feature). A swine is the only 3-power creature in the deck (bears
+# are 2/2), so an ENEMY attacking creature with power==3 is a trampler.
 _BF_PRESENT, _BF_MINE, _BF_POWER = 0, 1, 2
 
 
 def _swine_attacking(bf):
     """True if an ENEMY (is_mine=0) creature with power==3 is currently attacking (a trampling Swine)."""
-    atk = bf.shape[1] - 4
+    atk = bf.shape[1] - 5
     m = (bf[:, _BF_PRESENT] > 0.5) & (bf[:, _BF_MINE] < 0.5) & (bf[:, _BF_POWER] == 3) & (bf[:, atk] > 0.5)
     return bool(m.any())
 

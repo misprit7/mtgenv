@@ -304,7 +304,8 @@ impl PyGame {
         let inter = self.interaction.as_ref().expect("interaction present");
         let num_legal = inter.num_legal();
         let mask = inter.mask();
-        let o = obs::encode(inter.view(), inter.req(), num_legal);
+        let (pending_blocks, block_source) = inter.pending_block_view();
+        let o = obs::encode(inter.view(), inter.req(), num_legal, &pending_blocks, block_source);
         let obs_dict = obs_to_py(py, &o);
         let name = request_name(inter.req()).to_string();
         (obs_dict, mask, self.seat, name, num_legal, false)
