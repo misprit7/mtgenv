@@ -265,7 +265,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Archaic's Agony | S7,S15 | `sos` | ⏳ | Converge damage + impulse-play exiled cards |
 | Ark of Hunger | S9,S15 | `sos` | ⏳ | graveyard-leave trigger + impulse play |
 | Aziza, Mage Tower Captain | S14 | `sos` | ⏳ | copy your instant/sorcery spell |
-| Banishing Betrayal | S1 | `sos` | ⏳ | bounce + Surveil 1 |
+| Banishing Betrayal | S1 | `sos` | ✅ done | bounce + Surveil 1 |
 | Berta, Wise Extrapolator | S6 | `sos` | ⏳ | Increment + counters-placed mana trigger |
 | Blech, Loafing Pest | S16 | `sos` | ⏳ | whenever-you-gain-life counter trigger |
 | Brush Off | S12 | `sos` | ⏳ | conditional cost reduction if targets a spell |
@@ -326,7 +326,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Molten-Core Maestro | S5 | `sos` | ⏳ | Opus cast-trigger with mana-spent condition |
 | Moseo, Vein's New Dean | S4,S11 | `sos` | ⏳ | Pest token with ability + Infusion reanimate |
 | Muse Seeker | S5 | `sos` | ⏳ | Opus cast-trigger |
-| Muse's Encouragement | S1 | `sos` | ⏳ | surveil 2 (keyword-only token) |
+| Muse's Encouragement | S1 | `sos` | ✅ done | surveil 2 (keyword-only token) |
 | Old-Growth Educator | S4 | `sos` | ⏳ | Infusion gained-life-this-turn condition |
 | Orysa, Tide Choreographer | S12 | `sos` | ⏳ | conditional cost reduction on toughness |
 | Owlin Historian | S1,S9 | `sos` | ⏳ | surveil + cards-leave-graveyard trigger |
