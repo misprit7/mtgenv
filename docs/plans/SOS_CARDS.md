@@ -283,7 +283,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Elemental Mascot | S5,S15 | `sos` | ⏳ | Opus + impulse play top card |
 | Emil, Vastlands Roamer | DistinctNames | `sos` | ⏳ | X = differently-named lands you control |
 | End of the Hunt | GreatestMV | `sos` | ⏳ | select greatest-MV creature/pw |
-| Essenceknit Scholar | S11 | `sos` | ⏳ | Pest token with attack-lifegain ability |
+| Essenceknit Scholar | S11 | `sos` | ✅ done | Pest token with attack-lifegain ability |
 | Eternal Student | S18 | `sos` | ⏳ | {1}{B},exile-from-graveyard activated ability |
 | Exhibition Tidecaller | S5 | `sos` | ✅ done | Opus mill trigger, mana-spent threshold |
 | Expressive Firedancer | S5 | `sos` | ✅ done | Opus self-pump, mana-spent threshold |
