@@ -150,6 +150,11 @@ pub enum Effect {
         spec: TokenSpec,
         count: ValueExpr,
         controller: PlayerRef,
+        /// Counters whose count is computed at **resolution** and put on each created token (e.g.
+        /// "put X +1/+1 counters on it" — the Quandrix Fractal pattern). Each `(kind, n)` is
+        /// evaluated ctx-aware and merged onto the token's `spec.counters` when it's created. Empty
+        /// for fixed-counter / no-counter tokens (which use `spec.counters` directly).
+        dynamic_counters: Vec<(CounterKind, ValueExpr)>,
     },
     /// Create a token that's a **copy** of a permanent (CR 707.9e / 111.3). The copy snapshots the
     /// `source`'s copiable characteristics (its base `chars` — name, types, colours, P/T, and its

@@ -4643,6 +4643,7 @@ mod expect_tests {
                 },
                 count: ValueExpr::Fixed(2),
                 controller: PlayerRef::Controller,
+                dynamic_counters: Vec::new(),
             },
             &ResolutionCtx { controller: Some(PlayerId(0)), ..Default::default() },
             WbReason::Resolve(crate::ids::StackId(0)),
@@ -5643,6 +5644,7 @@ mod expect_tests {
                     },
                     count: ValueExpr::Fixed(1),
                     controller: PlayerRef::Controller,
+                    dynamic_counters: Vec::new(),
                 },
             ])),
         };

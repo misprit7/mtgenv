@@ -20,6 +20,7 @@ pub fn register(db: &mut CardDb) {
             spec: elemental_token(),
             count: ValueExpr::Fixed(1),
             controller: PlayerRef::Controller,
+            dynamic_counters: Vec::new(),
         },
         Effect::Surveil { count: ValueExpr::Fixed(2) },
     ]);
@@ -77,6 +78,7 @@ mod tests {
                             1,
                         ),
                         controller: Controller,
+                        dynamic_counters: [],
                     },
                     Surveil {
                         count: Fixed(

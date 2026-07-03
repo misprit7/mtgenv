@@ -33,7 +33,7 @@ pub fn register(db: &mut CardDb) {
                 event: EventPattern::SelfEnters,
                 condition: None,
                 intervening_if: false,
-                effect: Effect::CreateToken { spec: pest_token(), count: ValueExpr::Fixed(1), controller: PlayerRef::Controller },
+                effect: Effect::CreateToken { spec: pest_token(), count: ValueExpr::Fixed(1), controller: PlayerRef::Controller, dynamic_counters: Vec::new() },
             },
             Ability::Triggered {
                 event: EventPattern::BeginningOfStep(Phase::End),

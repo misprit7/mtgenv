@@ -36,6 +36,7 @@ pub fn register(db: &mut CardDb) {
                     spec: inkling_token(),
                     count: ValueExpr::Fixed(2),
                     controller: PlayerRef::Controller,
+                    dynamic_counters: Vec::new(),
                 },
                 timing: Timing::Instant,
                 restriction: None,

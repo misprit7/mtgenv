@@ -30,6 +30,7 @@ pub fn register(db: &mut CardDb) {
                 spec: fractal_token(3),
                 count: ValueExpr::Fixed(1),
                 controller: PlayerRef::Controller,
+                dynamic_counters: Vec::new(),
             },
         },
         Ability::Triggered {
@@ -108,6 +109,7 @@ mod tests {
                             1,
                         ),
                         controller: Controller,
+                        dynamic_counters: [],
                     },
                 },
                 Triggered {

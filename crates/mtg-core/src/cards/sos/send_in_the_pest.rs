@@ -18,7 +18,7 @@ pub const SEND_IN_THE_PEST: u32 = 290;
 pub fn register(db: &mut CardDb) {
     let effect = Effect::Sequence(vec![
         Effect::Discard { who: PlayerRef::EachOpponent, count: ValueExpr::Fixed(1) },
-        Effect::CreateToken { spec: pest_token(), count: ValueExpr::Fixed(1), controller: PlayerRef::Controller },
+        Effect::CreateToken { spec: pest_token(), count: ValueExpr::Fixed(1), controller: PlayerRef::Controller, dynamic_counters: Vec::new() },
     ]);
     db.insert(
         spell(SEND_IN_THE_PEST, "Send in the Pest", CardType::Sorcery, Color::Black, mana_cost(1, &[(Color::Black, 1)]), effect)

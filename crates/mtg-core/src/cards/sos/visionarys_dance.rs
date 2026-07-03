@@ -26,7 +26,7 @@ pub fn register(db: &mut CardDb) {
         CardType::Sorcery,
         Color::Blue,
         mana_cost(5, &[(Color::Blue, 1), (Color::Red, 1)]),
-        Effect::CreateToken { spec: elemental_token(), count: ValueExpr::Fixed(2), controller: PlayerRef::Controller },
+        Effect::CreateToken { spec: elemental_token(), count: ValueExpr::Fixed(2), controller: PlayerRef::Controller, dynamic_counters: Vec::new() },
     )
     .with_text("Create two 3/3 blue and red Elemental creature tokens with flying.\n{2}, Discard this card: Look at the top two cards of your library. Put one of them into your hand and the other into your graveyard.");
     def.chars.colors = vec![Color::Blue, Color::Red];

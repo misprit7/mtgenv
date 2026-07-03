@@ -119,6 +119,7 @@ pub mod vibrant_outburst;
 pub mod visionarys_dance;
 pub mod wildgrowth_archaic;
 pub mod wander_off;
+pub mod wild_hypothesis;
 pub mod witherbloom_charm;
 pub mod zealous_lorecaster;
 
@@ -239,6 +240,7 @@ pub fn register(db: &mut CardDb) {
     vibrant_outburst::register(db);
     visionarys_dance::register(db);
     wander_off::register(db);
+    wild_hypothesis::register(db);
     wildgrowth_archaic::register(db);
     witherbloom_charm::register(db);
     zealous_lorecaster::register(db);

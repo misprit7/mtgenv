@@ -1071,9 +1071,19 @@ impl EngineCore {
                 }
             }
             // C6: create N copies of a token (CR 111).
-            Effect::CreateToken { spec, count, controller } => {
+            Effect::CreateToken { spec, count, controller, dynamic_counters } => {
                 let count = self.eval_value(count, ctx).max(0) as u32;
                 let controller = self.eval_player(*controller, ctx);
+                // Bake resolution-time counter counts (e.g. "X +1/+1 counters on it") onto the token's
+                // spec, so each created token enters with them (CR 614.1e / 111.4). Fixed-counter
+                // tokens leave `dynamic_counters` empty and keep only `spec.counters`.
+                let mut spec = spec.clone();
+                for (kind, n) in dynamic_counters {
+                    let n = self.eval_value(n, ctx).max(0);
+                    if n > 0 {
+                        spec.counters.push((kind.clone(), n as u32));
+                    }
+                }
                 for _ in 0..count {
                     wb.push(Action::CreateToken {
                         spec: spec.clone(),

@@ -31,6 +31,7 @@ pub fn register(db: &mut CardDb) {
             spec: inkling_token(),
             count: ValueExpr::Fixed(1),
             controller: PlayerRef::ControllerOfTarget(0),
+            dynamic_counters: Vec::new(),
         },
     ]);
     db.insert(
@@ -101,6 +102,7 @@ mod tests {
                         controller: ControllerOfTarget(
                             0,
                         ),
+                        dynamic_counters: [],
                     },
                 ],
             )"#]].assert_eq(&format!("{:#?}", def.spell_effect().unwrap()));

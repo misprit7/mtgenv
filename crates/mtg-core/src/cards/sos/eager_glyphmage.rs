@@ -35,6 +35,7 @@ pub fn register(db: &mut CardDb) {
                     spec: inkling_token(),
                     count: ValueExpr::Fixed(1),
                     controller: PlayerRef::Controller,
+                    dynamic_counters: Vec::new(),
                 },
             }],
         )
@@ -87,6 +88,7 @@ mod tests {
                             1,
                         ),
                         controller: Controller,
+                        dynamic_counters: [],
                     },
                 },
             ]"#]].assert_eq(&format!("{:#?}", def.abilities));

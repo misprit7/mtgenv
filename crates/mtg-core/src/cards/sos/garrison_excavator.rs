@@ -29,7 +29,7 @@ pub fn register(db: &mut CardDb) {
             event: EventPattern::CardsLeaveYourGraveyard,
             condition: None,
             intervening_if: false,
-            effect: Effect::CreateToken { spec: spirit_token(), count: ValueExpr::Fixed(1), controller: PlayerRef::Controller },
+            effect: Effect::CreateToken { spec: spirit_token(), count: ValueExpr::Fixed(1), controller: PlayerRef::Controller, dynamic_counters: Vec::new() },
         }],
     );
     def.chars.keywords = vec![Keyword::Menace];

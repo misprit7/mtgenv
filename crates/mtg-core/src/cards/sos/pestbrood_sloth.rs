@@ -30,7 +30,7 @@ pub fn register(db: &mut CardDb) {
             event: EventPattern::SelfDies,
             condition: None,
             intervening_if: false,
-            effect: Effect::CreateToken { spec: pest_token(), count: ValueExpr::Fixed(2), controller: PlayerRef::Controller },
+            effect: Effect::CreateToken { spec: pest_token(), count: ValueExpr::Fixed(2), controller: PlayerRef::Controller, dynamic_counters: Vec::new() },
         }],
     );
     def.chars.keywords = vec![Keyword::Reach];
@@ -81,6 +81,7 @@ mod tests {
                             2,
                         ),
                         controller: Controller,
+                        dynamic_counters: [],
                     },
                 },
             ]"#]].assert_eq(&format!("{:#?}", def.abilities));
