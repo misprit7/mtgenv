@@ -100,6 +100,9 @@ class MtgSwineEnv(BaseEnv):
             'observation': self._flatten(obs_dict),
             'action_mask': self._mask.copy(),
             'to_play': -1,
+            # LightZero's collector/evaluator read a `timestep` from the obs (temporal models). It is
+            # unused by Stochastic MuZero; -1 matches the framework's own default (silences a warning).
+            'timestep': -1,
         }
 
     # ── BaseEnv API ─────────────────────────────────────────────────────────────────────────
@@ -128,7 +131,9 @@ class MtgSwineEnv(BaseEnv):
         self._final_eval_reward += float(reward)
 
         lz_obs = self._lz_obs(obs_dict, info['action_mask'])
-        rew = to_ndarray([float(reward)]).astype(np.float32)
+        # Reward must be a 0-d scalar array (not shape (1,)): the buffer pads with np.array(0.) and
+        # np.asarray of mixed (1,)+() shapes is inhomogeneous -> crash in _compute_target_reward_value.
+        rew = to_ndarray(float(reward)).astype(np.float32)
         out_info = {}
         if done:
             out_info['eval_episode_return'] = self._final_eval_reward

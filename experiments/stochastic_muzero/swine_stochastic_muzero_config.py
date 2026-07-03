@@ -17,6 +17,8 @@ from __future__ import annotations
 import sys
 from easydict import EasyDict
 
+import lz_patches  # noqa: F401  — monkeypatches LightZero v0.2.0 stochastic-muzero bugs on import
+
 SMOKE = "--smoke" in sys.argv
 
 # ── swine env-measured dims (see README M0) ──────────────────────────────────────────────────
@@ -68,6 +70,12 @@ swine_stochastic_muzero_config = dict(
         model_path=None,
         cuda=True,
         env_type='not_board_games',
+        # CRITICAL for our masked, factored action space: the set of legal actions varies per node
+        # (2..98). 'fixed_action_space' (the default, for Atari) stores raw variable-length MCTS visit
+        # distributions -> inhomogeneous policy-target array -> crash. 'varied_action_space' scatters
+        # each distribution into a fixed length-98 vector via the legal-action indices. (Same setting
+        # LightZero's board-game configs use.)
+        action_type='varied_action_space',
         game_segment_length=200,
         num_simulations=num_simulations,
         reanalyze_ratio=reanalyze_ratio,

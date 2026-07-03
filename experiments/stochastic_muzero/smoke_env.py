@@ -27,7 +27,7 @@ def main():
 
     # (2) reset returns the LightZero obs dict.
     obs = env.reset()
-    assert set(obs.keys()) == {'observation', 'action_mask', 'to_play'}, obs.keys()
+    assert set(obs.keys()) == {'observation', 'action_mask', 'to_play', 'timestep'}, obs.keys()
     assert obs['observation'].shape == (env.observation_space.shape[0],)
     assert obs['action_mask'].shape == (env.action_space.n,)
     assert obs['to_play'] == -1

@@ -7,7 +7,9 @@ has a known, stubborn failure (it chump-blocks the trampling 3/3 even at high li
 Everything here is **isolated**: this dir has its own venv, README, and `.gitignore`. It only
 *reads/imports* `python/mtgenv_gym/` and `crates/` — it never modifies them.
 
-> Status: **M0 (feasibility) — DONE, verdict GO.** See "M0 verdict" below. M1 (adapter) next.
+> Status: **M0 feasibility ✅ · M1 adapter ✅ · M2 smoke-train ✅** (full Stochastic-MuZero
+> pipeline trains end-to-end on swine with sane losses). **M3 (real GPU run) is next — needs the
+> lead's GPU go-ahead.**
 
 ---
 
@@ -147,6 +149,41 @@ Swine from a 2/2 Bear. (A structured/CNN encoder is a later refinement; v1 uses 
 
 ---
 
+## Files
+
+| File | What it is |
+|---|---|
+| `swine_lightzero_env.py` | `MtgSwineEnv(BaseEnv)` — wraps `MtgEnv`, flattens obs → 2650 vec, emits `{observation, action_mask, to_play=-1, timestep=-1}`. |
+| `swine_stochastic_muzero_config.py` | Stochastic MuZero **MLP** main/create config. `--smoke` = tiny; default = M3 real. Run it to train. |
+| `lz_patches.py` | In-memory monkeypatch for a LightZero v0.2.0 stochastic-muzero bug (see below). Imported by the config. |
+| `smoke_env.py` / `smoke_model.py` | M1 wiring checks (env reset/step; model forward at swine dims). |
+
+## Integration fixes discovered during M1/M2 (so a masked, factored, single-agent env trains)
+
+Three concrete things were needed to make LightZero's Stochastic MuZero accept this env — all are
+adapter-side (no engine changes), documented so the result is reproducible:
+
+1. **`action_type='varied_action_space'`** (policy config) — **the important one.** Our legal-action
+   set varies per node (2..98). The default `'fixed_action_space'` (Atari) stores raw
+   variable-length MCTS visit distributions → the policy-target array is inhomogeneous → crash. The
+   `varied_action_space` path scatters each distribution into a fixed length-98 vector via the
+   legal-action indices (the same setting LightZero's own board-game configs use).
+2. **Scalar (0-d) step reward** — the env must return `to_ndarray(float(r))`, not shape `(1,)`. The
+   replay buffer pads reward targets with `np.array(0.)` (0-d); mixing `(1,)` + `()` → inhomogeneous.
+3. **`lz_patches.py` — `timestep` kwarg drift (a genuine LightZero v0.2.0 bug).** The
+   collector/evaluator call `policy.forward(..., timestep=...)`; `MuZeroPolicy` absorbs it via
+   `**kwargs` but `StochasticMuZeroPolicy._forward_collect/_forward_eval` were never given `**kwargs`,
+   so they crash. `timestep` isn't used inside `forward` for stochastic muzero, so the patch just
+   drops it before delegating. (We also add `timestep=-1` to the obs dict to silence a benign warning.)
+
+## M2 smoke result (CPU, `--smoke`, no GPU)
+
+Full pipeline (collector + C++ ctree MCTS + VQ chance encoder + learner + replay buffer) trains
+end-to-end, exit 0, 36 train iterations, checkpoints saved. First-iter losses finite & typical for
+MuZero-with-categorical-support at init: `total 86.7`, `policy 26.4`, `reward 32.0`, `value 38.4`,
+`consistency ≈0`, and the **stochastic-specific `afterstate_policy_loss` / `afterstate_value_loss` /
+`commitment_loss` all present** — i.e. the afterstate/chance machinery is actually engaged. No NaN/inf.
+
 ## Environment setup
 
 ```bash
@@ -170,11 +207,11 @@ interfere. `mtg_py` (abi3) is import-compatible with both.
 
 - **M0 — feasibility** ✅ GO. LightZero installs & imports (incl. C++ stochastic MCTS) in an
   isolated Py3.11 venv; `mtg_py` is abi3 so it drops in; dims measured (obs 2650, actions 98).
-- **M1 — adapter.** `SwineLightZeroEnv(BaseEnv)` wrapping `MtgEnv`: flatten obs → 2650 vec,
-  surface `action_mask`, `to_play=-1`, single-agent vs random/frozen opponent. Build+install the
-  engine wheel here. Smoke that LightZero can `reset/step` it.
-- **M2 — smoke train.** Tiny config (few sims, small net) trains on swine without crashing; loss
-  curves sane. CPU or brief GPU.
+- **M1 — adapter.** ✅ `MtgSwineEnv(BaseEnv)` wrapping `MtgEnv`: flatten obs → 2650 vec, surface
+  `action_mask`, `to_play=-1`, single-agent vs random opponent. Engine wheel built+installed here.
+  Env + model wiring smokes pass.
+- **M2 — smoke train.** ✅ Tiny config trains end-to-end on swine (CPU), no crash, losses sane,
+  checkpoints saved. Needed the 3 integration fixes above.
 - **M3 — real run** (GPU, coordinate via lead). Comparable-budget run (a few hours; note: matching
   PPO 500k ≈ 20 min wall-clock is likely too little for MuZero — budget documented honestly).
   Versioned TB run.
