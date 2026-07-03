@@ -390,7 +390,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Ulna Alley Shopkeep | S4 | `sos` | ✅ done | Infusion: gained-life-this-turn condition |
 | Unsubtle Mockery | S1 | `sos` | ✅ done | damage plus surveil 1 |
 | Vicious Rivalry | PayXLife | `sos` | ⏳ | additional cost pay X life; destroy MV<=X |
-| Visionary's Dance | S2 | `sos` | ⏳ | look-and-pick top two |
+| Visionary's Dance | S2 | `sos` | ✅ done | look-and-pick top two |
 | Wild Hypothesis | S1 | `sos` | ⏳ | Fractal token; surveil 2 |
 | Wildgrowth Archaic | S7 | `sos` | ⏳ | converge, colors of mana spent |
 | Wilt in the Heat | S9,S12 | `sos` | ⏳ | graveyard-leave conditional cost reduction |
