@@ -21,6 +21,8 @@ pub mod conditions;
 pub mod stack;
 pub mod turn;
 pub mod priority;
+/// The resumable step API (M3) — the pull primitive `Session`/`Step`. See RESUMABLE_ENGINE.md.
+pub mod session;
 pub mod whiteboard;
 pub mod events;
 /// Replay + omniscient-spectating contract (GodView/Replay serde types). See REPLAY_PLAN.md.
