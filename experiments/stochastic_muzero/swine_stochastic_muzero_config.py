@@ -27,7 +27,9 @@ SUBPROCESS = "--subprocess" in sys.argv
 # same one PPO uses) + a search-depth bump, to escape the "value=-0.8 everywhere" basin the pure
 # sparse-reward run fell into. Policy-invariant; eval is still raw ±1. Separate TB run (3.1).
 SHAPING = "--shaping" in sys.argv
-REWARD_SHAPING = 0.3 if SHAPING else 0.0
+# coef 0.1 = the gym's OWN proven PBRS coefficient (batched_selfplay), validated vs 583k real games
+# and matching what PPO trains with (keeps the comparison fair). Constant (no anneal) at this budget.
+REWARD_SHAPING = 0.1 if SHAPING else 0.0
 
 # ── swine env-measured dims (see README M0) ──────────────────────────────────────────────────
 OBS_DIM = 2650          # flattened Dict obs (1966 spec + 684 card-id one-hots)
