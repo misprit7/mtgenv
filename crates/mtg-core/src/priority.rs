@@ -2237,8 +2237,12 @@ impl Engine {
                         _ => None,
                     })
                 });
+                // CR 603.4: re-check the intervening-if as the trigger resolves; if it no longer
+                // holds, the ability does nothing (but still leaves the stack).
                 if let (Some(effect), Some(src)) = (effect, obj.source) {
-                    if self.targets_still_legal(&obj.targets, &target_specs_for(&effect, &obj.modes)) {
+                    if self.trigger_intervening_if_holds(&obj)
+                        && self.targets_still_legal(&obj.targets, &target_specs_for(&effect, &obj.modes))
+                    {
                         let ctx = ResolutionCtx {
                             controller: Some(obj.controller),
                             source: Some(src),
@@ -2485,6 +2489,11 @@ impl Engine {
     }
 
     fn put_trigger_on_stack(&mut self, mut t: StackObject) {
+        // CR 603.4: an intervening-if is re-checked as the trigger would be put on the stack; if it
+        // no longer holds, the trigger is removed (does nothing).
+        if !self.trigger_intervening_if_holds(&t) {
+            return;
+        }
         let effect = match (t.source, &t.kind) {
             (Some(src), StackObjectKind::Ability { index }) => {
                 self.state.def_of(src).and_then(|d| match d.abilities.get(*index as usize) {
@@ -2752,10 +2761,15 @@ impl Engine {
                 }
                 self.queue_you_attack_triggers(*by);
             }
-            // Beginning of the end step (CR 513): fire armed "at the next end step" delayed triggers
-            // (warp's exile-at-end-step). Sorcery-speed-armed ⇒ "next" = this turn's end step.
-            GameEvent::PhaseBegan { phase: Phase::End, .. } => {
-                self.fire_end_step_delayed_triggers();
+            // "At the beginning of [this step] …" permanent triggers (CR 603.2) — fire for every
+            // permanent whose `BeginningOfStep(phase)` matches, condition-gated (see below).
+            GameEvent::PhaseBegan { phase, .. } => {
+                self.queue_begin_of_step_triggers(*phase);
+                // Beginning of the end step (CR 513): also fire armed "at the next end step" delayed
+                // triggers (warp's exile-at-end-step). Sorcery-speed-armed ⇒ "next" = this end step.
+                if *phase == Phase::End {
+                    self.fire_end_step_delayed_triggers();
+                }
             }
             // "Whenever you cast a [filter] spell" (CR 603.2 / 601.2i) — SoS Opus / Repartee /
             // Increment. Queue each matching `SpellCast` trigger on a permanent the *caster*
@@ -2918,6 +2932,87 @@ impl Engine {
                 x: None,
                 modes: Vec::new(),
             });
+        }
+    }
+
+    /// Queue every battlefield permanent's "at the beginning of [`phase`] …" trigger (CR 603.2) at a
+    /// phase transition. A **trigger condition** (`intervening_if == false`, e.g. Startled Relic
+    /// Sloth's "on your turn") gates whether the trigger fires at all — evaluated now, and only
+    /// queued if it holds. An **intervening-if** (`intervening_if == true`, e.g. Essenceknit's "if a
+    /// creature died…") is queued unconditionally and re-checked at put-on-stack and resolution (CR
+    /// 603.4, [`Self::trigger_intervening_if_holds`]).
+    fn queue_begin_of_step_triggers(&mut self, phase: crate::basics::Phase) {
+        let want = EventPattern::BeginningOfStep(phase);
+        let perms: Vec<ObjId> =
+            self.state.players.iter().flat_map(|p| p.battlefield.iter().copied()).collect();
+        for subject in perms {
+            // (index, trigger condition, intervening_if) for each matching begin-of-step trigger.
+            let matches: Vec<(u32, Option<crate::effects::condition::Condition>, bool)> =
+                match self.state.def_of(subject) {
+                    Some(def) => def
+                        .abilities
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(i, a)| match a {
+                            Ability::Triggered { event, condition, intervening_if, .. }
+                                if *event == want =>
+                            {
+                                Some((i as u32, condition.clone(), *intervening_if))
+                            }
+                            _ => None,
+                        })
+                        .collect(),
+                    None => continue,
+                };
+            if matches.is_empty() {
+                continue;
+            }
+            let controller = self.state.object(subject).controller;
+            for (index, condition, intervening_if) in matches {
+                // A non-intervening-if trigger condition (CR 603.2) decides whether it triggers now.
+                if !intervening_if {
+                    if let Some(cond) = &condition {
+                        if !crate::conditions::holds_for_source(
+                            &self.state,
+                            cond,
+                            controller,
+                            Some(subject),
+                        ) {
+                            continue;
+                        }
+                    }
+                }
+                let id = self.state.mint_stack();
+                self.state.pending_triggers.push(StackObject {
+                    id,
+                    controller,
+                    source: Some(subject),
+                    kind: StackObjectKind::Ability { index },
+                    targets: Vec::new(),
+                    x: None,
+                    modes: Vec::new(),
+                });
+            }
+        }
+    }
+
+    /// Whether a queued/resolving triggered ability's **intervening-if** still holds (CR 603.4 —
+    /// re-checked as the trigger would go on the stack and again as it resolves). Returns `true`
+    /// unless the object is a `Triggered { condition: Some, intervening_if: true }` whose condition is
+    /// currently false — so ordinary (condition-less / non-intervening-if) triggers are unaffected.
+    fn trigger_intervening_if_holds(&self, obj: &StackObject) -> bool {
+        let (Some(src), StackObjectKind::Ability { index }) = (obj.source, &obj.kind) else {
+            return true;
+        };
+        let cond = self.state.def_of(src).and_then(|d| match d.abilities.get(*index as usize) {
+            Some(Ability::Triggered { condition: Some(c), intervening_if: true, .. }) => Some(c.clone()),
+            _ => None,
+        });
+        match cond {
+            Some(c) => {
+                crate::conditions::holds_for_source(&self.state, &c, obj.controller, Some(src))
+            }
+            None => true,
         }
     }
 

@@ -185,4 +185,55 @@ mod tests {
         assert_eq!(e.state.computed(fractal).power, Some(3), "0/0 + three +1/+1 = 3/3");
         assert_eq!(e.state.computed(fractal).toughness, Some(3));
     }
+
+    /// Integration (real turn engine): the begin-combat "+1/+1 counter on target creature you
+    /// control" trigger is queued and resolves when combat begins on your turn (`intervening_if:false`
+    /// `YourTurn` condition) — the counter lands on a real creature.
+    #[test]
+    fn additive_evolution_begin_combat_trigger_pumps_a_creature() {
+        use crate::agent::{Agent, DecisionRequest, DecisionResponse, GameEvent, PlayerView};
+        use crate::basics::{CounterKind, Phase, Zone};
+        use crate::cards::{build_game, grp};
+        use crate::ids::PlayerId;
+        use crate::priority::Engine;
+
+        #[derive(Clone)]
+        struct PickTargetAgent;
+        impl Agent for PickTargetAgent {
+            fn decide(&mut self, _v: &PlayerView, req: &DecisionRequest) -> DecisionResponse {
+                match req {
+                    DecisionRequest::ChooseTargets { slots, .. } => DecisionResponse::Pairs(
+                        slots
+                            .iter()
+                            .enumerate()
+                            .filter(|(_, s)| !s.legal.is_empty())
+                            .map(|(i, _)| (i as u32, 0))
+                            .collect(),
+                    ),
+                    _ => DecisionResponse::Pass,
+                }
+            }
+        }
+
+        let mut state = build_game(1, &[&[], &[]]);
+        let c = state.card_db().get(ADDITIVE_EVOLUTION).unwrap().chars.clone();
+        state.add_card(PlayerId(0), c, Zone::Battlefield);
+        let bear = {
+            let c = state.card_db().get(grp::GRIZZLY_BEARS).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, Zone::Battlefield)
+        };
+        state.active_player = PlayerId(0);
+        state.phase = Phase::BeginCombat;
+        let mut e = Engine::new(state, vec![Box::new(PickTargetAgent), Box::new(PickTargetAgent)]);
+        e.broadcast(GameEvent::PhaseBegan { turn: 1, phase: Phase::BeginCombat, active: PlayerId(0) });
+        e.run_agenda();
+        if !e.state.stack.is_empty() {
+            e.resolve_top();
+        }
+        assert_eq!(
+            e.state.object(bear).counters.get(&CounterKind::PlusOnePlusOne),
+            1,
+            "begin-combat trigger put a +1/+1 counter on the creature"
+        );
+    }
 }

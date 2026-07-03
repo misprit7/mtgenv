@@ -185,4 +185,45 @@ mod tests {
             None,
         ));
     }
+
+    /// Integration (real turn engine): the end-step draw fires only when a card left your graveyard
+    /// this turn — proving the begin-of-step trigger is queued and its `intervening_if` evaluated.
+    #[test]
+    fn primary_research_end_step_draw_fires_only_after_a_graveyard_leave() {
+        use crate::agent::{Agent, DecisionRequest, DecisionResponse, GameEvent, PlayerView};
+        use crate::basics::{Phase, Zone};
+        use crate::cards::{build_game, grp};
+        use crate::ids::PlayerId;
+        use crate::priority::Engine;
+
+        #[derive(Clone)]
+        struct PassAgent;
+        impl Agent for PassAgent {
+            fn decide(&mut self, _v: &PlayerView, _r: &DecisionRequest) -> DecisionResponse {
+                DecisionResponse::Pass
+            }
+        }
+
+        let run = |left_gy: bool| -> usize {
+            let mut state = build_game(1, &[&[grp::FOREST, grp::FOREST], &[]]);
+            let c = state.card_db().get(PRIMARY_RESEARCH).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, Zone::Battlefield);
+            if left_gy {
+                state.player_mut(PlayerId(0)).cards_left_graveyard_this_turn = 1;
+            }
+            state.active_player = PlayerId(0);
+            state.phase = Phase::End;
+            let hand_before = state.player(PlayerId(0)).hand.len();
+            let mut e = Engine::new(state, vec![Box::new(PassAgent), Box::new(PassAgent)]);
+            e.broadcast(GameEvent::PhaseBegan { turn: 1, phase: Phase::End, active: PlayerId(0) });
+            e.run_agenda();
+            if !e.state.stack.is_empty() {
+                e.resolve_top();
+            }
+            e.state.player(PlayerId(0)).hand.len() - hand_before
+        };
+
+        assert_eq!(run(true), 1, "a card left the graveyard → intervening-if holds → draw");
+        assert_eq!(run(false), 0, "nothing left the graveyard → no draw");
+    }
 }

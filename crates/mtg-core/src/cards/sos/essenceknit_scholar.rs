@@ -93,4 +93,51 @@ mod tests {
         e.state.player_mut(PlayerId(0)).creatures_died_this_turn = 1;
         assert!(holds_for_source(&e.state, &gate, PlayerId(0), None), "creature-died gate now holds");
     }
+
+    /// Integration (real turn engine): the end-step draw fires when a creature died under your
+    /// control this turn, and is withheld otherwise — proving the `intervening_if: true` condition is
+    /// evaluated (CR 603.4) as the trigger goes on the stack / resolves, not silently ignored.
+    #[test]
+    fn essenceknit_end_step_draw_fires_only_when_a_creature_died() {
+        use crate::agent::{Agent, DecisionRequest, DecisionResponse, GameEvent, PlayerView};
+        use crate::basics::{Phase, Zone};
+        use crate::cards::{build_game, grp};
+        use crate::ids::PlayerId;
+        use crate::priority::Engine;
+
+        #[derive(Clone)]
+        struct PassAgent;
+        impl Agent for PassAgent {
+            fn decide(&mut self, _v: &PlayerView, _req: &DecisionRequest) -> DecisionResponse {
+                DecisionResponse::Pass
+            }
+        }
+
+        // Drive P0's end step; `died` = whether a creature died under P0's control this turn.
+        // Returns cards drawn (hand delta).
+        let run = |died: bool| -> usize {
+            let mut state = build_game(1, &[&[grp::FOREST, grp::FOREST], &[]]);
+            let scholar = {
+                let c = state.card_db().get(ESSENCEKNIT_SCHOLAR).unwrap().chars.clone();
+                state.add_card(PlayerId(0), c, Zone::Battlefield)
+            };
+            state.objects.get_mut(&scholar).unwrap().summoning_sick = false;
+            if died {
+                state.player_mut(PlayerId(0)).creatures_died_this_turn = 1;
+            }
+            state.active_player = PlayerId(0);
+            state.phase = Phase::End;
+            let hand_before = state.player(PlayerId(0)).hand.len();
+            let mut e = Engine::new(state, vec![Box::new(PassAgent), Box::new(PassAgent)]);
+            e.broadcast(GameEvent::PhaseBegan { turn: 1, phase: Phase::End, active: PlayerId(0) });
+            e.run_agenda();
+            if !e.state.stack.is_empty() {
+                e.resolve_top();
+            }
+            e.state.player(PlayerId(0)).hand.len() - hand_before
+        };
+
+        assert_eq!(run(true), 1, "a creature died → intervening-if holds → draw one");
+        assert_eq!(run(false), 0, "no creature died → intervening-if fails → no draw");
+    }
 }

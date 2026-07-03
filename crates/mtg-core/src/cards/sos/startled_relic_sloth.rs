@@ -118,4 +118,63 @@ mod tests {
         assert!(!e.state.players[1].graveyard.contains(&card), "left the graveyard");
         assert!(e.state.players[1].exile.contains(&card), "exiled");
     }
+
+    /// Integration (real turn engine): the begin-combat trigger is queued and resolves when combat
+    /// begins on YOUR turn, and is condition-gated off on the opponent's turn (`intervening_if:false`
+    /// trigger condition `YourTurn`). Proves the begin-of-step trigger actually fires end-to-end —
+    /// the `resolve_effect`-direct test above never exercised the turn engine's queueing.
+    #[test]
+    fn startled_relic_sloth_begin_combat_trigger_fires_only_on_your_turn() {
+        use crate::agent::{Agent, DecisionRequest, DecisionResponse, GameEvent, PlayerView};
+        use crate::basics::{Phase, Zone};
+        use crate::cards::{build_game, grp};
+        use crate::ids::PlayerId;
+        use crate::priority::Engine;
+
+        #[derive(Clone)]
+        struct PickTargetAgent;
+        impl Agent for PickTargetAgent {
+            fn decide(&mut self, _v: &PlayerView, req: &DecisionRequest) -> DecisionResponse {
+                match req {
+                    // Exile the (one legal) graveyard card — even "up to one" min-0 slots.
+                    DecisionRequest::ChooseTargets { slots, .. } => DecisionResponse::Pairs(
+                        slots
+                            .iter()
+                            .enumerate()
+                            .filter(|(_, s)| !s.legal.is_empty())
+                            .map(|(i, _)| (i as u32, 0))
+                            .collect(),
+                    ),
+                    _ => DecisionResponse::Pass,
+                }
+            }
+        }
+
+        // Drive begin-combat with `active` as the active player; return whether the gy card is exiled.
+        let run = |active: PlayerId| -> bool {
+            let mut state = build_game(1, &[&[], &[]]);
+            let sloth = {
+                let c = state.card_db().get(STARTLED_RELIC_SLOTH).unwrap().chars.clone();
+                state.add_card(PlayerId(0), c, Zone::Battlefield)
+            };
+            state.objects.get_mut(&sloth).unwrap().summoning_sick = false;
+            let victim = {
+                let c = state.card_db().get(grp::LIGHTNING_BOLT).unwrap().chars.clone();
+                state.add_card(PlayerId(1), c, Zone::Graveyard)
+            };
+            state.active_player = active;
+            state.phase = Phase::BeginCombat;
+            let mut e =
+                Engine::new(state, vec![Box::new(PickTargetAgent), Box::new(PickTargetAgent)]);
+            e.broadcast(GameEvent::PhaseBegan { turn: 1, phase: Phase::BeginCombat, active });
+            e.run_agenda();
+            if !e.state.stack.is_empty() {
+                e.resolve_top();
+            }
+            e.state.player(PlayerId(1)).exile.contains(&victim)
+        };
+
+        assert!(run(PlayerId(0)), "fires on your begin-combat (P0 controls Startled)");
+        assert!(!run(PlayerId(1)), "does NOT fire on the opponent's turn (YourTurn condition)");
+    }
 }
