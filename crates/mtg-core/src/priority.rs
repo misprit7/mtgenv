@@ -1126,7 +1126,7 @@ impl Engine {
                 }
                 let has_targets = collect_target_specs(effect)
                     .iter()
-                    .all(|spec| self.target_candidates(spec, p).len() as u32 >= spec.min.max(1));
+                    .all(|spec| self.target_candidates(spec, p, Some(perm)).len() as u32 >= spec.min.max(1));
                 if has_targets {
                     actions.push(PlayableAction::Activate {
                         source: perm,
@@ -1166,7 +1166,7 @@ impl Engine {
                 }
                 let has_targets = collect_target_specs(effect)
                     .iter()
-                    .all(|spec| self.target_candidates(spec, p).len() as u32 >= spec.min.max(1));
+                    .all(|spec| self.target_candidates(spec, p, Some(gy)).len() as u32 >= spec.min.max(1));
                 if has_targets {
                     actions.push(PlayableAction::Activate { source: gy, ability: AbilityRef(i as u32) });
                 }
@@ -1202,7 +1202,7 @@ impl Engine {
                 }
                 let has_targets = collect_target_specs(effect)
                     .iter()
-                    .all(|spec| self.target_candidates(spec, p).len() as u32 >= spec.min.max(1));
+                    .all(|spec| self.target_candidates(spec, p, Some(h)).len() as u32 >= spec.min.max(1));
                 if has_targets {
                     actions.push(PlayableAction::Activate { source: h, ability: AbilityRef(i as u32) });
                 }
@@ -1403,7 +1403,7 @@ impl Engine {
                 .iter()
                 .map(|spec| TargetSlot {
                     description: String::new(),
-                    legal: self.target_candidates(spec, p),
+                    legal: self.target_candidates(spec, p, Some(source)),
                     min: spec.min,
                     max: spec.max,
                 })
@@ -1793,7 +1793,7 @@ impl Engine {
                 .iter()
                 .map(|spec| TargetSlot {
                     description: String::new(),
-                    legal: self.target_candidates(spec, p),
+                    legal: self.target_candidates(spec, p, Some(card)),
                     min: spec.min,
                     max: spec.max,
                 })
@@ -1894,7 +1894,7 @@ impl Engine {
         collect_specs_into(&mode.effect, &mut specs);
         specs
             .iter()
-            .all(|spec| self.target_candidates(spec, controller).len() as u32 >= spec.min.max(1))
+            .all(|spec| self.target_candidates(spec, controller, None).len() as u32 >= spec.min.max(1))
     }
 
     /// CR 601.2c: can this spell choose legal targets, so it may be put on the stack? A normal spell
@@ -1910,7 +1910,7 @@ impl Engine {
             }
             _ => collect_target_specs(effect)
                 .iter()
-                .all(|spec| self.target_candidates(spec, p).len() as u32 >= spec.min.max(1)),
+                .all(|spec| self.target_candidates(spec, p, None).len() as u32 >= spec.min.max(1)),
         }
     }
 
@@ -1948,7 +1948,7 @@ impl Engine {
         }
         // An Aura additionally needs a legal permanent to enchant (CR 303.4f).
         if let Some(spec) = self.aura_target_spec(card) {
-            if (self.target_candidates(&spec, p).len() as u32) < spec.min.max(1) {
+            if (self.target_candidates(&spec, p, None).len() as u32) < spec.min.max(1) {
                 return false;
             }
         }
@@ -1957,7 +1957,15 @@ impl Engine {
 
     /// The legal target candidates for one target spec (the engine pre-filters; masking is
     /// the engine's job). Milestone 3 supports "any target" (CR 115.4) and player/creature.
-    fn target_candidates(&self, spec: &TargetSpec, caster: PlayerId) -> Vec<Target> {
+    /// `source` is the object whose ability is choosing targets (used to resolve `ItSelf` /
+    /// `Not(ItSelf)` — "another target …"). `None` when no source applies (spell prechecks / tests);
+    /// then `ItSelf` matches nothing, so `Not(ItSelf)` excludes nothing.
+    fn target_candidates(
+        &self,
+        spec: &TargetSpec,
+        caster: PlayerId,
+        source: Option<ObjId>,
+    ) -> Vec<Target> {
         let creatures = || {
             self.state
                 .objects
@@ -1989,10 +1997,10 @@ impl Engine {
             TargetKind::Any => creatures().chain(players()).collect(),
             TargetKind::Player => players().collect(),
             TargetKind::Creature(filter) => creatures()
-                .filter(|t| self.target_matches_filter(t, filter, caster))
+                .filter(|t| self.target_matches_filter(t, filter, caster, source))
                 .collect(),
             TargetKind::Permanent(filter) => permanents()
-                .filter(|t| self.target_matches_filter(t, filter, caster))
+                .filter(|t| self.target_matches_filter(t, filter, caster, source))
                 .collect(),
             // A card in a public zone — e.g. "target card from a graveyard" (Keen-Eyed Curator).
             // Enumerates every object in `zone` (any player's) matching the filter; graveyard/exile
@@ -2003,7 +2011,7 @@ impl Engine {
                 .values()
                 .filter(|o| o.zone == *zone)
                 .map(|o| Target::Object(o.id))
-                .filter(|t| self.target_matches_filter(t, filter, caster))
+                .filter(|t| self.target_matches_filter(t, filter, caster, source))
                 .collect(),
             // StackObject targeting: not needed by the current pool.
             _ => Vec::new(),
@@ -2017,13 +2025,23 @@ impl Engine {
     /// doesn't explicitly handle **rejects** the target (fail-closed) — an unenforced filter must
     /// never silently widen the legal set into illegal targets; a card needing a new predicate adds
     /// its arm here.
-    fn target_matches_filter(&self, t: &Target, filter: &CardFilter, caster: PlayerId) -> bool {
+    fn target_matches_filter(
+        &self,
+        t: &Target,
+        filter: &CardFilter,
+        caster: PlayerId,
+        source: Option<ObjId>,
+    ) -> bool {
         let Target::Object(id) = t else { return true };
         let Some(o) = self.state.objects.get(id) else {
             return false;
         };
         match filter {
             CardFilter::Any => true,
+            // "another target …" (CR 601.2c) — `Not(ItSelf)` excludes the ability's own source.
+            // With no source (spell prechecks / tests) `ItSelf` matches nothing, so `Not(ItSelf)`
+            // excludes nothing (mirrors `sac_filter_matches`'s `ItSelf` handling).
+            CardFilter::ItSelf => source == Some(*id),
             CardFilter::ControlledBy(PlayerRef::Controller | PlayerRef::Owner) => {
                 o.controller == caster
             }
@@ -2038,9 +2056,9 @@ impl Engine {
             CardFilter::Multicolored => self.state.computed(*id).colors.len() >= 2,
             CardFilter::PowerAtMost(n) => self.state.computed(*id).power.unwrap_or(0) <= *n,
             CardFilter::Supertype(s) => o.chars.supertypes.contains(s),
-            CardFilter::All(fs) => fs.iter().all(|f| self.target_matches_filter(t, f, caster)),
-            CardFilter::AnyOf(fs) => fs.iter().any(|f| self.target_matches_filter(t, f, caster)),
-            CardFilter::Not(f) => !self.target_matches_filter(t, f, caster),
+            CardFilter::All(fs) => fs.iter().all(|f| self.target_matches_filter(t, f, caster, source)),
+            CardFilter::AnyOf(fs) => fs.iter().any(|f| self.target_matches_filter(t, f, caster, source)),
+            CardFilter::Not(f) => !self.target_matches_filter(t, f, caster, source),
             // Fail-closed: an unhandled predicate rejects rather than silently passing (which is
             // what let a creature match "land you control"). Add an arm above when a card needs one.
             _ => false,
@@ -2519,7 +2537,7 @@ impl Engine {
                     .iter()
                     .map(|spec| TargetSlot {
                         description: String::new(),
-                        legal: self.target_candidates(spec, t.controller),
+                        legal: self.target_candidates(spec, t.controller, t.source),
                         min: spec.min,
                         max: spec.max,
                     })
@@ -6182,7 +6200,7 @@ mod expect_tests {
             distinct: true,
         };
         assert_eq!(
-            e.target_candidates(&spec, PlayerId(0)),
+            e.target_candidates(&spec, PlayerId(0), None),
             vec![Target::Object(card)],
             "a graveyard card is a legal 'target card from a graveyard'"
         );
@@ -6301,7 +6319,7 @@ mod expect_tests {
             distinct: true,
         };
         assert_eq!(
-            e.target_candidates(&land_you_control, PlayerId(0)),
+            e.target_candidates(&land_you_control, PlayerId(0), None),
             vec![Target::Object(my_forest)],
             "earthbend offers only the land you control — not your creatures"
         );
@@ -6315,7 +6333,7 @@ mod expect_tests {
             distinct: true,
         };
         assert_eq!(
-            e.target_candidates(&creature_you_dont_control, PlayerId(0)),
+            e.target_candidates(&creature_you_dont_control, PlayerId(0), None),
             vec![Target::Object(foe_bears)],
             "Bushwhack's fight target offers only creatures you don't control"
         );
@@ -7576,12 +7594,12 @@ mod expect_tests {
             distinct: true,
         };
         // P0 (the opponent) cannot target the hexproof scout, but can target everything else.
-        let cands = e.target_candidates(&spec, PlayerId(0));
+        let cands = e.target_candidates(&spec, PlayerId(0), None);
         assert!(!cands.contains(&Target::Object(scout)), "opponent can't target hexproof");
         assert!(cands.contains(&Target::Object(foe_bears)), "opponent can target non-hexproof");
         assert!(cands.contains(&Target::Object(my_bears)), "own creature is targetable");
         // The controller of the hexproof creature can still target it.
-        let own = e.target_candidates(&spec, PlayerId(1));
+        let own = e.target_candidates(&spec, PlayerId(1), None);
         assert!(own.contains(&Target::Object(scout)), "controller can target own hexproof");
     }
 

@@ -7,6 +7,7 @@ pub mod additive_evolution;
 pub mod applied_geometry;
 pub mod arcane_omens;
 pub mod artistic_process;
+pub mod ascendant_dustspeaker;
 pub mod banishing_betrayal;
 pub mod blech_loafing_pest;
 pub mod bogwater_lumaret;
@@ -126,6 +127,7 @@ pub fn register(db: &mut CardDb) {
     applied_geometry::register(db);
     arcane_omens::register(db);
     artistic_process::register(db);
+    ascendant_dustspeaker::register(db);
     banishing_betrayal::register(db);
     blech_loafing_pest::register(db);
     bogwater_lumaret::register(db);
