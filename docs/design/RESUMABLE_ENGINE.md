@@ -342,15 +342,27 @@ session.rs (no whiteboard.rs contact) and delivered a working primitive sooner. 
   identical outcomes to blocking `run_game` across seeds. Agents still live in the core (unused
   while a Session drives) → not yet `Send`; single-threaded, but already enough to drop the gym's
   per-game thread + channels.
-- **M3.3a — Port `mtg-py` to `resume`/`submit`.** ⏭ *next (crosses the gym zone).* Drop `PyGame`'s
-  per-game thread + `GameConn` channels + `PyAgent` (`crates/mtg-py/src/game.rs`); `PyGame`
-  becomes a thin single-threaded `Session` wrapper (kills the `unsendable` pin + `py.allow_threads`
-  blocking recv). Immediate win with no fleet/Send needed.
-- **M3.3b — Agent-removal split → `Send` core → Rust fleet.** ⏭ *needs the whiteboard.rs window.*
-  Make `Engine` the distinct driver `{ core, agents }` (drop the alias); `impl Engine`→`impl
-  EngineCore` in whiteboard.rs (2 lines) + combat.rs; `unsafe impl Send for EngineCore`; unify
-  `Engine::run_game` onto the driver loop. Then a Rust `Fleet` stepper (rayon — Send confirmed
-  viable in M3.0 — or thread-pinned groups) with batched obs via existing `obs.rs`/`codec.rs`.
+- **M3.3a — Port `mtg-py` to `resume`/`submit`.** ✅ **DONE** (gym-sanity: `8800205` + `ad25ad6`).
+  `PyGame` is now a thin single-threaded `Session` wrapper (dropped the per-game thread + `GameConn`
+  channels + `PyAgent`); gated by a byte-identical trajectory-fingerprint harness, **1.5–1.67×**
+  throughput single-threaded. `mtg-py` now depends on `Session::start(Engine)` in production
+  (semver-real). Also added `Session::replay()` (`5f272f3`) for training-replay export.
+- **M3.3b — `Send` core → Rust fleet.** ⚠ **BLOCKED on an architecture choice** (touches the Agent
+  LAW). Implementation surfaced hard costs on each Send path:
+  - **Agent-removal + `Engine` wrapper + Deref** (the original plan) — **dealbreaker.** A user
+    `Deref` breaks Rust's two-phase borrows for the pervasive `e.method(e.state…)` test pattern
+    (e.g. `e.cast_spell(P0, e.state.players[0].hand[0], v)` → E0502), across many tests including
+    un-editable sos-cards card files. Would need inherent `Engine::` wrappers for *every* such
+    method. Rejected.
+  - **`trait Agent: Send`** — works (`EngineCore` Send with agents in place, static `assert_send`
+    passes, tests green), but is a change to the boundary trait and forces even the deliberately
+    single-threaded CLI agents to be `Send` (`HumanAgent`'s `Rc<RefCell<CliIo>>` + `CliIo`'s
+    non-`Send` `Box<dyn BufRead/Write>` → `Arc<Mutex>` + `+ Send` across cli/driver/human).
+  - **Thread-pinned groups (§3.4)** — **needs no `Send` at all** (games created + stepped on one
+    owning thread, never moved): no LAW change, no wrapper, no Deref, and **zero engine work** —
+    the fleet is a `mtg-py`-side stepper over `Session`s with shared batched-obs buffers. Recommended.
+  Once chosen: the fleet stepper (rayon *iff* `Agent: Send`, else thread-pinned) with batched obs via
+  existing `obs.rs`/`codec.rs`.
 - **M3.4 — Benchmark + delete the migration scaffolding.** Measure vs baseline (§5); remove
   thread-per-game, the Python-side `BatchedSelfPlayVecEnv` pump, the `ask` `None` branch (the
   migration aid), and the spike crate, once parity + speedup are confirmed. mtg-gre-server: **no
