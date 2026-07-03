@@ -331,7 +331,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Orysa, Tide Choreographer | S12 | `sos` | ⏳ | conditional cost reduction on toughness |
 | Owlin Historian | S1,S9 | `sos` | ✅ done | surveil + cards-leave-graveyard trigger |
 | Paradox Gardens | S1 | `sos` | ✅ done | surveil activated ability |
-| Paradox Surveyor | S2 | `sos` | ⏳ | look-and-pick ETB selection |
+| Paradox Surveyor | S2 | `sos` | ✅ done | look-and-pick ETB selection |
 | Pensive Professor | S6 | `sos` | ⏳ | Increment (plus counter-added trigger) |
 | Pest Mascot | S16 | `sos` | ✅ done | whenever-you-gain-life trigger |
 | Pestbrood Sloth | S11 | `sos` | ✅ done | Pest token with attack ability |
