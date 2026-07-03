@@ -11,6 +11,7 @@ pub mod chase_inspiration;
 pub mod chelonian_tackle;
 pub mod cost_of_brilliance;
 pub mod cuboid_colony;
+pub mod dissection_practice;
 pub mod eager_glyphmage;
 pub mod efflorescence;
 pub mod environmental_scientist;
@@ -77,6 +78,7 @@ pub fn register(db: &mut CardDb) {
     chelonian_tackle::register(db);
     cost_of_brilliance::register(db);
     cuboid_colony::register(db);
+    dissection_practice::register(db);
     eager_glyphmage::register(db);
     efflorescence::register(db);
     environmental_scientist::register(db);
