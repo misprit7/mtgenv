@@ -5,6 +5,16 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-07-03 (night)
 
+- **engine+cards(sos) — Ward helpers + Forum Necroscribe + MoveZone target-collection fix (`c335bcd`):** moved
+  the Ward ability constructors to `cards/helpers.rs` (`ward`/`ward_mana`/`ward_discard`) per the code-org law
+  (no sibling-card imports); Colorstorm now uses `ward_mana`. **Forum Necroscribe** (`{5}{B}` 5/4 Troll Warlock)
+  = the 2nd Ward card and the **non-mana** Ward path: **Ward—Discard a card** (reuses the `can_pay_cost`/
+  `pay_cost` `Discard` arms — the targeting player discards from *their own* hand) + **Repartee** reanimation
+  (`SpellCastTargetingCreature(I/S)` → `MoveZone` graveyard→battlefield, same leaf as Lorehold Charm mode 2).
+  Its Repartee test is the FIRST to drive a `MoveZone` target through the real trigger path and exposed a
+  pre-existing gap: **`Effect::MoveZone` was missing from `collect_specs_into`**, so its `Target` was never
+  collected at cast/trigger time (Pull-from-Grave & Lorehold tests bypassed casting via `resolve_effect`).
+  Added the arm → reanimation now works through cast→target→resolve. 517 tests.
 - **engine+cards(sos) — S17 Ward mana cap + Colorstorm Stallion (`96dbc35`):** Ward {N} (CR 702.21) as a
   `BecomesTargeted{ItSelf, by_opponent}` trigger → new `Effect::CounterUnlessPay{ what, cost: Cost }`
   soft-counter leaf. The targeting spell/ability is referenced via new `EffectTarget::Triggering`, threaded
