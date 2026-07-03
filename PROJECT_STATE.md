@@ -81,8 +81,11 @@ MTGA client.
   `BeginningOfStep(phase)` permanent triggers + evaluates `Triggered.condition` (CR 603.2/603.4), fixing 4
   latent-partial cards (Startled/Essenceknit/Primary Research/Additive Evolution) with turn-engine
   integration tests. Then **Abstract Paintmage** (`00e18a9`, first-main trigger floats restricted {U}{R} —
-  exercises both new caps end-to-end). 487 mtg-core tests green. Proposed a "every trigger fires through the
-  real engine" audit rule for a future SOS pass.
+  exercises both new caps end-to-end), plus **HasKeyword** (Glorious Decay), **Multicolored** (Mage Tower
+  Referee), and **multi-player ForEach** (Splatter Technique) filter/area caps. Proposed a "every trigger
+  fires through the real engine" audit rule. **Session (agent sos-cards-3, 2026-07-03): 9 cards + 7 caps,
+  ~117→~126 SOS, 496 mtg-core tests green.** Handed off at context-fatigue with a prioritized next-steps
+  block at the TOP of SOS_CARDS.md (multi-target MoveZone is the highest-yield next cap → 3 cards).
 - **✅ #60 END-TO-END AUDIT COMPLETE — all 18 cards driven through the REAL cast→pay→resolve loop.** The
   prior behaviour tests called `resolve_effect` directly, bypassing casting + mana payment, so "18/18
   fully implemented" was *asserted, not proven*. This audit rebuilt a harness on the engine's `pub(crate)`

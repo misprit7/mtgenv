@@ -4,6 +4,38 @@ Standing workstream: implement the Secrets of Strixhaven set for **limited (40-c
 `mtg-core`, easiest-first, correctness over count. This ledger is the capability index + full
 per-card triage, modeled on `SELESNYA_LANDFALL_CARDS.md`.
 
+## ▶ NEXT AGENT — start here (handoff from sos-cards-3, 2026-07-03)
+
+Tree clean, 496 mtg-core tests green. This session shipped **9 cards + 7 caps** (S15 impulse-play, S13
+restricted-mana, Select-exile-as-cost, begin-of-step-triggers, `CardFilter::HasKeyword`,
+`CardFilter::Multicolored`, multi-player-ForEach — all with tests). Handed off at context-fatigue (quality
+was still green — this is a risk-curve call, not a broken state). **Every remaining reachable card needs a
+small-but-load-bearing cap; do each fresh, one commit, with a test.** Prioritized by yield:
+
+1. **Multi-target MoveZone (HIGHEST YIELD — 3 cards):** Pull from the Grave, Divergent Equation (`up to X`),
+   Moment of Reckoning (modal up-to-four). Gap: the `Effect::MoveZone` materialize arm does ONE
+   `resolve_target` (cursor++), so a spec with `max>1` drops all but the first target. Need the arm (and
+   likely a small target-model change) to consume ALL targets a single multi-pick spec claimed. Check how
+   `parse_targets`/`StackObject.targets` represent a `max=2` slot's picks before starting (that's the crux).
+2. **Another-target self-exclusion (1 card, now half-done):** Ascendant Dustspeaker — its begin-combat
+   exile trigger already works (begin-of-step cap); it just needs "+1/+1 on ANOTHER target creature you
+   control". Gap: `target_candidates(spec, caster)` doesn't take the source, so `Not(ItSelf)` can't be
+   evaluated in targeting. Thread the source `ObjId` through `target_candidates` → `target_matches_filter`
+   and add an `ItSelf` arm there (it already exists in `sac_filter_matches` at priority.rs ~1569).
+3. **dynamic-MV filter (1 card):** Mind into Matter (draw X; put a permanent MV≤X from hand). `CardFilter::
+   ManaValue{max}` is a fixed `u32`; needs a ValueExpr-driven max (or a sibling filter). Touches the
+   exhaustive `count_filter_matches`.
+4. **set-base-P/T (2 cards):** Fractalize, Wild Hypothesis — "becomes a Fractal with base P/T = X+1". Layer
+   system (higher risk — do carefully). See `BecomeCreature`/Earthbend animation for the P/T-set path.
+
+DEFERRED still (never build): DFC/modal, Lessons/Paradigm, planeswalkers, Casualty, Elder-Dragon grants;
+dies-triggers need LKI (Arnyn, Cauldron of Essence). S15 graveyard-play (Ark of Hunger) + Archaic's Agony
+(excess-damage + multi-card top-exile) also await their noted machinery.
+
+Systemic: honour the proposed audit rule (⚠️/✅ trigger section) — every new `Triggered` should fire once
+through the REAL turn engine in a test. SHARED TREE: `git commit --only <paths>`; MuZero teammate lives in
+`experiments/`.
+
 **Card data lives in the SQLite index, never memory** (CLAUDE.md "Card data"):
 ```
 sqlite3 data/scryfall/cards.sqlite \
