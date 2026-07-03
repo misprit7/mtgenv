@@ -280,7 +280,8 @@ mod tests {
     fn repartee_reanimates_a_creature_from_graveyard() {
         let mut state = GameState::new(2, 1);
         state.set_card_db(Arc::new(starter_db()));
-        let forum = {
+        // Forum Necroscribe on the battlefield is the Repartee trigger's source (watcher).
+        let _forum = {
             let c = state.card_db().get(FORUM_NECROSCRIBE).unwrap().chars.clone();
             state.add_card(PlayerId(0), c, Zone::Battlefield)
         };

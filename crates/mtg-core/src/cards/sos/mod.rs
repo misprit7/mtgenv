@@ -115,6 +115,7 @@ pub mod tome_blast;
 pub mod titans_grave;
 pub mod tenured_concocter;
 pub mod textbook_tabulator;
+pub mod tragedy_feaster;
 pub mod traumatic_critique;
 pub mod ulna_alley_shopkeep;
 pub mod unsubtle_mockery;
@@ -240,6 +241,7 @@ pub fn register(db: &mut CardDb) {
     titans_grave::register(db);
     tenured_concocter::register(db);
     textbook_tabulator::register(db);
+    tragedy_feaster::register(db);
     traumatic_critique::register(db);
     ulna_alley_shopkeep::register(db);
     unsubtle_mockery::register(db);
