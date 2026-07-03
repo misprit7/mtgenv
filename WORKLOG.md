@@ -31,8 +31,20 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
   false; `spend_from_pool` spends restricted-first; `add_mana` routes restricted production to the bucket.
   → **Hydro-Channeler** (`{T}: Add {U}` restricted; its `{1},{T}: Add any` restricted deferred — mana ability
   with a mana cost, unmodeled). Tests: restricted mana pays an I/S but not a creature/ability, from both a
-  source tap and floating mana. 477 mtg-core tests green. Next: S13 riders (Abstract Paintmage) or S15
-  graveyard-play (Ark of Hunger).
+  source tap and floating mana. 477 mtg-core tests green.
+- **FINDING — trigger-system gap (`86c7b2e`, no code change):** tracing Abstract Paintmage's "beginning of
+  your first main phase" trigger showed (1) `BeginningOfStep(phase)` permanent triggers are **never queued**
+  (collect_triggers fires only End-step *delayed* triggers) and (2) a `Triggered` ability's `condition` field
+  is **never evaluated**. So Essenceknit Scholar / Startled Relic Sloth / Ennis are latent-partial (their
+  begin-of-step/conditional triggers pass only `resolve_effect`-direct tests, not the turn engine), and
+  Abstract Paintmage / Fractal Tender / S16 end-step timing are blocked. Flagged to lead — a load-bearing
+  trigger-system cap deserving its own careful commit, not a rushed rider.
+- **engine+cards(sos) — Select-based Exile + Heated Argument (`5596fb4`):** `Effect::Exile` now handles
+  `EffectTarget::Select` in `interpret` (via `select_for_each`), returning whether the selection reached its
+  `min` so a wrapping `IfYouDo` gates correctly (previously it fell to `materialize`'s Target-only arm →
+  no-op yet reported "done" → reward fired without exiling). → **Heated Argument** (6 to target creature; you
+  may exile a gy card → 2 more to that creature's controller via `ControllerOfTarget(0)`). 480 mtg-core tests
+  green. Session total: 5 cards + 3 caps.
 - **gym (the combat-judgment ladder — cause definitively isolated):** three controlled experiments
   on "why does it chump-block the trampler at high life": (1) 2.8-swine-500k = user's reshaped
   reward (card-dominant Φ 0.5/0.3/0.2, coef 0.1, 50→80% anneal) → small directional nudge

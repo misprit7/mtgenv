@@ -75,7 +75,10 @@ MTGA client.
   exile cases** (`d079eb0` base [adopted from an orphaned predecessor WIP, hardened + tested] + `0e17d3e`
   top-of-library source + land-play-from-exile) → Practiced Scrollsmith, Elemental Mascot, Suspend
   Aggression. Then **S13 restricted-mana DONE** (`ffcc0df`, `ManaSpec.restriction` + `ManaPool.restricted`
-  bucket, `allow_restricted` threaded through payment) → Hydro-Channeler. 477 mtg-core tests green.
+  bucket, `allow_restricted` threaded through payment) → Hydro-Channeler. Then **Select-exile-as-cost**
+  (`5596fb4`, `Effect::Exile` handles a resolution-time `Select`, gates `IfYouDo`) → Heated Argument. 480
+  mtg-core tests green. **Open finding:** begin-of-step triggers + `Triggered.condition` are unwired (see
+  SOS_CARDS.md ⚠️ section) — Essenceknit/Startled/Ennis latent-partial; own trigger-system cap needed.
 - **✅ #60 END-TO-END AUDIT COMPLETE — all 18 cards driven through the REAL cast→pay→resolve loop.** The
   prior behaviour tests called `resolve_effect` directly, bypassing casting + mana payment, so "18/18
   fully implemented" was *asserted, not proven*. This audit rebuilt a harness on the engine's `pub(crate)`
