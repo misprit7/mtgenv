@@ -343,7 +343,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Practiced Scrollsmith | S15 | `sos` | ⏳ | impulse cast exiled graveyard card |
 | Primary Research | S9 | `sos` | ✅ done | card-left-graveyard-this-turn condition |
 | Prismari Charm | S1 | `sos` | ⏳ | surveil mode |
-| Procrastinate | S3 | `sos` | ⏳ | stun counters (twice X) |
+| Procrastinate | S3 | `sos` | ✅ done | stun counters (twice X) |
 | Pursue the Past | S10 | `sos` | ⏳ | flashback |
 | Quandrix Charm | SoftCounter | `sos` | ⏳ | counter-unless-pay mode |
 | Rabid Attack | GrantAbility | `sos` | ⏳ | grant ad-hoc dies-draw ability EOT |
