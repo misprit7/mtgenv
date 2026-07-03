@@ -300,7 +300,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Fractal Tender | S6,S17 | `sos` | ⏳ | Increment, Ward, conditional end-step token |
 | Garrison Excavator | S9 | `sos` | ⏳ | cards-leave-graveyard trigger makes token |
 | Geometer's Arthropod | S2,S21 | `sos` | ⏳ | cast-spell-with-X trigger + look-and-pick |
-| Graduation Day | S8 | `sos` | ⏳ | Repartee grants counter |
+| Graduation Day | S8 | `sos` | ✅ done | Repartee grants counter |
 | Great Hall of the Biblioplex | S13 | `sos` | ⏳ | I/S-restricted mana; animates to creature |
 | Group Project | S10 | `sos` | ⏳ | flashback with tap-creatures cost |
 | Growth Curve | S20 | `sos` | ⏳ | double +1/+1 counters on a target |
@@ -310,7 +310,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Hydro-Channeler | S13 | `sos` | ⏳ | mana only for instants/sorceries |
 | Imperious Inkmage | S1 | `sos` | ✅ done | ETB surveil 2 |
 | Informed Inkwright | S8 | `sos` | ✅ done | Repartee makes Inkling token |
-| Inkling Mascot | S8,S1 | `sos` | ⏳ | Repartee grants flying, surveil |
+| Inkling Mascot | S8,S1 | `sos` | ✅ done | Repartee grants flying, surveil |
 | Inkshape Demonstrator | S17,S8 | `sos` | ⏳ | Ward, Repartee pump/lifelink |
 | Killian's Confidence | S18 | `sos` | ⏳ | triggered ability functions from graveyard |
 | Lecturing Scornmage | S8 | `sos` | ✅ done | Repartee self-counter |
