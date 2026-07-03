@@ -94,6 +94,34 @@
     font-size: 11px; font-weight: 900; padding: 0 3px; line-height: 15px; }
   #cardpreview { position: fixed; display: none; width: 300px; border-radius: 12px; z-index: 200;
     box-shadow: 0 12px 44px rgba(0,0,0,.8); pointer-events: none; }
+  /* deck builder */
+  .deckacts { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+  .deckhdr { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+  .bname { flex: 1 1 180px; }
+  .bsum { color: var(--muted); font-size: 13px; margin: 2px 0 4px; }
+  .bsum b { color: var(--ink); font-size: 15px; }
+  .bwarn { color: #f5c518; font-size: 12px; margin-top: 3px; }
+  .curve { display: flex; align-items: flex-end; gap: 3px; height: 46px; margin: 4px 0 8px; }
+  .curvecol { display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
+    gap: 1px; font-size: 10px; color: var(--muted); flex: 1; height: 100%; }
+  .curvebar { width: 100%; background: var(--accent); border-radius: 3px 3px 0 0; min-height: 2px; }
+  .filterbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 4px 0 10px; }
+  .filterbar input { flex: 1 1 140px; }
+  .fchip { background: #0c120f; color: var(--muted); border: 1px solid var(--line); border-radius: 999px;
+    padding: 3px 9px; font-size: 11px; cursor: pointer; user-select: none; }
+  .fchip.on { border-color: var(--accent); color: var(--accent); }
+  .sectlbl { font-weight: 700; font-size: 12px; color: var(--muted); margin: 14px 0 8px;
+    text-transform: uppercase; letter-spacing: .04em; }
+  .dcard.addable { cursor: pointer; }
+  .dcard.addable:hover { border-color: var(--accent); }
+  .dcard .indeck { position: absolute; top: 4px; left: 4px; background: var(--accent2); color: #06140b;
+    border-radius: 999px; font-size: 11px; font-weight: 800; padding: 0 6px; }
+  .stepper { display: flex; align-items: center; gap: 6px; }
+  .stepper button { background: #0c120f; color: var(--ink); border: 1px solid var(--line); border-radius: 6px;
+    width: 28px; height: 28px; font-size: 16px; font-weight: 800; cursor: pointer; padding: 0; }
+  .stepper button:hover { border-color: var(--accent); }
+  .zoombtn { position: absolute; bottom: 4px; right: 4px; background: rgba(6,20,11,.78); color: var(--ink);
+    border: 1px solid var(--line); border-radius: 6px; font-size: 12px; padding: 0 5px; line-height: 18px; cursor: pointer; }
 </style>
 </head>
 <body>
@@ -151,6 +179,7 @@
       <div class="ghdr">
         <h2>Decks</h2>
         <div class="decktabs" id="deckTabs"></div>
+        <button class="ghost small" id="newDeckBtn">＋ New deck</button>
       </div>
       <div id="deckBody"><div class="empty">Loading decks…</div></div>
     </div>
@@ -184,10 +213,27 @@ function buildForm() {
     seat.appendChild(ks);
     const dl = el("label", null, "Deck"); seat.appendChild(dl);
     const ds = el("select"); ds.id = "deck" + i;
-    DECKS.forEach((d) => { const o = el("option", null, d); o.value = d; ds.appendChild(o); });
-    ds.value = "counters";
     seat.appendChild(ds);
     host.appendChild(seat);
+  }
+  populatePickers(); // fill the per-seat deck <select>s from the live deck list (API, or fallback)
+}
+
+// The deck names offered in the per-seat pickers: the live `/api/decks` list (presets + customs)
+// once loaded, else the built-in fallback so the form is usable before the first fetch resolves.
+function deckNames() { return allDecks.length ? allDecks.map((d) => d.name) : DECKS; }
+
+// (Re)fill each seat's deck <select> from `deckNames()`, preserving the current selection. Called at
+// startup and whenever the deck list changes (a save/delete), so new decks show up immediately.
+function populatePickers() {
+  const names = deckNames();
+  for (let i = 0; i < SEAT_COUNT; i++) {
+    const sel = $("deck" + i);
+    if (!sel) continue;
+    const prev = sel.value;
+    sel.innerHTML = "";
+    names.forEach((n) => { const o = el("option", null, n); o.value = n; sel.appendChild(o); });
+    sel.value = names.includes(prev) ? prev : (names.includes("counters") ? "counters" : (names[0] || ""));
   }
 }
 
@@ -425,34 +471,77 @@ function typeLine(c) {
   const sub = (c.subtypes || []).join(" ");
   return sub ? s + " — " + sub : s;
 }
-let deckList = [], curDeck = null;
-async function loadDecks() {
-  try { deckList = await (await fetch("/api/decks")).json(); } catch (e) { return; }
+let allDecks = [], curDeck = null, CATALOG = [], builder = null;
+
+// Fetch the deck list (`/api/decks`: presets + customs), refresh the tabs + the per-seat pickers,
+// and (unless the builder is open) reload the currently-viewed deck. The single "decks changed"
+// entry point — called at startup and after every create/update/delete.
+async function refreshDecks() {
+  try { allDecks = await (await fetch("/api/decks")).json(); } catch (e) { allDecks = []; }
+  renderDeckTabs();
+  populatePickers();
+  if (!builder) {
+    const pick = (curDeck && allDecks.some((d) => d.name === curDeck)) ? curDeck : (allDecks[0] || {}).name;
+    loadDeck(pick);
+  }
+}
+
+function renderDeckTabs() {
   const tabs = $("deckTabs"); tabs.innerHTML = "";
-  deckList.forEach((d) => {
-    const t = el("button", "decktab", d.name + " (" + d.total + ")");
+  allDecks.forEach((d) => {
+    const t = el("button", "decktab" + (d.name === curDeck ? " active" : ""),
+      d.name + " (" + d.total + ")" + (d.custom ? " ✎" : ""));
     t.dataset.deck = d.name;
     t.onclick = () => loadDeck(d.name);
     tabs.appendChild(t);
   });
-  loadDeck((curDeck && deckList.some((d) => d.name === curDeck)) ? curDeck : (deckList[0] || {}).name);
 }
+
+// View one deck (read-only). Presets get a "Duplicate to edit"; customs get Edit + Delete.
 async function loadDeck(name) {
-  if (!name) return;
+  builder = null;
+  if (!name) { $("deckBody").innerHTML = ""; return; }
   curDeck = name;
-  [...$("deckTabs").children].forEach((t) => t.classList.toggle("active", t.dataset.deck === name));
+  renderDeckTabs();
   const body = $("deckBody");
   let d;
   try { const r = await fetch("/api/decks/" + encodeURIComponent(name)); if (!r.ok) throw 0; d = await r.json(); }
   catch (e) { body.innerHTML = '<div class="empty">Couldn\'t load deck.</div>'; return; }
   body.innerHTML = "";
+  const acts = el("div", "deckacts");
+  if (d.custom) {
+    const edit = el("button", "ghost small", "✎ Edit"); edit.onclick = () => editDeck(d);
+    const del = el("button", "ghost small", "🗑 Delete"); del.onclick = () => deleteDeck(d.name);
+    acts.appendChild(edit); acts.appendChild(del);
+  } else {
+    const dup = el("button", "ghost small", "⧉ Duplicate to edit"); dup.onclick = () => duplicateDeck(d);
+    acts.appendChild(dup);
+  }
+  body.appendChild(acts);
   const partialDistinct = d.cards.filter((c) => c.fully_implemented === false).length;
   body.appendChild(el("div", "decksummary",
-    d.total + " cards · " + d.cards.length + " distinct" +
+    d.total + " cards · " + d.cards.length + " distinct · " + (d.custom ? "custom" : "preset") +
     (partialDistinct ? " · " + partialDistinct + " partially implemented ⚠" : "")));
   const grid = el("div", "deckgrid");
   d.cards.forEach((c) => grid.appendChild(deckCard(c)));
   body.appendChild(grid);
+}
+
+function cardsMap(detail) {
+  const m = new Map();
+  detail.cards.forEach((c) => m.set(c.grp_id, c.count));
+  return m;
+}
+function newDeck()          { openBuilder("", false, new Map()); }
+function editDeck(d)        { openBuilder(d.name, true, cardsMap(d)); }
+function duplicateDeck(d)   { openBuilder("", false, cardsMap(d)); }
+
+async function deleteDeck(name) {
+  if (!confirm("Delete deck '" + name + "'? This can't be undone.")) return;
+  const r = await fetch("/api/decks/" + encodeURIComponent(name), { method: "DELETE" });
+  if (!r.ok && r.status !== 204) { alert("delete failed: " + (await r.text())); return; }
+  curDeck = null;
+  await refreshDecks();
 }
 function deckCard(c) {
   const d = el("div", "dcard" + (c.fully_implemented === false ? " partial" : ""));
@@ -521,21 +610,206 @@ if (!HOVER) {
   });
 }
 
+// ── deck builder ────────────────────────────────────────────────────────────
+// The catalog (`/api/cards`) is every card that can appear in a game — the art-covered playable
+// pool — projected in the same shape as deck cards. Loaded once, lazily.
+async function loadCatalog() {
+  if (!CATALOG.length) {
+    try { CATALOG = await (await fetch("/api/cards")).json(); } catch (e) { CATALOG = []; }
+  }
+}
+const catalogCard = (grp) => CATALOG.find((c) => c.grp_id === grp);
+const deckTotal = () => [...builder.cards.values()].reduce((a, b) => a + b, 0);
+function partialCount() {
+  let n = 0;
+  builder.cards.forEach((cnt, g) => { const c = catalogCard(g); if (cnt > 0 && c && c.fully_implemented === false) n += cnt; });
+  return n;
+}
+const withId = (e, id) => { e.id = id; return e; };
+
+// Open the builder. `name`/`update` = target custom deck (update=true) or a fresh/duplicated one
+// (update=false, name blank so the user names it); `cards` = grp_id→count Map to start from.
+function openBuilder(name, update, cards) {
+  builder = { name, update, cards, q: "", colors: new Set(), types: new Set() };
+  loadCatalog().then(renderBuilder);
+}
+
+// Build the (stable) builder skeleton once; `updateBuilder` refills the dynamic parts so adding a
+// card doesn't reset the page scroll or the name field.
+function renderBuilder() {
+  const body = $("deckBody"); body.innerHTML = "";
+  const hd = el("div", "deckhdr");
+  const name = withId(el("input", "bname"), "bname");
+  name.placeholder = "deck name (A–Z, 0–9, - _)"; name.value = builder.name; name.disabled = builder.update;
+  name.oninput = () => { builder.name = name.value; };
+  hd.appendChild(name);
+  const save = el("button", null, builder.update ? "Save changes" : "Create deck"); save.onclick = saveBuilder;
+  const cancel = el("button", "ghost small", "Cancel");
+  cancel.onclick = () => { builder = null; loadDeck(curDeck || (allDecks[0] || {}).name); };
+  hd.appendChild(save); hd.appendChild(cancel);
+  body.appendChild(hd);
+  body.appendChild(withId(el("div", "bsum"), "bsum"));
+  body.appendChild(withId(el("div", "curve"), "bcurve"));
+  body.appendChild(el("div", "sectlbl", "Your deck"));
+  body.appendChild(withId(el("div", "deckgrid"), "bindeck"));
+  body.appendChild(el("div", "sectlbl", "Add cards"));
+  body.appendChild(filterBar());
+  body.appendChild(withId(el("div", "deckgrid"), "bcatalog"));
+  updateBuilder();
+}
+
+function filterBar() {
+  const bar = el("div", "filterbar");
+  const q = el("input"); q.placeholder = "Search name…"; q.value = builder.q;
+  q.oninput = () => { builder.q = q.value; updateCatalog(); };
+  bar.appendChild(q);
+  const chip = (label, set, val) => {
+    const c = el("span", "fchip" + (set.has(val) ? " on" : ""), label);
+    c.onclick = () => { set.has(val) ? set.delete(val) : set.add(val); c.classList.toggle("on"); updateCatalog(); };
+    return c;
+  };
+  ["W", "U", "B", "R", "G", "C"].forEach((code) => bar.appendChild(chip(code, builder.colors, code)));
+  ["Creature", "Land", "Instant", "Sorcery", "Artifact", "Enchantment"].forEach((t) => bar.appendChild(chip(t, builder.types, t)));
+  return bar;
+}
+
+// Refill every dynamic region from `builder.cards`.
+function updateBuilder() { updateSummary(); updateCurve(); updateInDeck(); updateCatalog(); }
+
+function updateSummary() {
+  const host = $("bsum"); if (!host) return; host.innerHTML = "";
+  const total = deckTotal(), distinct = [...builder.cards.values()].filter((n) => n > 0).length;
+  const line = el("span"); line.innerHTML = "<b>" + total + "</b> cards · " + distinct + " distinct"; host.appendChild(line);
+  const warns = [];
+  if (total < 7) warns.push("under 7 cards — decks out immediately");
+  else if (total > 300) warns.push("over 300 cards");
+  const p = partialCount();
+  if (p) warns.push(p + " partially-implemented");
+  if (warns.length) host.appendChild(el("div", "bwarn", "⚠ " + warns.join(" · ")));
+}
+
+function updateCurve() {
+  const host = $("bcurve"); if (!host) return; host.innerHTML = "";
+  const buckets = [0, 0, 0, 0, 0, 0, 0]; // mana value 0..5, then 6+
+  builder.cards.forEach((cnt, g) => {
+    const c = catalogCard(g);
+    if (!c || cnt <= 0 || c.card_types.includes("Land")) return;
+    buckets[Math.min(c.mana_value || 0, 6)] += cnt;
+  });
+  const max = Math.max(1, ...buckets);
+  buckets.forEach((n, i) => {
+    const col = el("div", "curvecol");
+    col.appendChild(el("span", null, "" + n));
+    const bar = el("div", "curvebar"); bar.style.height = Math.round((n / max) * 30) + "px";
+    bar.title = n + " nonland at MV " + (i === 6 ? "6+" : i);
+    col.appendChild(bar);
+    col.appendChild(el("span", null, i === 6 ? "6+" : "" + i));
+    host.appendChild(col);
+  });
+}
+
+function updateInDeck() {
+  const grid = $("bindeck"); if (!grid) return; grid.innerHTML = "";
+  const entries = [...builder.cards.entries()].filter(([, n]) => n > 0)
+    .map(([g, n]) => [catalogCard(g), n]).filter(([c]) => c);
+  if (!entries.length) { grid.appendChild(el("div", "empty", "Tap cards below to add them.")); return; }
+  entries.sort((a, b) => {
+    const la = a[0].card_types.includes("Land"), lb = b[0].card_types.includes("Land");
+    if (la !== lb) return la - lb;
+    if (a[0].mana_value !== b[0].mana_value) return a[0].mana_value - b[0].mana_value;
+    return a[0].name.localeCompare(b[0].name);
+  });
+  entries.forEach(([c, n]) => grid.appendChild(builderCard(c, n, "indeck", {
+    inc: () => { builder.cards.set(c.grp_id, n + 1); updateBuilder(); },
+    dec: () => { const cur = builder.cards.get(c.grp_id) || 0; if (cur <= 1) builder.cards.delete(c.grp_id); else builder.cards.set(c.grp_id, cur - 1); updateBuilder(); },
+  })));
+}
+
+function updateCatalog() {
+  const grid = $("bcatalog"); if (!grid) return; grid.innerHTML = "";
+  const q = builder.q.toLowerCase();
+  const list = CATALOG.filter((c) => {
+    if (q && !c.name.toLowerCase().includes(q)) return false;
+    if (builder.types.size && !c.card_types.some((t) => builder.types.has(t))) return false;
+    if (builder.colors.size) {
+      const codes = c.colors.length ? c.colors.map((x) => CODE[x]) : ["C"];
+      if (!codes.some((cd) => builder.colors.has(cd))) return false;
+    }
+    return true;
+  });
+  if (!list.length) { grid.appendChild(el("div", "empty", "No cards match.")); return; }
+  list.forEach((c) => grid.appendChild(builderCard(c, builder.cards.get(c.grp_id) || 0, "catalog", {
+    add: () => { builder.cards.set(c.grp_id, (builder.cards.get(c.grp_id) || 0) + 1); updateBuilder(); },
+  })));
+}
+
+// A builder card. catalog mode: tap = add one (badge shows current copies). indeck mode: −/+
+// steppers, tap body = remove one. A 🔍 button previews (touch); desktop also previews on hover.
+function builderCard(c, count, mode, h) {
+  const d = el("div", "dcard addable" + (c.fully_implemented === false ? " partial" : ""));
+  const hdr = el("div", "dchdr");
+  hdr.appendChild(el("div", "dcname", c.name));
+  const mana = el("div", "dcmana"); manaPips(c).forEach((p) => mana.appendChild(p)); hdr.appendChild(mana);
+  d.appendChild(hdr);
+  const art = el("div", "dcart"); const info = artMap[c.grp_id];
+  if (info && info.art) art.style.backgroundImage = "url('" + info.art + "')";
+  d.appendChild(art);
+  d.appendChild(el("div", "dctype", typeLine(c)));
+  if (mode === "catalog" && count > 0) d.appendChild(el("div", "indeck", "×" + count));
+  if (c.fully_implemented === false) { const w = el("div", "dcwarn", "⚠"); w.title = "Not fully implemented"; d.appendChild(w); }
+  if (mode === "indeck") {
+    const foot = el("div", "dcfoot");
+    const step = el("div", "stepper");
+    const minus = el("button", null, "−"); minus.onclick = (e) => { e.stopPropagation(); h.dec(); };
+    const plus = el("button", null, "+"); plus.onclick = (e) => { e.stopPropagation(); h.inc(); };
+    step.appendChild(minus); step.appendChild(el("span", "dccount", "×" + count)); step.appendChild(plus);
+    foot.appendChild(step);
+    if (c.power != null) foot.appendChild(el("span", "dcpt", c.power + "/" + c.toughness));
+    d.appendChild(foot);
+  }
+  if (info && info.img) {
+    if (HOVER) {
+      d.addEventListener("mousemove", (e) => showCardPreview(info.img, e));
+      d.addEventListener("mouseleave", hideCardPreview);
+    }
+    const z = el("button", "zoombtn", "🔍"); z.title = "Preview";
+    z.onclick = (e) => { e.stopPropagation(); showCardPreviewCentered(info.img, c.grp_id); };
+    d.appendChild(z);
+  }
+  d.addEventListener("click", () => { mode === "catalog" ? h.add() : h.dec(); });
+  return d;
+}
+
+async function saveBuilder() {
+  const cards = [...builder.cards.entries()].filter(([, n]) => n > 0).map(([grp_id, count]) => ({ grp_id, count }));
+  const name = builder.update ? builder.name : ($("bname").value.trim());
+  if (!name) { alert("give the deck a name"); return; }
+  const url = builder.update ? "/api/decks/" + encodeURIComponent(builder.name) : "/api/decks";
+  const method = builder.update ? "PUT" : "POST";
+  const r = await fetch(url, { method, headers: { "content-type": "application/json" }, body: JSON.stringify({ name, cards }) });
+  if (!r.ok) { alert("save failed: " + (await r.text())); return; }
+  const saved = await r.json();
+  builder = null; curDeck = saved.name;
+  await refreshDecks();
+}
+
 [...document.querySelectorAll(".tabbtn")].forEach((btn) => {
   btn.onclick = () => {
     document.querySelectorAll(".tabbtn").forEach((b) => b.classList.toggle("active", b === btn));
     const pane = btn.dataset.pane;
     $("pane-lobby").hidden = pane !== "lobby";
     $("pane-decks").hidden = pane !== "decks";
-    if (pane === "decks" && !deckList.length) loadDecks();
+    if (pane === "decks" && !allDecks.length) refreshDecks();
   };
 });
 
 buildForm();
 $("createBtn").onclick = createGame;
 $("clearFinished").onclick = clearFinished;
+$("newDeckBtn").onclick = newDeck;
 refresh();
 refreshReplays();
+refreshDecks(); // load the deck list up front so the per-seat pickers are populated immediately
 setInterval(refresh, 2000);
 setInterval(refreshReplays, 5000);
 </script>
