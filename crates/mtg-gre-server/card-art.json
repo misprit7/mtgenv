@@ -796,5 +796,271 @@
   "img": "https://cards.scryfall.io/normal/front/2/1/21375667-b318-47f8-a482-9c8c2b5b14c0.jpg?1782683009",
   "artist": "Cristi Balanescu",
   "set": "sos"
+ },
+ "264": {
+  "name": "Hungry Graffalon",
+  "art": "https://cards.scryfall.io/art_crop/front/0/3/030b1272-5990-4bc9-8fc1-82cc05602060.jpg?1782682907",
+  "img": "https://cards.scryfall.io/normal/front/0/3/030b1272-5990-4bc9-8fc1-82cc05602060.jpg?1782682907",
+  "artist": "Raph Lomotan",
+  "set": "sos"
+ },
+ "265": {
+  "name": "Cuboid Colony",
+  "art": "https://cards.scryfall.io/art_crop/front/6/3/6384d135-7780-4d75-9e95-71bce506948e.jpg?1782682877",
+  "img": "https://cards.scryfall.io/normal/front/6/3/6384d135-7780-4d75-9e95-71bce506948e.jpg?1782682877",
+  "artist": "Alexandre Honoré",
+  "set": "sos"
+ },
+ "266": {
+  "name": "Textbook Tabulator",
+  "art": "https://cards.scryfall.io/art_crop/front/5/6/56f54fee-b48d-4582-8982-ca4c7b8ef553.jpg?1782682979",
+  "img": "https://cards.scryfall.io/normal/front/5/6/56f54fee-b48d-4582-8982-ca4c7b8ef553.jpg?1782682979",
+  "artist": "Josiah \"Jo\" Cameron",
+  "set": "sos"
+ },
+ "267": {
+  "name": "Graduation Day",
+  "art": "https://cards.scryfall.io/art_crop/front/d/b/db1cea01-123e-4b23-8b98-f94cabce3912.jpg?1782683022",
+  "img": "https://cards.scryfall.io/normal/front/d/b/db1cea01-123e-4b23-8b98-f94cabce3912.jpg?1782683022",
+  "artist": "Brian Valeza",
+  "set": "sos"
+ },
+ "268": {
+  "name": "Inkling Mascot",
+  "art": "https://cards.scryfall.io/art_crop/front/6/d/6d4a2f39-0e1e-4076-815a-2676a09a1aab.jpg?1782682865",
+  "img": "https://cards.scryfall.io/normal/front/6/d/6d4a2f39-0e1e-4076-815a-2676a09a1aab.jpg?1782682865",
+  "artist": "Inkognit",
+  "set": "sos"
+ },
+ "269": {
+  "name": "Primary Research",
+  "art": "https://cards.scryfall.io/art_crop/front/f/6/f6fdb814-45c6-4d14-afff-7f5bd1bd10a1.jpg?1782683016",
+  "img": "https://cards.scryfall.io/normal/front/f/6/f6fdb814-45c6-4d14-afff-7f5bd1bd10a1.jpg?1782683016",
+  "artist": "Michal Ivan",
+  "set": "sos"
+ },
+ "270": {
+  "name": "Cost of Brilliance",
+  "art": "https://cards.scryfall.io/art_crop/front/3/a/3a46816b-9f75-4c72-9ec6-cded6a4a0d01.jpg?1782682972",
+  "img": "https://cards.scryfall.io/normal/front/3/a/3a46816b-9f75-4c72-9ec6-cded6a4a0d01.jpg?1782682972",
+  "artist": "Darren Tan",
+  "set": "sos"
+ },
+ "271": {
+  "name": "Dissection Practice",
+  "art": "https://cards.scryfall.io/art_crop/front/d/d/ddbf1242-6832-475e-9a77-65dd9b4bb32a.jpg?1782682970",
+  "img": "https://cards.scryfall.io/normal/front/d/d/ddbf1242-6832-475e-9a77-65dd9b4bb32a.jpg?1782682970",
+  "artist": "Steve Ellis",
+  "set": "sos"
+ },
+ "272": {
+  "name": "Exhibition Tidecaller",
+  "art": "https://cards.scryfall.io/art_crop/front/a/5/a58c364e-d0c5-41b9-8c8b-2e5a99468cc7.jpg?1782682998",
+  "img": "https://cards.scryfall.io/normal/front/a/5/a58c364e-d0c5-41b9-8c8b-2e5a99468cc7.jpg?1782682998",
+  "artist": "Tulio Brito",
+  "set": "sos"
+ },
+ "273": {
+  "name": "Molten-Core Maestro",
+  "art": "https://cards.scryfall.io/art_crop/front/3/2/326dfe32-3674-4a11-acd8-5ba62371235a.jpg?1782682930",
+  "img": "https://cards.scryfall.io/normal/front/3/2/326dfe32-3674-4a11-acd8-5ba62371235a.jpg?1782682930",
+  "artist": "Aleksi Briclot",
+  "set": "sos"
+ },
+ "274": {
+  "name": "Quick Study",
+  "art": "https://cards.scryfall.io/art_crop/front/2/d/2d4f0bc7-da7c-4749-a24c-b01f3eb5860c.jpg?1782682982",
+  "img": "https://cards.scryfall.io/normal/front/2/d/2d4f0bc7-da7c-4749-a24c-b01f3eb5860c.jpg?1782682982",
+  "artist": "Izzy",
+  "set": "woe"
+ },
+ "275": {
+  "name": "Dina's Guidance",
+  "art": "https://cards.scryfall.io/art_crop/front/7/7/775c1e50-08a4-413f-ab0f-f1c2a79cfe94.jpg?1782682876",
+  "img": "https://cards.scryfall.io/normal/front/7/7/775c1e50-08a4-413f-ab0f-f1c2a79cfe94.jpg?1782682876",
+  "artist": "Manuel Castañón",
+  "set": "sos"
+ },
+ "276": {
+  "name": "Strixhaven Skycoach",
+  "art": "https://cards.scryfall.io/art_crop/front/8/7/87741fbb-b426-4f83-a358-587b0907f081.jpg?1782682822",
+  "img": "https://cards.scryfall.io/normal/front/8/7/87741fbb-b426-4f83-a358-587b0907f081.jpg?1782682822",
+  "artist": "Michal Ivan",
+  "set": "sos"
+ },
+ "277": {
+  "name": "Terramorphic Expanse",
+  "art": "https://cards.scryfall.io/art_crop/front/a/8/a81f924b-0527-4311-8120-9bfff71524f6.jpg?1782682453",
+  "img": "https://cards.scryfall.io/normal/front/a/8/a81f924b-0527-4311-8120-9bfff71524f6.jpg?1782682453",
+  "artist": "Arthur Yuan",
+  "set": "psal"
+ },
+ "278": {
+  "name": "Ancestral Anger",
+  "art": "https://cards.scryfall.io/art_crop/front/6/c/6c5a93d6-d4ab-4062-bb3c-1b5330bf15ad.jpg?1782682949",
+  "img": "https://cards.scryfall.io/normal/front/6/c/6c5a93d6-d4ab-4062-bb3c-1b5330bf15ad.jpg?1782682949",
+  "artist": "Gonzalo Kenny",
+  "set": "vow"
+ },
+ "279": {
+  "name": "Stress Dream",
+  "art": "https://cards.scryfall.io/art_crop/front/1/e/1ec40a1b-51e7-4a35-966c-ab2a10f21a80.jpg?1782682834",
+  "img": "https://cards.scryfall.io/normal/front/1/e/1ec40a1b-51e7-4a35-966c-ab2a10f21a80.jpg?1782682834",
+  "artist": "Edgar Sánchez Hidalgo",
+  "set": "sos"
+ },
+ "280": {
+  "name": "Flow State",
+  "art": "https://cards.scryfall.io/art_crop/front/4/7/47d6093b-b1b6-4956-8bfd-02cce899f832.jpg?1782682998",
+  "img": "https://cards.scryfall.io/normal/front/4/7/47d6093b-b1b6-4956-8bfd-02cce899f832.jpg?1782682998",
+  "artist": "Genel Jumalon",
+  "set": "sos"
+ },
+ "281": {
+  "name": "Comforting Counsel",
+  "art": "https://cards.scryfall.io/art_crop/front/5/2/5223a04f-6b47-4379-80ce-8489c4a91734.jpg?1782682915",
+  "img": "https://cards.scryfall.io/normal/front/5/2/5223a04f-6b47-4379-80ce-8489c4a91734.jpg?1782682915",
+  "artist": "Chris Rahn",
+  "set": "sos"
+ },
+ "282": {
+  "name": "Procrastinate",
+  "art": "https://cards.scryfall.io/art_crop/front/1/e/1edb449d-620f-4e21-9d76-2c840635eb9d.jpg?1782682982",
+  "img": "https://cards.scryfall.io/normal/front/1/e/1edb449d-620f-4e21-9d76-2c840635eb9d.jpg?1782682982",
+  "artist": "Elizabeth Peiró",
+  "set": "sos"
+ },
+ "283": {
+  "name": "Deluge Virtuoso",
+  "art": "https://cards.scryfall.io/art_crop/front/2/e/2e3b16ed-8727-48fd-8b1f-c0cbd329385e.jpg?1782683001",
+  "img": "https://cards.scryfall.io/normal/front/2/e/2e3b16ed-8727-48fd-8b1f-c0cbd329385e.jpg?1782683001",
+  "artist": "Justine Cruz",
+  "set": "sos"
+ },
+ "284": {
+  "name": "Fractal Mascot",
+  "art": "https://cards.scryfall.io/art_crop/front/c/f/cf5b19e3-eed1-4b36-9756-660ffb3baa08.jpg?1782682873",
+  "img": "https://cards.scryfall.io/normal/front/c/f/cf5b19e3-eed1-4b36-9756-660ffb3baa08.jpg?1782682873",
+  "artist": "Manuel Castañón",
+  "set": "sos"
+ },
+ "285": {
+  "name": "Rapier Wit",
+  "art": "https://cards.scryfall.io/art_crop/front/9/7/97b50521-5a0f-4dbd-8e15-f0f0d059c258.jpg?1782683012",
+  "img": "https://cards.scryfall.io/normal/front/9/7/97b50521-5a0f-4dbd-8e15-f0f0d059c258.jpg?1782683012",
+  "artist": "Joshua Raphael",
+  "set": "sos"
+ },
+ "286": {
+  "name": "Dig Site Inventory",
+  "art": "https://cards.scryfall.io/art_crop/front/e/5/e52464ee-df8b-41ec-af93-4b0eb004383e.jpg?1782683029",
+  "img": "https://cards.scryfall.io/normal/front/e/5/e52464ee-df8b-41ec-af93-4b0eb004383e.jpg?1782683029",
+  "artist": "Alexandre Honoré",
+  "set": "sos"
+ },
+ "287": {
+  "name": "Tome Blast",
+  "art": "https://cards.scryfall.io/art_crop/front/7/2/72a3b17d-1e00-48e9-8402-c81bacd595a7.jpg?1782682921",
+  "img": "https://cards.scryfall.io/normal/front/7/2/72a3b17d-1e00-48e9-8402-c81bacd595a7.jpg?1782682921",
+  "artist": "Filipe Pagliuso",
+  "set": "sos"
+ },
+ "288": {
+  "name": "Duel Tactics",
+  "art": "https://cards.scryfall.io/art_crop/front/8/f/8f3a1675-0cc7-4dfd-a12e-4740a2cf81e8.jpg?1782682942",
+  "img": "https://cards.scryfall.io/normal/front/8/f/8f3a1675-0cc7-4dfd-a12e-4740a2cf81e8.jpg?1782682942",
+  "artist": "Craig J Spearing",
+  "set": "sos"
+ },
+ "289": {
+  "name": "Pursue the Past",
+  "art": "https://cards.scryfall.io/art_crop/front/4/5/4584d5f7-b1f1-4c8e-80c5-ad35e44a968e.jpg?1782682849",
+  "img": "https://cards.scryfall.io/normal/front/4/5/4584d5f7-b1f1-4c8e-80c5-ad35e44a968e.jpg?1782682849",
+  "artist": "Craig Elliott",
+  "set": "sos"
+ },
+ "290": {
+  "name": "Send in the Pest",
+  "art": "https://cards.scryfall.io/art_crop/front/2/8/283b508b-89f0-4c23-9686-b049e402b73c.jpg?1782682953",
+  "img": "https://cards.scryfall.io/normal/front/2/8/283b508b-89f0-4c23-9686-b049e402b73c.jpg?1782682953",
+  "artist": "Raluca Marinescu",
+  "set": "sos"
+ },
+ "291": {
+  "name": "Pestbrood Sloth",
+  "art": "https://cards.scryfall.io/art_crop/front/c/1/c1251ae6-2f19-4f84-ab02-6a6cc7ce6056.jpg?1782682901",
+  "img": "https://cards.scryfall.io/normal/front/c/1/c1251ae6-2f19-4f84-ab02-6a6cc7ce6056.jpg?1782682901",
+  "artist": "Alexandre Honoré",
+  "set": "sos"
+ },
+ "292": {
+  "name": "Arcane Omens",
+  "art": "https://cards.scryfall.io/art_crop/front/d/3/d357d997-9d4e-4ade-81f2-37629853f13a.jpg?1782682977",
+  "img": "https://cards.scryfall.io/normal/front/d/3/d357d997-9d4e-4ade-81f2-37629853f13a.jpg?1782682977",
+  "artist": "Antonio José Manzanedo",
+  "set": "sos"
+ },
+ "293": {
+  "name": "Together as One",
+  "art": "https://cards.scryfall.io/art_crop/front/a/c/ac2a8a66-e38c-42ab-83e1-d2d99ee48861.jpg?1782683032",
+  "img": "https://cards.scryfall.io/normal/front/a/c/ac2a8a66-e38c-42ab-83e1-d2d99ee48861.jpg?1782683032",
+  "artist": "Néstor Ossandón Leal",
+  "set": "sos"
+ },
+ "294": {
+  "name": "Transcendent Archaic",
+  "art": "https://cards.scryfall.io/art_crop/front/1/6/1624c680-502b-474a-b9b2-888fe3ca008c.jpg?1782683032",
+  "img": "https://cards.scryfall.io/normal/front/1/6/1624c680-502b-474a-b9b2-888fe3ca008c.jpg?1782683032",
+  "artist": "Chris Rahn",
+  "set": "sos"
+ },
+ "295": {
+  "name": "Stirring Honormancer",
+  "art": "https://cards.scryfall.io/art_crop/front/e/e/ee84b04d-78fc-416f-9166-72e5417c3e17.jpg?1782682837",
+  "img": "https://cards.scryfall.io/normal/front/e/e/ee84b04d-78fc-416f-9166-72e5417c3e17.jpg?1782682837",
+  "artist": "April Prime",
+  "set": "sos"
+ },
+ "296": {
+  "name": "Essenceknit Scholar",
+  "art": "https://cards.scryfall.io/art_crop/front/2/a/2a3cba55-3fae-4d45-ae03-4d662ec13718.jpg?1782682875",
+  "img": "https://cards.scryfall.io/normal/front/2/a/2a3cba55-3fae-4d45-ae03-4d662ec13718.jpg?1782682875",
+  "artist": "Ioannis Fiore",
+  "set": "sos"
+ },
+ "297": {
+  "name": "Eternal Student",
+  "art": "https://cards.scryfall.io/art_crop/front/f/9/f97fac69-3e77-4150-9702-cc726daa6d21.jpg?1782682969",
+  "img": "https://cards.scryfall.io/normal/front/f/9/f97fac69-3e77-4150-9702-cc726daa6d21.jpg?1782682969",
+  "artist": "Ksenia Kim",
+  "set": "sos"
+ },
+ "298": {
+  "name": "Stone Docent",
+  "art": "https://cards.scryfall.io/art_crop/front/c/2/c2abfffb-bf36-44af-9a27-6e109e4d77dd.jpg?1782683008",
+  "img": "https://cards.scryfall.io/normal/front/c/2/c2abfffb-bf36-44af-9a27-6e109e4d77dd.jpg?1782683008",
+  "artist": "Inkognit",
+  "set": "sos"
+ },
+ "299": {
+  "name": "Molten Note",
+  "art": "https://cards.scryfall.io/art_crop/front/5/0/506f69aa-7dc4-4dd7-990a-7371fc1762c0.jpg?1782682859",
+  "img": "https://cards.scryfall.io/normal/front/5/0/506f69aa-7dc4-4dd7-990a-7371fc1762c0.jpg?1782682859",
+  "artist": "David Álvarez",
+  "set": "sos"
+ },
+ "300": {
+  "name": "Impractical Joke",
+  "art": "https://cards.scryfall.io/art_crop/front/3/9/39a816b4-39b8-421c-b828-68db901d34b7.jpg?1782682936",
+  "img": "https://cards.scryfall.io/normal/front/3/9/39a816b4-39b8-421c-b828-68db901d34b7.jpg?1782682936",
+  "artist": "Caroline Gariba",
+  "set": "sos"
+ },
+ "9001": {
+  "name": "Pest",
+  "art": "https://cards.scryfall.io/art_crop/front/b/a/ba854032-6ad2-4654-990a-64006e7f92fd.jpg?1782723477",
+  "img": "https://cards.scryfall.io/normal/front/b/a/ba854032-6ad2-4654-990a-64006e7f92fd.jpg?1782723477",
+  "artist": "Oriana Menendez",
+  "set": "plst"
  }
 }
