@@ -17,6 +17,7 @@ pub mod masterful_flourish;
 pub mod mindful_biomancer;
 pub mod noxious_newt;
 pub mod oracles_restoration;
+pub mod planar_engineering;
 pub mod proctors_gaze;
 pub mod rapturous_moment;
 pub mod rearing_embermare;
@@ -29,6 +30,7 @@ pub mod startled_relic_sloth;
 pub mod traumatic_critique;
 pub mod vibrant_outburst;
 pub mod wander_off;
+pub mod witherbloom_charm;
 pub mod zealous_lorecaster;
 
 pub fn register(db: &mut CardDb) {
@@ -47,6 +49,7 @@ pub fn register(db: &mut CardDb) {
     mindful_biomancer::register(db);
     noxious_newt::register(db);
     oracles_restoration::register(db);
+    planar_engineering::register(db);
     proctors_gaze::register(db);
     rapturous_moment::register(db);
     rearing_embermare::register(db);
@@ -59,5 +62,6 @@ pub fn register(db: &mut CardDb) {
     traumatic_critique::register(db);
     vibrant_outburst::register(db);
     wander_off::register(db);
+    witherbloom_charm::register(db);
     zealous_lorecaster::register(db);
 }

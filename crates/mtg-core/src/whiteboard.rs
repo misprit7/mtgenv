@@ -175,6 +175,26 @@ impl Engine {
                 }
                 true
             }
+            // Sacrifice permanents as an effect (CR 701.17) — "sacrifice two lands", "each player
+            // sacrifices a creature of their choice." Imperative + asks each sacrificing player which
+            // of their own permanents to sacrifice, so it lives here. Flush staged actions first.
+            // Performed iff at least one permanent was sacrificed (an unmet min sacrifices what it can).
+            Effect::Sacrifice { who, what } => {
+                self.flush_pending(wb);
+                let controller = ctx.controller.unwrap_or(PlayerId(0));
+                let players: Vec<PlayerId> = match who {
+                    PlayerRef::EachPlayer => {
+                        (0..self.state.players.len() as u32).map(PlayerId).collect()
+                    }
+                    PlayerRef::EachOpponent => vec![self.opponent_of(controller)],
+                    other => vec![self.eval_player(*other, ctx)],
+                };
+                let mut any = 0usize;
+                for pl in players {
+                    any += self.interpret_sacrifice(pl, what, ctx);
+                }
+                any > 0
+            }
             // "You may …" (CR 603.5 / optional effect): ask the controller; run `body` on yes.
             // Performed iff the controller said yes AND the body itself performed (so a "may" whose
             // body can't be carried out still reports "not done" to a wrapping `IfYouDo`).
@@ -334,6 +354,63 @@ impl Engine {
             self.broadcast(GameEvent::ObjectMoved { obj: card, to: Zone::Graveyard });
         }
         discarded
+    }
+
+    /// Have `pl` sacrifice permanents matching `spec` (CR 701.17), choosing which of their own (up
+    /// to `spec.max`, at least `spec.min` when able). The sacrificing player is always the chooser.
+    /// Returns the number actually sacrificed (for the `IfYouDo`/"performed" flag).
+    fn interpret_sacrifice(&mut self, pl: PlayerId, spec: &SelectSpec, ctx: &ResolutionCtx) -> usize {
+        let candidates: Vec<ObjId> = self
+            .state
+            .player(pl)
+            .battlefield
+            .iter()
+            .copied()
+            .filter(|&id| self.count_filter_matches(id, &spec.filter))
+            .collect();
+        let max = self.eval_value(&spec.max, ctx).max(0) as usize;
+        let want = max.min(candidates.len());
+        if want == 0 {
+            return 0;
+        }
+        let chosen: Vec<ObjId> = if candidates.len() <= want {
+            candidates
+        } else {
+            let req = DecisionRequest::SelectCards {
+                reason: SelectReason::Sacrifice,
+                from: candidates.clone(),
+                min: want as u32,
+                max: want as u32,
+                description: "Sacrifice".into(),
+            };
+            let mut seen = std::collections::BTreeSet::new();
+            let mut picks: Vec<ObjId> = match self.ask(pl, &req) {
+                DecisionResponse::Indices(idxs) => idxs
+                    .iter()
+                    .filter_map(|&i| candidates.get(i as usize).copied())
+                    .filter(|o| seen.insert(*o))
+                    .take(want)
+                    .collect(),
+                _ => Vec::new(),
+            };
+            // Sacrifice is mandatory (for a fixed count): fill from the front if the agent under-picked.
+            for &o in &candidates {
+                if picks.len() >= want {
+                    break;
+                }
+                if seen.insert(o) {
+                    picks.push(o);
+                }
+            }
+            picks
+        };
+        let sacrificed = chosen.len();
+        for obj in chosen {
+            let owner = self.state.object(obj).owner;
+            self.state.move_object(obj, Zone::Graveyard, owner);
+            self.broadcast(GameEvent::ObjectMoved { obj, to: Zone::Graveyard });
+        }
+        sacrificed
     }
 
     /// Counter the stack object with id `sid` (CR 701.5): remove it from the stack; a countered
@@ -792,10 +869,7 @@ impl Engine {
             // above and leaves this list. **The match is exhaustive by design (no wildcard):**
             // a NEW `Effect` variant added without an interpreter arm is a *compile* error
             // here, not a silent gap.
-            Effect::Sacrifice { .. }
-            | Effect::Repeat { .. }
-            | Effect::Distribute { .. }
-            | Effect::Native { .. } => {
+            Effect::Repeat { .. } | Effect::Distribute { .. } | Effect::Native { .. } => {
                 debug_assert!(false, "uninterpreted Effect leaf in materialize(): {effect:?}");
             }
             // Control-flow / interactive nodes are driven by `interpret` (which asks the agent);
@@ -809,6 +883,7 @@ impl Engine {
             | Effect::AddMana { .. }
             | Effect::Discard { .. }
             | Effect::Counter { .. }
+            | Effect::Sacrifice { .. }
             | Effect::Nothing => {}
         }
     }
