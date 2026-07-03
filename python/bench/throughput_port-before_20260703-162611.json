@@ -1,0 +1,54 @@
+{
+  "label": "port-before",
+  "date_utc": "2026-07-03 16:26 UTC",
+  "git_sha": "068df71",
+  "host": "oko",
+  "config": {
+    "deck": "bears",
+    "n_steps": 256,
+    "rollouts": 4,
+    "vec_env": "BatchedSelfPlayVecEnv",
+    "callbacks": "eval/pool/replay OFF"
+  },
+  "results": [
+    {
+      "n_envs": 32,
+      "timesteps": 32768,
+      "rollouts": 4,
+      "wall_s": 23.5,
+      "steady_fps": 1484,
+      "fps_series": [
+        1672,
+        1519,
+        1488,
+        1479
+      ]
+    },
+    {
+      "n_envs": 128,
+      "timesteps": 131072,
+      "rollouts": 4,
+      "wall_s": 83.1,
+      "steady_fps": 1672,
+      "fps_series": [
+        1992,
+        1759,
+        1693,
+        1652
+      ]
+    },
+    {
+      "n_envs": 256,
+      "timesteps": 262144,
+      "rollouts": 4,
+      "wall_s": 169.9,
+      "steady_fps": 1626,
+      "fps_series": [
+        1953,
+        1704,
+        1637,
+        1616
+      ]
+    }
+  ]
+}
