@@ -157,6 +157,7 @@ Swine from a 2/2 Bear. (A structured/CNN encoder is a later refinement; v1 uses 
 | `swine_stochastic_muzero_config.py` | Stochastic MuZero **MLP** main/create config. `--smoke` = tiny; default = M3 real. Run it to train. |
 | `lz_patches.py` | In-memory monkeypatch for a LightZero v0.2.0 stochastic-muzero bug (see below). Imported by the config. |
 | `smoke_env.py` / `smoke_model.py` | M1 wiring checks (env reset/step; model forward at swine dims). |
+| `eval_muzero_swine.py` | M4 harness: greedy win-rate vs random + chump-block/gang self-mirror analysis. Built & plumbing-validated; runs once M3 gives a checkpoint. `--latent-state-dim` matches the ckpt (real=256). |
 
 ## Integration fixes discovered during M1/M2 (so a masked, factored, single-agent env trains)
 
