@@ -192,7 +192,10 @@ pub(crate) fn save_replay(id: u64, replay: &mtg_core::replay::Replay) {
     if std::fs::create_dir_all(&dir).is_err() {
         return;
     }
-    if let Ok(json) = serde_json::to_string(replay) {
+    // Persist the compact (delta-encoded) form — 100×+ smaller raw than the full-frame JSON, so
+    // `data/replays` stops ballooning to GBs (mtg-core `RESUMABLE`/replay notes). `get_replay`
+    // reconstructs full frames on read; pre-v2 full-frame files still load via `AnyReplay`.
+    if let Ok(json) = serde_json::to_string(&replay.to_compact()) {
         let _ = std::fs::write(dir.join(format!("{id}.json")), json);
     }
 }
@@ -254,11 +257,19 @@ async fn get_replay(
     if id.is_empty() || !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
         return (axum::http::StatusCode::BAD_REQUEST, "bad replay id").into_response();
     }
-    match std::fs::read_to_string(replay_dir().join(format!("{id}.json"))) {
-        Ok(text) => {
-            ([(axum::http::header::CONTENT_TYPE, "application/json")], text).into_response()
-        }
-        Err(_) => (axum::http::StatusCode::NOT_FOUND, "no such replay").into_response(),
+    let text = match std::fs::read_to_string(replay_dir().join(format!("{id}.json"))) {
+        Ok(t) => t,
+        Err(_) => return (axum::http::StatusCode::NOT_FOUND, "no such replay").into_response(),
+    };
+    // Files are stored compact (delta-encoded); reconstruct the full-frame replay the viewer plays.
+    // `AnyReplay` also accepts pre-v2 full-frame files, so old saved replays keep working.
+    let full = match serde_json::from_str::<mtg_core::replay::AnyReplay>(&text) {
+        Ok(any) => any.into_replay(),
+        Err(_) => return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "corrupt replay").into_response(),
+    };
+    match serde_json::to_string(&full) {
+        Ok(json) => ([(axum::http::header::CONTENT_TYPE, "application/json")], json).into_response(),
+        Err(_) => (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "replay serialize error").into_response(),
     }
 }
 

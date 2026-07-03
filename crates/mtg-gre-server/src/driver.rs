@@ -441,6 +441,37 @@ mod tests {
         assert!(outcome.winner.is_some(), "counters mirror should produce a winner");
     }
 
+    /// The compact (delta) replay format on a REAL recorded game: reconstructs losslessly (what
+    /// `get_replay` relies on) and is many× smaller than the full-frame JSON `save_replay` used to
+    /// write (the disk win — `data/replays` no longer balloons to GBs). Prints the real ratio.
+    #[test]
+    fn compact_replay_round_trips_and_shrinks_a_real_game() {
+        use mtg_core::agent::RandomAgent;
+        use mtg_core::replay::AnyReplay;
+
+        let agents: Vec<Box<dyn Agent>> =
+            vec![Box::new(RandomAgent::new(7)), Box::new(RandomAgent::new(9))];
+        let state = state_for_deck_names(7, &["counters", "counters"]);
+        let (_out, replay) = finish_game_with_replay(Engine::new(state, agents));
+        assert!(replay.frames.len() > 10, "a real game records many frames");
+
+        let full = serde_json::to_string(&replay).unwrap();
+        let compact = serde_json::to_string(&replay.to_compact()).unwrap();
+
+        // Lossless: the versioned reader reconstructs the exact full-frame replay `get_replay` serves.
+        let back: AnyReplay = serde_json::from_str(&compact).unwrap();
+        assert_eq!(full, serde_json::to_string(&back.into_replay()).unwrap(), "compact must round-trip");
+
+        let ratio = full.len() as f64 / compact.len() as f64;
+        eprintln!(
+            "[replay] {} frames: full={} B compact={} B → {ratio:.0}× smaller",
+            replay.frames.len(),
+            full.len(),
+            compact.len(),
+        );
+        assert!(ratio >= 5.0, "compact should be >=5x smaller, got {ratio:.1}x");
+    }
+
     /// Walk a serialized `PlayerView` JSON tree and collect `name → fully_implemented` for every
     /// `chars` object (one that carries both `name` and the `fully_implemented` key).
     fn collect_flags(
