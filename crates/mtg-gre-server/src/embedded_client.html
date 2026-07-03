@@ -17,7 +17,13 @@
   /* The `hidden` attribute must win over component `display` rules (e.g. .replaybar/.hand use
      display:flex, which would otherwise override the UA [hidden]{display:none} and show them). */
   [hidden] { display: none !important; }
-  html,body { height: 100%; }
+  /* `manipulation` kills double-tap-to-zoom (and the legacy 300ms tap delay) during rapid card-tapping,
+     while PRESERVING pinch-zoom + scroll. touch-action combines down the ancestor chain, so setting it
+     on the root covers every descendant incl. dynamically-added modals/overlays. No mouse impact. */
+  html,body { height: 100%; touch-action: manipulation; }
+  /* Belt-and-suspenders on the directly-tappable surfaces so double-tap-zoom is reliably suppressed on
+     iOS regardless of ancestor-combination quirks (pinch-zoom + scroll still work). */
+  .card, button, a, .pile, .step .sdotrow, .dlrow { touch-action: manipulation; }
   body { margin: 0; background: var(--felt2); color: var(--ink);
     font: 13px/1.4 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; overflow: hidden; }
 
