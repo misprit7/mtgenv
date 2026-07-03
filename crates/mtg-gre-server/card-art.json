@@ -556,5 +556,65 @@
   "art": "https://cards.scryfall.io/art_crop/front/f/5/f588fa50-7cc5-41ba-90df-2d252eb5c785.jpg?1782682884",
   "img": "https://cards.scryfall.io/normal/front/f/5/f588fa50-7cc5-41ba-90df-2d252eb5c785.jpg?1782682884",
   "artist": "Ilse Gort"
+ },
+ "243": {
+  "name": "Deathcap Glade",
+  "art": "https://cards.scryfall.io/art_crop/front/7/8/78897104-80e1-4d8a-9958-145b40f679e8.jpg?1782682822",
+  "img": "https://cards.scryfall.io/normal/front/7/8/78897104-80e1-4d8a-9958-145b40f679e8.jpg?1782682822",
+  "artist": "Piotr Dura"
+ },
+ "244": {
+  "name": "Dreamroot Cascade",
+  "art": "https://cards.scryfall.io/art_crop/front/e/f/ef662b92-5a7f-48c9-bcc1-14b55e091aef.jpg?1782682821",
+  "img": "https://cards.scryfall.io/normal/front/e/f/ef662b92-5a7f-48c9-bcc1-14b55e091aef.jpg?1782682821",
+  "artist": "Marco Gorlei"
+ },
+ "245": {
+  "name": "Shattered Sanctum",
+  "art": "https://cards.scryfall.io/art_crop/front/5/a/5aa0c810-3b7d-4661-979e-e84fb327742d.jpg?1782682815",
+  "img": "https://cards.scryfall.io/normal/front/5/a/5aa0c810-3b7d-4661-979e-e84fb327742d.jpg?1782682815",
+  "artist": "Sergey Glushakov"
+ },
+ "246": {
+  "name": "Stormcarved Coast",
+  "art": "https://cards.scryfall.io/art_crop/front/b/d/bd3ae4fa-4c97-410a-8c0a-bd203342595d.jpg?1782682815",
+  "img": "https://cards.scryfall.io/normal/front/b/d/bd3ae4fa-4c97-410a-8c0a-bd203342595d.jpg?1782682815",
+  "artist": "Leon Tukker"
+ },
+ "247": {
+  "name": "Sundown Pass",
+  "art": "https://cards.scryfall.io/art_crop/front/b/3/b34000e9-ff20-4fb4-9d0b-03a172a92457.jpg?1782682814",
+  "img": "https://cards.scryfall.io/normal/front/b/3/b34000e9-ff20-4fb4-9d0b-03a172a92457.jpg?1782682814",
+  "artist": "Sergey Glushakov"
+ },
+ "248": {
+  "name": "Titan's Grave",
+  "art": "https://cards.scryfall.io/art_crop/front/a/9/a9ab41c8-3ee2-4676-9b8b-20c34d9f5f21.jpg?1782682814",
+  "img": "https://cards.scryfall.io/normal/front/a/9/a9ab41c8-3ee2-4676-9b8b-20c34d9f5f21.jpg?1782682814",
+  "artist": "Lorenzo Lanfranconi"
+ },
+ "249": {
+  "name": "Fields of Strife",
+  "art": "https://cards.scryfall.io/art_crop/front/3/d/3dc7a4c3-c356-4fba-bea0-e8788da3eb57.jpg?1782682821",
+  "img": "https://cards.scryfall.io/normal/front/3/d/3dc7a4c3-c356-4fba-bea0-e8788da3eb57.jpg?1782682821",
+  "artist": "Josu Solano"
+ },
+ "250": {
+  "name": "Forum of Amity",
+  "art": "https://cards.scryfall.io/art_crop/front/1/d/1de6c6cc-0c55-4997-8623-d7f796bd9ab8.jpg?1782682821",
+  "img": "https://cards.scryfall.io/normal/front/1/d/1de6c6cc-0c55-4997-8623-d7f796bd9ab8.jpg?1782682821",
+  "artist": "Richard Wright"
+ },
+ "251": {
+  "name": "Paradox Gardens",
+  "art": "https://cards.scryfall.io/art_crop/front/d/b/dbc3447e-1329-4ea1-b4ca-b321b0ffec8f.jpg?1782682818",
+  "img": "https://cards.scryfall.io/normal/front/d/b/dbc3447e-1329-4ea1-b4ca-b321b0ffec8f.jpg?1782682818",
+  "artist": "Leon Tukker"
+ },
+ "252": {
+  "name": "Spectacle Summit",
+  "art": "https://cards.scryfall.io/art_crop/front/a/0/a0a66f7b-eab4-45da-8895-c2c2c7eb05f8.jpg?1782682815",
+  "img": "https://cards.scryfall.io/normal/front/a/0/a0a66f7b-eab4-45da-8895-c2c2c7eb05f8.jpg?1782682815",
+  "artist": "Andreas Zafiratos"
  }
 }
