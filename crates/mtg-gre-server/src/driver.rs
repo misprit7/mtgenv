@@ -452,29 +452,38 @@ mod tests {
     }
 
     #[test]
-    fn fully_implemented_flag_reaches_the_wire_for_a_real_partial_card() {
-        // Real-data verification of the ⚠ "not fully implemented" badge (task #30): a board with a
-        // genuinely tracked-incomplete card (Surrak, Elusive Hunter — can't-be-countered clause
-        // deferred; the lone remaining partial in the pool) and a complete vanilla (Grizzly Bears).
-        // Project the seat view, wrap it in the exact `ServerMsg::Event` the server pushes,
-        // serialize, and assert the per-card flag the web client reads.
+    fn fully_implemented_flag_reaches_the_wire() {
+        // Verification of the ⚠ "not fully implemented" badge (task #30): the per-card
+        // `fully_implemented` flag must survive view projection → the exact `ServerMsg::Event` the
+        // server pushes → JSON, which is what the web client reads.
+        //
+        // Every real card in the pool is now fully implemented (nothing calls `.incomplete()` any
+        // more — the last real partial, Surrak, was completed in eb2b364), so we register a
+        // SYNTHETIC partial `CardDef` rather than depend on whichever card happens to still be
+        // incomplete. The serialization path is the thing under test, not any particular card.
         use mtg_core::agent::GameEvent;
         use mtg_core::basics::{Phase, Zone};
-        use mtg_core::cards::grp;
-        use mtg_core::cards::tdm::surrak_elusive_hunter::SURRAK_ELUSIVE_HUNTER;
+        use mtg_core::cards::{grp, CardDef};
         use mtg_core::state::view::view_for;
         use std::sync::Arc;
 
+        const PARTIAL_GRP: u32 = 9_999_001; // a fresh grp_id that no real card uses
+        let mut db = mtg_core::cards::starter_db();
+        // A synthetic partial: a Grizzly-Bears body under a new grp_id, flagged not-fully-implemented.
+        let mut partial_chars = db.get(grp::GRIZZLY_BEARS).unwrap().chars.clone();
+        partial_chars.name = "Partial Test Creature".to_string();
+        partial_chars.grp_id = PARTIAL_GRP;
+        db.insert(CardDef {
+            chars: partial_chars.clone(),
+            abilities: Vec::new(),
+            text: "A deferred clause is tracked-incomplete.".to_string(),
+            fully_implemented: false,
+        });
+        let bear = db.get(grp::GRIZZLY_BEARS).unwrap().chars.clone();
+
         let mut state = GameState::new(2, 1);
-        state.set_card_db(Arc::new(mtg_core::cards::starter_db()));
-        let (surrak, bear) = {
-            let db = state.card_db();
-            (
-                db.get(SURRAK_ELUSIVE_HUNTER).unwrap().chars.clone(),
-                db.get(grp::GRIZZLY_BEARS).unwrap().chars.clone(),
-            )
-        };
-        state.add_card(PlayerId(0), surrak, Zone::Battlefield);
+        state.set_card_db(Arc::new(db));
+        state.add_card(PlayerId(0), partial_chars, Zone::Battlefield);
         state.add_card(PlayerId(0), bear, Zone::Battlefield);
 
         let view = view_for(&state, PlayerId(0));
@@ -489,7 +498,7 @@ mod tests {
         // The partial card serializes as `false` (client renders ⚠ + deferred-clause tooltip); the
         // complete card as `true` (no badge). This is the exact JSON the client parses.
         assert_eq!(
-            flags.get("Surrak, Elusive Hunter"),
+            flags.get("Partial Test Creature"),
             Some(&Some(false)),
             "tracked-incomplete card must reach the wire as fully_implemented:false"
         );
