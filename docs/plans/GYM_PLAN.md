@@ -429,10 +429,14 @@ already exist — these are the L3/L4/L5 build.
    `snapshot/restore`/`clone`; vectorized envs + async batched inference; enable the Arena auto-pass
    profile. Grows naturally as the engine adds mechanics (removal, modal spells, triggers, mulligan
    — already partly present). **Exit:** stable self-play improvement; ≥10² games/s/core.
-3. **Resumable step API (engine, coordinated) + MCTS-ready.** Land approach §2.2-B with `engine`
-   (re-entrant `resume`/`submit`), swap `PyAgent` internals to it (no Python API change), and use
-   `clone`/`snapshot` for AlphaZero-style rollouts. **Exit:** single-threaded vector envs;
-   clone-based search demonstrated.
+3. **Resumable step API (engine, coordinated) — throughput only.** Land approach §2.2-B with
+   `engine` (re-entrant `resume`/`submit`), swap `PyAgent` internals to it (no Python API change).
+   RE-SCOPED 2026-07-03 (user directive): engine-backed tree search is permanently out of scope
+   (MuZero-style *learned* search needs no engine support), so clone/snapshot-for-search is CUT as
+   a deliverable — `PyGame.snapshot/restore/clone` stay stubbed. Design: RESUMABLE_ENGINE.md
+   (stackful-coroutine session; fiber is deliberately not cloneable). **Exit:** per-game
+   threads/channels removed; GIL-free Rust fleet stepping with one PyO3 crossing per micro-tick;
+   measured training-throughput win vs the n_envs-scaling baseline.
 4. **Scale the card pool.** The `grp_id` embedding table grows; load a larger pool / a real limited
    format (ties to `../magician` 17lands card priors). Consider the pointer-network action head
    (§4-B). **Exit:** competent agent on a real format vs the Rust scripted baseline and prior
