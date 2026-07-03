@@ -157,6 +157,27 @@ fn replay_dir() -> std::path::PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data/replays")
 }
 
+/// The highest numeric replay id already saved on disk (`data/replays/<n>.json`), or 0 if none.
+/// The lobby seeds its game-id counter above this so a restart — which wipes the in-memory game
+/// registry and would otherwise reissue ids from 1 — can't reuse an id whose replay file already
+/// exists and silently overwrite it (the bug this fixes). Non-numeric stems (AI-training replays
+/// like `aitrain-…`) are ignored.
+pub fn max_replay_id() -> u64 {
+    let mut max = 0;
+    if let Ok(entries) = std::fs::read_dir(replay_dir()) {
+        for e in entries.flatten() {
+            let path = e.path();
+            if path.extension().and_then(|s| s.to_str()) != Some("json") {
+                continue;
+            }
+            if let Some(n) = path.file_stem().and_then(|s| s.to_str()).and_then(|s| s.parse::<u64>().ok()) {
+                max = max.max(n);
+            }
+        }
+    }
+    max
+}
+
 /// Persist a finished game's [`Replay`](mtg_core::replay::Replay) to `data/replays/<id>.json`
 /// (best-effort; creates the store dir). The lobby's finished-game "▶ Replay" button links to
 /// `/play?replay=<id>`, so the file id matches the game id.

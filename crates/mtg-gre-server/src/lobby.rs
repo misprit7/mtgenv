@@ -200,7 +200,10 @@ impl Lobby {
     pub fn new() -> Arc<Self> {
         Arc::new(Lobby {
             rooms: Mutex::new(HashMap::new()),
-            next_id: AtomicU64::new(1),
+            // Seed game ids ABOVE any saved replay. A restart wipes the in-memory registry, so
+            // without this ids would reset to 1 and new games' replay files would overwrite older
+            // ones (replay filename = game id). See `server::max_replay_id`.
+            next_id: AtomicU64::new(crate::server::max_replay_id() + 1),
             seed: AtomicU64::new(1),
         })
     }
