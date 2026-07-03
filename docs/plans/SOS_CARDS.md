@@ -197,11 +197,11 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Chelonian Tackle | - | `sos` | ✅ done | pump + fight up to one |
 | Colossus of the Blood Age | - | `sos` | ⏳ | ETB drain + dies rummage draw |
 | Cost of Brilliance | - | `sos` | ⏳ | draw, lose life, counter |
-| Deathcap Glade | - | `vow` | ⏳ | checkland conditional tap + mana |
+| Deathcap Glade | - | `vow` | ✅ done | checkland conditional tap + mana |
 | Dina's Guidance | - | `sos` | ⏳ | search creature to hand/graveyard |
 | Dissection Practice | - | `sos` | ⏳ | drain + pump modal, all IR |
 | Divergent Equation | - | `sos` | ⏳ | X return instant/sorcery cards, exile self |
-| Dreamroot Cascade | - | `vow` | ⏳ | checkland conditional tap + mana |
+| Dreamroot Cascade | - | `vow` | ✅ done | checkland conditional tap + mana |
 | Eager Glyphmage | - | `sos` | ✅ done | ETB Inkling keyword token |
 | Embrace the Paradox | - | `sos` | ⏳ | draw three + put land from hand |
 | Ennis, Debate Moderator | - | `sos` | ⏳ | blink ETB + conditional end-step counter |
@@ -233,7 +233,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Rapturous Moment | - | `sos` | ✅ done | draw, discard, add mana ritual |
 | Rubble Rouser | - | `sos` | ⏳ | discard/draw ETB; mana ability with damage |
 | Shattered Acolyte | - | `sos` | ✅ done | lifelink; sac to destroy artifact/enchantment |
-| Shattered Sanctum | - | `vow` | ⏳ | conditional enters-tapped dual land |
+| Shattered Sanctum | - | `vow` | ✅ done | conditional enters-tapped dual land |
 | Shopkeeper's Bane | - | `sos` | ✅ done | attack trigger gain life |
 | Silverquill Charm | - | `sos` | ✅ done | modal counters/exile/drain |
 | Sneering Shadewriter | - | `sos` | ✅ done | ETB lose/gain life |
@@ -241,9 +241,9 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Stadium Tidalmage | - | `sos` | ✅ done | ETB/attack loot draw-discard |
 | Stand Up for Yourself | - | `sos` | ⏳ | destroy target power-3+ creature |
 | Startled Relic Sloth | - | `sos` | ✅ done | combat trigger exile graveyard card |
-| Stormcarved Coast | - | `vow` | ⏳ | conditional enters-tapped dual |
+| Stormcarved Coast | - | `vow` | ✅ done | conditional enters-tapped dual |
 | Strixhaven Skycoach | - | `sos` | ⏳ | vehicle crew, ETB land search |
-| Sundown Pass | - | `vow` | ⏳ | conditional enters-tapped dual |
+| Sundown Pass | - | `vow` | ✅ done | conditional enters-tapped dual |
 | Terramorphic Expanse | - | `tsp` | ⏳ | fetch basic land, tapped |
 | Traumatic Critique | - | `sos` | ✅ done | X damage, draw then discard |
 | Vibrant Outburst | - | `sos` | ✅ done | damage plus tap creature |
