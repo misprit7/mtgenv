@@ -7,11 +7,11 @@
 //! `rewrite` — a fixpoint over both self and global replacements), then *commits* the survivors,
 //! emitting a `GameEvent` per applied action.
 //!
-//! Resolution splits across two methods: [`Engine::interpret`] handles the interactive /
+//! Resolution splits across two methods: [`EngineCore::interpret`] handles the interactive /
 //! control-flow nodes (`Sequence`, `Optional`, `IfYouDo`, `Modal`, `ForEach`, `Search`,
 //! `AddMana`) — asking the controller for resolution-time choices and returning whether the
 //! effect actually *performed* (so `IfYouDo` can gate a reward on its cost) — while
-//! [`Engine::materialize`] lowers the pure leaves (`DealDamage`, `Draw`, `Destroy`, `PutCounters`,
+//! [`EngineCore::materialize`] lowers the pure leaves (`DealDamage`, `Draw`, `Destroy`, `PutCounters`,
 //! `CreateToken`, `Conditional`, …) into `Action`s. IR nodes with no card using them yet are a
 //! graceful no-op rather than a panic.
 
@@ -30,7 +30,7 @@ use crate::effects::value::{PlayerRef, ValueExpr};
 use crate::effects::{Effect, EffectTarget, Mode};
 use crate::ids::{ObjId, PlayerId, StackId};
 use crate::state::Characteristics;
-use crate::priority::Engine;
+use crate::priority::EngineCore;
 
 /// A replacement effect that applies to a pending action (for the CR 616.1f choice).
 struct Applicable {
@@ -67,11 +67,11 @@ fn describe_rewrite(rw: &Rewrite) -> String {
     }
 }
 
-impl Engine {
+impl EngineCore {
     /// Resolve an `Effect`: interpret its tree (asking the controller for any resolution-time
     /// choices — modal modes, search selections) while materializing a whiteboard of `Action`s,
-    /// then commit it. Pure leaves lower in [`Engine::materialize`]; interactive/control-flow
-    /// nodes are handled in [`Engine::interpret`].
+    /// then commit it. Pure leaves lower in [`EngineCore::materialize`]; interactive/control-flow
+    /// nodes are handled in [`EngineCore::interpret`].
     pub(crate) fn resolve_effect(&mut self, effect: &Effect, ctx: &ResolutionCtx, reason: WbReason) {
         let sid = match &reason {
             WbReason::Resolve(s) => *s,
