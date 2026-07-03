@@ -45,8 +45,10 @@ small-but-load-bearing cap; do each fresh, one commit, with a test.** Prioritize
    0/0 Fractal token entering with **X** +1/+1 counters + Surveil 2. Added `Effect::CreateToken.dynamic_counters:
    Vec<(CounterKind, ValueExpr)>` (counter counts evaluated at resolution, baked onto the token's spec at
    materialize — the token enters as an X/X). **New reusable cap** — the Quandrix "0/0 Fractal + N dynamic
-   counters" pattern; unlocks **Snarl Song** (X = `ValueExpr::ColorsSpent`, S7 DONE — still needs Converge cast
-   + 2 tokens + gain X life), **Fractal Anomaly** (X = cards-drawn-this-turn, needs S19), **Emil** (X =
+   counters" pattern. It immediately made **Snarl Song** a ZERO-new-cap card: ✅ **DONE** (`b58763d`) —
+   `CreateToken{count:2, dynamic_counters:[(+1/+1, ColorsSpent)]}` (each of the two tokens gets X counters) +
+   `GainLife(ColorsSpent)`; Converge via S7's `ValueExpr::ColorsSpent` (reads the resolving spell's
+   `colors_spent`). Still unlocks **Fractal Anomaly** (X = cards-drawn-this-turn, needs S19), **Emil** (X =
    differently-named-lands, needs a DistinctNames ValueExpr + its {T} activated ability) as those X-value
    ValueExprs land. ⏳ **Fractalize** still needs true set-base-P/T: "target creature *becomes* a green-and-blue
    Fractal with base P/T = X+1, loses all other colors and creature types" — that's SET (replace) color/type

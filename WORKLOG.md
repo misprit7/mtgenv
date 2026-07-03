@@ -5,6 +5,10 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-07-03 (night)
 
+- **cards(sos) — Snarl Song (`b58763d`, no new cap):** the dynamic-counters cap immediately made this a free
+  card — `CreateToken{count:2, dynamic_counters:[(+1/+1, ColorsSpent)]}` (each of the two 0/0 Fractals enters
+  with X counters) + `GainLife(ColorsSpent)`, Converge driven by S7's `ValueExpr::ColorsSpent`. Test at
+  colors_spent=3 → two 3/3s + 3 life.
 - **engine+cards(sos) — CreateToken dynamic counters + Wild Hypothesis (`9d2a856`):** added
   `Effect::CreateToken.dynamic_counters: Vec<(CounterKind, ValueExpr)>` — counter counts evaluated at
   resolution and baked onto the token's spec at materialize, so a token can enter with e.g. **X** +1/+1
