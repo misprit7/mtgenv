@@ -29,6 +29,8 @@ pub enum Condition {
     YourTurn,
     /// The named player has gained one or more life this turn (CR 118.9) — the SoS "Infusion" gate.
     GainedLifeThisTurn { who: PlayerRef },
+    /// One or more cards left the named player's graveyard this turn — the SoS Lorehold gate.
+    CardLeftGraveyardThisTurn { who: PlayerRef },
     /// Compare two values.
     ValueAtLeast(ValueExpr, ValueExpr),
 }

@@ -180,6 +180,11 @@ pub struct Player {
     /// `GainLife`. Read by the SoS "Infusion — if you gained life this turn …" condition.
     #[serde(default)]
     pub life_gained_this_turn: u32,
+    /// How many cards have left this player's graveyard this turn — reset each turn, incremented when
+    /// an object moves out of the graveyard. Read by the SoS Lorehold "if a card left your graveyard
+    /// this turn …" condition.
+    #[serde(default)]
+    pub cards_left_graveyard_this_turn: u32,
     pub hand_size_limit: usize,
     pub has_lost: bool,
     /// Set when a draw is attempted from an empty library; the SBA (CR 704.5b) reads it on
@@ -202,6 +207,7 @@ impl Player {
             counters: CounterBag::default(),
             lands_played_this_turn: 0,
             life_gained_this_turn: 0,
+            cards_left_graveyard_this_turn: 0,
             hand_size_limit: DEFAULT_HAND_SIZE,
             has_lost: false,
             drew_from_empty: false,
@@ -574,6 +580,10 @@ impl GameState {
             if let Some(pos) = v.iter().position(|&x| x == id) {
                 v.remove(pos);
             }
+        }
+        // "A card left your graveyard this turn" (SoS Lorehold): count departures from the graveyard.
+        if from_zone == Zone::Graveyard && to != Zone::Graveyard {
+            self.player_mut(from_owner).cards_left_graveyard_this_turn += 1;
         }
         // A permanent entering the battlefield gets a fresh layer-system timestamp (613.7d).
         let new_ts = if to == Zone::Battlefield {
