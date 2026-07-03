@@ -261,7 +261,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Ambitious Augmenter | S6 | `sos` | ⏳ | Increment mechanic (mana-spent vs power/toughness) |
 | Antiquities on the Loose | S10 | `sos` | ⏳ | flashback + cast-from-zone condition |
 | Applied Geometry | S14 | `sos` | ⏳ | create token copy of permanent |
-| Arcane Omens | S7 | `sos` | ⏳ | Converge colors-of-mana discard |
+| Arcane Omens | S7 | `sos` | ✅ done | Converge colors-of-mana discard |
 | Archaic's Agony | S7,S15 | `sos` | ⏳ | Converge damage + impulse-play exiled cards |
 | Ark of Hunger | S9,S15 | `sos` | ⏳ | graveyard-leave trigger + impulse play |
 | Aziza, Mage Tower Captain | S14 | `sos` | ⏳ | copy your instant/sorcery spell |
