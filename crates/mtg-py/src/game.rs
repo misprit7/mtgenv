@@ -40,6 +40,11 @@ pub enum Deck {
     /// Herald, attack with everything), so a converging policy should drive playland/cast/attack
     /// rates → ~1.0. Used to verify training actually learns.
     Heralds,
+    /// "Bears": the next sanity tier up from Heralds — 40 Grizzly Bears ({1}{G} 2/2 vanilla) + 20
+    /// Forest. Unlike the Heralds race, bears CAN block, so the mirror has real combat judgment
+    /// (attacking into untapped 2/2s trades; board stalls are plausible) and there's no provable
+    /// "always attack" optimum — a test that learning progresses sensibly with combat credit.
+    Bears,
 }
 
 impl Deck {
@@ -50,6 +55,7 @@ impl Deck {
             "burn_vs_bears" | "burnvsbears" | "bvb" => Some(Deck::BurnVsBears),
             "selesnya" | "landfall" => Some(Deck::Selesnya),
             "heralds" => Some(Deck::Heralds),
+            "bears" => Some(Deck::Bears),
             _ => None,
         }
     }
@@ -67,6 +73,11 @@ impl Deck {
             Deck::Heralds => {
                 // Mirror of the degenerate "heralds" sanity preset (one library per seat).
                 let d = mtg_core::cards::preset_deck("heralds").expect("heralds preset deck");
+                mtg_core::cards::build_game(seed, &[d.as_slice(), d.as_slice()])
+            }
+            Deck::Bears => {
+                // Mirror of the "bears" sanity preset (one library per seat) — combat-capable.
+                let d = mtg_core::cards::preset_deck("bears").expect("bears preset deck");
                 mtg_core::cards::build_game(seed, &[d.as_slice(), d.as_slice()])
             }
         }
@@ -87,6 +98,7 @@ impl Deck {
             ],
             Deck::Selesnya => vec![preset_deck("selesnya").unwrap_or_default()],
             Deck::Heralds => vec![preset_deck("heralds").unwrap_or_default()],
+            Deck::Bears => vec![preset_deck("bears").unwrap_or_default()],
             Deck::LandsOnly => vec![], // basics-only deck-out test; no spell pool to identify
         };
         let mut set = std::collections::BTreeSet::new();
@@ -318,6 +330,7 @@ mod tests {
         assert_eq!(Deck::parse("Demo"), Some(Deck::Demo));
         assert_eq!(Deck::parse("burn-vs-bears"), Some(Deck::BurnVsBears));
         assert_eq!(Deck::parse("heralds"), Some(Deck::Heralds));
+        assert_eq!(Deck::parse("Bears"), Some(Deck::Bears));
         assert_eq!(Deck::parse("nope"), None);
     }
 

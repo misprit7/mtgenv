@@ -133,7 +133,7 @@ def train_and_eval(deck="demo", timesteps=60_000, eval_games=400, n_envs=8, seed
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--deck", default="demo", choices=["lands", "demo", "burn_vs_bears", "selesnya", "heralds"])
+    ap.add_argument("--deck", default="demo", choices=["lands", "demo", "burn_vs_bears", "selesnya", "heralds", "bears"])
     ap.add_argument("--timesteps", type=int, default=60_000)
     ap.add_argument("--eval-games", type=int, default=400)
     ap.add_argument("--n-envs", type=int, default=8)

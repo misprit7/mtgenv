@@ -19,7 +19,7 @@ from mtgenv_gym import play_random_game
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--deck", default="demo", choices=["lands", "demo", "burn_vs_bears", "selesnya", "heralds"])
+    ap.add_argument("--deck", default="demo", choices=["lands", "demo", "burn_vs_bears", "selesnya", "heralds", "bears"])
     ap.add_argument("--games", type=int, default=3000)
     ap.add_argument("--auto-pass", dest="auto_pass", action="store_true", default=True)
     ap.add_argument("--no-auto-pass", dest="auto_pass", action="store_false")
