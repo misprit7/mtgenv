@@ -241,6 +241,17 @@ pub enum Effect {
         body: Box<Effect>,
     },
 
+    /// "Look at the top `count` cards of your library, put `take` of them into `take_to`, and the rest
+    /// into `rest_to`" (CR 120-ish library manipulation) — the SoS Strixhaven "look-and-pick" pattern
+    /// (Flow State / Stress Dream / Stirring Honormancer). The controller chooses which cards are taken;
+    /// `take_to`/`rest_to` are `Hand`/`Graveyard`/`Library` (Library = the bottom, in any order).
+    LookAndPick {
+        count: ValueExpr,
+        take: ValueExpr,
+        take_to: Zone,
+        rest_to: Zone,
+    },
+
     /// Declare a **"target player"** (CR 115.1) for the spell/ability — a targeting slot with no
     /// effect of its own. The player-affecting effects that follow reference the chosen player via
     /// `PlayerRef::ChosenTarget(n)` (e.g. "target player draws two and loses 2 life"). Collected as a

@@ -188,6 +188,16 @@ impl EngineCore {
                 self.interpret_surveil(player, n);
                 true
             }
+            // "Look at the top `count`, put `take` into `take_to`, the rest into `rest_to`." Imperative
+            // (asks which to take). Flush first.
+            Effect::LookAndPick { count, take, take_to, rest_to } => {
+                self.flush_pending(wb);
+                let player = ctx.controller.unwrap_or(PlayerId(0));
+                let n = self.eval_value(count, ctx).max(0) as usize;
+                let take = self.eval_value(take, ctx).max(0) as usize;
+                self.interpret_look_and_pick(player, n, take, *take_to, *rest_to);
+                true
+            }
             Effect::Sacrifice { who, what } => {
                 self.flush_pending(wb);
                 let controller = ctx.controller.unwrap_or(PlayerId(0));
@@ -417,6 +427,70 @@ impl EngineCore {
             let owner = self.state.object(card).owner;
             self.state.move_object(card, Zone::Graveyard, owner);
             self.broadcast(GameEvent::ObjectMoved { obj: card, to: Zone::Graveyard });
+        }
+    }
+
+    /// "Look at the top `n`, put `take` into `take_to`, the rest into `rest_to`" (SoS look-and-pick).
+    /// The controller chooses which of the looked-at cards to take. `rest_to == Library` places the
+    /// remainder on the **bottom** of the library.
+    fn interpret_look_and_pick(
+        &mut self,
+        pl: PlayerId,
+        n: usize,
+        take: usize,
+        take_to: Zone,
+        rest_to: Zone,
+    ) {
+        let lib = &self.state.player(pl).library;
+        let count = n.min(lib.len());
+        if count == 0 {
+            return;
+        }
+        // Top-first (the library's top is the vec's tail).
+        let top: Vec<ObjId> = lib.iter().rev().take(count).copied().collect();
+        let take_n = take.min(count);
+        let mut seen = std::collections::BTreeSet::new();
+        let taken: Vec<ObjId> = if take_n == 0 {
+            Vec::new()
+        } else {
+            let req = DecisionRequest::SelectCards {
+                reason: SelectReason::ScryStage,
+                from: top.clone(),
+                min: take_n as u32,
+                max: take_n as u32,
+                description: "Look and pick".into(),
+            };
+            match self.ask(pl, &req) {
+                DecisionResponse::Indices(idxs) => idxs
+                    .iter()
+                    .filter_map(|&i| top.get(i as usize).copied())
+                    .filter(|o| seen.insert(*o))
+                    .take(take_n)
+                    .collect(),
+                _ => top.iter().take(take_n).copied().collect(),
+            }
+        };
+        // Move the taken cards to `take_to`.
+        for card in &taken {
+            let owner = self.state.object(*card).owner;
+            self.state.move_object(*card, take_to, owner);
+            self.broadcast(GameEvent::ObjectMoved { obj: *card, to: take_to });
+        }
+        // The rest — the looked-at cards not taken.
+        let rest: Vec<ObjId> = top.iter().filter(|o| !taken.contains(o)).copied().collect();
+        if rest_to == Zone::Library {
+            // Put them on the bottom (bottom = front of the vec, since the top is the tail).
+            let libv = &mut self.state.player_mut(pl).library;
+            libv.retain(|o| !rest.contains(o));
+            for card in rest.iter().rev() {
+                libv.insert(0, *card);
+            }
+        } else {
+            for card in &rest {
+                let owner = self.state.object(*card).owner;
+                self.state.move_object(*card, rest_to, owner);
+                self.broadcast(GameEvent::ObjectMoved { obj: *card, to: rest_to });
+            }
         }
     }
 
@@ -954,6 +1028,7 @@ impl EngineCore {
             | Effect::Counter { .. }
             | Effect::Sacrifice { .. }
             | Effect::Surveil { .. }
+            | Effect::LookAndPick { .. }
             | Effect::Nothing => {}
         }
     }
@@ -1599,9 +1674,16 @@ impl EngineCore {
             // The enumeration scope already restricts by controller (a `Count`'s controller
             // restriction / a `ForEach`'s chooser), so a `ControlledBy` in the filter is redundant.
             CardFilter::ControlledBy(_) => true,
+            // Name equality (CR 201) — e.g. "cards named Ancestral Anger in your graveyard". Name is a
+            // base characteristic (read from the object's chars, like `Supertype`).
+            CardFilter::Named(name) => {
+                self.state.objects.get(&id).is_some_and(|o| o.chars.name == *name)
+            }
             CardFilter::All(fs) => fs.iter().all(|f| self.count_filter_matches(id, f)),
             CardFilter::AnyOf(fs) => fs.iter().any(|f| self.count_filter_matches(id, f)),
             CardFilter::Not(f) => !self.count_filter_matches(id, f),
+            // Remaining leaves (ManaValue/PowerAtMost/Tapped/Untapped/ItSelf/AttachedHost) aren't
+            // used by any current `Count`/`ForEach` filter; default to no match.
             _ => false,
         }
     }
