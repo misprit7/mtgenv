@@ -183,7 +183,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Card | Caps | Folder | Status | Gating clause |
 |---|---|---|---|---|
 | Additive Evolution | - | `sos` | ✅ done | fractal token + combat counter, all IR |
-| Ancestral Anger | - | `vow` | ⏳ | grant trample, named-card-count pump, draw |
+| Ancestral Anger | - | `vow` | ✅ done | grant trample, named-card-count pump, draw |
 | Arnyn, Deathbloom Botanist | - | `sos` | ⏳ | deathtouch, filtered dies-trigger drain |
 | Artistic Process | - | `sos` | ⏳ | modal damage + flying token, all IR |
 | Ascendant Dustspeaker | - | `sos` | ⏳ | flying, ETB counter, exile graveyard card |
@@ -290,7 +290,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Fields of Strife | S1 | `sos` | ✅ done | land ability surveil 1 |
 | Fix What's Broken | PayXLife | `sos` | ⏳ | additional cost pay X life; reanimate MV=X |
 | Flashback | S10 | `sos` | ⏳ | grants flashback to graveyard card |
-| Flow State | S2 | `sos` | ⏳ | look-and-pick top three to hand |
+| Flow State | S2 | `sos` | ✅ done | look-and-pick top three to hand |
 | Follow the Lumarets | S2,S4 | `sos` | ⏳ | look-and-pick plus infusion gained-life |
 | Foolish Fate | S4 | `sos` | ✅ done | destroy plus infusion gained-life drain |
 | Forum Necroscribe | S8,S17 | `sos` | ⏳ | Ward—Discard + Repartee reanimation |
@@ -368,7 +368,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Stirring Honormancer | S2 | `sos` | ⏳ | look at top X, pick one |
 | Stirring Hopesinger | S8 | `sos` | ✅ done | Repartee: cast IS targeting creature |
 | Stone Docent | S1,S18 | `sos` | ⏳ | graveyard-activated gain-life + surveil |
-| Stress Dream | S2 | `sos` | ⏳ | look-and-pick top two |
+| Stress Dream | S2 | `sos` | ✅ done | look-and-pick top two |
 | Summoned Dromedary | S18 | `sos` | ⏳ | {1}{W} return this from graveyard to hand |
 | Sundering Archaic | S7 | `sos` | ⏳ | converge, colors of mana spent |
 | Suspend Aggression | S15 | `sos` | ⏳ | impulse play exiled cards |
