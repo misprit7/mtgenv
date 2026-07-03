@@ -7,9 +7,10 @@ per-card triage, modeled on `SELESNYA_LANDFALL_CARDS.md`.
 ## ▶ NEXT AGENT — start here (handoff from sos-cards-4, 2026-07-03)
 
 **sos-cards-5 update (2026-07-03):** S17 **Ward cap** (mana + discard) + **Colorstorm Stallion** (`96dbc35`)
-+ **Forum Necroscribe** (`c335bcd`, Ward—Discard, first non-mana Ward). Also fixed `Effect::MoveZone` target
-collection (`collect_specs_into`) — reanimation now works through the real cast/trigger path. **517 tests
-green.** See the S17 row + queue item 1 for the seam and the remaining Ward cards (each gated by its secondary).
++ **Forum Necroscribe** (`c335bcd`, Ward—Discard) + **Tragedy Feaster** (`1ca6d8e`, Ward—Discard + Infusion).
+Also fixed `Effect::MoveZone` target collection (`collect_specs_into`) — reanimation now works through the real
+cast/trigger path. **3 Ward cards, 520 tests green.** The remaining 4 Ward cards each need a new secondary cap
+(see the S17 row + queue item 1); the mana/discard Ward paths are done.
 
 Tree clean, **509 mtg-core tests green**, all pushed. This session (sos-cards-4) shipped **5 cards + 4 caps**,
 all with tests incl. real-turn-engine integration tests where a trigger fires. Handing off at a natural
@@ -38,11 +39,14 @@ boundary (still green — the small/clean caps are largely picked; what remains 
    itself lifelink UEOT, but **lifelink isn't combat-wired** → can't be faithful yet. **Mica**/**Prismari**
    are Ward—Pay-life but need (a) a `pay_cost` `PayLife` arm (currently a no-op) AND (b) their blocked
    secondaries (spell-copy / storm). **Forum Necroscribe** ✅ DONE (`c335bcd` — Ward—Discard + Repartee
-   reanimation; the reanimation exposed & fixed the `MoveZone`/`collect_specs_into` gap). **Tragedy Feaster**
-   `{2}{B}{B}` 7/6 trample + Ward—Discard (works now) but its Infusion is an *end-step "sacrifice a permanent
-   unless you gained life this turn"* trigger — needs a sacrifice-unless-condition end-step effect (assess).
-   Cheapest remaining Ward card: **Thornfist Striker Ward-only** (honest `fully_implemented:false`) or check
-   whether Tragedy Feaster's Infusion end-step-sacrifice-unless-gained-life is expressible.
+   reanimation; the reanimation exposed & fixed the `MoveZone`/`collect_specs_into` gap). **Tragedy Feaster** ✅ DONE
+   (`1ca6d8e`, no new cap — trample + Ward—Discard + Infusion = `BeginningOfStep(End)` gated on `YourTurn` →
+   `Conditional{ GainedLifeThisTurn ? Nothing : Sacrifice a permanent }`). **Remaining Ward cards all need a
+   NEW secondary cap:** Thornfist Striker (conditional anthem static — `Ability::Static` has no condition
+   field), Fractal Tender (per-turn "put a counter on this creature" tracker), Inkshape Demonstrator (lifelink
+   not combat-wired), Mica/Prismari (`pay_cost` PayLife arm + spell-copy/storm). Cheapest is **Thornfist
+   Striker Ward-only** (`fully_implemented:false`); otherwise the Ward pool is exhausted until one of those
+   secondary caps lands — move to another ledger item (Flashback front caps / S2 look-and-pick).
 2. **Flashback front-side caps** (S10 the cap is already DONE — offer + mana-cost + exile-on-resolve all wired;
    5 cards authored). The 5 UNAUTHORED SOS flashback cards each need a small FRONT-side cap (verified oracle):
    **Practiced Offense** `{2}{W}` = "counter on *each* creature target player controls" (target-PLAYER +
@@ -80,11 +84,11 @@ DEFERRED still (never build): DFC/modal, Lessons/Paradigm, planeswalkers, Casual
 dies-triggers need LKI (Arnyn, Cauldron of Essence).
 
 **Blocked set (need an unbuilt cap first — don't burn time on these until the cap lands):**
-- **Ward (S17, ◑ mana+discard built `96dbc35`/`c335bcd`)** — Colorstorm Stallion + Forum Necroscribe DONE.
-  The other 5 named cards are now gated only by their SECONDARY abilities (see queue item 1): Thornfist Striker
-  (Infusion conditional anthem), Fractal Tender (per-turn counter-added tracker), Inkshape Demonstrator
-  (lifelink not combat-wired), Mica & Prismari (pay_cost PayLife arm + spell-copy/storm), Tragedy Feaster
-  (Infusion end-step sacrifice-unless). **Ward—Pay-life needs a `pay_cost` PayLife arm** (IR ready; no-op today).
+- **Ward (S17, ◑ mana+discard built `96dbc35`/`c335bcd`)** — Colorstorm Stallion + Forum Necroscribe + Tragedy
+  Feaster DONE (3 cards). The other 4 named cards each need a NEW secondary cap: Thornfist Striker (conditional
+  anthem static — `Ability::Static` has no condition field), Fractal Tender (per-turn counter-added tracker),
+  Inkshape Demonstrator (lifelink not combat-wired), Mica & Prismari (pay_cost PayLife arm + spell-copy/storm).
+  **Ward—Pay-life needs a `pay_cost` PayLife arm** (IR ready; no-op today).
 - **S16 end-step-token timing** — the begin-of-step-trigger cap unblocked the *timing*; any remaining
   end-step-token card is now authorable IF its other clauses are (check per-card).
 - **S15 graveyard-play** — Ark of Hunger (mill → play from graveyard); needs a graveyard analog of

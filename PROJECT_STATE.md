@@ -90,9 +90,10 @@ MTGA client.
   S21 cast-with-{X}, CreateToken dynamic counters) → 509 tests. **Session sos-cards-5 (2026-07-03): S17 Ward
   cap (mana + discard) + 2 cards** — `Effect::CounterUnlessPay` soft-counter + `EffectTarget::Triggering`
   (targeting spell threaded through `GameEvent::Targeted.source` → `ResolutionCtx.triggering_stack`) →
-  **Colorstorm Stallion** (Ward {1}, `96dbc35`) + **Forum Necroscribe** (Ward—Discard, `c335bcd`); also fixed
-  `Effect::MoveZone` target collection (reanimation now works through the real cast/trigger path). The other 5
-  Ward cards are gated only by their secondaries → **517 mtg-core tests green.**
+  **Colorstorm Stallion** (Ward {1}, `96dbc35`) + **Forum Necroscribe** (Ward—Discard, `c335bcd`) + **Tragedy
+  Feaster** (Ward—Discard + Infusion end-step sacrifice, `1ca6d8e`); also fixed `Effect::MoveZone` target
+  collection (reanimation now works through the real cast/trigger path). 3 Ward cards; the remaining 4 each
+  need a new secondary cap → **520 mtg-core tests green.**
 - **✅ #60 END-TO-END AUDIT COMPLETE — all 18 cards driven through the REAL cast→pay→resolve loop.** The
   prior behaviour tests called `resolve_effect` directly, bypassing casting + mana payment, so "18/18
   fully implemented" was *asserted, not proven*. This audit rebuilt a harness on the engine's `pub(crate)`

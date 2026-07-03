@@ -5,6 +5,12 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-07-03 (night)
 
+- **cards(sos) — Tragedy Feaster (`1ca6d8e`, no new cap):** third Ward card — `{2}{B}{B}` 7/6 Demon, Trample +
+  Ward—Discard a card (2nd non-mana Ward) + Infusion downside modeled as a `BeginningOfStep(End)` trigger gated
+  on `Condition::YourTurn` (so it fires only on your end step) whose effect is `Conditional{ GainedLifeThisTurn
+  ? Nothing : Sacrifice a permanent (any you control, chooser picks) }`. Real end-step-trigger tests both ways
+  (no life gained → 2 perms → 1; gained → unchanged). All pieces already existed (YourTurn cond, GainedLife
+  cond, Sacrifice effect, begin-of-step cap). 520 tests.
 - **engine+cards(sos) — Ward helpers + Forum Necroscribe + MoveZone target-collection fix (`c335bcd`):** moved
   the Ward ability constructors to `cards/helpers.rs` (`ward`/`ward_mana`/`ward_discard`) per the code-org law
   (no sibling-card imports); Colorstorm now uses `ward_mana`. **Forum Necroscribe** (`{5}{B}` 5/4 Troll Warlock)
