@@ -135,6 +135,14 @@ impl Session {
     pub fn state(&self) -> Option<&GameState> {
         self.finished.as_ref().map(|c| &c.state)
     }
+
+    /// The omniscient [`Replay`](crate::replay::Replay) recorded during the game — `Some` once the
+    /// game is over. The frames are populated only if the core was built with `record_replay(true)`
+    /// before [`Session::start`] (the gym's training-replay export path); mirrors `Engine::replay`
+    /// for a Session-driven game.
+    pub fn replay(&self) -> Option<crate::replay::Replay> {
+        self.finished.as_ref().map(|c| c.replay())
+    }
 }
 
 #[cfg(test)]
@@ -218,5 +226,27 @@ mod tests {
         assert!(outcome.turns > 0);
         assert!(sess.is_over());
         assert!(sess.state().is_some(), "finished state is inspectable");
+    }
+
+    /// A `record_replay(true)` core driven through a Session yields its omniscient replay — the
+    /// gym's training-replay export path (records inside the fiber, extracted after game-over).
+    #[test]
+    fn session_records_a_replay_when_enabled() {
+        let state = cards::build_game(5, &[&preset_deck("bears").unwrap(), &preset_deck("bears").unwrap()]);
+        let mut core = Engine::new(state, vec![Box::new(RandomAgent::new(1)), Box::new(RandomAgent::new(2))]);
+        core.record_replay(true);
+        let mut sess = Session::start(core);
+        let mut ext = [RandomAgent::new(1), RandomAgent::new(2)];
+        loop {
+            match sess.resume() {
+                Step::Decision { seat, view, request } => {
+                    sess.submit(ext[seat.0 as usize].decide(&view, &request));
+                }
+                Step::GameOver { .. } => break,
+            }
+        }
+        let replay = sess.replay().expect("a finished session exposes its replay");
+        assert!(replay.frames.len() > 1, "frames were recorded through the fiber");
+        assert!(replay.meta.result.is_some(), "the finished replay has its result stamped");
     }
 }
