@@ -61,7 +61,7 @@ each cap unlocks the bracketed count. `⏳` = not yet built.
 | **S9** Graveyard-leave | "cards leave your graveyard" trigger + "a card left your graveyard this turn" cond | 8 | ✅ **DONE** (flag `f9b5584` + trigger: LeftGraveyard event snapshot in resolve_effect → Spirit Mascot, Owlin Historian, Garrison Excavator) |
 | **S2** Look-and-pick | look at top N, put one/some in hand, rest on bottom (impulse selection) | 8 | ⏳ |
 | **S12** Cost-reduction cond. | "costs {N} less if it targets X / you control Y / a card left your gy" (cast-time) | 7 | ⏳ |
-| **S14** Copy spell/perm | "copy target spell", "create a token that's a copy of" (heavier small-cap) | 7 | ⏳ |
+| **S14** Copy spell/perm | "copy target spell", "create a token that's a copy of" (heavier small-cap) | 7 | ⏳ **token-copy DONE** (`Effect::CreateTokenCopy`+`TokenCopyMods`, `a8c8a2d` → Applied Geometry); **spell-copy** portion still ⏳ |
 | **S17** Ward {cost} | Ward N / Ward—Pay life / Ward—Discard (counter-unless-pay on becoming targeted) | 7 | ⏳ |
 | **S15** Impulse play | exile/mill → "you may play it until end of turn / your next turn" | 6 | ⏳ |
 | **S3** Stun counters | `CounterKind::Stun` + "would untap → remove a stun counter instead" replacement | 6 | ⏳ |
@@ -260,7 +260,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Ajani's Response | S12 | `sos` | ⏳ | conditional cost reduction if targets tapped creature |
 | Ambitious Augmenter | S6 | `sos` | ⏳ | Increment mechanic (mana-spent vs power/toughness) |
 | Antiquities on the Loose | S10 | `sos` | ⏳ | flashback + cast-from-zone condition |
-| Applied Geometry | S14 | `sos` | ⏳ | create token copy of permanent |
+| Applied Geometry | S14 | `sos` | ✅ done | create token copy of permanent |
 | Arcane Omens | S7 | `sos` | ✅ done | Converge colors-of-mana discard |
 | Archaic's Agony | S7,S15 | `sos` | ⏳ | Converge damage + impulse-play exiled cards |
 | Ark of Hunger | S9,S15 | `sos` | ⏳ | graveyard-leave trigger + impulse play |
@@ -515,10 +515,18 @@ Approach — give ability-bearing tokens a real `grp_id` pointing at a pre-regis
 Test: create a Pest token, kill it (SBA), assert its controller gained 1 life (the dies-trigger fired
 through the synthetic def).
 
-## S14 token-copy — note
-"Create a token copy of target creature" snapshots the target's chars into the token. Extends the
-S11 machinery (the copy's abilities come from the copied creature's def, reachable by copying its
-`grp_id` onto the token). Do after S11.
+## S14 token-copy — ✅ DONE (`a8c8a2d`)
+`Effect::CreateTokenCopy { source: EffectTarget, controller, mods: TokenCopyMods }` — the materialize
+arm snapshots the source's **copiable** characteristics (its base `chars`: name/types/subtypes/colors/
+P·T + abilities via the copied `grp_id`; **not** counters/damage/auras/other continuous effects, CR
+707.2) into a `TokenSpec`, applies the `mods` CR 707.9e "except" overrides (`add_card_types` /
+`add_subtypes` / `set_power_toughness` / `counters`), then reuses the existing `create_token` path.
+`collect_specs_into` gained a `CreateTokenCopy{ source: Target }` arm so the copy target is enumerated
+at cast. → **Applied Geometry** (copy a permanent as a 0/0 Fractal + six +1/+1 → a 6/6).
+**Deferred token-copy consumers:** Colorstorm Stallion (also needs S17 Ward — build with Ward, uses the
+SourceSelf/empty-`mods` copy-self path), Echocasting Symposium (Paradigm, T4). The **spell-copy** half
+of S14 ("copy target/that spell" → a copy on the stack — Aziza, Choreographed Sparks, Mica, Social Snub,
+Lumaret's Favor) is a **different mechanic** (stack object, not a battlefield token) and is still ⏳.
 
 ## Hybrid mana — the next high-value blocker (7 non-DFC cards)
 
