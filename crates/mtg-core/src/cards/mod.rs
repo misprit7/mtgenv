@@ -66,9 +66,11 @@ pub mod sth;
 pub mod tdm;
 pub mod tla;
 pub mod tmp;
+pub mod tsp;
 pub mod ulg;
 pub mod usg;
 pub mod vow;
+pub mod woe;
 
 /// Oracle/printing ids (the `grp_id` linking an object to its [`CardDef`]). Per-set card ids move
 /// near their cards in the `<setcode>/` folders; the prototype/starter ids stay here.
@@ -445,6 +447,7 @@ pub fn starter_db() -> CardDb {
     tdm::register(&mut db);
     blb::register(&mut db);
     vow::register(&mut db);
+    woe::register(&mut db);
     // Per-set folders for the prototype/starter pool (moved out of `misc`).
     aer::register(&mut db);
     ala::register(&mut db);
@@ -465,6 +468,7 @@ pub fn starter_db() -> CardDb {
     som::register(&mut db);
     sth::register(&mut db);
     tmp::register(&mut db);
+    tsp::register(&mut db);
     ulg::register(&mut db);
     usg::register(&mut db);
     db
@@ -611,7 +615,7 @@ mod tests {
     #[test]
     fn starter_db_has_expected_cards() {
         let db = starter_db();
-        assert_eq!(db.len(), 124);
+        assert_eq!(db.len(), 128);
         // Forest is "type line only": a Basic Land with subtype Forest. Mana is intrinsic
         // (CR 305.6) — the engine derives {T}: Add {G} from the subtype, so the CardDef carries
         // no explicit mana ability (and `is_mana_source` only sees authored abilities).
