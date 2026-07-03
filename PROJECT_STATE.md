@@ -54,10 +54,12 @@ MTGA client.
   `Session { resume/submit/replay }` (corosensei fiber yields at the single `ask` seam; game logic
   byte-identical; ~390 tests green). mtg-py drives games through it — per-game threads/channels/
   PyAgent DELETED, decision trajectories byte-for-byte identical to the old transport (committed
-  fingerprint gate), training 2.7k fps at 128 envs (was 1.6k). Send-split priced and REJECTED
-  (Deref two-phase dealbreaker; Agent:Send = LAW change) → **thread-pinned fleet groups** (zero
-  engine change, nothing Send). Remaining: the mtg-py fleet stepper (in progress, phase-gated).
-  Design + fork record: docs/design/RESUMABLE_ENGINE.md.
+  fingerprint gate). Send-split priced and REJECTED (Deref two-phase dealbreaker; Agent:Send =
+  LAW change) → **thread-pinned fleet groups** (zero engine change, nothing Send). **M3 CLOSED
+  2026-07-03: FleetSelfPlayVecEnv shipped — end-to-end training ~1.6–2.0k (pump) → 2.25k (Session)
+  → 5.5k fps (fleet, 512 envs) = 2.8×**, byte-identical trajectories + same learned policy at every
+  step; fleet is the default vec env. Deferred (resume when throughput binds): pump-loop
+  vectorization toward fully-GPU-bound. Design + fork record: docs/design/RESUMABLE_ENGINE.md.
 - **✅ TRAINING VERIFIED WORKING (2026-07-03) + shaping default ON.** The "heralds" sanity deck
   (40× Mist-Cloaked Herald + 20× Island, provably-optimal play = land/cast/attack-all) trains to
   greedy attack_rate 1.000, productive_rate 1.000, 0.972 vs random (baseline 0.478). PBRS shaping
