@@ -1855,6 +1855,9 @@ impl Engine {
         if let Some(o) = self.state.objects.get_mut(&card) {
             o.mana_spent = spent;
             o.colors_spent = colors_spent.len() as u32;
+            // The chosen {X} (CR 107.3) — read by a cast-with-{X} trigger's "top X cards" (Geometer's
+            // Arthropod's `ValueExpr::XOfTriggeringSpell`).
+            o.cast_x = if cost.x > 0 { Some(chosen_x) } else { None };
         }
 
         // 601.2i: the spell has been cast.

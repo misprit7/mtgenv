@@ -47,6 +47,7 @@ pub mod foolish_fate;
 pub mod forum_necroscribe;
 pub mod forum_of_amity;
 pub mod garrison_excavator;
+pub mod geometers_arthropod;
 pub mod glorious_decay;
 pub mod graduation_day;
 pub mod grapple_with_death;
@@ -183,6 +184,7 @@ pub fn register(db: &mut CardDb) {
     forum_necroscribe::register(db);
     forum_of_amity::register(db);
     garrison_excavator::register(db);
+    geometers_arthropod::register(db);
     glorious_decay::register(db);
     graduation_day::register(db);
     grapple_with_death::register(db);

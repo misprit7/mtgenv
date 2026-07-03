@@ -1895,6 +1895,13 @@ impl EngineCore {
                 .and_then(|p| self.state.players.get(p.0 as usize))
                 .map(|pl| pl.cards_drawn_this_turn as i64)
                 .unwrap_or(0),
+            // The {X} chosen for the triggering spell of a cast-with-{X} trigger — Geometer's Arthropod.
+            ValueExpr::XOfTriggeringSpell => ctx
+                .triggering_spell
+                .and_then(|s| self.state.objects.get(&s))
+                .and_then(|o| o.cast_x)
+                .map(|x| x as i64)
+                .unwrap_or(0),
         }
     }
 

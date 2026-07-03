@@ -140,6 +140,12 @@ pub struct Object {
     /// recorded by `cast_spell` alongside `mana_spent`. Reset to 0 on every zone change (CR 400.7).
     #[serde(default)]
     pub colors_spent: u32,
+    /// The value chosen for `{X}` when this object was cast (CR 107.3 / 601.2b), recorded by
+    /// `cast_spell` alongside `mana_spent`. `None` if the cost had no `{X}`. Read by
+    /// `ValueExpr::XOfTriggeringSpell` — "look at the top X cards" where X is the triggering spell's
+    /// {X} (Geometer's Arthropod). Reset on every zone change (a fresh object, CR 400.7).
+    #[serde(default)]
+    pub cast_x: Option<u32>,
     /// While this card is in exile, the permanent that exiled it (Keen-Eyed Curator's "cards exiled
     /// **with** this creature") — set by `Action::Exile` from the exiling source, `None` otherwise.
     /// Reset on every zone change (a card leaving exile drops the link, CR 400.7).
@@ -582,6 +588,7 @@ impl GameState {
             used_once_per_turn: false,
             mana_spent: 0,
             colors_spent: 0,
+            cast_x: None,
             exiled_with: None,
             warp_cast: false,
             flashback_cast: false,
@@ -653,6 +660,7 @@ impl GameState {
             o.used_once_per_turn = false; // a fresh object identity (CR 400.7)
             o.mana_spent = 0; // re-recorded only by a fresh cast (CR 400.7)
             o.colors_spent = 0; // re-recorded only by a fresh cast (CR 400.7)
+            o.cast_x = None; // re-recorded only by a fresh cast (CR 400.7)
             o.exiled_with = None; // the exile-association is dropped on any zone change (400.7)
             o.warp_cast = false; // a fresh object identity (CR 400.7)
             o.flashback_cast = false; // a fresh object identity (CR 400.7)

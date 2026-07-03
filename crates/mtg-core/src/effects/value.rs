@@ -86,6 +86,11 @@ pub enum ValueExpr {
     /// "X = the number of cards you've drawn this turn" (Fractal Anomaly). Reads
     /// `Player.cards_drawn_this_turn` for `ctx.controller`.
     CardsDrawnThisTurn,
+    /// The value chosen for `{X}` (CR 107.3) of the **triggering spell** of a "whenever you cast a
+    /// spell with {X} in its mana cost" ability — read from `ResolutionCtx::triggering_spell`'s
+    /// `Object.cast_x`. "Look at the top X cards" (Geometer's Arthropod). `0` outside such a trigger
+    /// or if the triggering spell had no `{X}`.
+    XOfTriggeringSpell,
 }
 
 impl ValueExpr {
