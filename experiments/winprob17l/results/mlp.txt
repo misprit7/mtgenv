@@ -1,0 +1,33 @@
+epoch  0  train_bce=0.6167  test_auc=0.7491  test_logloss=0.5806
+epoch  1  train_bce=0.5799  test_auc=0.7555  test_logloss=0.5743
+epoch  2  train_bce=0.5750  test_auc=0.7584  test_logloss=0.5709
+epoch  3  train_bce=0.5721  test_auc=0.7600  test_logloss=0.5693
+epoch  4  train_bce=0.5707  test_auc=0.7610  test_logloss=0.5680
+epoch  5  train_bce=0.5694  test_auc=0.7617  test_logloss=0.5674
+epoch  6  train_bce=0.5685  test_auc=0.7620  test_logloss=0.5668
+epoch  7  train_bce=0.5678  test_auc=0.7622  test_logloss=0.5666
+epoch  8  train_bce=0.5672  test_auc=0.7625  test_logloss=0.5660
+epoch  9  train_bce=0.5667  test_auc=0.7626  test_logloss=0.5658
+epoch 10  train_bce=0.5662  test_auc=0.7633  test_logloss=0.5652
+epoch 11  train_bce=0.5659  test_auc=0.7634  test_logloss=0.5648
+epoch 12  train_bce=0.5653  test_auc=0.7638  test_logloss=0.5645
+epoch 13  train_bce=0.5650  test_auc=0.7638  test_logloss=0.5645
+epoch 14  train_bce=0.5646  test_auc=0.7644  test_logloss=0.5638
+
+=== MLP TEST METRICS ===
+  ROC-AUC  : 0.7644
+  log-loss : 0.5638
+  Brier    : 0.1938
+
+=== MLP CALIBRATION (10 uniform bins) ===
+  bin                n   mean_pred    frac_win
+  [0.0,0.1)      13285       0.053       0.049
+  [0.1,0.2)      14761       0.150       0.147
+  [0.2,0.3)      17141       0.253       0.256
+  [0.3,0.4)      22960       0.353       0.356
+  [0.4,0.5)      38062       0.454       0.456
+  [0.5,0.6)      64992       0.552       0.549
+  [0.6,0.7)      44993       0.648       0.637
+  [0.7,0.8)      29166       0.747       0.746
+  [0.8,0.9)      21721       0.849       0.854
+  [0.9,1.0)      20892       0.950       0.957

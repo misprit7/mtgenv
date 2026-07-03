@@ -1,0 +1,56 @@
+loaded 1,437,392 rows over 80,000 games; base win rate 0.5494
+train rows 1,149,419 | test rows 287,973 (games disjoint; test frac by game = 0.2)
+
+=== TEST METRICS (logistic, by-game split) ===
+  ROC-AUC   : 0.7392
+  log-loss  : 0.5905  (constant-base-rate baseline 0.6888)
+  Brier     : 0.2034
+
+=== CALIBRATION (reliability table, 10 uniform bins) ===
+  bin                n   mean_pred    frac_win
+  [0.0,0.1)       8633       0.054       0.078
+  [0.1,0.2)      11888       0.152       0.135
+  [0.2,0.3)      15386       0.252       0.233
+  [0.3,0.4)      23701       0.355       0.340
+  [0.4,0.5)      46357       0.458       0.458
+  [0.5,0.6)      67701       0.552       0.549
+  [0.6,0.7)      51274       0.644       0.638
+  [0.7,0.8)      28414       0.745       0.755
+  [0.8,0.9)      19510       0.848       0.857
+  [0.9,1.0)      15109       0.947       0.936
+
+=== STANDARDIZED LOGISTIC COEFFICIENTS (sorted by |coef|) ===
+  (feature standardized to unit variance; coef = log-odds shift per +1 SD)
+  feature                 coef  (SD of raw feature)
+  my_lands              0.8369    raw_sd=2.56
+  opp_lands            -0.8022    raw_sd=2.52
+  opp_hand             -0.6881    raw_sd=2.06
+  my_hand               0.6756    raw_sd=2.04
+  opp_creatures        -0.5824    raw_sd=1.55
+  my_creatures          0.5695    raw_sd=1.60
+  my_life               0.4187    raw_sd=5.54
+  opp_life             -0.3989    raw_sd=5.61
+  my_turn              -0.3605    raw_sd=0.50
+  my_noncreatures       0.2671    raw_sd=0.58
+  opp_noncreatures     -0.2552    raw_sd=0.54
+  my_cmc_sum            0.2376    raw_sd=3.78
+  opp_cmc_sum          -0.2288    raw_sd=3.78
+  my_tou_sum            0.2015    raw_sd=3.56
+  opp_tou_sum          -0.1927    raw_sd=3.53
+  my_pow_sum           -0.1460    raw_sd=3.09
+  opp_pow_sum           0.1285    raw_sd=3.09
+  my_cmc_mean           0.0842    raw_sd=1.50
+  opp_pow_max          -0.0724    raw_sd=1.62
+  on_play               0.0493    raw_sd=0.50
+  opp_cmc_mean         -0.0476    raw_sd=1.50
+  my_pow_max            0.0374    raw_sd=1.61
+  turn                 -0.0267    raw_sd=6.68
+  intercept             0.2477
+
+=== AUC BY TURN BUCKET (test) ===
+  turns            n  win_rate     auc
+  1-4          63996     0.550   0.576
+  5-8          63834     0.550   0.667
+  9-12         60904     0.549   0.758
+  13-18        64563     0.543   0.827
+  19-60        34676     0.538   0.841
