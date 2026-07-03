@@ -52,7 +52,7 @@ each cap unlocks the bracketed count. `⏳` = not yet built.
 | Cap | What it adds | Cards | Status |
 |---|---|---|---|
 | **S1** Surveil N | look at top N, put any number in graveyard, rest back (CR 701.42) — `Effect::Surveil` | 15 | ✅ **DONE** `cc58a7b` |
-| **S5** Opus | `SpellCast(I/S you control)` trigger + `ValueExpr::ManaSpentOnTrigger` + `≥5` condition | 13 | ⏳ |
+| **S5** Opus | `SpellCast(I/S you control)` trigger + `ValueExpr::ManaSpentOnTrigger` + `≥5` condition | 13 | ✅ **DONE** `e85771e` |
 | **S8** Repartee | `SpellCast(I/S you control **that targets a creature**)` trigger (inspect cast targets) | 12 | ⏳ |
 | **S4** Infusion | per-turn per-player "gained life this turn" state + a `Condition` reading it | 12 | ✅ **DONE** `89b3581` |
 | **S10** Flashback | alt-cast from graveyard for a flashback cost, then exile (Warp-analogue) | 11 | ⏳ |
@@ -286,7 +286,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Essenceknit Scholar | S11 | `sos` | ⏳ | Pest token with attack-lifegain ability |
 | Eternal Student | S18 | `sos` | ⏳ | {1}{B},exile-from-graveyard activated ability |
 | Exhibition Tidecaller | S5 | `sos` | ⏳ | Opus mill trigger, mana-spent threshold |
-| Expressive Firedancer | S5 | `sos` | ⏳ | Opus self-pump, mana-spent threshold |
+| Expressive Firedancer | S5 | `sos` | ✅ done | Opus self-pump, mana-spent threshold |
 | Fields of Strife | S1 | `sos` | ✅ done | land ability surveil 1 |
 | Fix What's Broken | PayXLife | `sos` | ⏳ | additional cost pay X life; reanimate MV=X |
 | Flashback | S10 | `sos` | ⏳ | grants flashback to graveyard card |
@@ -325,7 +325,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Molten Note | S10 | `sos` | ⏳ | flashback; damage equals mana spent |
 | Molten-Core Maestro | S5 | `sos` | ⏳ | Opus cast-trigger with mana-spent condition |
 | Moseo, Vein's New Dean | S4,S11 | `sos` | ⏳ | Pest token with ability + Infusion reanimate |
-| Muse Seeker | S5 | `sos` | ⏳ | Opus cast-trigger |
+| Muse Seeker | S5 | `sos` | ✅ done | Opus cast-trigger |
 | Muse's Encouragement | S1 | `sos` | ✅ done | surveil 2 (keyword-only token) |
 | Old-Growth Educator | S4 | `sos` | ✅ done | Infusion gained-life-this-turn condition |
 | Orysa, Tide Choreographer | S12 | `sos` | ⏳ | conditional cost reduction on toughness |
@@ -362,7 +362,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Soaring Stoneglider | AltCost | `sos` | ⏳ | modal additional cost (exile 2 gy or pay) |
 | Social Snub | S14 | `sos` | ⏳ | copy this spell |
 | Spectacle Summit | S1 | `sos` | ✅ done | activated surveil 1 |
-| Spectacular Skywhale | S5 | `sos` | ⏳ | Opus cast-IS trigger, mana spent |
+| Spectacular Skywhale | S5 | `sos` | ✅ done | Opus cast-IS trigger, mana spent |
 | Spirit Mascot | S9 | `sos` | ⏳ | cards leave graveyard trigger |
 | Steal the Show | Native | `sos` | ⏳ | wheel: discard any number, draw that many |
 | Stirring Honormancer | S2 | `sos` | ⏳ | look at top X, pick one |
@@ -373,14 +373,14 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Sundering Archaic | S7 | `sos` | ⏳ | converge, colors of mana spent |
 | Suspend Aggression | S15 | `sos` | ⏳ | impulse play exiled cards |
 | Tablet of Discovery | S13,S15 | `sos` | ⏳ | impulse-play milled card; restricted mana |
-| Tackle Artist | S5 | `sos` | ⏳ | Opus cast-IS trigger, mana spent |
+| Tackle Artist | S5 | `sos` | ✅ done | Opus cast-IS trigger, mana spent |
 | Teacher's Pest | S18 | `sos` | ⏳ | {B}{G} return this from graveyard |
 | Tenured Concocter | S4 | `sos` | ✅ done | Infusion: gained-life-this-turn condition |
 | Tester of the Tangential | S6 | `sos` | ⏳ | Increment trigger |
 | Textbook Tabulator | S1,S6 | `sos` | ⏳ | Increment plus surveil 2 |
 | The Dawning Archaic | S10,S12 | `sos` | ⏳ | cast from graveyard; count-based cost reduction |
 | Thornfist Striker | S4,S17 | `sos` | ⏳ | Ward cost plus Infusion |
-| Thunderdrum Soloist | S5 | `sos` | ⏳ | Opus cast-IS trigger, mana spent |
+| Thunderdrum Soloist | S5 | `sos` | ✅ done | Opus cast-IS trigger, mana spent |
 | Titan's Grave | S1 | `sos` | ✅ done | activated surveil 1 |
 | Together as One | S7 | `sos` | ⏳ | converge, colors of mana spent |
 | Tome Blast | S10 | `sos` | ⏳ | Flashback |
