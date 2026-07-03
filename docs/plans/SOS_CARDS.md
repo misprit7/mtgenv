@@ -58,7 +58,7 @@ each cap unlocks the bracketed count. `⏳` = not yet built.
 | **S10** Flashback | alt-cast from graveyard for a flashback cost, then exile (Warp-analogue) | 11 | ⏳ |
 | **S6** Increment | `SpellCast(you)` trigger + condition "mana spent > this creature's power OR toughness" | 9 | ✅ **DONE** |
 | **S7** Converge | `ValueExpr::ColorsOfManaSpent` (ETB counters / X in Converge spells) | 9 | ⏳ |
-| **S9** Graveyard-leave | "cards leave your graveyard" trigger + "a card left your graveyard this turn" cond | 8 | ⏳ |
+| **S9** Graveyard-leave | "cards leave your graveyard" trigger + "a card left your graveyard this turn" cond | 8 | 🟡 PARTIAL `f9b5584` (per-turn *flag*/condition done → Primary Research; the *trigger* deferred) |
 | **S2** Look-and-pick | look at top N, put one/some in hand, rest on bottom (impulse selection) | 8 | ⏳ |
 | **S12** Cost-reduction cond. | "costs {N} less if it targets X / you control Y / a card left your gy" (cast-time) | 7 | ⏳ |
 | **S14** Copy spell/perm | "copy target spell", "create a token that's a copy of" (heavier small-cap) | 7 | ⏳ |
@@ -341,7 +341,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Pox Plague | Native | `sos` | ⏳ | halve life/hand/permanents (one-off) |
 | Practiced Offense | S10 | `sos` | ⏳ | flashback |
 | Practiced Scrollsmith | S15 | `sos` | ⏳ | impulse cast exiled graveyard card |
-| Primary Research | S9 | `sos` | ⏳ | card-left-graveyard-this-turn condition |
+| Primary Research | S9 | `sos` | ✅ done | card-left-graveyard-this-turn condition |
 | Prismari Charm | S1 | `sos` | ⏳ | surveil mode |
 | Procrastinate | S3 | `sos` | ⏳ | stun counters (twice X) |
 | Pursue the Past | S10 | `sos` | ⏳ | flashback |
