@@ -171,6 +171,12 @@ pub struct ResolutionCtx {
     /// resolve to a target's controller even after that object left play during this resolution
     /// (e.g. Erode's "Destroy target … its controller may search"). Empty if not captured.
     pub target_controllers: Vec<Option<PlayerId>>,
+    /// For a triggered ability that fired off a *spell cast* (CR 603.2 "whenever you cast …"), the
+    /// card object of the **triggering spell**. Lets the ability's effect read that spell's
+    /// mana-spent (`ValueExpr::ManaSpentOnTrigger`) — the SoS "Opus" cycle's "if five or more mana
+    /// was spent to cast that spell." `None` for every other resolution.
+    #[serde(default)]
+    pub triggering_spell: Option<ObjId>,
 }
 
 /// A staged batch of actions the engine intends to apply together (the "nap"): materialize →

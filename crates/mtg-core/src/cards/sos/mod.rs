@@ -13,6 +13,7 @@ pub mod eager_glyphmage;
 pub mod efflorescence;
 pub mod environmental_scientist;
 pub mod erode;
+pub mod expressive_firedancer;
 pub mod fields_of_strife;
 pub mod foolish_fate;
 pub mod forum_of_amity;
@@ -62,6 +63,7 @@ pub fn register(db: &mut CardDb) {
     efflorescence::register(db);
     environmental_scientist::register(db);
     erode::register(db);
+    expressive_firedancer::register(db);
     fields_of_strife::register(db);
     foolish_fate::register(db);
     forum_of_amity::register(db);

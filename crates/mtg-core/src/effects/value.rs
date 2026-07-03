@@ -60,6 +60,9 @@ pub enum ValueExpr {
     /// the mana spent to cast it" (Dyadrine). `0` if the source wasn't cast (token / put onto the
     /// battlefield).
     ManaSpent,
+    /// The total mana spent to cast the **triggering spell** of a "whenever you cast …" ability (the
+    /// SoS "Opus" cycle) — read from `ResolutionCtx::triggering_spell`. `0` outside such a trigger.
+    ManaSpentOnTrigger,
     /// The number of **distinct card types** among the cards in exile that were exiled *with* the
     /// effect's source object (`Object.exiled_with == source`) — Keen-Eyed Curator's "four or more
     /// card types among cards exiled with this creature." `0` if there's no source.

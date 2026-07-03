@@ -19,7 +19,7 @@ use crate::cards::{CardDb, CardDef};
 use crate::effects::ability::Keyword;
 use crate::effects::action::{Action, DelayedTriggerEvent};
 use crate::combat::CombatState;
-use crate::ids::{ObjId, PlayerId, Timestamp};
+use crate::ids::{ObjId, PlayerId, StackId, Timestamp};
 use crate::rng::Rng;
 use crate::subtypes::{LandType, Subtype, Supertype};
 use crate::stack::{Stack, StackObject};
@@ -266,6 +266,12 @@ pub struct GameState {
     /// priority (CR 603.3, APNAP-ordered). Empty until the effect runtime arrives (M4); the
     /// agenda loop already drains it so the wiring is correct from day one.
     pub pending_triggers: Vec<StackObject>,
+    /// For a "whenever you cast …" triggered ability (CR 603.2) queued off a spell cast: maps that
+    /// trigger's [`StackId`] to the **triggering spell's** card [`ObjId`], so the ability can read
+    /// the spell's mana-spent at resolution (SoS "Opus"). Cleared per entry when the trigger
+    /// resolves; empty otherwise.
+    #[serde(default)]
+    pub trigger_source_spell: BTreeMap<StackId, ObjId>,
     /// Combat state during a combat phase (CR 506–511); `None` outside combat.
     pub combat: Option<CombatState>,
     /// Continuous effects created by resolution (CR 611) that aren't printed `Ability::Static` —
@@ -318,6 +324,7 @@ impl GameState {
             stack: Stack::default(),
             starting_player: PlayerId(0),
             pending_triggers: Vec::new(),
+            trigger_source_spell: BTreeMap::new(),
             combat: None,
             continuous_effects: Vec::new(),
             delayed_triggers: Vec::new(),

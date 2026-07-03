@@ -1964,6 +1964,7 @@ impl Engine {
                                 chosen_targets: obj.targets.clone(),
                                 chosen_modes: obj.modes.clone(),
                                 ability_index: None,
+                                triggering_spell: None,
                             };
                             self.resolve_effect(&effect, &ctx, WbReason::Resolve(obj.id));
                         }
@@ -1998,10 +1999,14 @@ impl Engine {
                             chosen_modes: Vec::new(),
                             // So a reflexive "when you do" branch can reference back into this ability.
                             ability_index: Some(index),
+                            // A "whenever you cast …" trigger carries its triggering spell (Opus).
+                            triggering_spell: self.state.trigger_source_spell.get(&obj.id).copied(),
                         };
                         self.resolve_effect(&effect, &ctx, WbReason::Resolve(obj.id));
                     }
                 }
+                // The triggering-spell association is consumed once the trigger resolves.
+                self.state.trigger_source_spell.remove(&obj.id);
             }
             StackObjectKind::ReflexiveAbility { source, ability_index } => {
                 // A reflexive "when you do" sub-trigger (CR 603.7c): re-check the intervening-if
@@ -2501,6 +2506,12 @@ impl Engine {
             GameEvent::PhaseBegan { phase: Phase::End, .. } => {
                 self.fire_end_step_delayed_triggers();
             }
+            // "Whenever you cast a [filter] spell" (CR 603.2 / 601.2i) — SoS Opus / Repartee /
+            // Increment. Queue each matching `SpellCast` trigger on a permanent the *caster*
+            // controls, recording the triggering spell so the ability can read its mana-spent.
+            GameEvent::SpellCast { spell, controller } => {
+                self.queue_watching_spellcast_triggers(*spell, *controller);
+            }
             _ => {}
         }
     }
@@ -2654,6 +2665,58 @@ impl Engine {
     /// Queue every battlefield permanent's `PermanentEnters(filter)` trigger that matches the
     /// just-entered object (CR 603.2). The filter is evaluated relative to the WATCHER's
     /// controller, so "a land you control enters" (landfall) means the watcher's controller.
+    /// Queue "whenever you cast a [filter] spell" triggers (CR 603.2) for the caster's permanents,
+    /// recording each trigger's [`StackId`] → the triggering spell's card so the ability can read
+    /// its mana-spent at resolution (SoS Opus / Repartee / Increment). Only the *caster's* permanents
+    /// watch (the "you" in "whenever you cast …").
+    fn queue_watching_spellcast_triggers(&mut self, spell: StackId, caster: PlayerId) {
+        let card = self
+            .state
+            .stack
+            .items
+            .iter()
+            .find(|s| s.id == spell)
+            .and_then(|s| match s.kind {
+                StackObjectKind::Spell(o) => Some(o),
+                _ => None,
+            });
+        let Some(card) = card else {
+            return;
+        };
+        let watchers: Vec<ObjId> = self.state.player(caster).battlefield.clone();
+        for watcher in watchers {
+            let candidates: Vec<(u32, CardFilter)> = match self.state.def_of(watcher) {
+                Some(def) => def
+                    .abilities
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, a)| match a {
+                        Ability::Triggered { event: EventPattern::SpellCast(f), .. } => {
+                            Some((i as u32, f.clone()))
+                        }
+                        _ => None,
+                    })
+                    .collect(),
+                None => continue,
+            };
+            for (index, filter) in candidates {
+                if self.enter_filter_matches(card, &filter, caster) {
+                    let id = self.state.mint_stack();
+                    self.state.pending_triggers.push(StackObject {
+                        id,
+                        controller: caster,
+                        source: Some(watcher),
+                        kind: StackObjectKind::Ability { index },
+                        targets: Vec::new(),
+                        x: None,
+                        modes: Vec::new(),
+                    });
+                    self.state.trigger_source_spell.insert(id, card);
+                }
+            }
+        }
+    }
+
     fn queue_watching_enters_triggers(&mut self, entered: ObjId) {
         let watchers: Vec<ObjId> = self
             .state

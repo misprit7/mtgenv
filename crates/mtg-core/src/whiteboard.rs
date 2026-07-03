@@ -21,7 +21,7 @@ use crate::agent::{
 };
 use crate::basics::{CardType, Color, CounterKind, DamageKind, Target, Zone, ZoneDest, ZonePos};
 use crate::effects::ability::{Ability, ActionPattern, Keyword, Rewrite, StaticContribution};
-use crate::effects::condition::Duration;
+use crate::effects::condition::{Condition, Duration};
 use crate::effects::action::{
     Action, DelayedTriggerEvent, MoveCause, ResolutionCtx, Whiteboard, WbReason,
 };
@@ -885,8 +885,7 @@ impl EngineCore {
                     .filter(|_| !crate::priority::collect_target_specs(then).is_empty());
                 if let Some((source, ability_index)) = reflexive {
                     wb.push(Action::RegisterReflexive { source, ability_index, controller });
-                } else if crate::conditions::holds_for_source(&self.state, cond, controller, ctx.source)
-                {
+                } else if self.cond_holds(cond, ctx) {
                     self.materialize(then, ctx, wb, cursor);
                 } else if let Some(otherwise) = otherwise {
                     self.materialize(otherwise, ctx, wb, cursor);
@@ -1472,6 +1471,26 @@ impl EngineCore {
 
     // ── IR resolution helpers ─────────────────────────────────────────────────────────────
 
+    /// Evaluate a `Condition` **with the resolution context** (so `ValueExpr`s like
+    /// `ManaSpentOnTrigger` / `X` that only make sense at resolution resolve correctly). `ValueAtLeast`
+    /// and the boolean combinators are handled here via `eval_value`; every other condition delegates
+    /// to the state-only [`crate::conditions::holds_for_source`].
+    fn cond_holds(&self, cond: &Condition, ctx: &ResolutionCtx) -> bool {
+        use crate::effects::condition::Condition as C;
+        match cond {
+            C::All(cs) => cs.iter().all(|c| self.cond_holds(c, ctx)),
+            C::AnyOf(cs) => cs.iter().any(|c| self.cond_holds(c, ctx)),
+            C::Not(c) => !self.cond_holds(c, ctx),
+            C::ValueAtLeast(a, b) => self.eval_value(a, ctx) >= self.eval_value(b, ctx),
+            other => crate::conditions::holds_for_source(
+                &self.state,
+                other,
+                ctx.controller.unwrap_or(PlayerId(0)),
+                ctx.source,
+            ),
+        }
+    }
+
     pub(crate) fn eval_value(&self, v: &ValueExpr, ctx: &ResolutionCtx) -> i64 {
         match v {
             ValueExpr::Fixed(n) => *n,
@@ -1507,6 +1526,12 @@ impl EngineCore {
             // The mana spent to cast the source object (recorded at cast, CR 601.2f–h) — Dyadrine.
             ValueExpr::ManaSpent => ctx
                 .source
+                .and_then(|s| self.state.objects.get(&s))
+                .map(|o| o.mana_spent as i64)
+                .unwrap_or(0),
+            // The mana spent to cast the triggering spell of a "whenever you cast …" ability — Opus.
+            ValueExpr::ManaSpentOnTrigger => ctx
+                .triggering_spell
                 .and_then(|s| self.state.objects.get(&s))
                 .map(|o| o.mana_spent as i64)
                 .unwrap_or(0),
