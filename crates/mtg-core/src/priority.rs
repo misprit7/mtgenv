@@ -457,7 +457,7 @@ impl Engine {
             GameEvent::ValueChosen { player, label, value } => {
                 format!("P{} {label} = {value}", player.0)
             }
-            GameEvent::Targeted { object, by } => {
+            GameEvent::Targeted { object, by, .. } => {
                 format!("{} targeted by P{}", name(*object), by.0)
             }
             GameEvent::AttackersDeclared { attackers, by } => {
@@ -1420,7 +1420,7 @@ impl Engine {
                 obj.targets = chosen;
             }
             // CR 603.2: each targeted object becomes the target of this activated ability.
-            self.fire_targeted(&targeted, p);
+            self.fire_targeted(&targeted, p, sid);
         }
         self.pay_cost(p, source, &cost);
         // Mark the once-per-turn limit (CR 606.3) as used on this permanent.
@@ -1433,7 +1433,7 @@ impl Engine {
 
     /// Pay an ability/cost's components (CR 118). Mana is auto-tapped; the starter set also uses
     /// `{T}`. Components beyond these aren't charged yet (none in the starter pool need them).
-    fn pay_cost(&mut self, p: PlayerId, source: ObjId, cost: &Cost) {
+    pub(crate) fn pay_cost(&mut self, p: PlayerId, source: ObjId, cost: &Cost) {
         // Pay NON-mana components FIRST (CR 601.2h — the payer orders cost payment): committing them
         // first means a source tapped/sacrificed for a `{T}`/Sacrifice cost is already excluded from
         // the mana sources, so it can't ALSO produce mana for the same cost (Ba Sing Se's `{T}` can't
@@ -1570,7 +1570,7 @@ impl Engine {
             CardFilter::All(fs) => fs.iter().all(|f| self.sac_filter_matches(obj, f, source, payer)),
             CardFilter::AnyOf(fs) => fs.iter().any(|f| self.sac_filter_matches(obj, f, source, payer)),
             CardFilter::Not(f) => !self.sac_filter_matches(obj, f, source, payer),
-            other => self.enter_filter_matches(obj, other, payer),
+            other => self.enter_filter_matches(obj, other, payer, None),
         }
     }
 
@@ -1613,7 +1613,7 @@ impl Engine {
             .zone_ids(spec.zone)
             .iter()
             .copied()
-            .filter(|&o| self.enter_filter_matches(o, &spec.filter, payer))
+            .filter(|&o| self.enter_filter_matches(o, &spec.filter, payer, None))
             .collect()
     }
 
@@ -1820,7 +1820,7 @@ impl Engine {
                 obj.targets = chosen;
             }
             // CR 603.2: each targeted object "becomes the target" of this spell, controlled by `p`.
-            self.fire_targeted(&targeted, p);
+            self.fire_targeted(&targeted, p, sid);
         }
 
         // 601.2f–h: pay the total cost (auto-tap lands), with {X} settled to `chosen_x`. Hybrid and
@@ -2230,6 +2230,7 @@ impl Engine {
                                 chosen_modes: obj.modes.clone(),
                                 ability_index: None,
                                 triggering_spell: None,
+                                triggering_stack: None,
                             };
                             self.resolve_effect(&effect, &ctx, WbReason::Resolve(obj.id));
                         }
@@ -2274,12 +2275,16 @@ impl Engine {
                             ability_index: Some(index),
                             // A "whenever you cast …" trigger carries its triggering spell (Opus).
                             triggering_spell: self.state.trigger_source_spell.get(&obj.id).copied(),
+                            // A "becomes the target …" trigger carries the targeting spell/ability
+                            // so a Ward soft-counter can counter it (CR 702.21).
+                            triggering_stack: self.state.trigger_targeting_source.get(&obj.id).copied(),
                         };
                         self.resolve_effect(&effect, &ctx, WbReason::Resolve(obj.id));
                     }
                 }
-                // The triggering-spell association is consumed once the trigger resolves.
+                // The triggering-spell / targeting-source associations are consumed once resolved.
                 self.state.trigger_source_spell.remove(&obj.id);
+                self.state.trigger_targeting_source.remove(&obj.id);
             }
             StackObjectKind::ReflexiveAbility { source, ability_index } => {
                 // A reflexive "when you do" sub-trigger (CR 603.7c): re-check the intervening-if
@@ -2557,9 +2562,10 @@ impl Engine {
         }
         let targeted = self.targeted_object_ids(&t.targets);
         let by = t.controller;
+        let sid = t.id;
         self.state.stack.push(t);
         // CR 603.2: each targeted object becomes the target of this triggered ability.
-        self.fire_targeted(&targeted, by);
+        self.fire_targeted(&targeted, by, sid);
     }
 
     /// Drain triggers waiting to go on the stack, APNAP-ordered (CR 603.3b): the active
@@ -2771,8 +2777,8 @@ impl Engine {
                 self.fire_delayed_triggers(*obj);
             }
             // "Whenever [filter] becomes the target of a spell/ability …" (CR 603.2). C16.
-            GameEvent::Targeted { object, by } => {
-                self.queue_watching_targeted_triggers(*object, *by);
+            GameEvent::Targeted { object, by, source } => {
+                self.queue_watching_targeted_triggers(*object, *by, *source);
             }
             // Attackers declared (CR 508.1): per-attacker "this attacks" + once "you attack".
             GameEvent::AttackersDeclared { attackers, by } => {
@@ -2921,10 +2927,11 @@ impl Engine {
     }
 
     /// Broadcast a `Targeted` event for each object that became a target (CR 603.2), controlled by
-    /// `by` — drives "becomes the target of a spell or ability" triggers.
-    fn fire_targeted(&mut self, objects: &[ObjId], by: PlayerId) {
+    /// `by` — drives "becomes the target of a spell or ability" triggers. `source` is the targeting
+    /// spell/ability's stack id (carried so a Ward soft-counter can counter "that spell or ability").
+    fn fire_targeted(&mut self, objects: &[ObjId], by: PlayerId, source: StackId) {
         for &object in objects {
-            self.broadcast(GameEvent::Targeted { object, by });
+            self.broadcast(GameEvent::Targeted { object, by, source });
         }
     }
 
@@ -3107,7 +3114,7 @@ impl Engine {
             };
             for (index, filter, needs_creature_target) in candidates {
                 if (!needs_creature_target || targets_a_creature)
-                    && self.enter_filter_matches(card, &filter, caster)
+                    && self.enter_filter_matches(card, &filter, caster, None)
                 {
                     let id = self.state.mint_stack();
                     self.state.pending_triggers.push(StackObject {
@@ -3151,7 +3158,7 @@ impl Engine {
                 None => continue,
             };
             for (index, filter) in candidates {
-                if self.enter_filter_matches(entered, &filter, wctrl) {
+                if self.enter_filter_matches(entered, &filter, wctrl, None) {
                     let id = self.state.mint_stack();
                     self.state.pending_triggers.push(StackObject {
                         id,
@@ -3171,7 +3178,9 @@ impl Engine {
     /// just become the target of a spell/ability controlled by `by` (CR 603.2). The `filter` is
     /// evaluated relative to the WATCHER's controller ("a creature you control"); `by_opponent`
     /// requires the targeting source to be controlled by an opponent of the watcher (C16, Surrak).
-    fn queue_watching_targeted_triggers(&mut self, object: ObjId, by: PlayerId) {
+    /// `source` is the targeting spell/ability's stack id, recorded per fired trigger so a Ward
+    /// soft-counter (CR 702.21) can counter "that spell or ability" at resolution.
+    fn queue_watching_targeted_triggers(&mut self, object: ObjId, by: PlayerId, source: StackId) {
         let watchers: Vec<ObjId> = self
             .state
             .players
@@ -3200,7 +3209,7 @@ impl Engine {
                 if by_opponent && by == wctrl {
                     continue;
                 }
-                if self.enter_filter_matches(object, &filter, wctrl) {
+                if self.enter_filter_matches(object, &filter, wctrl, Some(watcher)) {
                     let id = self.state.mint_stack();
                     self.state.pending_triggers.push(StackObject {
                         id,
@@ -3211,6 +3220,10 @@ impl Engine {
                         x: None,
                         modes: Vec::new(),
                     });
+                    // Remember which spell/ability did the targeting so a Ward soft-counter can
+                    // counter "that spell or ability" (CR 702.21); harmless for triggers (Surrak's
+                    // draw) that never read it.
+                    self.state.trigger_targeting_source.insert(id, source);
                 }
             }
         }
@@ -3218,10 +3231,20 @@ impl Engine {
 
     /// Whether the just-entered object matches a `PermanentEnters` filter, with `ControlledBy`
     /// resolved against the watching permanent's controller (`watcher_controller`).
-    fn enter_filter_matches(&self, obj: ObjId, filter: &CardFilter, watcher_controller: PlayerId) -> bool {
+    fn enter_filter_matches(
+        &self,
+        obj: ObjId,
+        filter: &CardFilter,
+        watcher_controller: PlayerId,
+        source: Option<ObjId>,
+    ) -> bool {
         let cc = self.state.computed(obj);
         match filter {
             CardFilter::Any => true,
+            // "this permanent itself" (CR 702.21 Ward: "whenever THIS creature becomes the target").
+            // Matches only when the watcher (`source`) is the object that became the target; `None`
+            // source ⇒ never (callers that don't opt in preserve the old false result).
+            CardFilter::ItSelf => source == Some(obj),
             CardFilter::HasCardType(t) => cc.card_types.contains(t),
             CardFilter::HasSubtype(s) => cc.subtypes.contains(s),
             CardFilter::HasColor(c) => cc.colors.contains(c),
@@ -3249,9 +3272,9 @@ impl Engine {
                 };
                 self.state.objects.get(&obj).map(|o| o.controller) == Some(want)
             }
-            CardFilter::All(fs) => fs.iter().all(|f| self.enter_filter_matches(obj, f, watcher_controller)),
-            CardFilter::AnyOf(fs) => fs.iter().any(|f| self.enter_filter_matches(obj, f, watcher_controller)),
-            CardFilter::Not(f) => !self.enter_filter_matches(obj, f, watcher_controller),
+            CardFilter::All(fs) => fs.iter().all(|f| self.enter_filter_matches(obj, f, watcher_controller, source)),
+            CardFilter::AnyOf(fs) => fs.iter().any(|f| self.enter_filter_matches(obj, f, watcher_controller, source)),
+            CardFilter::Not(f) => !self.enter_filter_matches(obj, f, watcher_controller, source),
             _ => false,
         }
     }
@@ -5143,7 +5166,7 @@ mod expect_tests {
         );
         let before = e.state.player(PlayerId(0)).hand.len();
         // P1 targets the creature spell on the stack.
-        e.fire_targeted(&[spell_card], PlayerId(1));
+        e.fire_targeted(&[spell_card], PlayerId(1), sid);
         e.run_agenda();
         e.resolve_top();
         assert_eq!(
@@ -5199,12 +5222,12 @@ mod expect_tests {
 
         let mut e = pass_engine(state);
         // P0 targeting its OWN creature: no trigger (the source isn't an opponent).
-        e.broadcast(GameEvent::Targeted { object: bears, by: PlayerId(0) });
+        e.broadcast(GameEvent::Targeted { object: bears, by: PlayerId(0), source: StackId(1) });
         assert!(e.state.pending_triggers.is_empty(), "targeting your own creature doesn't trigger");
 
         // An opponent (P1) targets P0's creature: triggers, and P0 draws.
         let before = e.state.player(PlayerId(0)).hand.len();
-        e.broadcast(GameEvent::Targeted { object: bears, by: PlayerId(1) });
+        e.broadcast(GameEvent::Targeted { object: bears, by: PlayerId(1), source: StackId(2) });
         assert_eq!(e.state.pending_triggers.len(), 1, "an opponent targeting your creature triggers");
         e.run_agenda(); // put the trigger on the stack
         e.resolve_top(); // resolve the draw

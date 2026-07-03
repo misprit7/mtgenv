@@ -304,6 +304,12 @@ pub struct GameState {
     /// resolves; empty otherwise.
     #[serde(default)]
     pub trigger_source_spell: BTreeMap<StackId, ObjId>,
+    /// For a `BecomesTargeted` trigger (CR 603.2) queued off a spell/ability targeting a permanent:
+    /// maps that trigger's [`StackId`] to the **targeting spell/ability's** [`StackId`], so a Ward
+    /// soft-counter (CR 702.21) can counter "that spell or ability" at resolution. Cleared per entry
+    /// when the trigger resolves; empty otherwise.
+    #[serde(default)]
+    pub trigger_targeting_source: BTreeMap<StackId, StackId>,
     /// Combat state during a combat phase (CR 506–511); `None` outside combat.
     pub combat: Option<CombatState>,
     /// Continuous effects created by resolution (CR 611) that aren't printed `Ability::Static` —
@@ -357,6 +363,7 @@ impl GameState {
             starting_player: PlayerId(0),
             pending_triggers: Vec::new(),
             trigger_source_spell: BTreeMap::new(),
+            trigger_targeting_source: BTreeMap::new(),
             combat: None,
             continuous_effects: Vec::new(),
             delayed_triggers: Vec::new(),

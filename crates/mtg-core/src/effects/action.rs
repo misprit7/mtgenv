@@ -183,6 +183,11 @@ pub struct ResolutionCtx {
     /// was spent to cast that spell." `None` for every other resolution.
     #[serde(default)]
     pub triggering_spell: Option<ObjId>,
+    /// For a `BecomesTargeted` trigger (CR 603.2), the **stack id of the spell or ability that did
+    /// the targeting** — so a Ward soft-counter (CR 702.21) can counter "that spell or ability" via
+    /// `EffectTarget::Triggering`. `None` for every other resolution.
+    #[serde(default)]
+    pub triggering_stack: Option<StackId>,
 }
 
 /// A staged batch of actions the engine intends to apply together (the "nap"): materialize →

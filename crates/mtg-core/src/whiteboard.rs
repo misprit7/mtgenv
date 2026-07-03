@@ -184,6 +184,40 @@ impl EngineCore {
                 }
                 true
             }
+            // Ward soft-counter (CR 702.21): counter `what` unless *its controller* (the targeting
+            // player, not the Ward controller) pays `cost`. They're only offered the choice if they
+            // can afford it; declining or being unable to pay counters the spell/ability. Imperative
+            // (asks a player, taps mana, mutates the stack), so it lives here. Flush staged first.
+            Effect::CounterUnlessPay { what, cost } => {
+                self.flush_pending(wb);
+                if let Some(Target::Stack(target_sid)) = self.resolve_target(what, ctx, cursor) {
+                    // The controller of the targeting spell/ability pays (or the object is countered).
+                    let payer =
+                        self.state.stack.items.iter().find(|s| s.id == target_sid).map(|s| s.controller);
+                    if let Some(payer) = payer {
+                        // `source` is only used by `{T}`/sacrifice-self cost components (Ward costs
+                        // have none), so for pure mana/life the value is irrelevant. `ctx.source` (the
+                        // Ward permanent) is always present for a triggered ability; `ObjId(0)` is a
+                        // dead fallback.
+                        let src = ctx.source.unwrap_or(ObjId(0));
+                        let can_pay = self.can_pay_cost(payer, src, cost);
+                        let paid = can_pay
+                            && matches!(
+                                self.ask(
+                                    payer,
+                                    &DecisionRequest::Confirm { kind: ConfirmKind::PayToPrevent },
+                                ),
+                                DecisionResponse::Bool(true),
+                            );
+                        if paid {
+                            self.pay_cost(payer, src, cost);
+                        } else {
+                            self.interpret_counter(target_sid);
+                        }
+                    }
+                }
+                true
+            }
             // Sacrifice permanents as an effect (CR 701.17) — "sacrifice two lands", "each player
             // sacrifices a creature of their choice." Imperative + asks each sacrificing player which
             // of their own permanents to sacrifice, so it lives here. Flush staged actions first.
@@ -1162,6 +1196,7 @@ impl EngineCore {
             | Effect::AddMana { .. }
             | Effect::Discard { .. }
             | Effect::Counter { .. }
+            | Effect::CounterUnlessPay { .. }
             | Effect::Sacrifice { .. }
             | Effect::Surveil { .. }
             | Effect::LookAndPick { .. }
@@ -1927,6 +1962,9 @@ impl EngineCore {
                 let pl = self.eval_player(*who, ctx);
                 self.state.player(pl).library.last().copied().map(Target::Object)
             }
+            // The spell/ability that triggered this ability (Ward, CR 702.21) — read from the
+            // resolution ctx; `None` if it already left the stack.
+            EffectTarget::Triggering => ctx.triggering_stack.map(Target::Stack),
             EffectTarget::Select(_) => None,
         }
     }

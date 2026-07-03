@@ -656,8 +656,9 @@ pub enum GameEvent {
     Revealed { to: PlayerId, objects: Vec<ObjId> },
     ValueChosen { player: PlayerId, label: String, value: i64 },
     /// `object` became the target of a spell or ability controlled by `by` (CR 603.2/601.2c) —
-    /// fired as targets are locked. Drives "becomes the target of …" triggers.
-    Targeted { object: ObjId, by: PlayerId },
+    /// fired as targets are locked. `source` is the targeting spell/ability's stack id (so a Ward
+    /// soft-counter can reference "that spell or ability"). Drives "becomes the target of …" triggers.
+    Targeted { object: ObjId, by: PlayerId, source: StackId },
     /// Player `by` declared `attackers` as attacking creatures (CR 508.1). Drives "whenever you
     /// attack" (player-level, once) and "whenever this creature attacks" (per attacker) triggers.
     AttackersDeclared { attackers: Vec<ObjId>, by: PlayerId },

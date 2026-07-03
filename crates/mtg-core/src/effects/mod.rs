@@ -19,7 +19,7 @@ pub mod native;
 pub mod target;
 pub mod value;
 
-use self::ability::Keyword;
+use self::ability::{Cost, Keyword};
 use self::condition::{Condition, Duration};
 use self::native::NativeFn;
 use self::target::{CardFilter, ManaSpec, SelectSpec, TargetSpec, TokenCopyMods, TokenSpec};
@@ -52,6 +52,11 @@ pub enum EffectTarget {
     /// the top of library (SoS: Elemental Mascot's "exile the top card of your library"). Resolves to
     /// `None` (no-op) if that library is empty.
     TopOfLibrary(PlayerRef),
+    /// The **spell or ability that triggered this ability** (CR 603.2) — the object on the stack
+    /// whose targeting fired a `BecomesTargeted` trigger. Not a chosen target; resolved from the
+    /// resolution context (`triggering_stack`). Used by Ward (CR 702.21) to counter "that spell or
+    /// ability." Resolves to `None` if the triggering object has already left the stack.
+    Triggering,
 }
 
 /// One mode of a modal spell/ability (CR 700.2): a presented label + the effect it runs.
@@ -169,6 +174,16 @@ pub enum Effect {
     /// Counter a target spell or ability (CR 701.6).
     Counter {
         what: EffectTarget,
+    },
+    /// "Counter `what` unless that spell/ability's controller pays `cost`" (CR 701.5 / 702.21) —
+    /// the Ward soft-counter. `what` is typically `EffectTarget::Triggering` (the spell or ability
+    /// that targeted the Ward permanent). The *targeting player* (not the Ward controller) decides
+    /// whether to pay; if they can't afford it or decline, the object is countered. Reuses the
+    /// engine's `Cost` (mana / pay-life / discard), so Ward {N} / Ward—Pay life / Ward—Discard all
+    /// share one leaf.
+    CounterUnlessPay {
+        what: EffectTarget,
+        cost: Cost,
     },
     /// Two creatures fight (CR 701.12): each deals damage equal to its power to the other,
     /// **simultaneously** (lowered to two `Damage` actions in one whiteboard so deathtouch /
