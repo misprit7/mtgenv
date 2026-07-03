@@ -428,21 +428,16 @@ async fn delete_deck(
     }
 }
 
-/// `GET /api/cards` — the deck builder's card catalog: every card that can appear in a game (the
-/// union of all preset + custom decks, i.e. [`driver::deck_card_pool`]), each projected into the
-/// same [`DeckCard`] shape as the deck viewer. `count` is meaningless here (always 1) — the builder
-/// treats these as templates. This set is exactly the art-covered pool, so every catalog card has
-/// an image.
+/// `GET /api/cards` — the deck builder's card catalog: **every registered card** (the full engine
+/// registry via `CardDb::iter`), each projected into the same [`DeckCard`] shape as the deck viewer.
+/// `count` is meaningless here (always 1) — the builder treats these as templates.
 ///
-/// NOTE: this is the *playable pool*, not the full registered-card DB — the DB holds more cards, but
-/// `CardDb` exposes no iterator today and cards outside the pool have no baked art. Widening this to
-/// the whole DB would need a `CardDb::iter()` in mtg-core (a separate crate).
+/// This is the whole implemented pool, not just cards used by a preset, so newly-authored cards are
+/// buildable immediately. Art can lag (the manifest is regenerated separately) — a card without a
+/// baked image just renders as a text tile, which the client handles gracefully.
 async fn card_catalog() -> impl IntoResponse {
     let db = mtg_core::cards::starter_db();
-    let mut cards: Vec<DeckCard> = driver::deck_card_pool()
-        .into_iter()
-        .filter_map(|(grp, _)| db.get(grp).map(|def| card_view(grp, 1, def)))
-        .collect();
+    let mut cards: Vec<DeckCard> = db.iter().map(|(grp, def)| card_view(grp, 1, def)).collect();
     deck_sort(&mut cards);
     axum::Json(cards)
 }

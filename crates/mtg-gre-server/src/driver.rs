@@ -233,14 +233,14 @@ pub fn run_demo_game(agents: Vec<Box<dyn Agent>>, seed: u64) -> Outcome {
 /// of truth for the lobby/CLI pickers.
 pub const DECK_NAMES: &[&str] = &["selesnya", "counters", "demo", "burn", "bears", "heralds"];
 
-/// Every `(grp_id, exact card name)` that can appear in a game this server serves: the union of all
-/// selectable decks ([`DECK_NAMES`]) resolved against the engine's [`starter_db`]. Sorted, unique.
+/// Every `(grp_id, exact card name)` in the built-in **preset** decks ([`DECK_NAMES`]), resolved
+/// against the engine's [`starter_db`]. Sorted, unique.
 ///
-/// This is the canonical "cards that need art" set — a card a player can ever see is exactly a card
-/// in some deck, since `build_game` only ever draws a player's cards from their deck. It's the one
-/// source of truth shared by the startup art-coverage check ([`crate::server::missing_card_art`])
-/// and the `dump-cards` resolver helper (which feeds `resolve-card-art.py`), so adding a card to a
-/// deck automatically pulls it into both the warning and the art fetch.
+/// This is the *preset-pool* "cards that need art" set behind the startup art-coverage warning
+/// ([`crate::server::missing_card_art`]) — the cards guaranteed to appear in the default games, so a
+/// missing-art gap there is worth shouting about. The deck-builder catalog (`/api/cards`) and the
+/// `dump-cards` art resolver instead enumerate the wider [`all_cards`] (the full registry), so every
+/// implemented card is buildable and can get art even if no preset references it.
 ///
 /// [`starter_db`]: mtg_core::cards::starter_db
 pub fn deck_card_pool() -> Vec<(u32, String)> {
@@ -255,6 +255,18 @@ pub fn deck_card_pool() -> Vec<(u32, String)> {
         }
     }
     pool.into_iter().collect()
+}
+
+/// Every registered card as `(grp_id, exact name)`, ascending by grp_id — the **full card registry**
+/// via [`mtg_core::cards::CardDb::iter`], not just the cards reachable through presets. The
+/// deck-builder catalog (`/api/cards`) and the art resolver (`dump-cards`) enumerate this, so every
+/// implemented card is buildable and can be given art independently of the presets. (Contrast
+/// [`deck_card_pool`], the narrower preset pool behind the startup art warning.)
+pub fn all_cards() -> Vec<(u32, String)> {
+    mtg_core::cards::starter_db()
+        .iter()
+        .map(|(grp, def)| (grp, def.chars.name.clone()))
+        .collect()
 }
 
 /// A *much* richer preset than the trivial burn/bears/demo piles: a **Selesnya (G/W) landfall +
