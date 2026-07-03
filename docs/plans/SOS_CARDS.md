@@ -58,7 +58,7 @@ each cap unlocks the bracketed count. `⏳` = not yet built.
 | **S10** Flashback | alt-cast from graveyard for a flashback cost, then exile (Warp-analogue) | 11 | ⏳ |
 | **S6** Increment | `SpellCast(you)` trigger + condition "mana spent > this creature's power OR toughness" | 9 | ✅ **DONE** |
 | **S7** Converge | `ValueExpr::ColorsOfManaSpent` (ETB counters / X in Converge spells) | 9 | ⏳ |
-| **S9** Graveyard-leave | "cards leave your graveyard" trigger + "a card left your graveyard this turn" cond | 8 | 🟡 PARTIAL `f9b5584` (per-turn *flag*/condition done → Primary Research; the *trigger* deferred) |
+| **S9** Graveyard-leave | "cards leave your graveyard" trigger + "a card left your graveyard this turn" cond | 8 | ✅ **DONE** (flag `f9b5584` + trigger: LeftGraveyard event snapshot in resolve_effect → Spirit Mascot, Owlin Historian, Garrison Excavator) |
 | **S2** Look-and-pick | look at top N, put one/some in hand, rest on bottom (impulse selection) | 8 | ⏳ |
 | **S12** Cost-reduction cond. | "costs {N} less if it targets X / you control Y / a card left your gy" (cast-time) | 7 | ⏳ |
 | **S14** Copy spell/perm | "copy target spell", "create a token that's a copy of" (heavier small-cap) | 7 | ⏳ |
@@ -298,7 +298,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Fractal Anomaly | S19 | `sos` | ⏳ | X = cards drawn this turn |
 | Fractal Mascot | S3 | `sos` | ✅ done | ETB tap plus stun counter |
 | Fractal Tender | S6,S17 | `sos` | ⏳ | Increment, Ward, conditional end-step token |
-| Garrison Excavator | S9 | `sos` | ⏳ | cards-leave-graveyard trigger makes token |
+| Garrison Excavator | S9 | `sos` | ✅ done | cards-leave-graveyard trigger makes token |
 | Geometer's Arthropod | S2,S21 | `sos` | ⏳ | cast-spell-with-X trigger + look-and-pick |
 | Graduation Day | S8 | `sos` | ✅ done | Repartee grants counter |
 | Great Hall of the Biblioplex | S13 | `sos` | ⏳ | I/S-restricted mana; animates to creature |
@@ -329,7 +329,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Muse's Encouragement | S1 | `sos` | ✅ done | surveil 2 (keyword-only token) |
 | Old-Growth Educator | S4 | `sos` | ✅ done | Infusion gained-life-this-turn condition |
 | Orysa, Tide Choreographer | S12 | `sos` | ⏳ | conditional cost reduction on toughness |
-| Owlin Historian | S1,S9 | `sos` | ⏳ | surveil + cards-leave-graveyard trigger |
+| Owlin Historian | S1,S9 | `sos` | ✅ done | surveil + cards-leave-graveyard trigger |
 | Paradox Gardens | S1 | `sos` | ✅ done | surveil activated ability |
 | Paradox Surveyor | S2 | `sos` | ⏳ | look-and-pick ETB selection |
 | Pensive Professor | S6 | `sos` | ⏳ | Increment (plus counter-added trigger) |
@@ -363,7 +363,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Social Snub | S14 | `sos` | ⏳ | copy this spell |
 | Spectacle Summit | S1 | `sos` | ✅ done | activated surveil 1 |
 | Spectacular Skywhale | S5 | `sos` | ✅ done | Opus cast-IS trigger, mana spent |
-| Spirit Mascot | S9 | `sos` | ⏳ | cards leave graveyard trigger |
+| Spirit Mascot | S9 | `sos` | ✅ done | cards leave graveyard trigger |
 | Steal the Show | Native | `sos` | ⏳ | wheel: discard any number, draw that many |
 | Stirring Honormancer | S2 | `sos` | ✅ done | look at top X, pick one |
 | Stirring Hopesinger | S8 | `sos` | ✅ done | Repartee: cast IS targeting creature |
