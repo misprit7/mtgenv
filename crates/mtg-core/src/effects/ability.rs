@@ -260,6 +260,10 @@ pub enum Ability {
     /// casting-permission ability — `legal_priority_actions` scans for it to offer the alternative
     /// cast; the engine handles the exile-at-end-step + cast-from-exile mechanics.
     Warp { cost: ManaCost },
+    /// Flashback (CR 702.34): "You may cast this card from your graveyard for its flashback `cost`.
+    /// Then exile it." A static casting-permission ability — `legal_priority_actions` scans for it to
+    /// offer casting the card from the graveyard; the spell is exiled as it leaves the stack.
+    Flashback { cost: ManaCost },
     /// A continuous/static effect (CR 604/611/613): contributes to a layer and/or paints a
     /// qualification, for the given duration over the given affected set.
     Static {

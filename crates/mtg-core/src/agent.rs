@@ -426,6 +426,9 @@ pub enum CastVariant {
     /// Cast from hand for the card's warp cost (CR 702.x) — the spell is then exiled at the next
     /// end step and may be cast from exile later.
     Warp,
+    /// Cast from the **graveyard** for the card's flashback cost (CR 702.34); the card is exiled as it
+    /// resolves (or otherwise leaves the stack) instead of going anywhere else.
+    Flashback,
 }
 
 /// A special action (CR 116) — no stack, no response.

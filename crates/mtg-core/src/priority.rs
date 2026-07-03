@@ -1035,6 +1035,26 @@ impl Engine {
             }
         }
 
+        // Flashback (CR 702.34): cast a card from your graveyard for its flashback cost. Timing
+        // follows the card's own type (instant/Flash → instant speed, else sorcery speed). The card
+        // is exiled as it leaves the stack (handled in `resolve_top`).
+        for &card in &s.player(p).graveyard {
+            let chars = &s.object(card).chars;
+            let instant_speed =
+                chars.has_type(CardType::Instant) || chars.keywords.contains(&Keyword::Flash);
+            if !(instant_speed || sorcery_speed) {
+                continue;
+            }
+            if let Some(fcost) = self.flashback_cost(card) {
+                if mana::can_pay(s, p, &fcost) && self.card_castable_targets(card, p) {
+                    actions.push(PlayableAction::Cast {
+                        spell: card,
+                        variant: CastVariant::Flashback,
+                    });
+                }
+            }
+        }
+
         // Activated abilities (CR 602) of permanents `p` controls — e.g. Equip. Mana abilities
         // (CR 605) use a separate no-stack path and are skipped here. Masked by timing, the
         // activation restriction, cost payability, and (if it targets) a legal target.
@@ -1484,6 +1504,16 @@ impl Engine {
         })
     }
 
+    /// The flashback cost a card declares via `Ability::Flashback`, if any (CR 702.34).
+    fn flashback_cost(&self, card: ObjId) -> Option<ManaCost> {
+        self.state.def_of(card).and_then(|d| {
+            d.abilities.iter().find_map(|a| match a {
+                Ability::Flashback { cost } => Some(cost.clone()),
+                _ => None,
+            })
+        })
+    }
+
     /// Cast a spell from `p`'s hand (CR 601, minimal): put it on the stack (601.2a), choose
     /// targets (601.2c), auto-pay its cost (601.2f–h), and announce it cast (601.2i). `variant`
     /// selects the cost paid — the mana cost for `Normal`, the warp cost for `Warp` (CR 702.x),
@@ -1493,6 +1523,7 @@ impl Engine {
     pub(crate) fn cast_spell(&mut self, p: PlayerId, card: ObjId, variant: CastVariant) {
         let cost = match variant {
             CastVariant::Warp => self.warp_cost(card),
+            CastVariant::Flashback => self.flashback_cost(card),
             _ => self.state.object(card).chars.mana_cost.clone(),
         };
         let cost = match cost {
@@ -1508,6 +1539,13 @@ impl Engine {
         if variant == CastVariant::Warp {
             if let Some(o) = self.state.objects.get_mut(&card) {
                 o.warp_cast = true;
+            }
+        }
+        // Flag a flashback-cast spell so it's exiled (not put in the graveyard) as it leaves the
+        // stack (CR 702.34).
+        if variant == CastVariant::Flashback {
+            if let Some(o) = self.state.objects.get_mut(&card) {
+                o.flashback_cast = true;
             }
         }
 
@@ -1652,10 +1690,11 @@ impl Engine {
     /// the [`StackObject`] wraps it with a `StackId`).
     fn move_to_stack(&mut self, card: ObjId, controller: PlayerId) {
         let owner = self.state.object(card).owner;
-        // Remove from its current public source zone — hand, or exile for a warp recast.
+        // Remove from its current public source zone — hand, exile (warp recast), or graveyard (flashback).
         let pl = self.state.player_mut(owner);
         pl.hand.retain(|&x| x != card);
         pl.exile.retain(|&x| x != card);
+        pl.graveyard.retain(|&x| x != card);
         if let Some(o) = self.state.objects.get_mut(&card) {
             o.zone = Zone::Stack;
             o.controller = controller;
@@ -1989,11 +2028,15 @@ impl Engine {
                         }
                         // else: all targets illegal ⇒ countered by game rules, no effect.
                     }
-                    self.state.move_object(id, Zone::Graveyard, owner);
-                    self.broadcast(GameEvent::ObjectMoved {
-                        obj: id,
-                        to: Zone::Graveyard,
-                    });
+                    // A flashback-cast spell is exiled as it leaves the stack (CR 702.34d) instead of
+                    // going to its owner's graveyard (608.2n).
+                    let dest = if self.state.object(id).flashback_cast {
+                        Zone::Exile
+                    } else {
+                        Zone::Graveyard
+                    };
+                    self.state.move_object(id, dest, owner);
+                    self.broadcast(GameEvent::ObjectMoved { obj: id, to: dest });
                 }
             }
             StackObjectKind::Ability { index } => {
