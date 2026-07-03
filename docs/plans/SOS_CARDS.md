@@ -203,7 +203,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Divergent Equation | - | `sos` | ⏳ | X return instant/sorcery cards, exile self |
 | Dreamroot Cascade | - | `vow` | ✅ done | checkland conditional tap + mana |
 | Eager Glyphmage | - | `sos` | ✅ done | ETB Inkling keyword token |
-| Embrace the Paradox | - | `sos` | ⏳ | draw three + put land from hand |
+| Embrace the Paradox | - | `sos` | ✅ done | draw 3 + put land from hand (hand→bf `Search`, min 0) |
 | Ennis, Debate Moderator | - | `sos` | ⏳ | blink ETB + conditional end-step counter |
 | Environmental Scientist | - | `sos` | ✅ done | ETB search basic land to hand |
 | Erode | - | `sos` | ✅ done (sos) | destroy + opponent fetches basic land |
