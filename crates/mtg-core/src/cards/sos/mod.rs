@@ -9,6 +9,7 @@ pub mod bogwater_lumaret;
 pub mod burrog_banemaker;
 pub mod chase_inspiration;
 pub mod chelonian_tackle;
+pub mod comforting_counsel;
 pub mod cost_of_brilliance;
 pub mod cuboid_colony;
 pub mod dinas_guidance;
@@ -82,6 +83,7 @@ pub fn register(db: &mut CardDb) {
     burrog_banemaker::register(db);
     chase_inspiration::register(db);
     chelonian_tackle::register(db);
+    comforting_counsel::register(db);
     cost_of_brilliance::register(db);
     cuboid_colony::register(db);
     dinas_guidance::register(db);
