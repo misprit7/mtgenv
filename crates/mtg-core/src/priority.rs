@@ -1740,11 +1740,14 @@ impl Engine {
             self.fire_targeted(&targeted, p);
         }
 
-        // 601.2f–h: pay the total cost (auto-tap lands), with {X} settled to `chosen_x`.
+        // 601.2f–h: pay the total cost (auto-tap lands), with {X} settled to `chosen_x`. Hybrid and
+        // monocolour-hybrid pips are carried through so they're actually paid (and their spent colours
+        // feed Converge, CR 702.75) — the offer gate already required the full cost to be payable.
         let pay = ManaCost {
-            hybrid: Vec::new(),
             generic: cost.generic + chosen_x * cost.x,
             colored: cost.colored.clone(),
+            hybrid: cost.hybrid.clone(),
+            mono_hybrid: cost.mono_hybrid.clone(),
             x: 0,
         };
         let colors_spent = mana::auto_pay(&mut self.state, p, &pay).unwrap_or_default();
@@ -5107,14 +5110,14 @@ mod expect_tests {
             chars: Characteristics {
                 name: "Warp Creature (test)".into(),
                 card_types: vec![CardType::Creature],
-                mana_cost: Some(ManaCost { generic: 3, colored: BTreeMap::new(), x: 0, hybrid: Vec::new() }),
+                mana_cost: Some(ManaCost { generic: 3, ..Default::default() }),
                 power: Some(2),
                 toughness: Some(2),
                 grp_id: 9950,
                 ..Default::default()
             },
             abilities: vec![Ability::Warp {
-                cost: ManaCost { generic: 1, colored: BTreeMap::new(), x: 0, hybrid: Vec::new() },
+                cost: ManaCost { generic: 1, ..Default::default() },
             }],
             text: String::new(),
             ..Default::default()
@@ -6144,10 +6147,9 @@ mod expect_tests {
                 card_types: vec![CardType::Creature],
                 colors: vec![Color::Green],
                 mana_cost: Some(ManaCost {
-                    hybrid: Vec::new(),
                     generic: 2,
                     colored: BTreeMap::from([(Color::Green, 1)]),
-                    x: 0,
+                    ..Default::default()
                 }),
                 power: Some(0),
                 toughness: Some(0),
@@ -6205,10 +6207,9 @@ mod expect_tests {
                 card_types: vec![CardType::Instant],
                 colors: vec![Color::Red],
                 mana_cost: Some(ManaCost {
-                    hybrid: Vec::new(),
-                    generic: 0,
                     colored: BTreeMap::from([(Color::Red, 1)]),
                     x: 1,
+                    ..Default::default()
                 }),
                 grp_id: 9300,
                 ..Default::default()

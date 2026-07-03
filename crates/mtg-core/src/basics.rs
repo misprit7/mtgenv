@@ -137,10 +137,15 @@ pub struct ManaCost {
     #[serde(default)]
     pub x: u32,
     /// Two-colour **hybrid** pips (CR 107.4e), each payable by *either* colour — e.g. `{B/G}` is
-    /// `(Black, Green)`. Each pip counts 1 toward mana value. Monocolour hybrid (`{2/G}`) is not yet
-    /// modelled. Serialized `#[serde(default)]` so older saves/wire messages load as no-hybrid.
+    /// `(Black, Green)`. Each pip counts 1 toward mana value. Serialized `#[serde(default)]` so older
+    /// saves/wire messages load as no-hybrid.
     #[serde(default)]
     pub hybrid: Vec<(Color, Color)>,
+    /// Monocolour **hybrid** pips (CR 107.4f) — `{2/R}` etc. Each `(n, color)` is payable by EITHER
+    /// `n` generic mana OR one mana of `color`; its mana value is `n` (CR 202.3g). e.g. Magmablood
+    /// Archaic's `{2/R}{2/R}{2/R}` is `[(2,Red),(2,Red),(2,Red)]`, mana value 6. serde-default.
+    #[serde(default)]
+    pub mono_hybrid: Vec<(u32, Color)>,
 }
 
 impl Color {
@@ -171,7 +176,18 @@ impl std::fmt::Display for ManaCost {
                 write!(f, "{{{}}}", color.symbol())?;
             }
         }
-        if self.x == 0 && self.generic == 0 && self.colored.is_empty() {
+        for &(c1, c2) in &self.hybrid {
+            write!(f, "{{{}/{}}}", c1.symbol(), c2.symbol())?;
+        }
+        for &(n, c) in &self.mono_hybrid {
+            write!(f, "{{{}/{}}}", n, c.symbol())?;
+        }
+        if self.x == 0
+            && self.generic == 0
+            && self.colored.is_empty()
+            && self.hybrid.is_empty()
+            && self.mono_hybrid.is_empty()
+        {
             write!(f, "{{0}}")?;
         }
         Ok(())

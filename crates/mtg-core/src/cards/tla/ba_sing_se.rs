@@ -146,6 +146,7 @@ mod tests {
                                 },
                                 x: 0,
                                 hybrid: [],
+                                mono_hybrid: [],
                             },
                         ),
                         components: [

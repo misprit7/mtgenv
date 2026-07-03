@@ -229,6 +229,34 @@ fn select_payment(units: &[ManaUnit], cost: &ManaCost) -> Option<Vec<(usize, Col
             return None;
         }
     }
+    // Monocolour hybrid pips (CR 107.4f): each `{n/c}` is paid by ONE remaining unit producing `c`,
+    // else by `n` remaining units of any colour. Prefer the colour side (uses fewer units, so it
+    // never starves a later requirement). Done after the fixed/two-colour pips so those come first.
+    for &(n, c) in &cost.mono_hybrid {
+        if let Some(i) = units
+            .iter()
+            .enumerate()
+            .find(|&(i, u)| assigned[i].is_none() && u.colors.contains(&c))
+            .map(|(i, _)| i)
+        {
+            assigned[i] = Some(c);
+            continue;
+        }
+        // Fall back to `n` generic units (each contributes its own colour, for Converge).
+        let mut got = 0;
+        for (i, u) in units.iter().enumerate() {
+            if got == n {
+                break;
+            }
+            if assigned[i].is_none() {
+                assigned[i] = Some(u.colors[0]);
+                got += 1;
+            }
+        }
+        if got < n {
+            return None;
+        }
+    }
     // Generic: any remaining unit, contributing its first colour (CR 202.1, generic = any mana).
     let mut generic_left = cost.generic;
     for (i, u) in units.iter().enumerate() {
@@ -413,7 +441,7 @@ mod tests {
         for &(c, n) in pips {
             colored.insert(c, n);
         }
-        ManaCost { generic, colored, x: 0, hybrid: Vec::new() }
+        ManaCost { generic, colored, ..Default::default() }
     }
 
     fn game_with_lands(forests: usize, mountains: usize) -> GameState {
@@ -723,8 +751,7 @@ mod tests {
 
     #[test]
     fn hybrid_pip_pays_with_either_color() {
-        use std::collections::BTreeMap;
-        let hybrid = |a: Color, b: Color| ManaCost { generic: 0, colored: BTreeMap::new(), x: 0, hybrid: vec![(a, b)] };
+        let hybrid = |a: Color, b: Color| ManaCost { hybrid: vec![(a, b)], ..Default::default() };
         let state = game_with_lands(1, 0); // one Forest (G)
         // {G/R} is payable — the Forest covers the G side.
         assert!(can_pay(&state, PlayerId(0), &hybrid(Color::Green, Color::Red)));
@@ -732,6 +759,24 @@ mod tests {
         assert!(can_pay(&state, PlayerId(0), &hybrid(Color::Red, Color::Green)));
         // {W/U} is NOT payable — a green source is neither white nor blue.
         assert!(!can_pay(&state, PlayerId(0), &hybrid(Color::White, Color::Blue)));
+    }
+
+    #[test]
+    fn mono_hybrid_pip_pays_with_color_or_n_generic() {
+        // CR 107.4f: `{2/R}` is payable by ONE red mana OR TWO of any mana.
+        let mono = |n: u32, c: Color| ManaCost { mono_hybrid: vec![(n, c)], ..Default::default() };
+        // One Mountain (R) covers the coloured side.
+        assert!(can_pay(&game_with_lands(0, 1), PlayerId(0), &mono(2, Color::Red)));
+        // Two Forests (G) cover the 2-generic side.
+        assert!(can_pay(&game_with_lands(2, 0), PlayerId(0), &mono(2, Color::Red)));
+        // A single Forest is neither red nor two mana → not payable.
+        assert!(!can_pay(&game_with_lands(1, 0), PlayerId(0), &mono(2, Color::Red)));
+        // Three `{2/R}` pips (Magmablood): three Mountains pay all coloured sides.
+        assert!(can_pay(
+            &game_with_lands(0, 3),
+            PlayerId(0),
+            &ManaCost { mono_hybrid: vec![(2, Color::Red), (2, Color::Red), (2, Color::Red)], ..Default::default() }
+        ));
     }
 
     #[test]

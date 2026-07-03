@@ -1716,6 +1716,13 @@ impl EngineCore {
                 .and_then(|s| self.state.objects.get(&s))
                 .map(|o| o.mana_spent as i64)
                 .unwrap_or(0),
+            // Distinct colours of mana spent to cast the triggering spell — Converge on a cast-trigger
+            // (Magmablood Archaic).
+            ValueExpr::ColorsSpentOnTrigger => ctx
+                .triggering_spell
+                .and_then(|s| self.state.objects.get(&s))
+                .map(|o| o.colors_spent as i64)
+                .unwrap_or(0),
             // Distinct card types among cards exiled with the source — Keen-Eyed Curator.
             ValueExpr::DistinctCardTypesAmongExiledWith => {
                 crate::conditions::distinct_card_types_among_exiled_with(&self.state, ctx.source)
