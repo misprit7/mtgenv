@@ -694,6 +694,14 @@ impl Engine {
             self.state.players[i].cards_left_graveyard_this_turn = 0;
             self.state.players[i].creatures_died_this_turn = 0;
         }
+        // "you put a counter on this creature this turn" is per-turn and read on EACH end step, so
+        // reset the flag on every permanent (not just the active player's).
+        let all: Vec<ObjId> = self.state.objects.keys().copied().collect();
+        for id in all {
+            if let Some(o) = self.state.objects.get_mut(&id) {
+                o.counter_added_this_turn = false;
+            }
+        }
         let perms = self.state.player(ap).battlefield.clone();
         for id in perms {
             if let Some(o) = self.state.objects.get_mut(&id) {

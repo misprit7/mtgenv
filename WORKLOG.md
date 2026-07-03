@@ -21,6 +21,24 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
   wiring, per-turn counter tracker, PayLife, multi-target-each, spell-copy, Fractalize. Agent 6
   spawned on first-strike.
 
+## 2026-07-03 (late night, agent 6)
+
+- **FIRST/DOUBLE-STRIKE ALREADY WIRED — the handoff's #1 task was a no-op (read the code, not the ledger).**
+  sos-cards-5 listed "first-strike / double-strike combat wiring" as genuinely-unwired top-priority work
+  ("verified by reading `combat_damage`"). It's WRONG: `combat/mod.rs::combat_damage` has had the CR 510.4
+  two-substep split since `a15015f` ("#14 checkpoint 1") — `any_first_or_double_strike` → first-strike substep
+  (FS+DS deal), `apply_combat_deaths` (SBAs between steps), then the regular substep (DS again + non-FS). Passing
+  tests `double_strike_deals_twice` + `first_strike_kills_before_retaliation` already prove it. `deals_in` reads
+  the COMPUTED keyword set, so granted first/double strike works too. **No card is unblocked by this** (Practiced
+  Offense still needs modal-keyword-pick + counter-on-each-of-a-target-player's-creatures). Queue item #1 removed.
+- **cards(sos) — Fractal Tender + per-turn "counter put on this permanent" cap (queue item #2).** New:
+  `Object.counter_added_this_turn` (set in the `Action::AddCounters` executor when `n>0`; reset at turn start for
+  ALL permanents + on any zone change, CR 400.7) and `Condition::PutCounterOnSelfThisTurn` (reads the source
+  object's flag — threaded through both intervening-if check points). **Fractal Tender** `{3}{G}{U}` 3/3 Elf Wizard
+  = Ward {2} (S17) + Increment (S6, its +1/+1 sets the flag) + `BeginningOfStep(End)` intervening-if trigger →
+  0/0 Fractal token with three +1/+1 counters (`fractal_token(3)`). The 6th of 8 Ward cards. Real-path tests: the
+  end-step trigger fires through the engine and gates on the flag; a real `PutCounters`→`AddCounters` sets it. 541 tests.
+
 ## 2026-07-03 (night)
 
 - **cards(sos) — Inkshape Demonstrator (5th Ward card) + Hardened Academic (`9be0eb3`), no new cap — LIFELINK

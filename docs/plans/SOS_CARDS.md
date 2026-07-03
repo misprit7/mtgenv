@@ -22,8 +22,11 @@ as new work** — 6 rows had drifted stale (S2/S3/S7/S10/S11/S18 were all done);
 a PROCESS RULE is now in the capability-ledger header (flip the Status cell in the SAME commit as the cap).
 (2) **Verify keyword/subsystem wiring by READING the code, not from memory** — "lifelink not combat-wired" was
 believed by two sources but `apply_damage` already gains life (CR 702.15) and reads the COMPUTED keyword set, so
-even a granted lifelink works; that unblocked 2 cards. Correspondingly, **double-strike / first-strike ARE
-genuinely unwired** (no first-strike combat step) — verified by reading `combat_damage`.
+even a granted lifelink works; that unblocked 2 cards. ⚠️ **CORRECTION (agent 6, 2026-07-03):** the claim that
+"double-strike / first-strike ARE genuinely unwired" was ALSO WRONG (same read-the-code lesson) — `combat/mod.rs::
+combat_damage` has had the CR 510.4 two-substep split since `a15015f`; tests `double_strike_deals_twice` +
+`first_strike_kills_before_retaliation` prove it, and `deals_in` reads the COMPUTED keyword set so granted FS/DS
+works. **Both keywords are DONE.** Queue item #1 below was a no-op; it's struck.
 
 **State of the pool: the no-cap / easy-card vein is MINED OUT.** Every remaining unauthored non-DFC card needs a
 genuinely-new cap (see the fresh cap queue below). The big deferred bucket is 36 modal-DFC + Lesson/planeswalker/
@@ -45,14 +48,14 @@ boundary (still green — the small/clean caps are largely picked; what remains 
 **Fresh cap queue (all GENUINELY-NEW — verified unbuilt 2026-07-03; each: one cap, one+ card, one commit, a
 real-path test; flip the ledger Status cell in the SAME commit).** Ordered by realistic yield/effort:
 
-1. **First-strike / double-strike combat wiring** (CR 702.7 / 702.4). No first-strike combat-damage step exists;
-   `Keyword::{FirstStrike,DoubleStrike}` are inert. Adds a combat-damage-step split (first-strikers deal in a
-   first sub-step, then normal). Unblocks **Practiced Offense** (its double-strike option; but that card ALSO
-   needs a modal keyword-pick + "counter on each creature target player controls" = target-player + ForEach, both
-   doable) and any future first/double-strike creatures. Moderate combat-subsystem work — do with fresh context.
-2. **Per-turn "counters put on THIS permanent this turn" tracker** → unblocks **Fractal Tender** (the last easy-ish
-   Ward card: Increment + end-step Fractal token gated on "if you put a counter on this creature this turn"). A
-   per-object counter, set in the counter-add action, reset each turn, + a `Condition` reading it. Smallish.
+1. ~~**First-strike / double-strike combat wiring**~~ — **ALREADY DONE** (agent 6, `a15015f`). The CR 510.4
+   two-substep split is in `combat/mod.rs::combat_damage`; tests `double_strike_deals_twice` +
+   `first_strike_kills_before_retaliation` prove it. **No card unblocked** — Practiced Offense still needs a modal
+   keyword-pick + "counter on each creature target player controls" (target-player + ForEach), both still unbuilt.
+2. ~~**Per-turn "counters put on THIS permanent this turn" tracker**~~ — **DONE** (agent 6). `Object.
+   counter_added_this_turn` (set in the `AddCounters` executor for `n>0`; reset at turn start for all permanents +
+   on zone change) + `Condition::PutCounterOnSelfThisTurn` (reads the source's flag). → **Fractal Tender** authored
+   (6th of 8 Ward cards). Remaining Ward: Mica + Prismari (PayLife + spell-copy/storm).
 3. **`pay_cost` `PayLife` arm** (tiny) + then Ward—Pay-life cards (**Mica**, **Prismari**) — BUT both are also
    blocked by spell-copy/storm secondaries, so PayLife alone yields 0 cards. Build it only alongside a consumer.
 4. **Apply-to-each-of-a-variable-multi-target** → **Homesickness** (`{4}{U}{U}`: draw target-player + tap up-to-2
@@ -88,12 +91,12 @@ dies-triggers need LKI (Arnyn, Cauldron of Essence).
 
 **Blocked set (need an unbuilt cap first — don't burn time on these until the cap lands):**
 - **Ward (S17, ◑ mana+discard built)** — Colorstorm Stallion + Forum Necroscribe + Tragedy Feaster + Thornfist
-  Striker + **Inkshape Demonstrator** DONE (**5 of 8 cards**). ⚠️ **Lifelink IS combat-wired** (`apply_damage`
-  gains the source's controller life = damage dealt, CR 702.15, and reads the COMPUTED keyword set so a GRANTED
-  lifelink counts) — the earlier "lifelink not combat-wired" note (mine + the audit's) was WRONG; that unblocked
-  Inkshape (Repartee grants lifelink) AND **Hardened Academic** (Discard→lifelink). Remaining 3 Ward cards:
-  **Fractal Tender** (per-turn counter-added tracker), **Mica** & **Prismari** (pay_cost PayLife arm +
-  spell-copy/storm). **Ward—Pay-life needs a `pay_cost` PayLife arm** (IR ready; no-op today).
+  Striker + Inkshape Demonstrator + **Fractal Tender** DONE (**6 of 8 cards**). ⚠️ **Lifelink IS combat-wired**
+  (`apply_damage` gains the source's controller life = damage dealt, CR 702.15, and reads the COMPUTED keyword set
+  so a GRANTED lifelink counts) — the earlier "lifelink not combat-wired" note (mine + the audit's) was WRONG; that
+  unblocked Inkshape (Repartee grants lifelink) AND **Hardened Academic** (Discard→lifelink). **Fractal Tender**
+  `{3}{G}{U}` used the new per-turn counter-added tracker (agent 6). Remaining 2 Ward cards: **Mica** & **Prismari**
+  (pay_cost PayLife arm + spell-copy/storm). **Ward—Pay-life needs a `pay_cost` PayLife arm** (IR ready; no-op today).
 
 **▶ Fresh authorable-now list (2026-07-03 unauthored-card audit — verified vs the real engine):** the audit
 found `ConditionalStatic`, stun counters, `ValueExpr::{Sum,XTimes,NumTargets,PowerOfTarget}`, `CardFilter::

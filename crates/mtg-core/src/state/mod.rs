@@ -161,6 +161,12 @@ pub struct Object {
     /// reset on any zone change (CR 400.7).
     #[serde(default)]
     pub play_until_turn: Option<u32>,
+    /// Set when one or more counters were put on this permanent **this turn** (any counter kind, via
+    /// `Action::AddCounters` with positive `n`). Reset at the start of each turn and on any zone change
+    /// (a fresh object, CR 400.7). Read by the SoS Quandrix "if you put a counter on this creature this
+    /// turn" gate (Fractal Tender).
+    #[serde(default)]
+    pub counter_added_this_turn: bool,
 }
 
 impl Object {
@@ -575,6 +581,7 @@ impl GameState {
             flashback_cast: false,
             castable_from_exile: false,
             play_until_turn: None,
+            counter_added_this_turn: false,
         };
         self.objects.insert(id, obj);
         if let Some(v) = self.player_mut(owner).zone_vec_mut(zone) {
@@ -645,6 +652,7 @@ impl GameState {
             o.flashback_cast = false; // a fresh object identity (CR 400.7)
             o.castable_from_exile = false; // re-granted only by a fresh warp-exile (400.7)
             o.play_until_turn = None; // impulse-play window drops on any zone change (400.7)
+            o.counter_added_this_turn = false; // counters exist only on the battlefield (110.5d / 400.7)
             if to == Zone::Battlefield {
                 o.controller = to_owner;
                 o.summoning_sick = o.chars.is_creature();

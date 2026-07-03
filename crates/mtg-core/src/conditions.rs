@@ -77,6 +77,10 @@ pub(crate) fn holds_for_source(
                 .map(|pl| pl.creatures_died_this_turn > 0)
                 .unwrap_or(false)
         }
+        // "you put a counter on this creature this turn" — reads the source permanent's flag.
+        Condition::PutCounterOnSelfThisTurn => {
+            source.and_then(|s| state.objects.get(&s)).is_some_and(|o| o.counter_added_this_turn)
+        }
         Condition::ValueAtLeast(a, b) => {
             eval_value(state, a, source_controller, source)
                 >= eval_value(state, b, source_controller, source)

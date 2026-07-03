@@ -33,6 +33,10 @@ pub enum Condition {
     CardLeftGraveyardThisTurn { who: PlayerRef },
     /// One or more creatures died under the named player's control this turn (CR 700.4).
     CreatureDiedThisTurn { who: PlayerRef },
+    /// One or more counters were put on the **source permanent** this turn — the SoS Quandrix
+    /// "if you put a counter on this creature this turn" intervening-"if" (Fractal Tender). Reads the
+    /// source object's `counter_added_this_turn` flag; `false` with no source object.
+    PutCounterOnSelfThisTurn,
     /// Compare two values.
     ValueAtLeast(ValueExpr, ValueExpr),
     /// The source spell was cast from **anywhere other than its owner's hand** (CR 601 / flashback
