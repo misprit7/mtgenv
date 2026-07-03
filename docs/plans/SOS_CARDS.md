@@ -519,3 +519,26 @@ through the synthetic def).
 "Create a token copy of target creature" snapshots the target's chars into the token. Extends the
 S11 machinery (the copy's abilities come from the copied creature's def, reachable by copying its
 `grp_id` onto the token). Do after S11.
+
+## Hybrid mana — the next high-value blocker (7 non-DFC cards)
+
+`ManaCost` has no hybrid `{X/Y}` pip. This blocks 7 non-DFC SoS cards (Essenceknit Scholar,
+Stirring Honormancer, Moseo, Abstract Paintmage, …) AND their riders. Scope:
+- `basics::ManaCost`: add a hybrid-pip representation (e.g. `hybrid: Vec<(Color, Color)>`, each payable
+  by either colour; keep `colored`/`generic` as-is).
+- `mana::select_payment`: when planning, satisfy each hybrid pip with whichever of its two colours the
+  player can produce (try both). `mana_value` counts each hybrid pip as 1.
+- Card builders: extend `mana_cost` (or add `mana_cost_hybrid`) to author `{B/G}` etc.
+Note: the **"creature died under your control this turn" flag** was scoped + reverted (only consumer,
+Essenceknit Scholar, is hybrid-blocked) — rebuild it *with* Essenceknit once hybrid mana lands. Pattern
+mirrors `cards_left_graveyard_this_turn`: Player counter, increment in the CreatureDies SBA (by the
+creature's controller at death), reset in begin_turn, `Condition::CreatureDiedThisTurn`.
+
+## Remaining cap queue (all engine files released; pick by fresh-context fit)
+- **Hybrid mana** (above) — 7 cards, payment-planner change.
+- **S7 Converge** — track *colors* of mana spent at cast (extend `auto_pay` to report spent colours →
+  record `Object.colors_spent` → `ValueExpr::ColorsOfManaSpent`). ~8 Archaic-cycle cards.
+- **S18 graveyard-activated** — activate an ability from the graveyard (discard/exile cost); extend the
+  activated-ability enumeration to scan the graveyard for a graveyard-source ability.
+- **S9-trigger** (graveyard-leave event), **CreatureDies trigger** (needs LKI), **S14 token-copy**
+  (extends S11 — copy the target's `grp_id`+chars onto the token).
