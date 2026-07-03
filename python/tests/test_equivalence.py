@@ -50,3 +50,16 @@ def test_fleet_transport_matches_snapshot():
         expected = json.load(f)
     diffs = diff_suites(expected, fingerprint_suite(make_driver=fleet_driver))
     assert not diffs, "Fleet transport diverged from the committed snapshot:\n  " + "\n  ".join(diffs)
+
+
+def test_fleet_multiworker_is_deterministic():
+    """M3.4 determinism gate: a 6-env / 3-worker Fleet's per-env trajectories each match the PyGame
+    single-game reference for that seed — parallel stepping across worker threads doesn't perturb
+    per-env behavior (independent Sessions; deterministic per-env seeding + assembly ordering)."""
+    from mtgenv_gym.equivalence import fleet_multienv_fingerprints, game_fingerprint, pygame_driver
+
+    n = 6
+    fleet = fleet_multienv_fingerprints("bears", n, num_workers=3)
+    ref = [game_fingerprint("bears", i, pygame_driver) for i in range(n)]
+    diffs = diff_suites(ref, fleet)
+    assert not diffs, "Fleet multi-worker diverged from PyGame per-env:\n  " + "\n  ".join(diffs)

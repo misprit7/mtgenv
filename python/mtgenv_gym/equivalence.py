@@ -85,7 +85,8 @@ class _FleetDriver:
     def __init__(self, deck, seed):
         import mtg_py
 
-        self.f = mtg_py.Fleet(deck, 1, True, int(seed))  # (deck, num_envs=1, auto_pass, base_seed)
+        # (deck, num_envs, num_workers, auto_pass, base_seed) — 1 env / 1 worker for a single game.
+        self.f = mtg_py.Fleet(deck, 1, 1, True, int(seed))
 
     def decision(self) -> Decision:
         f = self.f
@@ -103,6 +104,45 @@ class _FleetDriver:
 def fleet_driver(deck, seed):
     """Fleet-transport driver factory — the M3.4 stepper through the equivalence seam."""
     return _FleetDriver(deck, seed)
+
+
+def fleet_multienv_fingerprints(deck, n, num_workers) -> list[dict]:
+    """Drive an `n`-env / `num_workers`-worker `Fleet` (env i seeded `i`) with the scripted policy and
+    return per-env fingerprints (game_fingerprint shape). Diffing each against the single-game PyGame
+    reference proves parallel multi-worker stepping doesn't perturb per-env trajectories."""
+    import hashlib
+
+    import mtg_py
+
+    f = mtg_py.Fleet(deck, n, num_workers, True, 0)  # base_seed 0 ⇒ env i seeded i
+    counters = [0] * n
+    traces: list[list] = [[] for _ in range(n)]
+    outcomes: list = [None] * n
+    done = [False] * n
+    for _ in range(MAX_DECISIONS * n + n):
+        if all(done):
+            break
+        actions = [0] * n
+        for i in range(n):
+            if done[i]:
+                continue
+            if f.terminal(i):
+                s = f.summary(i)  # (winner, turns, reason) | None
+                outcomes[i] = {"winner": s[0], "turns": s[1], "reason": s[2]} if s else None
+                done[i] = True
+                continue
+            mask = np.asarray(f.env_mask(i), dtype=bool)
+            a = scripted_action(counters[i], mask)
+            traces[i].append([int(f.seat(i)), f.request(i), int(f.num_legal(i)), a])
+            counters[i] += 1
+            actions[i] = a
+        f.submit(actions)
+    out = []
+    for i in range(n):
+        canon = repr([deck, i, traces[i], outcomes[i], False]).encode()
+        out.append({"deck": deck, "seed": i, "n_decisions": len(traces[i]), "outcome": outcomes[i],
+                    "truncated": False, "digest": hashlib.sha256(canon).hexdigest()[:16], "trace": traces[i]})
+    return out
 
 
 def scripted_action(decision_index: int, mask: np.ndarray) -> int:

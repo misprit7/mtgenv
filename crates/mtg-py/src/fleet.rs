@@ -1,13 +1,24 @@
-//! M3.4 fleet stepper. A `Fleet` owns many games and advances the whole batch to its next factored
-//! decisions in **one** PyO3 crossing, so the per-decision Python↔Rust round-trip that pegs one
-//! Python core (the measured wall) collapses into a single call whose obs/masks cross as bytes
-//! (`np.frombuffer`), never a per-element Python list.
+//! M3.4 fleet stepper. A `Fleet` advances many games to their next factored decisions and hands
+//! Python the whole batch in **one** PyO3 crossing, so the per-decision Python↔Rust round-trip that
+//! pegs one Python core (the measured wall) collapses into a single call whose obs/masks cross as
+//! bytes (`np.frombuffer`), never a per-element Python list.
 //!
-//! Each game is a [`GameSlot`] — a `Session` (M3 resumable engine) + its in-flight factored
-//! [`Interaction`], i.e. exactly the per-game state `PyGame` holds, minus Python. `tick` steps every
-//! non-terminal slot to its current sub-step and batch-encodes it; `submit` feeds one factored action
-//! per env and advances. (Phase 1: single-threaded, every decision surfaced to Python. Phase 2 pins
-//! groups of slots to worker threads for GIL-free parallel stepping + self-play opponent grouping.)
+//! **Parallelism.** Each game is a [`GameSlot`] (a `Session` + its in-flight factored [`Interaction`]
+//! — exactly PyGame's core, off-Python). A `Session` is a fiber pinned to its thread, so slots are
+//! partitioned into fixed groups, one per **worker thread** that both *creates* and *steps* its
+//! group. A `step` releases the GIL, fans the per-group actions out to the workers, and each worker
+//! applies + advances + encodes its group into a plain-data [`GroupBatch`] sent back over a channel;
+//! the main thread stitches the batches into contiguous buffers. No `Send` on the engine, no shared
+//! mutable buffer — batches are owned data moved over channels. Python still runs every forward
+//! (learner + per-checkpoint opponent groups in Phase 2); the fleet only parallelizes the stepping.
+//!
+//! TODO(gym-owner): `GameSlot` duplicates `PyGame`'s advance/apply/encode logic (lib.rs). Once the
+//! fleet path is the primary one, hoist `GameSlot` to the canonical per-game core and make `PyGame`
+//! a thin wrapper over it (one code path).
+
+use std::sync::mpsc::{Receiver, Sender};
+use std::thread::JoinHandle;
+use std::time::Instant;
 
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict};
@@ -43,8 +54,8 @@ impl GameSlot {
         slot
     }
 
-    /// Advance to the next factored sub-step (or terminal). Mirrors `PyGame::advance` minus Python:
-    /// continues an in-flight interaction, else `resume`s the session to the next engine decision.
+    /// Advance to the next factored sub-step (or terminal): continue an in-flight interaction, else
+    /// `resume` the session to the next engine decision. Mirrors `PyGame::advance` minus Python.
     fn advance(&mut self) {
         if self.interaction.is_some() {
             return;
@@ -63,8 +74,8 @@ impl GameSlot {
         }
     }
 
-    /// Feed one factored action; on commit, submit the assembled response and advance to the next
-    /// sub-step (so after `apply` the slot again sits at a decision or terminal, ready for the next tick).
+    /// Feed one factored action; on commit, submit the assembled response, then advance to the next
+    /// sub-step (so the slot again sits at a decision or terminal, ready for the next tick).
     fn apply(&mut self, action: usize) {
         if let Some(inter) = self.interaction.as_mut() {
             if let Some(resp) = inter.apply(action) {
@@ -75,53 +86,256 @@ impl GameSlot {
         self.advance();
     }
 
-    fn mask(&self) -> Vec<bool> {
-        self.interaction
-            .as_ref()
-            .map(|i| i.mask())
-            .unwrap_or_else(|| vec![false; codec::ACTION_DIM])
-    }
-    fn num_legal(&self) -> usize {
-        self.interaction.as_ref().map(|i| i.num_legal()).unwrap_or(0)
-    }
     fn request_name(&self) -> &'static str {
         self.interaction
             .as_ref()
             .map(|i| crate::request_name(i.req()))
             .unwrap_or("Terminal")
     }
-    fn obs(&self) -> Option<obs::Obs> {
-        self.interaction
-            .as_ref()
-            .map(|i| obs::encode(i.view(), i.req(), i.num_legal()))
+}
+
+/// One worker's encoded slice of the batch (contiguous env rows in group order). Plain data — `Send`
+/// — so it moves back to the main thread over a channel with no engine types crossing threads.
+struct GroupBatch {
+    globals: Vec<f32>,
+    bf_feat: Vec<f32>,
+    bf_ids: Vec<i64>,
+    hand_feat: Vec<f32>,
+    hand_ids: Vec<i64>,
+    stack_feat: Vec<f32>,
+    stack_ids: Vec<i64>,
+    decision_ids: Vec<i64>,
+    mask: Vec<u8>,
+    seat: Vec<i32>,
+    num_legal: Vec<i32>,
+    terminal: Vec<i32>,
+    requests: Vec<&'static str>,
+    summaries: Vec<Option<(Option<i64>, u32, String)>>,
+}
+
+impl GroupBatch {
+    fn with_capacity(k: usize) -> Self {
+        GroupBatch {
+            globals: Vec::with_capacity(k * obs::G),
+            bf_feat: Vec::new(),
+            bf_ids: Vec::new(),
+            hand_feat: Vec::new(),
+            hand_ids: Vec::new(),
+            stack_feat: Vec::new(),
+            stack_ids: Vec::new(),
+            decision_ids: Vec::new(),
+            mask: Vec::with_capacity(k * codec::ACTION_DIM),
+            seat: Vec::with_capacity(k),
+            num_legal: Vec::with_capacity(k),
+            terminal: Vec::with_capacity(k),
+            requests: Vec::with_capacity(k),
+            summaries: Vec::with_capacity(k),
+        }
     }
 }
 
-/// A batch of games ticked in one PyO3 crossing. Phase-1: single-threaded; every decision (both
-/// seats) is surfaced to Python, which answers with `submit`. `unsendable`: the slots' Sessions are
-/// fibers pinned to this thread.
+/// `rows*cols` of a named obs array (its flat row width), from `obs::spec()`.
+fn arr_width(name: &str) -> usize {
+    obs::spec().iter().find(|(n, ..)| *n == name).map(|(_, r, c, _)| r * c).expect("obs array in spec")
+}
+
+/// Encode one group of slots into a `GroupBatch` (contiguous rows). Terminal envs get a zero obs row
+/// (still a full-width row) + the terminal flag; their summary rides along once, when they end.
+fn encode_group(slots: &[GameSlot]) -> GroupBatch {
+    let ad = codec::ACTION_DIM;
+    let mut b = GroupBatch::with_capacity(slots.len());
+    for slot in slots {
+        b.seat.push(slot.seat as i32);
+        b.num_legal.push(slot.interaction.as_ref().map(|i| i.num_legal()).unwrap_or(0) as i32);
+        b.terminal.push(slot.terminal as i32);
+        b.requests.push(slot.request_name());
+        b.summaries
+            .push(slot.summary.map(|s| (s.winner.map(|w| w as i64), s.turns, s.reason.to_string())));
+        // mask (full width, all-false when terminal)
+        match &slot.interaction {
+            Some(i) => b.mask.extend(i.mask().iter().map(|&x| x as u8)),
+            None => b.mask.extend(std::iter::repeat(0u8).take(ad)),
+        }
+        // obs arrays (encode, or zero rows when terminal)
+        let o = slot.interaction.as_ref().map(|i| obs::encode(i.view(), i.req(), i.num_legal()));
+        match o {
+            Some(o) => {
+                b.globals.extend_from_slice(&o.globals);
+                b.bf_feat.extend_from_slice(&o.bf_feat);
+                b.bf_ids.extend_from_slice(&o.bf_ids);
+                b.hand_feat.extend_from_slice(&o.hand_feat);
+                b.hand_ids.extend_from_slice(&o.hand_ids);
+                b.stack_feat.extend_from_slice(&o.stack_feat);
+                b.stack_ids.extend_from_slice(&o.stack_ids);
+                b.decision_ids.extend_from_slice(&o.decision_ids);
+            }
+            None => {
+                // A terminal env contributes a full-width zero row for every array.
+                b.globals.extend(std::iter::repeat(0f32).take(obs::G));
+                b.bf_feat.extend(std::iter::repeat(0f32).take(arr_width("bf_feat")));
+                b.bf_ids.extend(std::iter::repeat(0i64).take(arr_width("bf_ids")));
+                b.hand_feat.extend(std::iter::repeat(0f32).take(arr_width("hand_feat")));
+                b.hand_ids.extend(std::iter::repeat(0i64).take(arr_width("hand_ids")));
+                b.stack_feat.extend(std::iter::repeat(0f32).take(arr_width("stack_feat")));
+                b.stack_ids.extend(std::iter::repeat(0i64).take(arr_width("stack_ids")));
+                b.decision_ids.extend(std::iter::repeat(0i64).take(arr_width("decision_ids")));
+            }
+        }
+    }
+    b
+}
+
+enum Command {
+    Step(Vec<usize>),
+    Shutdown,
+}
+
+struct Worker {
+    tx: Sender<Command>,
+    rx: Receiver<GroupBatch>,
+    handle: Option<JoinHandle<()>>,
+    range: (usize, usize), // [start, end) env indices this worker owns
+}
+
+/// Batch of games ticked in one PyO3 crossing, stepped by `num_workers` pinned threads. `unsendable`:
+/// this handle owns the worker threads; the engine fibers never cross threads.
 #[pyclass(unsendable)]
 pub struct Fleet {
     deck: Deck,
-    slots: Vec<GameSlot>,
+    num_envs: usize,
+    workers: Vec<Worker>,
+    // Assembled per-env state (Fleet-owned copies from the last batch — the workers own the slots).
+    globals: Vec<f32>,
+    obs_flat: Vec<(&'static str, bool, Vec<f32>, Vec<i64>)>,
+    mask: Vec<u8>,
+    seat: Vec<i32>,
+    num_legal: Vec<i32>,
+    terminal: Vec<i32>,
+    requests: Vec<String>,
+    summaries: Vec<Option<(Option<i64>, u32, String)>>,
+    last_tick_us: u128,
+}
+
+impl Fleet {
+    /// Collect one `GroupBatch` per worker and stitch them into the Fleet-owned contiguous buffers.
+    fn assemble(&mut self, batches: Vec<(usize, GroupBatch)>) {
+        // batches carry their worker index so order is deterministic regardless of arrival order.
+        let mut ordered = batches;
+        ordered.sort_by_key(|(w, _)| *w);
+        self.globals.clear();
+        for a in self.obs_flat.iter_mut() {
+            a.2.clear();
+            a.3.clear();
+        }
+        self.mask.clear();
+        self.seat.clear();
+        self.num_legal.clear();
+        self.terminal.clear();
+        self.requests.clear();
+        for (_, b) in &ordered {
+            self.globals.extend_from_slice(&b.globals);
+            self.mask.extend_from_slice(&b.mask);
+            self.seat.extend_from_slice(&b.seat);
+            self.num_legal.extend_from_slice(&b.num_legal);
+            self.terminal.extend_from_slice(&b.terminal);
+            self.requests.extend(b.requests.iter().map(|s| s.to_string()));
+            for (name, _is_int, fbuf, ibuf) in self.obs_flat.iter_mut() {
+                match *name {
+                    "bf_feat" => fbuf.extend_from_slice(&b.bf_feat),
+                    "bf_ids" => ibuf.extend_from_slice(&b.bf_ids),
+                    "hand_feat" => fbuf.extend_from_slice(&b.hand_feat),
+                    "hand_ids" => ibuf.extend_from_slice(&b.hand_ids),
+                    "stack_feat" => fbuf.extend_from_slice(&b.stack_feat),
+                    "stack_ids" => ibuf.extend_from_slice(&b.stack_ids),
+                    "decision_ids" => ibuf.extend_from_slice(&b.decision_ids),
+                    _ => {}
+                }
+            }
+        }
+        // summaries: sticky — once an env ends its outcome is fixed (later batches carry Some again).
+        let mut idx = 0;
+        for (_, b) in &ordered {
+            for s in &b.summaries {
+                if s.is_some() {
+                    self.summaries[idx] = s.clone();
+                }
+                idx += 1;
+            }
+        }
+    }
 }
 
 #[pymethods]
 impl Fleet {
-    /// Build `num_envs` games of `deck`, seeded `base_seed + i`, each advanced to its first decision.
+    /// Build `num_envs` games of `deck` (seed `base_seed + i`), partitioned across `num_workers`
+    /// pinned threads; each worker creates + advances its group and returns the first batch.
     #[new]
-    #[pyo3(signature = (deck, num_envs, auto_pass = true, base_seed = 0))]
-    fn new(deck: &str, num_envs: usize, auto_pass: bool, base_seed: u64) -> PyResult<Self> {
+    #[pyo3(signature = (deck, num_envs, num_workers = 1, auto_pass = true, base_seed = 0))]
+    fn new(deck: &str, num_envs: usize, num_workers: usize, auto_pass: bool, base_seed: u64) -> PyResult<Self> {
         let deck = Deck::parse(deck)
             .ok_or_else(|| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("unknown deck {deck:?}")))?;
-        let slots = (0..num_envs)
-            .map(|i| GameSlot::new(deck, base_seed.wrapping_add(i as u64), auto_pass))
+        let nw = num_workers.max(1).min(num_envs.max(1));
+        let mut workers = Vec::with_capacity(nw);
+        let mut init: Vec<(usize, GroupBatch)> = Vec::with_capacity(nw);
+        // Contiguous, near-equal groups.
+        let base = num_envs / nw;
+        let rem = num_envs % nw;
+        let mut start = 0usize;
+        for w in 0..nw {
+            let k = base + if w < rem { 1 } else { 0 };
+            let range = (start, start + k);
+            start += k;
+            let (cmd_tx, cmd_rx) = std::sync::mpsc::channel::<Command>();
+            let (res_tx, res_rx) = std::sync::mpsc::channel::<GroupBatch>();
+            let seeds: Vec<u64> = (range.0..range.1).map(|i| base_seed.wrapping_add(i as u64)).collect();
+            let handle = std::thread::spawn(move || {
+                // Slots are created AND stepped here — the Session fibers never leave this thread.
+                let mut slots: Vec<GameSlot> = seeds.iter().map(|&s| GameSlot::new(deck, s, auto_pass)).collect();
+                let _ = res_tx.send(encode_group(&slots)); // initial batch
+                while let Ok(cmd) = cmd_rx.recv() {
+                    match cmd {
+                        Command::Step(actions) => {
+                            for (slot, a) in slots.iter_mut().zip(actions.iter()) {
+                                if !slot.terminal {
+                                    slot.apply(*a);
+                                }
+                            }
+                            if res_tx.send(encode_group(&slots)).is_err() {
+                                break;
+                            }
+                        }
+                        Command::Shutdown => break,
+                    }
+                }
+            });
+            init.push((w, res_rx.recv().map_err(|_| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>("worker died at init"))?));
+            workers.push(Worker { tx: cmd_tx, rx: res_rx, handle: Some(handle), range });
+        }
+        let obs_flat = obs::spec()
+            .into_iter()
+            .filter(|(n, ..)| *n != "globals")
+            .map(|(n, _r, _c, is_int)| (n, is_int, Vec::<f32>::new(), Vec::<i64>::new()))
             .collect();
-        Ok(Fleet { deck, slots })
+        let mut fleet = Fleet {
+            deck,
+            num_envs,
+            workers,
+            globals: Vec::new(),
+            obs_flat,
+            mask: Vec::new(),
+            seat: Vec::new(),
+            num_legal: Vec::new(),
+            terminal: Vec::new(),
+            requests: Vec::new(),
+            summaries: vec![None; num_envs],
+            last_tick_us: 0,
+        };
+        fleet.assemble(init);
+        Ok(fleet)
     }
 
     fn num_envs(&self) -> usize {
-        self.slots.len()
+        self.num_envs
     }
     fn action_dim(&self) -> usize {
         codec::ACTION_DIM
@@ -130,120 +344,104 @@ impl Fleet {
         self.deck.vocab()
     }
 
-    // ── per-env accessors (used by the equivalence _FleetDriver on a 1-env fleet) ────────────────
-    fn seat(&self, i: usize) -> i64 {
-        self.slots[i].seat
-    }
-    fn request(&self, i: usize) -> String {
-        self.slots[i].request_name().to_string()
-    }
-    fn num_legal(&self, i: usize) -> usize {
-        self.slots[i].num_legal()
-    }
-    fn env_mask(&self, i: usize) -> Vec<bool> {
-        self.slots[i].mask()
-    }
-    fn terminal(&self, i: usize) -> bool {
-        self.slots[i].terminal
-    }
-    /// `(winner, turns, reason)` once env `i` is terminal, else `None`.
-    fn summary(&self, i: usize) -> Option<(Option<i64>, u32, String)> {
-        self.slots[i]
-            .summary
-            .map(|s| (s.winner.map(|w| w as i64), s.turns, s.reason.to_string()))
+    /// Introspection for the bench: worker count, per-group sizes, and the last `submit`'s wall time
+    /// (µs) — lets a reader tell stepping-bound (tick time grows with n_envs) from forward-bound.
+    fn debug_stats<'py>(&self, py: Python<'py>) -> Bound<'py, PyDict> {
+        let d = PyDict::new(py);
+        d.set_item("num_workers", self.workers.len()).unwrap();
+        let groups: Vec<usize> = self.workers.iter().map(|w| w.range.1 - w.range.0).collect();
+        d.set_item("group_sizes", groups).unwrap();
+        d.set_item("last_tick_us", self.last_tick_us as u64).unwrap();
+        d
     }
 
-    /// Apply one factored action per env (indexed 0..num_envs) and advance each to its next decision
-    /// (or terminal). Terminal envs ignore their action. Returns nothing — read the batch via `tick`.
+    // ── per-env accessors (Fleet-owned copies from the last batch; used by the equivalence driver) ─
+    fn seat(&self, i: usize) -> i64 {
+        self.seat[i] as i64
+    }
+    fn request(&self, i: usize) -> String {
+        self.requests[i].clone()
+    }
+    fn num_legal(&self, i: usize) -> usize {
+        self.num_legal[i] as usize
+    }
+    fn env_mask(&self, i: usize) -> Vec<bool> {
+        let ad = codec::ACTION_DIM;
+        self.mask[i * ad..(i + 1) * ad].iter().map(|&b| b != 0).collect()
+    }
+    fn terminal(&self, i: usize) -> bool {
+        self.terminal[i] != 0
+    }
+    fn summary(&self, i: usize) -> Option<(Option<i64>, u32, String)> {
+        self.summaries[i].clone()
+    }
+
+    /// Apply one factored action per env and advance the whole batch to its next decisions. Fans all
+    /// per-group Step commands out first, then collects — so the workers step **in parallel** (they
+    /// are separate OS threads doing pure-Rust engine work; they never touch Python, so they run
+    /// regardless of the GIL, which the caller holds only while blocked on `recv`). Read via `tick`.
     fn submit(&mut self, actions: Vec<usize>) -> PyResult<()> {
-        if actions.len() != self.slots.len() {
+        if actions.len() != self.num_envs {
             return Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
                 "submit expects {} actions, got {}",
-                self.slots.len(),
+                self.num_envs,
                 actions.len()
             )));
         }
-        for (slot, &a) in self.slots.iter_mut().zip(actions.iter()) {
-            if !slot.terminal {
-                slot.apply(a);
-            }
+        let died = || PyErr::new::<pyo3::exceptions::PyRuntimeError, _>("a worker died mid-step");
+        let t0 = Instant::now();
+        for worker in &self.workers {
+            let (s, e) = worker.range;
+            worker.tx.send(Command::Step(actions[s..e].to_vec())).map_err(|_| died())?;
         }
+        let mut batches = Vec::with_capacity(self.workers.len());
+        for (w, worker) in self.workers.iter().enumerate() {
+            batches.push((w, worker.rx.recv().map_err(|_| died())?));
+        }
+        self.last_tick_us = t0.elapsed().as_micros();
+        self.assemble(batches);
         Ok(())
     }
 
-    /// Batch-encode the current sub-step of every env into flat buffers, crossing to Python once as
-    /// bytes: `{obs arrays → bytes, "mask" → bytes(u8), "seat"/"num_legal"/"terminal" → bytes(i32)}`.
-    /// Python does `np.frombuffer(...).reshape(num_envs, ...)` (shapes from `PyGame.obs_spec()` +
-    /// `action_dim`). Terminal envs contribute a zero row + a terminal flag.
+    /// Cross the current batch to Python once as bytes: `{obs arrays, "mask"(u8), "seat"/"num_legal"/
+    /// "terminal"(i32)}`. Python `np.frombuffer(...).reshape(num_envs, ...)` (shapes from
+    /// `PyGame.obs_spec()` + `action_dim`).
     fn tick<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
-        let n = self.slots.len();
-        let ad = codec::ACTION_DIM;
-        // Preallocate per-array flat buffers (num_envs rows). Shapes mirror obs::spec().
-        let g = obs::G;
-        let mut globals = vec![0f32; n * g];
-        let mut mask = vec![0u8; n * ad];
-        let mut seat = vec![0i32; n];
-        let mut num_legal = vec![0i32; n];
-        let mut terminal = vec![0i32; n];
-        // Variable obs arrays flattened by their spec dims.
-        let spec = obs::spec();
-        let mut arrays: Vec<(&'static str, usize, Vec<f32>, Vec<i64>, bool)> = spec
-            .iter()
-            .filter(|(name, ..)| *name != "globals")
-            .map(|&(name, rows, cols, is_int)| (name, rows * cols, vec![0f32; n * rows * cols], vec![0i64; n * rows * cols], is_int))
-            .collect();
-
-        for (i, slot) in self.slots.iter().enumerate() {
-            seat[i] = slot.seat as i32;
-            num_legal[i] = slot.num_legal() as i32;
-            terminal[i] = slot.terminal as i32;
-            for (j, b) in slot.mask().iter().enumerate() {
-                mask[i * ad + j] = *b as u8;
-            }
-            if let Some(o) = slot.obs() {
-                globals[i * g..(i + 1) * g].copy_from_slice(&o.globals);
-                for (name, width, fbuf, ibuf, is_int) in arrays.iter_mut() {
-                    let (src_f, src_i): (&[f32], &[i64]) = match *name {
-                        "bf_feat" => (&o.bf_feat, &[]),
-                        "bf_ids" => (&[], &o.bf_ids),
-                        "hand_feat" => (&o.hand_feat, &[]),
-                        "hand_ids" => (&[], &o.hand_ids),
-                        "stack_feat" => (&o.stack_feat, &[]),
-                        "stack_ids" => (&[], &o.stack_ids),
-                        "decision_ids" => (&[], &o.decision_ids),
-                        _ => (&[], &[]),
-                    };
-                    if *is_int {
-                        ibuf[i * *width..(i + 1) * *width].copy_from_slice(src_i);
-                    } else {
-                        fbuf[i * *width..(i + 1) * *width].copy_from_slice(src_f);
-                    }
-                }
-            }
-        }
-
         let out = PyDict::new(py);
-        out.set_item("globals", PyBytes::new(py, bytemuck_f32(&globals)))?;
-        for (name, _w, fbuf, ibuf, is_int) in &arrays {
-            let bytes = if *is_int { bytemuck_i64(ibuf) } else { bytemuck_f32(fbuf) };
+        out.set_item("globals", PyBytes::new(py, as_bytes_f32(&self.globals)))?;
+        for (name, is_int, fbuf, ibuf) in &self.obs_flat {
+            let bytes = if *is_int { as_bytes_i64(ibuf) } else { as_bytes_f32(fbuf) };
             out.set_item(*name, PyBytes::new(py, bytes))?;
         }
-        out.set_item("mask", PyBytes::new(py, &mask))?;
-        out.set_item("seat", PyBytes::new(py, bytemuck_i32(&seat)))?;
-        out.set_item("num_legal", PyBytes::new(py, bytemuck_i32(&num_legal)))?;
-        out.set_item("terminal", PyBytes::new(py, bytemuck_i32(&terminal)))?;
+        out.set_item("mask", PyBytes::new(py, &self.mask))?;
+        out.set_item("seat", PyBytes::new(py, as_bytes_i32(&self.seat)))?;
+        out.set_item("num_legal", PyBytes::new(py, as_bytes_i32(&self.num_legal)))?;
+        out.set_item("terminal", PyBytes::new(py, as_bytes_i32(&self.terminal)))?;
         Ok(out)
     }
 }
 
-// Reinterpret POD slices as bytes for the one-crossing transfer (little-endian, matched by the
-// Python side's np.frombuffer dtype). No external crate: these are plain `#[repr]` scalars.
-fn bytemuck_f32(s: &[f32]) -> &[u8] {
+impl Drop for Fleet {
+    fn drop(&mut self) {
+        for w in &self.workers {
+            let _ = w.tx.send(Command::Shutdown);
+        }
+        for w in &mut self.workers {
+            if let Some(h) = w.handle.take() {
+                let _ = h.join();
+            }
+        }
+    }
+}
+
+// Reinterpret POD slices as bytes for the one-crossing transfer (native-endian, matched by the
+// Python side's np.frombuffer dtype). Plain `#[repr]` scalars — no external crate.
+fn as_bytes_f32(s: &[f32]) -> &[u8] {
     unsafe { std::slice::from_raw_parts(s.as_ptr() as *const u8, std::mem::size_of_val(s)) }
 }
-fn bytemuck_i64(s: &[i64]) -> &[u8] {
+fn as_bytes_i64(s: &[i64]) -> &[u8] {
     unsafe { std::slice::from_raw_parts(s.as_ptr() as *const u8, std::mem::size_of_val(s)) }
 }
-fn bytemuck_i32(s: &[i32]) -> &[u8] {
+fn as_bytes_i32(s: &[i32]) -> &[u8] {
     unsafe { std::slice::from_raw_parts(s.as_ptr() as *const u8, std::mem::size_of_val(s)) }
 }
