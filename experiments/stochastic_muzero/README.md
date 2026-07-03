@@ -7,9 +7,32 @@ has a known, stubborn failure (it chump-blocks the trampling 3/3 even at high li
 Everything here is **isolated**: this dir has its own venv, README, and `.gitignore`. It only
 *reads/imports* `python/mtgenv_gym/` and `crates/` — it never modifies them.
 
-> Status: **M0 feasibility ✅ · M1 adapter ✅ · M2 smoke-train ✅** (full Stochastic-MuZero
-> pipeline trains end-to-end on swine with sane losses). **M3 (real GPU run) is next — needs the
-> lead's GPU go-ahead.**
+> Status: **M0 ✅ · M1 ✅ · M2 ✅ · M3 (pure) run ⚠️ COLD-START COLLAPSE** — the pure sparse-reward
+> run (`3.0-muzero-swine`) trains mechanically but the policy **anti-learns** (see "M3 finding"
+> below). A shaped variant (`3.1`, potential-based reward) is prepped as the remedy. M4 harness ready.
+
+## M3 finding (pure sparse-reward run) — the sub-decision cold-start collapse
+
+The pure run (`3.0-muzero-swine`: sparse ±1 terminal reward, 50 sims, vs random) is **mechanically
+healthy but does not learn to win** — in fact it gets *worse*:
+
+- **iteration_0 (untrained): 25% win** vs random (12 games) → **iteration_10000 (~25k env-steps): 0%**
+  (30 games, greedy *and* stochastic). Loss decreases then plateaus ~5; eval win-rate flat at −1.0.
+- **Behavior:** greedy play collapses to **always-mulligan** (mulligans to ~0 cards, loses turn 14–20).
+  MCTS visit split is a *soft* ~36/50 mulligan vs ~14/50 keep — not a hard collapse, but argmax locks on.
+- **Root cause:** `predicted_value ≈ −0.8 everywhere` — the value net learns "every position loses"
+  because collection ~never wins, so there's no gradient toward good play. This is the
+  **sub-decision-lookahead dilution + sparse-reward cold-start** flagged up front: 50-sim search over
+  *factored sub-decisions* (a game-turn ≈ several sub-decisions) can't see far enough to find the
+  winning lines needed to bootstrap. PPO sidesteps it with 500k cheap model-free steps + advantage
+  estimation. **Honest read: Stochastic MuZero at this budget/config underperforms PPO — it doesn't
+  even reach random's 53.5%.**
+
+**Remedy under test — `3.1-muzero-swine-shaped` (`--shaping`):** dense **potential-based** reward
+`F = γΦ(s') − Φ(s)` using the *same card-dominant Φ the PPO training uses*
+(`batched_selfplay._phi_batch`), coef 0.3, plus sims 50→100. Policy-invariant (Φ(terminal)=0), and
+**eval is always the raw ±1** — so a win-rate improvement is real, not shaping-inflated. This targets
+the cold-start basin directly (gives the value net a signal before it ever wins a full game).
 
 ---
 
