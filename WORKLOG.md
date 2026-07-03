@@ -51,6 +51,16 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
   it for `ctx.controller`. **Fractal Anomaly** `{U}` Instant = 0/0 Fractal token with X +1/+1 counters where X =
   cards drawn this turn (reuses `CreateToken.dynamic_counters`; same shape as Wild Hypothesis but count is
   cards-drawn, not `{X}`). Real-path test drives `Engine::draw` then resolves the token → 3 counters. 548 tests.
+- **cards(sos) — `ValueExpr::XOfTriggeringSpell` + Geometer's Arthropod (S21 complete).** Records chosen `{X}` on
+  the cast object (`Object.cast_x`, alongside `mana_spent`); a ValueExpr reads the triggering spell's `cast_x`.
+  Geometer's Arthropod `{G}{U}` = cast-with-{X} trigger (S21) → LookAndPick (S2) top-X keep-one. 551 tests.
+- **AUDIT: "no-cap vein mined out" was WRONG.** A verified unauthored-card audit found **2 zero-cap cards** + a
+  vein of 1-small-cap cards. Shipped both zero-cap: **Withering Curse** `{1}{B}{B}` (all-creatures -2/-2, or
+  Infusion destroy-all — the Splatter `EachPlayer` all-creatures ForEach inside a `GainedLifeThisTurn` Conditional)
+  and **Prismari Charm** `{U}{R}` (3-mode modal: Surveil+Draw / 1 dmg to each of 1–2 "any" targets / bounce). The
+  charm's mode 2 drove a small generalization: `foreach_current` is now `Option<Target>` (was `ObjId`), so
+  `ForEachTarget`/`Each` binds **players** too. 558 tests. New cheap-win queue recorded in the ledger (S22 +
+  counters-put-on-self each clear 2 cards).
 
 ## 2026-07-03 (night)
 

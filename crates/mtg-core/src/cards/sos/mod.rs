@@ -87,6 +87,7 @@ pub mod pestbrood_sloth;
 pub mod poisoners_apprentice;
 pub mod practiced_scrollsmith;
 pub mod primary_research;
+pub mod prismari_charm;
 pub mod procrastinate;
 pub mod proctors_gaze;
 pub mod pterafractyl;
@@ -136,6 +137,7 @@ pub mod wildgrowth_archaic;
 pub mod wander_off;
 pub mod wild_hypothesis;
 pub mod witherbloom_charm;
+pub mod withering_curse;
 pub mod zealous_lorecaster;
 
 pub fn register(db: &mut CardDb) {
@@ -224,6 +226,7 @@ pub fn register(db: &mut CardDb) {
     poisoners_apprentice::register(db);
     practiced_scrollsmith::register(db);
     primary_research::register(db);
+    prismari_charm::register(db);
     procrastinate::register(db);
     proctors_gaze::register(db);
     pterafractyl::register(db);
@@ -273,5 +276,6 @@ pub fn register(db: &mut CardDb) {
     wild_hypothesis::register(db);
     wildgrowth_archaic::register(db);
     witherbloom_charm::register(db);
+    withering_curse::register(db);
     zealous_lorecaster::register(db);
 }

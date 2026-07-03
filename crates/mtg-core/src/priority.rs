@@ -185,9 +185,11 @@ pub struct EngineCore {
     /// effect can reference "that land/creature" (Fabled Passage's "untap that land"). Cleared at
     /// the start of each `resolve_effect`; read by `EffectTarget::Searched`.
     pub(crate) searched_this_resolution: Vec<ObjId>,
-    /// The object currently being iterated by an `Effect::ForEach` — bound while its body
-    /// interprets, read by `EffectTarget::Each` (Dyadrine's "remove a counter from each of …").
-    pub(crate) foreach_current: Option<ObjId>,
+    /// The target currently being iterated by an `Effect::ForEach` (always an object) or
+    /// `Effect::ForEachTarget` (an object OR a player) — bound while its body interprets, read by
+    /// `EffectTarget::Each` (Dyadrine's "remove a counter from each of …"; Prismari Charm's "1 damage
+    /// to each of one or two targets", which may include players).
+    pub(crate) foreach_current: Option<Target>,
     /// When on, capture an omniscient [`ReplayFrame`] (a [`crate::replay::GodView`] + label) at
     /// each public event — the recorded replay stream (REPLAY_PLAN). Off by default.
     record_replay: bool,

@@ -60,9 +60,11 @@ real-path test; flip the ledger Status cell in the SAME commit).** Ordered by re
    blocked by spell-copy/storm secondaries, so PayLife alone yields 0 cards. Build it only alongside a consumer.
 4. ~~**Apply-to-each-of-a-variable-multi-target**~~ — **DONE** (agent 6). New `Effect::ForEachTarget { slot, body }`:
    declares `slot` as a targeting spec at cast (added to `collect_specs_into`), then at resolution binds each chosen
-   target to `EffectTarget::Each` in turn and runs `body` (reusing the `foreach_current` machinery). → **Homesickness**
-   (`{4}{U}{U}`: `TargetPlayer`+`Draw{ChosenTarget(0),2}` then `ForEachTarget` over up-to-2 creatures with
-   `body = Tap{Each}+PutCounters{Each,Stun}`). Reusable for any "do X to each of up-to-N target creatures."
+   target to `EffectTarget::Each` in turn and runs `body` (reusing the `foreach_current` machinery — now generalized
+   to `Option<Target>` so `Each` can be an object OR a player). → **Homesickness** (`{4}{U}{U}`:
+   `TargetPlayer`+`Draw{ChosenTarget(0),2}` then `ForEachTarget` over up-to-2 creatures, `body = Tap{Each}+
+   PutCounters{Each,Stun}`) and **Prismari Charm** mode 2 (1 damage to each of one or two "any" targets, incl.
+   players). Reusable for any "do X to each of up-to-N targets."
 5. **Spell-copy** (S14, ⏳ — token-copy already done). A real subsystem: mint a StackObject copy of a spell above
    the original (CR 707.10) + a "you may choose new targets" reselection. LOW practical yield — of its 7 cards,
    most are ALSO blocked elsewhere (Aziza tap-3 cost, Choreographed Sparks modal+creature-copy-grants, Mica
@@ -107,11 +109,23 @@ found `ConditionalStatic`, stun counters, `ValueExpr::{Sum,XTimes,NumTargets,Pow
 **fully swept**: Antiquities/Rancorous/Aberrant/Topiary/Thornfist done, Ancestral Anger already in `vow/`. **Plus
 2 cards the audit wrongly marked "lifelink-blocked"** — lifelink IS wired, so **Inkshape Demonstrator** (5th Ward
 card) and **Hardened Academic** are done too. **Homesickness DONE** (agent 6, `Effect::ForEachTarget`).
-**Remaining unauthored non-DFC cards all need a genuinely-new cap** (verified): the rest need spell-copy /
-move-counters / counters-on-TARGET / dynamic-ManaValue / one-shot-set-base-P/T-on-target / pay-life /
-grant-arbitrary-ability, or are DFC/Lesson/planeswalker/named-keyword (deferred). **The no-cap card vein is now
-genuinely mined out** — next work is a new cap. Recommended order by realistic yield: **first/double-strike +
-per-turn-counter-tracker + multi-target-each all DONE → spell-copy (subsystem, ~1: Lumaret's Favor) → Fractalize.**
+
+⚠️ **CORRECTION (agent 6 audit, 2026-07-03): the "no-cap vein is mined out" claim was WRONG.** A fresh
+unauthored-card audit (verified vs the interpreter) found **2 zero-cap cards** — **Prismari Charm** (3-mode modal,
+DONE) and **Withering Curse** (all-creatures -2/-2 or Infusion destroy-all, DONE) — plus a live vein of
+**one-small-cap** cards. Newly DONE by agent 6: **Geometer's Arthropod** (`XOfTriggeringSpell`). Still-cheap
+1-cap wins the audit surfaced (each a single small leaf, some sharing a cap):
+- **S22 `Condition` "cast an instant/sorcery this turn"** → **Burrog Barrage** + **Potioner's Trove** (2 cards).
+- **"counters put on self" `EventPattern`** → **Pensive Professor** + **Berta, Wise Extrapolator** (2 cards; the
+  detection point `Object.counter_added_this_turn` already exists — just emit a trigger).
+- **S20 `ValueExpr::CountersOnTarget(n)`** → **Growth Curve**. • **`DistinctNamedLands` value** → **Emil**.
+- **`CardFilter::Attacking`** → **Living History**. • **Treasure token def** → **Seize the Spoils**.
+- **directed-discard `Effect`** → **Render Speechless**. • **Slumbering Trudge** (stun core authorable now;
+  enter-tapped clause needs X threaded into the `EntersTappedUnless` condition eval, or defer that clause).
+Bigger subsystems (lower ROI, deferred): spell-copy (~5 cards but most double-blocked), move-counters, cost-
+reduction (S12), dynamic-ManaValue, blink-with-delayed-return, graveyard-play, grant-arbitrary-ability,
+Fractalize (milestone-5 layers), LKI dies-triggers. Recommended next: the two shared 1-cap leaves (S22,
+counters-put-on-self) clear 4 cards fast; spell-copy is NOT worth its subsystem cost for the first pass.
 Genuinely-absent caps (from the audit): spell-copy, move-counters, counters-on-TARGET value, no-max-hand,
 DYNAMIC ManaValue bounds, one-shot set-base-P/T on a target, self "costs less", grant-arbitrary-ability; DFC/
 Lesson/planeswalker/named-keyword buckets remain deferred (36 DFC + more).

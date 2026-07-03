@@ -326,7 +326,7 @@ impl EngineCore {
                 let selected = self.select_for_each(selector, ctx);
                 let performed = selected.len() >= min;
                 for item in selected {
-                    let prev = self.foreach_current.replace(item);
+                    let prev = self.foreach_current.replace(Target::Object(item));
                     self.interpret(body, ctx, sid, wb, cursor);
                     self.foreach_current = prev;
                 }
@@ -340,13 +340,16 @@ impl EngineCore {
                 let probe = EffectTarget::Target(slot.clone());
                 let mut performed = false;
                 for _ in 0..slot.max.max(1) {
+                    // A target in the slot may be an object OR a player ("1 damage to each of one or
+                    // two targets" — Prismari Charm); bind whichever to `Each`. `None` = the "up to N"
+                    // slot had fewer picks, so stop.
                     match self.resolve_target(&probe, ctx, cursor) {
-                        Some(Target::Object(obj)) => {
-                            let prev = self.foreach_current.replace(obj);
+                        Some(t) => {
+                            let prev = self.foreach_current.replace(t);
                             performed |= self.interpret(body, ctx, sid, wb, cursor);
                             self.foreach_current = prev;
                         }
-                        _ => break,
+                        None => break,
                     }
                 }
                 performed
@@ -2002,7 +2005,7 @@ impl EngineCore {
             EffectTarget::Searched(n) => {
                 self.searched_this_resolution.get(*n as usize).copied().map(Target::Object)
             }
-            EffectTarget::Each => self.foreach_current.map(Target::Object),
+            EffectTarget::Each => self.foreach_current,
             EffectTarget::Player(who) => Some(Target::Player(self.eval_player(*who, ctx))),
             EffectTarget::SourceSelf => ctx.source.map(Target::Object),
             // The top card of the player's library (last element) — no-op on an empty library.
