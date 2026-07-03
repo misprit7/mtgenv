@@ -324,27 +324,37 @@ batch to ~9 at n=64, §5).
 sos-cards (cards/effects/whiteboard are theirs mid-flight; my zone is priority/turn/stack/agent
 seam + new files). Any restructure of a file they're editing goes through the lead first.
 
-- **M3.0 — Spike (throwaway/bench-only).** Add the chosen coroutine crate; prove (a) it
-  **builds offline** here; (b) yield → resume-with-input → return round-trips; (c) it survives
-  moving across a thread boundary (Send) *or* confirm the thread-pinned model. No engine change.
-  **Go/no-go on Option B.** *(No-go ⇒ pivot to Option A, same skeleton below.)*
-- **M3.1 — Core/agent split, behavior-preserving.** Introduce `EngineCore` (state + all logic);
-  make `Engine = { core, agents }` delegating to it; `ask` still calls agents. Pure refactor, no
-  coroutine yet. **All tests green.** (Largest mechanical diff, zero behavior change — the
-  unchanged test suite is the net.)
-- **M3.2 — Introduce `Session` + `resume`/`submit`; drive `run_game` through it.** `ask` yields
-  when a yielder is present (§3.2); `Engine::run_game` becomes the driver loop; the `None` branch
-  keeps direct-call unit tests working. Full-game blocking play now flows through the primitive.
-  **All tests green** (turn-trace snapshots unchanged — same code paths). Wire `observe`/events.
-- **M3.3 — Port `mtg-py` to `resume`/`submit`; add the Rust fleet.** Drop `PyGame`'s per-game
-  thread + `GameConn` channels + `PyAgent` (`crates/mtg-py/src/game.rs`); `PyGame` becomes a
-  thin `Session` wrapper (kills the `unsendable` pin and the `py.allow_threads` blocking recv).
-  Add a Rust `Fleet` stepper (thread-pinned groups first; rayon if Send is clean) writing
-  batched obs via the existing `obs.rs`/`codec.rs`. Keep the old path behind a flag until the new
-  one matches outcomes on a fixed seed set.
-- **M3.4 — Benchmark + delete the old pump.** Measure vs baseline (§5); remove thread-per-game
-  and the Python-side `BatchedSelfPlayVecEnv` pump once parity + speedup are confirmed.
-  mtg-gre-server: **no change** (still `Engine::new().run_game()`).
+Actual staging reordered the split: the **control-flow inversion landed before the agent
+removal**, because `ask` only needs to *yield* — the core can keep its (unused-while-driven)
+agents until the fleet forces `Send`. This kept the inversion entirely within priority.rs +
+session.rs (no whiteboard.rs contact) and delivered a working primitive sooner. Status below.
+
+- **M3.0 — Spike (throwaway/bench-only).** ✅ **DONE** (`crates/mtg-coro-spike`, cap `30c3394`).
+  corosensei `=0.2.2` builds offline; round-trip + real-engine-in-a-fiber + Send + panic
+  isolation all green; stack high-water **42 KiB → 256 KiB/fiber**. See §6.5.
+- **M3.1 — Rename + boundary type.** ✅ **DONE** (`8949409`, `a351ddf`). `Engine` struct →
+  `EngineCore` + transparent `type Engine = EngineCore` alias (priority.rs only, every
+  `impl Engine`/`Engine::new` site unchanged), and `session::Step` (the stable boundary type).
+- **M3.2 — Working `Session` (`resume`/`submit`), inversion only.** ✅ **DONE** (`17e9276`).
+  `EngineCore` gains a `yielder` seam; `ask` **suspends** inside a fiber, else calls the in-core
+  agent (the transitional `None` branch). `Session::start/resume/submit` runs the game in a
+  corosensei fiber. Proven behavior-preserving: `session_drive_matches_blocking_run` gets
+  identical outcomes to blocking `run_game` across seeds. Agents still live in the core (unused
+  while a Session drives) → not yet `Send`; single-threaded, but already enough to drop the gym's
+  per-game thread + channels.
+- **M3.3a — Port `mtg-py` to `resume`/`submit`.** ⏭ *next (crosses the gym zone).* Drop `PyGame`'s
+  per-game thread + `GameConn` channels + `PyAgent` (`crates/mtg-py/src/game.rs`); `PyGame`
+  becomes a thin single-threaded `Session` wrapper (kills the `unsendable` pin + `py.allow_threads`
+  blocking recv). Immediate win with no fleet/Send needed.
+- **M3.3b — Agent-removal split → `Send` core → Rust fleet.** ⏭ *needs the whiteboard.rs window.*
+  Make `Engine` the distinct driver `{ core, agents }` (drop the alias); `impl Engine`→`impl
+  EngineCore` in whiteboard.rs (2 lines) + combat.rs; `unsafe impl Send for EngineCore`; unify
+  `Engine::run_game` onto the driver loop. Then a Rust `Fleet` stepper (rayon — Send confirmed
+  viable in M3.0 — or thread-pinned groups) with batched obs via existing `obs.rs`/`codec.rs`.
+- **M3.4 — Benchmark + delete the migration scaffolding.** Measure vs baseline (§5); remove
+  thread-per-game, the Python-side `BatchedSelfPlayVecEnv` pump, the `ask` `None` branch (the
+  migration aid), and the spike crate, once parity + speedup are confirmed. mtg-gre-server: **no
+  change** (still `Engine::new().run_game()`).
 
 ---
 
