@@ -185,8 +185,17 @@ fn encode_group(slots: &[GameSlot]) -> GroupBatch {
     b
 }
 
+/// One coordinated advance for a worker's group: apply `steps` (local slot index → factored action,
+/// advancing only those slots — so the self-play pump can advance opponent-pending envs while learner
+/// envs wait), then `resets` (local slot index → fresh-game seed, for auto-reset on terminal). The
+/// worker re-encodes its whole group afterward so the assembled batch stays consistent.
+struct StepMsg {
+    steps: Vec<(usize, usize)>,
+    resets: Vec<(usize, u64)>,
+}
+
 enum Command {
-    Step(Vec<usize>),
+    Step(StepMsg),
     Shutdown,
 }
 
@@ -217,6 +226,37 @@ pub struct Fleet {
 }
 
 impl Fleet {
+    /// Map a global env index to `(worker slot, local index within its group)`.
+    fn locate(&self, env: usize) -> (usize, usize) {
+        for (w, worker) in self.workers.iter().enumerate() {
+            if env >= worker.range.0 && env < worker.range.1 {
+                return (w, env - worker.range.0);
+            }
+        }
+        unreachable!("env {env} out of range")
+    }
+
+    /// One coordinated worker round-trip: hand each worker its `StepMsg`, collect all batches, and
+    /// re-assemble. The workers step (and reset) their groups in parallel; the main blocks on `recv`.
+    fn dispatch(&mut self, per_worker: Vec<StepMsg>) -> PyResult<()> {
+        let died = || PyErr::new::<pyo3::exceptions::PyRuntimeError, _>("a worker died mid-step");
+        let t0 = Instant::now();
+        for (worker, msg) in self.workers.iter().zip(per_worker) {
+            worker.tx.send(Command::Step(msg)).map_err(|_| died())?;
+        }
+        let mut batches = Vec::with_capacity(self.workers.len());
+        for (w, worker) in self.workers.iter().enumerate() {
+            batches.push((w, worker.rx.recv().map_err(|_| died())?));
+        }
+        self.last_tick_us = t0.elapsed().as_micros();
+        self.assemble(batches);
+        Ok(())
+    }
+
+    fn empty_msgs(&self) -> Vec<StepMsg> {
+        self.workers.iter().map(|_| StepMsg { steps: Vec::new(), resets: Vec::new() }).collect()
+    }
+
     /// Collect one `GroupBatch` per worker and stitch them into the Fleet-owned contiguous buffers.
     fn assemble(&mut self, batches: Vec<(usize, GroupBatch)>) {
         // batches carry their worker index so order is deterministic regardless of arrival order.
@@ -294,11 +334,15 @@ impl Fleet {
                 let _ = res_tx.send(encode_group(&slots)); // initial batch
                 while let Ok(cmd) = cmd_rx.recv() {
                     match cmd {
-                        Command::Step(actions) => {
-                            for (slot, a) in slots.iter_mut().zip(actions.iter()) {
+                        Command::Step(msg) => {
+                            for (local, a) in &msg.steps {
+                                let slot = &mut slots[*local];
                                 if !slot.terminal {
                                     slot.apply(*a);
                                 }
+                            }
+                            for (local, seed) in &msg.resets {
+                                slots[*local] = GameSlot::new(deck, *seed, auto_pass);
                             }
                             if res_tx.send(encode_group(&slots)).is_err() {
                                 break;
@@ -376,10 +420,9 @@ impl Fleet {
         self.summaries[i].clone()
     }
 
-    /// Apply one factored action per env and advance the whole batch to its next decisions. Fans all
-    /// per-group Step commands out first, then collects — so the workers step **in parallel** (they
-    /// are separate OS threads doing pure-Rust engine work; they never touch Python, so they run
-    /// regardless of the GIL, which the caller holds only while blocked on `recv`). Read via `tick`.
+    /// Apply one factored action per env (full batch) and advance to the next decisions — the
+    /// workers step **in parallel** (separate OS threads, pure-Rust engine work, no Python), the
+    /// caller holds the GIL only while blocked on `recv`. Read via `tick`.
     fn submit(&mut self, actions: Vec<usize>) -> PyResult<()> {
         if actions.len() != self.num_envs {
             return Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
@@ -388,19 +431,37 @@ impl Fleet {
                 actions.len()
             )));
         }
-        let died = || PyErr::new::<pyo3::exceptions::PyRuntimeError, _>("a worker died mid-step");
-        let t0 = Instant::now();
-        for worker in &self.workers {
-            let (s, e) = worker.range;
-            worker.tx.send(Command::Step(actions[s..e].to_vec())).map_err(|_| died())?;
+        let mut per = self.empty_msgs();
+        for (env, &a) in actions.iter().enumerate() {
+            let (w, local) = self.locate(env);
+            per[w].steps.push((local, a));
         }
-        let mut batches = Vec::with_capacity(self.workers.len());
-        for (w, worker) in self.workers.iter().enumerate() {
-            batches.push((w, worker.rx.recv().map_err(|_| died())?));
+        self.dispatch(per)
+    }
+
+    /// Selective advance for the self-play pump: apply `step_actions` to ONLY `step_envs` (the
+    /// opponent-pending envs — learner envs listed nowhere keep their current decision, waiting for
+    /// SB3), and restart `reset_envs` with `reset_seeds` (terminals → fresh games). One worker
+    /// round-trip; envs are re-encoded so `tick` stays consistent. Clears reset envs' stale summaries.
+    #[pyo3(signature = (step_envs, step_actions, reset_envs = vec![], reset_seeds = vec![]))]
+    fn advance(&mut self, step_envs: Vec<usize>, step_actions: Vec<usize>,
+               reset_envs: Vec<usize>, reset_seeds: Vec<u64>) -> PyResult<()> {
+        if step_envs.len() != step_actions.len() || reset_envs.len() != reset_seeds.len() {
+            return Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+                "advance: step_envs/step_actions and reset_envs/reset_seeds must be equal length",
+            ));
         }
-        self.last_tick_us = t0.elapsed().as_micros();
-        self.assemble(batches);
-        Ok(())
+        let mut per = self.empty_msgs();
+        for (&env, &a) in step_envs.iter().zip(step_actions.iter()) {
+            let (w, local) = self.locate(env);
+            per[w].steps.push((local, a));
+        }
+        for (&env, &s) in reset_envs.iter().zip(reset_seeds.iter()) {
+            let (w, local) = self.locate(env);
+            per[w].resets.push((local, s));
+            self.summaries[env] = None; // fresh game — drop the finished game's outcome
+        }
+        self.dispatch(per)
     }
 
     /// Cross the current batch to Python once as bytes: `{obs arrays, "mask"(u8), "seat"/"num_legal"/
