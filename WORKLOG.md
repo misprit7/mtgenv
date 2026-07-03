@@ -3,6 +3,43 @@
 Short, dated entries for future-agent consumption. Newest first. One line or a few bullets
 per unit of meaningful progress. Keep it terse — detail lives in `docs/` and git history.
 
+## 2026-07-03 (night)
+
+- **gym (the combat-judgment ladder — cause definitively isolated):** three controlled experiments
+  on "why does it chump-block the trampler at high life": (1) 2.8-swine-500k = user's reshaped
+  reward (card-dominant Φ 0.5/0.3/0.2, coef 0.1, 50→80% anneal) → small directional nudge
+  (swine-gated block@≥15 life 1.000→0.938), insufficient; (2) blocking-observability enhancement
+  (per-attacker blocked-by count + pending-blocker source flag, F_PERM 43→44, equivalence
+  fingerprints unchanged — they're obs-independent) after an audit proved ganging was never
+  representable; (3) 2.9-swine-500k (single variable = obs) → ZERO behavioral change
+  (block_double 0.30→0.18 identical to blind 0.29→0.19). CONCLUSION: the symmetric mirror
+  equilibrium is the bottleneck — no gradient punishes the chump when both sides chump. The
+  untested PPO lever = an asymmetric/punishing opponent; groundwork all in place.
+- **gym (fleet decision_stats parity):** the fleet default now emits per-decision stats (was
+  silently dark — the 2.8 run had to use the batched path); "TrackedStats present" added as a
+  permanent gate. Instrumented 500k runs now ~460 steps/s ≈ 18 min (was 19+ on batched at equal
+  n_envs, with room at higher env counts).
+- **17lands winprob track (experiments/winprob17l/):** SOS PremierDraft replay data (583k games)
+  → supervised win-prob models: logistic AUC 0.739 / MLP 0.764, superbly calibrated. Standardized
+  coefs: COUNTS beat stats (lands ±0.84 > hand ±0.68 > creature count ±0.57 > life ±0.42;
+  power-sum ~0). Audit vs the gym's Φ: already near-optimal (AUC 0.710/0.739, ρ=0.965); one
+  indicated tweak = shift ~0.1 weight power→life. Frozen logistic blob + flag-gated adapter stub
+  shelved (re-center for the 0.554 collector base rate before use). In-gym A/B held for user.
+  Interactive report artifact published (582k games, card GIH rankings).
+- **Stochastic MuZero track (experiments/stochastic_muzero/):** user-directed; M0 feasibility GO —
+  LightZero v0.2.0 in an isolated uv Python 3.11 venv (3.14 unsupported), C++ stochastic-MCTS
+  compiles, CUDA torch live, action masks native; the abi3-py39 mtg_py wheel imports in both venvs
+  (same engine build). v1 design: single-agent stochastic MDP (opponent+draws = chance codes),
+  NOT LightZero's perfect-info board_games mode. Crux to test: does sub-decision-factored lookahead
+  reach the block→consequence horizon that model-free PPO provably can't get gradient for in a mirror.
+- **SOS (agent chain):** predecessor retired at 105 cards/25 caps; successor added S14 token-copy,
+  monocolour hybrid {N/C} (+ fixed hybrid pips DROPPED FROM CAST PAYMENT — Honormancer cast 1 short,
+  all-hybrid would've been free), discard-cost, X→ETB-counters fix (enters-with-X was silently 0),
+  filtered look-pick, + T2 sweep → ~117 cards / 29 caps / 462 tests; retired clean with S15/S13
+  scoped site-by-site. Third agent adopting orphaned S15 WIP (review-hard protocol) → S13.
+- **UI:** hybrid mana pips render as official split-circle symbols (game client + lobby, canonical
+  pair-order normalization); CMYK reskin verified across themes.
+
 ## 2026-07-03 (evening)
 
 - **UI (CMYK identity shipped, game+lobby):** user picked the "CMYK riso" direction from style
