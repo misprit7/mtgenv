@@ -287,14 +287,14 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Eternal Student | S18 | `sos` | ⏳ | {1}{B},exile-from-graveyard activated ability |
 | Exhibition Tidecaller | S5 | `sos` | ⏳ | Opus mill trigger, mana-spent threshold |
 | Expressive Firedancer | S5 | `sos` | ⏳ | Opus self-pump, mana-spent threshold |
-| Fields of Strife | S1 | `sos` | ⏳ | land ability surveil 1 |
+| Fields of Strife | S1 | `sos` | ✅ done | land ability surveil 1 |
 | Fix What's Broken | PayXLife | `sos` | ⏳ | additional cost pay X life; reanimate MV=X |
 | Flashback | S10 | `sos` | ⏳ | grants flashback to graveyard card |
 | Flow State | S2 | `sos` | ⏳ | look-and-pick top three to hand |
 | Follow the Lumarets | S2,S4 | `sos` | ⏳ | look-and-pick plus infusion gained-life |
 | Foolish Fate | S4 | `sos` | ✅ done | destroy plus infusion gained-life drain |
 | Forum Necroscribe | S8,S17 | `sos` | ⏳ | Ward—Discard + Repartee reanimation |
-| Forum of Amity | S1 | `sos` | ⏳ | land ability surveil 1 |
+| Forum of Amity | S1 | `sos` | ✅ done | land ability surveil 1 |
 | Fractal Anomaly | S19 | `sos` | ⏳ | X = cards drawn this turn |
 | Fractal Mascot | S3 | `sos` | ⏳ | ETB tap plus stun counter |
 | Fractal Tender | S6,S17 | `sos` | ⏳ | Increment, Ward, conditional end-step token |
@@ -330,7 +330,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Old-Growth Educator | S4 | `sos` | ✅ done | Infusion gained-life-this-turn condition |
 | Orysa, Tide Choreographer | S12 | `sos` | ⏳ | conditional cost reduction on toughness |
 | Owlin Historian | S1,S9 | `sos` | ⏳ | surveil + cards-leave-graveyard trigger |
-| Paradox Gardens | S1 | `sos` | ⏳ | surveil activated ability |
+| Paradox Gardens | S1 | `sos` | ✅ done | surveil activated ability |
 | Paradox Surveyor | S2 | `sos` | ⏳ | look-and-pick ETB selection |
 | Pensive Professor | S6 | `sos` | ⏳ | Increment (plus counter-added trigger) |
 | Pest Mascot | S16 | `sos` | ✅ done | whenever-you-gain-life trigger |
@@ -361,7 +361,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Snooping Page | S8 | `sos` | ⏳ | Repartee: cast IS targeting creature |
 | Soaring Stoneglider | AltCost | `sos` | ⏳ | modal additional cost (exile 2 gy or pay) |
 | Social Snub | S14 | `sos` | ⏳ | copy this spell |
-| Spectacle Summit | S1 | `sos` | ⏳ | activated surveil 1 |
+| Spectacle Summit | S1 | `sos` | ✅ done | activated surveil 1 |
 | Spectacular Skywhale | S5 | `sos` | ⏳ | Opus cast-IS trigger, mana spent |
 | Spirit Mascot | S9 | `sos` | ⏳ | cards leave graveyard trigger |
 | Steal the Show | Native | `sos` | ⏳ | wheel: discard any number, draw that many |
@@ -381,7 +381,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | The Dawning Archaic | S10,S12 | `sos` | ⏳ | cast from graveyard; count-based cost reduction |
 | Thornfist Striker | S4,S17 | `sos` | ⏳ | Ward cost plus Infusion |
 | Thunderdrum Soloist | S5 | `sos` | ⏳ | Opus cast-IS trigger, mana spent |
-| Titan's Grave | S1 | `sos` | ⏳ | activated surveil 1 |
+| Titan's Grave | S1 | `sos` | ✅ done | activated surveil 1 |
 | Together as One | S7 | `sos` | ⏳ | converge, colors of mana spent |
 | Tome Blast | S10 | `sos` | ⏳ | Flashback |
 | Topiary Lecturer | S6 | `sos` | ⏳ | Increment; mana equal to power |
