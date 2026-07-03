@@ -63,3 +63,32 @@ def test_fleet_multiworker_is_deterministic():
     ref = [game_fingerprint("bears", i, pygame_driver) for i in range(n)]
     diffs = diff_suites(ref, fleet)
     assert not diffs, "Fleet multi-worker diverged from PyGame per-env:\n  " + "\n  ".join(diffs)
+
+
+def test_fleet_emits_decision_stats():
+    """Fleet-parity gate (default-path regression guard): the fleet self-play vec env MUST surface
+    the learner's per-decision `decision_stats` in `info` — else `TrackedStats` (stats/block_rate,
+    productive_rate, …) goes silently dark on the default `--vecenv fleet` path. Asserts the block +
+    productive families appear over a short random rollout."""
+    import tempfile
+
+    import numpy as np
+
+    from mtgenv_gym.fleet_selfplay import FleetSelfPlayVecEnv
+
+    ve = FleetSelfPlayVecEnv("swine", tempfile.mkdtemp(), num_envs=16, num_workers=4, seed=0)
+    ve.reset()
+    rng = np.random.default_rng(0)
+    seen = set()
+    for _ in range(150):
+        m = np.stack(ve.env_method("action_masks"))
+        ve.step_async(np.array([int(rng.choice(np.flatnonzero(m[i]))) for i in range(16)]))
+        _o, _r, _d, infos = ve.step_wait()
+        for info in infos:
+            if "decision_stats" in info:
+                seen |= set(info["decision_stats"].keys())
+    ve.close()
+    required = {"block_eligible", "block_declared", "block_double", "attackers_blocked",
+                "productive_legal", "productive_taken"}
+    missing = required - seen
+    assert not missing, f"fleet dropped decision_stats keys (TrackedStats would go dark): {missing}"

@@ -26,6 +26,7 @@ use pyo3::types::{PyBytes, PyDict};
 use mtg_core::session::{Session, Step};
 
 use crate::codec::{self, Interaction};
+use crate::decision_stats;
 use crate::game::{self, end_summary_from, start_session, Deck};
 use crate::obs;
 
@@ -37,6 +38,9 @@ struct GameSlot {
     seat: i64,
     terminal: bool,
     summary: Option<game::EndSummary>,
+    /// Semantic record of the decision the last `apply` finalized (tracked-stats, #68) — empty between
+    /// finalizations. Mirrors `PyGame::last_stats`; captured per env so the fleet path feeds TrackedStats.
+    last_stats: Vec<(&'static str, f64)>,
 }
 
 impl GameSlot {
@@ -49,6 +53,7 @@ impl GameSlot {
             seat: -1,
             terminal: false,
             summary: None,
+            last_stats: Vec::new(),
         };
         slot.advance();
         slot
@@ -77,12 +82,17 @@ impl GameSlot {
     /// Feed one factored action; on commit, submit the assembled response, then advance to the next
     /// sub-step (so the slot again sits at a decision or terminal, ready for the next tick).
     fn apply(&mut self, action: usize) {
+        let mut committed: Option<Vec<(&'static str, f64)>> = None;
         if let Some(inter) = self.interaction.as_mut() {
             if let Some(resp) = inter.apply(action) {
+                // On commit, record the decision's semantic stats (req + resp) before submitting —
+                // mirrors PyGame::step_to_decision so TrackedStats works on the fleet path too.
+                committed = Some(decision_stats::summarize(inter.req(), &resp));
                 self.session.submit(resp);
                 self.interaction = None;
             }
         }
+        self.last_stats = committed.unwrap_or_default();
         self.advance();
     }
 
@@ -111,6 +121,7 @@ struct GroupBatch {
     terminal: Vec<i32>,
     requests: Vec<&'static str>,
     summaries: Vec<Option<(Option<i64>, u32, String)>>,
+    stats: Vec<Vec<(&'static str, f64)>>, // per-env decision_stats (empty when the sub-step didn't finalize)
 }
 
 impl GroupBatch {
@@ -130,6 +141,7 @@ impl GroupBatch {
             terminal: Vec::with_capacity(k),
             requests: Vec::with_capacity(k),
             summaries: Vec::with_capacity(k),
+            stats: Vec::with_capacity(k),
         }
     }
 }
@@ -151,6 +163,7 @@ fn encode_group(slots: &[GameSlot]) -> GroupBatch {
         b.requests.push(slot.request_name());
         b.summaries
             .push(slot.summary.map(|s| (s.winner.map(|w| w as i64), s.turns, s.reason.to_string())));
+        b.stats.push(slot.last_stats.clone()); // per-env decision_stats (empty for a non-final sub-step)
         // mask (full width, all-false when terminal)
         match &slot.interaction {
             Some(i) => b.mask.extend(i.mask().iter().map(|&x| x as u8)),
@@ -222,6 +235,7 @@ pub struct Fleet {
     terminal: Vec<i32>,
     requests: Vec<String>,
     summaries: Vec<Option<(Option<i64>, u32, String)>>,
+    stats: Vec<Vec<(&'static str, f64)>>, // per-env decision_stats from the last advance (not sticky)
     last_tick_us: u128,
 }
 
@@ -272,6 +286,7 @@ impl Fleet {
         self.num_legal.clear();
         self.terminal.clear();
         self.requests.clear();
+        self.stats.clear();
         for (_, b) in &ordered {
             self.globals.extend_from_slice(&b.globals);
             self.mask.extend_from_slice(&b.mask);
@@ -279,6 +294,7 @@ impl Fleet {
             self.num_legal.extend_from_slice(&b.num_legal);
             self.terminal.extend_from_slice(&b.terminal);
             self.requests.extend(b.requests.iter().map(|s| s.to_string()));
+            self.stats.extend(b.stats.iter().cloned());
             for (name, _is_int, fbuf, ibuf) in self.obs_flat.iter_mut() {
                 match *name {
                     "bf_feat" => fbuf.extend_from_slice(&b.bf_feat),
@@ -372,6 +388,7 @@ impl Fleet {
             terminal: Vec::new(),
             requests: Vec::new(),
             summaries: vec![None; num_envs],
+            stats: Vec::new(),
             last_tick_us: 0,
         };
         fleet.assemble(init);
@@ -418,6 +435,20 @@ impl Fleet {
     }
     fn summary(&self, i: usize) -> Option<(Option<i64>, u32, String)> {
         self.summaries[i].clone()
+    }
+    /// The `{field: value}` decision_stats env `i`'s slot finalized on the last advance, or `None` for
+    /// a non-finalizing sub-step. Read right after the learner advance (before the pump's opponent
+    /// advances overwrite it) so it's the LEARNER's decision — mirrors `MtgEnv.ext_take_stats`.
+    fn decision_stats<'py>(&self, py: Python<'py>, i: usize) -> Option<Bound<'py, PyDict>> {
+        let rec = &self.stats[i];
+        if rec.is_empty() {
+            return None;
+        }
+        let d = PyDict::new(py);
+        for (k, v) in rec {
+            d.set_item(*k, *v).unwrap();
+        }
+        Some(d)
     }
 
     /// Apply one factored action per env (full batch) and advance to the next decisions — the

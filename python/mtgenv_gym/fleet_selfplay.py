@@ -207,6 +207,12 @@ class FleetSelfPlayVecEnv(VecEnv):
         # Apply the learner's factored action to every (learner-pending) env, then pump.
         all_envs = list(range(self.num_envs))
         self._fleet.advance(all_envs, [int(a) for a in self._actions], [], [])
+        # Capture the learner decision's semantic stats NOW — before _pump answers opponents and
+        # overwrites the fleet's per-env stats buffer. Feeds TrackedStats, matching the batched path.
+        for i in range(self.num_envs):
+            rec = self._fleet.decision_stats(i)
+            if rec:
+                infos[i]["decision_stats"] = rec
         self._pump(rewards, dones, infos, record_terminals=True)
         obs, mask, _seat, _term = self._decode()
         self._masks = mask
