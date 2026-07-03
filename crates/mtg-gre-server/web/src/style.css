@@ -282,6 +282,17 @@
   .replaybar .rbrate input { accent-color: var(--accent2); }
   .replaybar .rblabel { color: var(--ink); font-size: 12px; flex: 1 1 140px; min-width: 120px;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* Replay load status: progress / error panel centered over the board (all sizes). The replay JSON is
+     tens of MB, so a slow phone download needs a visible indicator instead of a dead bar. */
+  .replay-status { position: fixed; z-index: 110; left: 50%; top: 44%; transform: translate(-50%,-50%);
+    display: none; flex-direction: column; gap: 10px; align-items: center; text-align: center;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px 24px;
+    box-shadow: 0 12px 40px rgba(0,0,0,.6); max-width: 84vw; }
+  .replay-status .rs-title { font-weight: 800; font-size: 14px; }
+  .replay-status .rs-prog { color: var(--accent); font-variant-numeric: tabular-nums; font-size: 13px; }
+  .replay-status .rs-err { color: #ff9a8a; font-size: 12px; max-width: 70vw; word-break: break-word; }
+  .replay-status .rs-retry { background: var(--accent); color: #06140b; border: none; border-radius: 8px;
+    padding: 9px 20px; font-weight: 700; cursor: pointer; font: inherit; }
 
   /* ── new touch affordances (all viewport sizes) ─────────────────────────────── */
   /* "Pass turn" button — on-screen equivalent of Enter (hold through this turn's stops). */

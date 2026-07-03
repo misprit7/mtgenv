@@ -144,18 +144,81 @@ function replaySource(s: Any): string {
 function frameCount(): number { return replay && replay.frames ? replay.frames.length : 0; }
 function startReplay(): void {
   ($("replaybar") as HTMLElement).hidden = false;
-  fetch(`/api/replays/${encodeURIComponent(replayId as string)}`)
-    .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
-    .then((rep) => {
-      replay = rep;
-      const meta = rep.meta || {};
-      if (meta.players) $("decks").textContent = `▶ Replay #${replayId} · ` +
-        meta.players.map((p: Any) => `P${p.seat} ${p.deck || "?"}`).join(" vs ");
-      log(`Loaded replay: ${frameCount()} frames` + (meta.source ? ` · ${replaySource(meta.source)}` : ""));
-      showFrame(0);
-    })
-    .catch((e) => { $("prompt").innerHTML = `<div class="banner">Replay #${esc(replayId as string)} ` +
-      `unavailable (${esc(e.message)}). The replay backend may not be wired yet.</div>`; });
+  setReplayControlsEnabled(false);
+  loadReplay();
+}
+// Stream the (tens-of-MB) replay JSON with a visible progress indicator + explicit error/retry, so a
+// slow phone download never looks like a dead bar. Handles a plain response (Content-Length → %) and a
+// compressed/chunked one (no length → cumulative MB) alike.
+async function loadReplay(): Promise<void> {
+  showReplayStatus(
+    `<div class="rs-title">Loading replay #${esc(replayId as string)}…</div>` +
+    `<div class="rs-prog" id="rsProg">connecting…</div>`);
+  try {
+    const resp = await fetch(`/api/replays/${encodeURIComponent(replayId as string)}`);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}` + (resp.status === 404 ? " — no such replay" : ""));
+    const text = await readBodyWithProgress(resp);
+    const rep = JSON.parse(text);
+    replay = rep;
+    const meta = rep.meta || {};
+    if (meta.players) $("decks").textContent = `▶ Replay #${replayId} · ` +
+      meta.players.map((p: Any) => `P${p.seat} ${p.deck || "?"}`).join(" vs ");
+    log(`Loaded replay: ${frameCount()} frames` + (meta.source ? ` · ${replaySource(meta.source)}` : ""));
+    hideReplayStatus();
+    setReplayControlsEnabled(true);
+    showFrame(0);
+  } catch (e: Any) {
+    showReplayError((e && e.message) || "network error");
+  }
+}
+// Read the body via a streaming reader so we can report progress. Falls back to resp.text() where
+// streams aren't available.
+async function readBodyWithProgress(resp: Response): Promise<string> {
+  const total = Number(resp.headers.get("Content-Length")) || 0; // 0 when compressed / chunked
+  const body: Any = resp.body;
+  if (!body || !body.getReader) { updateReplayProgress(0, 0, "loading…"); return await resp.text(); }
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = []; let loaded = 0;
+  for (;;) {
+    const r = await reader.read();
+    if (r.done) break;
+    if (r.value) { chunks.push(r.value); loaded += r.value.length; updateReplayProgress(loaded, total); }
+  }
+  updateReplayProgress(loaded, total, "parsing…");
+  const buf = new Uint8Array(loaded); let off = 0;
+  for (const c of chunks) { buf.set(c, off); off += c.length; }
+  return new TextDecoder("utf-8").decode(buf);
+}
+function mb(n: number): string { return (n / 1048576).toFixed(1); }
+function updateReplayProgress(loaded: number, total: number, note?: string): void {
+  const e = document.getElementById("rsProg"); if (!e) return;
+  if (note) { e.textContent = note; return; }
+  // Content-Length is the COMPRESSED size while the reader yields DECOMPRESSED bytes, so once `loaded`
+  // passes it the % is meaningless → fall back to cumulative MB.
+  if (total > 0 && loaded <= total) e.textContent = `${mb(loaded)} MB / ${mb(total)} MB (${Math.round(loaded / total * 100)}%)`;
+  else e.textContent = `${mb(loaded)} MB loaded…`;
+}
+function showReplayStatus(html: string): void {
+  let s = document.getElementById("replayStatus");
+  if (!s) { s = el("div", "replay-status"); s.id = "replayStatus"; document.body.appendChild(s); }
+  s.innerHTML = html; (s as HTMLElement).style.display = "flex";
+}
+function hideReplayStatus(): void { const s = document.getElementById("replayStatus"); if (s) (s as HTMLElement).style.display = "none"; }
+function showReplayError(msg: string): void {
+  setReplayControlsEnabled(false);
+  showReplayStatus(
+    `<div class="rs-title">Failed to load replay #${esc(replayId as string)}</div>` +
+    `<div class="rs-err">${esc(msg)}</div>` +
+    `<button class="rs-retry" id="rsRetry">Retry</button>`);
+  const btn = document.getElementById("rsRetry");
+  if (btn) btn.onclick = () => loadReplay();
+}
+// Disable/label the playback controls until the frames are parsed (nothing to play yet).
+function setReplayControlsEnabled(on: boolean): void {
+  ["rbBack", "rbPlay", "rbFwd", "rbScrub", "rbRate"].forEach((id) => {
+    const e = document.getElementById(id) as Any; if (e) e.disabled = !on;
+  });
+  const pl = document.getElementById("rbPlay"); if (pl) pl.textContent = on ? "▶" : "…";
 }
 function showFrame(i: number): void {
   const n = frameCount(); if (!n) return;

@@ -289,6 +289,17 @@
   .replaybar .rbrate input { accent-color: var(--accent2); }
   .replaybar .rblabel { color: var(--ink); font-size: 12px; flex: 1 1 140px; min-width: 120px;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* Replay load status: progress / error panel centered over the board (all sizes). The replay JSON is
+     tens of MB, so a slow phone download needs a visible indicator instead of a dead bar. */
+  .replay-status { position: fixed; z-index: 110; left: 50%; top: 44%; transform: translate(-50%,-50%);
+    display: none; flex-direction: column; gap: 10px; align-items: center; text-align: center;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px 24px;
+    box-shadow: 0 12px 40px rgba(0,0,0,.6); max-width: 84vw; }
+  .replay-status .rs-title { font-weight: 800; font-size: 14px; }
+  .replay-status .rs-prog { color: var(--accent); font-variant-numeric: tabular-nums; font-size: 13px; }
+  .replay-status .rs-err { color: #ff9a8a; font-size: 12px; max-width: 70vw; word-break: break-word; }
+  .replay-status .rs-retry { background: var(--accent); color: #06140b; border: none; border-radius: 8px;
+    padding: 9px 20px; font-weight: 700; cursor: pointer; font: inherit; }
 
   /* ── new touch affordances (all viewport sizes) ─────────────────────────────── */
   /* "Pass turn" button — on-screen equivalent of Enter (hold through this turn's stops). */
@@ -567,18 +578,79 @@
   function frameCount() { return replay && replay.frames ? replay.frames.length : 0; }
   function startReplay() {
     $("replaybar").hidden = false;
-    fetch("/api/replays/" + encodeURIComponent(replayId))
-      .then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
-      .then(rep => {
-        replay = rep;
-        const meta = rep.meta || {};
-        if (meta.players) $("decks").textContent = "▶ Replay #" + replayId + " · " +
-          meta.players.map(p => "P" + p.seat + " " + (p.deck || "?")).join(" vs ");
-        log("Loaded replay: " + frameCount() + " frames" + (meta.source ? " · " + replaySource(meta.source) : ""));
-        showFrame(0);
-      })
-      .catch(e => { $("prompt").innerHTML = '<div class="banner">Replay #' + esc(replayId) +
-        " unavailable (" + esc(e.message) + "). The replay backend may not be wired yet.</div>"; });
+    setReplayControlsEnabled(false);
+    loadReplay();
+  }
+  // Stream the (tens-of-MB) replay JSON with a visible progress indicator + explicit error/retry, so a
+  // slow phone download never looks like a dead bar. Handles a plain response (Content-Length → %) and a
+  // compressed/chunked one (no length → cumulative MB) alike.
+  async function loadReplay() {
+    showReplayStatus('<div class="rs-title">Loading replay #' + esc(replayId) + '…</div>' +
+      '<div class="rs-prog" id="rsProg">connecting…</div>');
+    try {
+      const resp = await fetch("/api/replays/" + encodeURIComponent(replayId));
+      if (!resp.ok) throw new Error("HTTP " + resp.status + (resp.status === 404 ? " — no such replay" : ""));
+      const text = await readBodyWithProgress(resp);
+      const rep = JSON.parse(text);
+      replay = rep;
+      const meta = rep.meta || {};
+      if (meta.players) $("decks").textContent = "▶ Replay #" + replayId + " · " +
+        meta.players.map(p => "P" + p.seat + " " + (p.deck || "?")).join(" vs ");
+      log("Loaded replay: " + frameCount() + " frames" + (meta.source ? " · " + replaySource(meta.source) : ""));
+      hideReplayStatus();
+      setReplayControlsEnabled(true);
+      showFrame(0);
+    } catch (e) {
+      showReplayError((e && e.message) || "network error");
+    }
+  }
+  // Read the body via a streaming reader so we can report progress. Falls back to resp.text() where
+  // streams aren't available.
+  async function readBodyWithProgress(resp) {
+    const total = Number(resp.headers.get("Content-Length")) || 0; // 0 when compressed / chunked
+    const body = resp.body;
+    if (!body || !body.getReader) { updateReplayProgress(0, 0, "loading…"); return await resp.text(); }
+    const reader = body.getReader();
+    const chunks = []; let loaded = 0;
+    for (;;) {
+      const r = await reader.read();
+      if (r.done) break;
+      if (r.value) { chunks.push(r.value); loaded += r.value.length; updateReplayProgress(loaded, total); }
+    }
+    updateReplayProgress(loaded, total, "parsing…");
+    const buf = new Uint8Array(loaded); let off = 0;
+    for (const c of chunks) { buf.set(c, off); off += c.length; }
+    return new TextDecoder("utf-8").decode(buf);
+  }
+  function mb(n) { return (n / 1048576).toFixed(1); }
+  function updateReplayProgress(loaded, total, note) {
+    const e = document.getElementById("rsProg"); if (!e) return;
+    if (note) { e.textContent = note; return; }
+    // Content-Length is the COMPRESSED size while the reader yields DECOMPRESSED bytes, so once `loaded`
+    // passes it the % is meaningless → fall back to cumulative MB.
+    if (total > 0 && loaded <= total) e.textContent = mb(loaded) + " MB / " + mb(total) + " MB (" + Math.round(loaded / total * 100) + "%)";
+    else e.textContent = mb(loaded) + " MB loaded…";
+  }
+  function showReplayStatus(html) {
+    let s = document.getElementById("replayStatus");
+    if (!s) { s = el("div", "replay-status"); s.id = "replayStatus"; document.body.appendChild(s); }
+    s.innerHTML = html; s.style.display = "flex";
+  }
+  function hideReplayStatus() { const s = document.getElementById("replayStatus"); if (s) s.style.display = "none"; }
+  function showReplayError(msg) {
+    setReplayControlsEnabled(false);
+    showReplayStatus('<div class="rs-title">Failed to load replay #' + esc(replayId) + '</div>' +
+      '<div class="rs-err">' + esc(msg) + '</div>' +
+      '<button class="rs-retry" id="rsRetry">Retry</button>');
+    const btn = document.getElementById("rsRetry");
+    if (btn) btn.onclick = () => loadReplay();
+  }
+  // Disable/label the playback controls until the frames are parsed (nothing to play yet).
+  function setReplayControlsEnabled(on) {
+    ["rbBack", "rbPlay", "rbFwd", "rbScrub", "rbRate"].forEach((id) => {
+      const e = document.getElementById(id); if (e) e.disabled = !on;
+    });
+    const pl = document.getElementById("rbPlay"); if (pl) pl.textContent = on ? "▶" : "…";
   }
   function showFrame(i) {
     const n = frameCount(); if (!n) return;
