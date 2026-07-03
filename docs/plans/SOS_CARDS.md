@@ -316,7 +316,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Lecturing Scornmage | S8 | `sos` | ✅ done | Repartee self-counter |
 | Living History | S9 | `sos` | ⏳ | attack trigger gated on graveyard-leave |
 | Lumaret's Favor | S14,S4 | `sos` | ⏳ | conditional copy (infusion) plus pump |
-| Magmablood Archaic | S5,S7 | `sos` | ⏳ | Converge; I/S trigger scales by colors |
+| Magmablood Archaic | S5,S7,mono-hybrid | `sos` | ✅ done | Converge; I/S trigger scales by colors |
 | Mana Sculpt | S5 | `sos` | ⏳ | counter; delayed mana = mana spent |
 | Mathemagics | Native | `sos` | ⏳ | draw 2^X (one-off value) |
 | Matterbending Mage | S21 | `sos` | ⏳ | cast-spell-with-X trigger -> unblockable |
@@ -392,7 +392,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Vicious Rivalry | PayXLife | `sos` | ⏳ | additional cost pay X life; destroy MV<=X |
 | Visionary's Dance | S2 | `sos` | ✅ done | look-and-pick top two |
 | Wild Hypothesis | S1 | `sos` | ⏳ | Fractal token; surveil 2 |
-| Wildgrowth Archaic | S7 | `sos` | ⏳ | converge, colors of mana spent |
+| Wildgrowth Archaic | S7,mono-hybrid | `sos` | ◑ partial | converge body done; creature-cast counter-injection trigger deferred |
 | Wilt in the Heat | S9,S12 | `sos` | ⏳ | graveyard-leave conditional cost reduction |
 | Wisdom of Ages | NoMaxHand | `sos` | ⏳ | no maximum hand size static |
 | Withering Curse | S4 | `sos` | ⏳ | Infusion: gained-life-this-turn condition |
@@ -564,9 +564,29 @@ a unit of either colour (after fixed pips, before generic; shared by `can_pay`+`
 counts each hybrid pip as 1 + `mana_cost_hybrid()` builder. **Wire:** gym `obs.rs` doesn't encode raw
 ManaCost fields (transparent); the web client (`main.ts`) renders from `generic`/`colored` and ignores
 `hybrid` → a hybrid card shows its pip incomplete but **does not crash** (graceful, per lead). Follow-up
-(UI team): render `{X/Y}` pips in `main.ts`. Monocolour hybrid (`{2/G}`, Wildgrowth Archaic) still
-deferred. → Stirring Honormancer. Next: rebuild the creature-died flag *with* Essenceknit Scholar (now
-unblocked); then Moseo, Abstract Paintmage.
+(UI team): render `{X/Y}` pips in `main.ts`. → Stirring Honormancer.
+
+### Monocolour hybrid `{N/C}` — ✅ DONE (`01fe254`)
+`ManaCost.mono_hybrid: Vec<(u32,Color)>` (serde-default) — each `{2/R}` pip payable by ONE mana of the
+colour OR `n` generic; `select_payment` prefers the colour side (uses fewer units, never starves a later
+pip), else falls back to `n` generic (after fixed + two-colour hybrid, before generic). `mana_value` adds
+each pip's `n` (CR 202.3g); `Display` now renders both `{c1/c2}` and `{n/C}` pips; `mana_cost_mono_hybrid()`
+builder. **Also fixed a latent bug:** the cast-payment cost at `priority.rs` was dropping `hybrid`
+(and would have dropped `mono_hybrid`) — an all-mono-hybrid card would have cast **free** with zero
+Converge colours. Now the payment carries `hybrid`+`mono_hybrid` through, so they're actually paid and
+their spent colours feed Converge (this also fixes two-colour hybrid under-costing, e.g. Stirring
+Honormancer). New `ValueExpr::ColorsSpentOnTrigger` (colours spent on the *triggering* spell — the
+colours-of-trigger analogue of `ManaSpentOnTrigger`) for Magmablood's cast-trigger.
+→ **Magmablood Archaic** (fully implemented: Converge enters-with `ColorsSpent` + Opus mass-pump by
+`ColorsSpentOnTrigger`), **Wildgrowth Archaic** (`.incomplete()`: mono-hybrid + Converge body work; the
+creature-cast "enters with X additional counters" trigger is deferred — needs a delayed enters-with
+replacement keyed to another spell on the stack, an unbuilt mechanism).
+_Latent gap (not blocking, no consumer):_ `mana_spent` (Dyadrine's `ValueExpr::ManaSpent`) is still
+computed as `generic + colored` at cast, so it under-counts hybrid/mono-hybrid pips. No hybrid card reads
+`ManaSpent` today; fix needs `auto_pay` to also report the unit count spent.
+
+Next hybrid follow-up: rebuild the creature-died flag *with* Essenceknit Scholar (now unblocked); then
+Moseo, Abstract Paintmage.
 
 ## S18 graveyard-activated — ✅ DONE (`6190bb2`)
 _(scoped plan below, now implemented: `CostComponent::ExileSelfFromGraveyard` + graveyard enumeration in `legal_priority_actions` + exile-on-pay. → Eternal Student, Stone Docent. Postmortem Professor / Rubble Rouser still deferred.)_
