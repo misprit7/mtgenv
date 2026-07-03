@@ -37,10 +37,13 @@ num_simulations = 8 if SMOKE else 50
 update_per_collect = 2 if SMOKE else 100
 batch_size = 32 if SMOKE else 256
 latent_state_dim = 64 if SMOKE else 256
-max_env_step = int(2e3) if SMOKE else int(5e6)
+max_env_step = int(2e3) if SMOKE else int(250e3)   # M3 target (with a 3.5h wall-clock hard cap)
 reanalyze_ratio = 0.0
 
-exp_name = f"tb/mtg_swine_stochastic_muzero{'_smoke' if SMOKE else ''}"
+# M3 real run keeps ckpt/data/log under the (gitignored) local tb/ dir; a symlink surfaces the TB
+# events under /tmp/mtgenv_tb/3.0-muzero-swine (the user's single versioned TensorBoard). New algo
+# family -> 3.0 major bump per house convention.
+exp_name = "tb/mtg_swine_stochastic_muzero_smoke" if SMOKE else "tb/3.0-muzero-swine"
 
 swine_stochastic_muzero_config = dict(
     exp_name=exp_name,
