@@ -27,11 +27,17 @@ boundary (still green — the small/clean caps are largely picked; what remains 
    by Surrak's "becomes the target" trigger, `by_opponent`), and E2's `Effect::Counter` exists. Model Ward as
    a triggered "when this becomes the target of a spell/ability an opponent controls, counter it unless they
    pay {cost}" — the SoftCounter (counter-unless-pay) leaf is the new bit. Start with **Ward N (pay generic)**.
-2. **S10 Flashback** (⏳, **11** cards — highest raw count). Alt-cast from graveyard for a flashback cost,
-   then exile. **Infra likely partly present:** `Object.flashback_cast` and `warp_cast` flags already exist
-   (see `add_card`), and Warp is the cast-from-a-nonhand-zone analogue (`castable_from_exile` + the unified
-   exile-cast offer loop from S15, `d079eb0`). Likely = a graveyard analogue of that offer loop + exile-on-
-   resolve. Read the S15 impulse-play commits first — much of the plumbing is shared.
+2. **Flashback front-side caps** (S10 the cap is already DONE — offer + mana-cost + exile-on-resolve all wired;
+   5 cards authored). The 5 UNAUTHORED SOS flashback cards each need a small FRONT-side cap (verified oracle):
+   **Practiced Offense** `{2}{W}` = "counter on *each* creature target player controls" (target-PLAYER +
+   ForEach) + "target creature gains your CHOICE of double strike or lifelink" (modal keyword pick);
+   **Antiquities on the Loose** `{1}{W}{W}` = 2 Spirit tokens + "if cast from other than hand" (cast-zone
+   condition — note S10 sets `flashback_cast`, so the flag exists) + ForEach counter on your Spirits;
+   **Daydream** `{W}` = self-blink (exile a creature you control, return it with a +1/+1 counter — needs an
+   exiled-card reference, like `Searched` but for exile); **Group Project** `{1}{W}` = trivial 2/2 Spirit
+   front BUT its flashback cost is **non-mana** ("tap three creatures") — `Ability::Flashback{cost:ManaCost}`
+   can't hold it (would need a `Cost`-typed flashback); **Flashback** (the card) `{R}` = *grants* flashback to
+   a gy card (dynamic ability grant — bigger). Pick Practiced Offense or Antiquities (both mana-flashback).
 3. **S2 Look-and-pick** (⏳, **8** cards) — "look at top N, put one/some in hand, rest on bottom." Distinct
    from S15 impulse (which plays from exile); this is a hidden top-N selection into hand. Unlocks
    **Geometer's Arthropod** (with S21 done + reading the *triggering spell's* X for the "top X" count).
@@ -123,7 +129,7 @@ each cap unlocks the bracketed count. `⏳` = not yet built.
 | **S5** Opus | `SpellCast(I/S you control)` trigger + `ValueExpr::ManaSpentOnTrigger` + `≥5` condition | 13 | ✅ **DONE** `e85771e` |
 | **S8** Repartee | `SpellCast(I/S you control **that targets a creature**)` trigger (inspect cast targets) | 12 | ✅ **DONE** |
 | **S4** Infusion | per-turn per-player "gained life this turn" state + a `Condition` reading it | 12 | ✅ **DONE** `89b3581` |
-| **S10** Flashback | alt-cast from graveyard for a flashback cost, then exile (Warp-analogue) | 11 | ⏳ |
+| **S10** Flashback | alt-cast from graveyard for a flashback cost, then exile (Warp-analogue) | 11 | ✅ **DONE** (offer at priority.rs ~1075 `flashback_cost`/`CastVariant::Flashback`; exile-on-resolve ~1718; `Ability::Flashback{cost:ManaCost}`). **5 cards authored** (Dig Site Inventory, Duel Tactics, Molten Note, Pursue the Past, Tome Blast). ⚠️ **cost is mana-only** — a non-mana flashback cost (Group Project's "tap three creatures") is NOT expressible; a card that *grants* flashback (the card "Flashback") needs a dynamic-ability-grant cap. Remaining 5 unauthored each need a FRONT-side cap (see handoff). |
 | **S6** Increment | `SpellCast(you)` trigger + condition "mana spent > this creature's power OR toughness" | 9 | ✅ **DONE** |
 | **S7** Converge | `ValueExpr::ColorsOfManaSpent` (ETB counters / X in Converge spells) | 9 | ✅ **DONE** `ba8c183` (`ValueExpr::ColorsSpent` — `Object.colors_spent` recorded at cast; consumers Arcane Omens, Together as One, Magmablood/Transcendent/Wildgrowth Archaic) |
 | **S9** Graveyard-leave | "cards leave your graveyard" trigger + "a card left your graveyard this turn" cond | 8 | ✅ **DONE** (flag `f9b5584` + trigger: LeftGraveyard event snapshot in resolve_effect → Spirit Mascot, Owlin Historian, Garrison Excavator) |
