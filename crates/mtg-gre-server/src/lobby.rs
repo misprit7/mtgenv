@@ -269,6 +269,13 @@ pub async fn create_game(State(lobby): State<Arc<Lobby>>, Json(req): Json<Create
     if req.seats.len() < 2 || req.seats.len() > 4 {
         return (StatusCode::BAD_REQUEST, "a game needs 2-4 seats").into_response();
     }
+    // Reject a typo'd/unknown deck up front (preset or custom) rather than silently falling back to
+    // the demo deck at game start.
+    for s in &req.seats {
+        if driver::resolve_deck(&s.deck).is_none() {
+            return (StatusCode::BAD_REQUEST, format!("unknown deck '{}'", s.deck)).into_response();
+        }
+    }
     let id = lobby.next_id.fetch_add(1, Ordering::Relaxed);
     let name = req.name.unwrap_or_else(|| format!("Game #{id}"));
     let nseats = req.seats.len();

@@ -70,8 +70,9 @@ pub fn app() -> Router {
         )
         .route("/api/replays", get(list_replays))
         .route("/api/replays/:id", get(get_replay))
-        .route("/api/decks", get(list_decks))
-        .route("/api/decks/:name", get(get_deck));
+        .route("/api/decks", get(list_decks).post(create_deck))
+        .route("/api/decks/:name", get(get_deck).put(update_deck).delete(delete_deck))
+        .route("/api/cards", get(card_catalog));
     if dist.join("index.html").exists() {
         // Built Vite front end available — serve its /assets/* (and any stray path) via ServeDir.
         router = router.fallback_service(ServeDir::new(dist).fallback(get(embedded)));
@@ -256,13 +257,51 @@ struct DeckCard {
 }
 
 #[derive(serde::Serialize)]
-struct DeckSummary { name: String, total: u32, partial: u32 }
+struct DeckSummary { name: String, total: u32, partial: u32, custom: bool }
 
 #[derive(serde::Serialize)]
-struct DeckDetail { name: String, total: u32, partial: u32, cards: Vec<DeckCard> }
+struct DeckDetail { name: String, total: u32, partial: u32, custom: bool, cards: Vec<DeckCard> }
+
+/// Project a `CardDef` (by grp_id, with a copy `count`) into the wire [`DeckCard`]. The single
+/// place a card becomes JSON — shared by the deck viewer ([`build_deck`]) and the builder's card
+/// catalog ([`card_catalog`]) so both speak the exact same shape.
+fn card_view(grp: u32, count: u32, def: &mtg_core::cards::CardDef) -> DeckCard {
+    let c = &def.chars;
+    let mana_value = c
+        .mana_cost
+        .as_ref()
+        .map(|m| m.generic + m.colored.values().sum::<u32>())
+        .unwrap_or(0);
+    DeckCard {
+        count,
+        grp_id: grp,
+        name: c.name.clone(),
+        mana_cost: c.mana_cost.clone(),
+        mana_value,
+        colors: c.colors.clone(),
+        card_types: c.card_types.iter().map(|t| t.as_str().to_string()).collect(),
+        subtypes: c.subtypes.iter().map(|s| s.to_string()).collect(),
+        supertypes: c.supertypes.iter().map(|s| s.to_string()).collect(),
+        power: c.power,
+        toughness: c.toughness,
+        rules_text: def.text.clone(),
+        fully_implemented: def.fully_implemented,
+    }
+}
+
+/// The usual deck-view order: nonland first (by mana value then name), lands last.
+fn deck_sort(cards: &mut [DeckCard]) {
+    cards.sort_by(|a, b| {
+        let is_land = |c: &DeckCard| c.card_types.iter().any(|t| t == "Land");
+        is_land(a)
+            .cmp(&is_land(b))
+            .then(a.mana_value.cmp(&b.mana_value))
+            .then_with(|| a.name.cmp(&b.name))
+    });
+}
 
 /// Resolve a deck name to (total, partial-count, grouped+sorted card list) using `resolve_deck`
-/// (the picker's deck names) and the engine's `starter_db` for each card's characteristics.
+/// (presets + customs) and the engine's `starter_db` for each card's characteristics.
 fn build_deck(name: &str) -> Option<(u32, u32, Vec<DeckCard>)> {
     use std::collections::BTreeMap;
     let ids = driver::resolve_deck(name)?;
@@ -276,61 +315,115 @@ fn build_deck(name: &str) -> Option<(u32, u32, Vec<DeckCard>)> {
         .iter()
         .filter_map(|(&g, &count)| {
             let def = db.get(g)?;
-            let c = &def.chars;
             if !def.fully_implemented {
                 partial += count;
             }
-            let mana_value = c
-                .mana_cost
-                .as_ref()
-                .map(|m| m.generic + m.colored.values().sum::<u32>())
-                .unwrap_or(0);
-            Some(DeckCard {
-                count,
-                grp_id: g,
-                name: c.name.clone(),
-                mana_cost: c.mana_cost.clone(),
-                mana_value,
-                colors: c.colors.clone(),
-                card_types: c.card_types.iter().map(|t| t.as_str().to_string()).collect(),
-                subtypes: c.subtypes.iter().map(|s| s.to_string()).collect(),
-                supertypes: c.supertypes.iter().map(|s| s.to_string()).collect(),
-                power: c.power,
-                toughness: c.toughness,
-                rules_text: def.text.clone(),
-                fully_implemented: def.fully_implemented,
-            })
+            Some(card_view(g, count, def))
         })
         .collect();
-    // Nonland first by mana value then name; lands last (the usual deck-view order).
-    cards.sort_by(|a, b| {
-        let is_land = |c: &DeckCard| c.card_types.iter().any(|t| t == "Land");
-        is_land(a)
-            .cmp(&is_land(b))
-            .then(a.mana_value.cmp(&b.mana_value))
-            .then_with(|| a.name.cmp(&b.name))
-    });
+    deck_sort(&mut cards);
     let total = counts.values().sum();
     Some((total, partial, cards))
 }
 
-/// `GET /api/decks` — the playable presets the picker offers, with card/partial counts.
+/// `GET /api/decks` — every deck the picker offers, with card/partial counts. Built-in **presets**
+/// (`custom: false`, read-only) first, then user-built **custom** decks (`custom: true`).
 async fn list_decks() -> impl IntoResponse {
-    let decks: Vec<DeckSummary> = driver::DECK_NAMES
+    let mut decks: Vec<DeckSummary> = driver::DECK_NAMES
         .iter()
-        .filter_map(|&n| build_deck(n).map(|(total, partial, _)| DeckSummary { name: n.to_string(), total, partial }))
+        .filter_map(|&n| {
+            build_deck(n).map(|(total, partial, _)| DeckSummary {
+                name: n.to_string(),
+                total,
+                partial,
+                custom: false,
+            })
+        })
         .collect();
+    for d in crate::custom_decks::list() {
+        if let Some((total, partial, _)) = build_deck(&d.name) {
+            decks.push(DeckSummary { name: d.name, total, partial, custom: true });
+        }
+    }
     axum::Json(decks)
 }
 
-/// `GET /api/decks/:name` — a deck's full grouped card list for the lobby deck viewer.
+/// `GET /api/decks/:name` — a deck's full grouped card list (preset or custom) for the viewer /
+/// builder-edit flow. `custom` marks whether it's an editable user deck.
 async fn get_deck(axum::extract::Path(name): axum::extract::Path<String>) -> axum::response::Response {
     match build_deck(&name) {
         Some((total, partial, cards)) => {
-            axum::Json(DeckDetail { name, total, partial, cards }).into_response()
+            let custom = crate::custom_decks::exists(&name);
+            axum::Json(DeckDetail { name, total, partial, custom, cards }).into_response()
         }
         None => (axum::http::StatusCode::NOT_FOUND, "no such deck").into_response(),
     }
+}
+
+/// `POST /api/decks` — create a new **custom** deck. Body is the deck JSON
+/// (`{ "name", "cards": [{ "grp_id", "count" }] }`). Returns the deck's summary on success, or
+/// `400` with a human-readable reason (unknown card, empty, too big/small, preset-name clash…).
+async fn create_deck(
+    axum::Json(deck): axum::Json<crate::custom_decks::CustomDeck>,
+) -> axum::response::Response {
+    save_deck_response(deck, false)
+}
+
+/// `PUT /api/decks/:name` — replace an existing custom deck's contents. The URL name is
+/// authoritative (rename isn't supported here). `404`/`400` if it isn't an existing custom deck.
+async fn update_deck(
+    axum::extract::Path(name): axum::extract::Path<String>,
+    axum::Json(mut deck): axum::Json<crate::custom_decks::CustomDeck>,
+) -> axum::response::Response {
+    deck.name = name;
+    save_deck_response(deck, true)
+}
+
+/// Shared create/update tail: persist the deck (validating first) and return its summary or the
+/// validation error.
+fn save_deck_response(deck: crate::custom_decks::CustomDeck, overwrite: bool) -> axum::response::Response {
+    match crate::custom_decks::save(deck, overwrite) {
+        Ok(saved) => {
+            let (total, partial) =
+                build_deck(&saved.name).map(|(t, p, _)| (t, p)).unwrap_or((saved.total(), 0));
+            axum::Json(DeckSummary { name: saved.name, total, partial, custom: true }).into_response()
+        }
+        Err(e) => (axum::http::StatusCode::BAD_REQUEST, e).into_response(),
+    }
+}
+
+/// `DELETE /api/decks/:name` — delete a custom deck. Presets are read-only (`403`); a name that
+/// isn't a known custom deck is `404`.
+async fn delete_deck(
+    axum::extract::Path(name): axum::extract::Path<String>,
+) -> axum::response::Response {
+    if driver::is_preset_name(&name) {
+        return (axum::http::StatusCode::FORBIDDEN, "presets are read-only").into_response();
+    }
+    if crate::custom_decks::delete(&name) {
+        axum::http::StatusCode::NO_CONTENT.into_response()
+    } else {
+        (axum::http::StatusCode::NOT_FOUND, "no such custom deck").into_response()
+    }
+}
+
+/// `GET /api/cards` — the deck builder's card catalog: every card that can appear in a game (the
+/// union of all preset + custom decks, i.e. [`driver::deck_card_pool`]), each projected into the
+/// same [`DeckCard`] shape as the deck viewer. `count` is meaningless here (always 1) — the builder
+/// treats these as templates. This set is exactly the art-covered pool, so every catalog card has
+/// an image.
+///
+/// NOTE: this is the *playable pool*, not the full registered-card DB — the DB holds more cards, but
+/// `CardDb` exposes no iterator today and cards outside the pool have no baked art. Widening this to
+/// the whole DB would need a `CardDb::iter()` in mtg-core (a separate crate).
+async fn card_catalog() -> impl IntoResponse {
+    let db = mtg_core::cards::starter_db();
+    let mut cards: Vec<DeckCard> = driver::deck_card_pool()
+        .into_iter()
+        .filter_map(|(grp, _)| db.get(grp).map(|def| card_view(grp, 1, def)))
+        .collect();
+    deck_sort(&mut cards);
+    axum::Json(cards)
 }
 
 /// Snapshot a seat's **starting decklist** from the freshly-built `GameState` (before the engine

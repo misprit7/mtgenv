@@ -138,11 +138,12 @@ pub fn resolve(name: &str) -> Option<Vec<u32>> {
     get(name).map(|d| d.grp_ids())
 }
 
-/// Validate + canonicalize a deck, persist it to `data/decks/<name>.json`, and update the in-memory
-/// store. `overwrite` gates the mode: `false` = create (name must be new), `true` = update (name
-/// must already exist). Returns the stored (canonicalized) deck, or an error message suitable as a
-/// `400` body. In-memory state is only updated after the disk write succeeds.
-pub fn save(mut deck: CustomDeck, overwrite: bool) -> Result<CustomDeck, String> {
+/// Validate + **canonicalize** a deck without touching disk: trim/validate the name, reject preset
+/// clashes, merge duplicate grp_id lines (dropping zero counts), reject unknown cards / empty /
+/// too-small / too-big decks, and enforce the create-vs-update mode against the in-memory store.
+/// Returns the canonical deck (sorted, merged lines) or a `400`-suitable error. Pure aside from
+/// reading the store + card DB, so it's unit-testable. [`save`] runs this, then persists.
+pub fn validate(mut deck: CustomDeck, overwrite: bool) -> Result<CustomDeck, String> {
     deck.name = deck.name.trim().to_string();
     if !valid_name(&deck.name) {
         return Err(format!(
@@ -194,7 +195,15 @@ pub fn save(mut deck: CustomDeck, overwrite: bool) -> Result<CustomDeck, String>
         .into_iter()
         .map(|(grp_id, count)| CardCount { grp_id, count })
         .collect();
+    Ok(deck)
+}
 
+/// Validate + canonicalize a deck ([`validate`]), persist it to `data/decks/<name>.json`, and update
+/// the in-memory store. `overwrite` gates create (name must be new) vs update (name must exist).
+/// Returns the stored deck, or a `400`-suitable error. In-memory state is only updated after the
+/// disk write succeeds.
+pub fn save(deck: CustomDeck, overwrite: bool) -> Result<CustomDeck, String> {
+    let deck = validate(deck, overwrite)?;
     // Persist first; only touch memory if the write succeeds.
     std::fs::create_dir_all(dir()).map_err(|e| format!("cannot create deck store: {e}"))?;
     let json = serde_json::to_string_pretty(&deck).map_err(|e| e.to_string())?;
@@ -210,4 +219,76 @@ pub fn delete(name: &str) -> bool {
     }
     let _ = std::fs::remove_file(file_path(name));
     true
+}
+
+#[cfg(test)]
+mod tests {
+    //! These exercise the disk-free [`validate`] path only (never [`save`]), so they don't touch
+    //! the real `data/decks` store. The persist + survive-restart behaviour is covered by the
+    //! end-to-end server verification.
+    use super::*;
+    use expect_test::expect;
+    use mtg_core::cards::grp::{FOREST, GRIZZLY_BEARS};
+
+    fn cc(grp_id: u32, count: u32) -> CardCount {
+        CardCount { grp_id, count }
+    }
+    fn deck(name: &str, cards: Vec<CardCount>) -> CustomDeck {
+        CustomDeck { name: name.into(), cards }
+    }
+    fn render(r: Result<CustomDeck, String>) -> String {
+        match r {
+            Ok(d) => {
+                let lines: Vec<String> =
+                    d.cards.iter().map(|c| format!("{}x grp{}", c.count, c.grp_id)).collect();
+                format!("OK '{}' [{}] total={}", d.name, lines.join(", "), d.total())
+            }
+            Err(e) => format!("ERR {e}"),
+        }
+    }
+
+    #[test]
+    fn name_rules() {
+        assert!(valid_name("mono-blue"));
+        assert!(valid_name("Deck_1"));
+        assert!(!valid_name(""), "empty");
+        assert!(!valid_name("has space"), "space");
+        assert!(!valid_name("emoji🔥"), "non-ascii");
+        assert!(!valid_name(&"x".repeat(MAX_NAME_LEN + 1)), "too long");
+    }
+
+    #[test]
+    fn expand_grp_ids() {
+        let d = deck("d", vec![cc(FOREST, 3), cc(GRIZZLY_BEARS, 2)]);
+        assert_eq!(d.grp_ids(), vec![FOREST, FOREST, FOREST, GRIZZLY_BEARS, GRIZZLY_BEARS]);
+        assert_eq!(d.total(), 5);
+    }
+
+    #[test]
+    fn validate_merges_duplicate_lines_and_canonicalizes() {
+        // Two FOREST lines merge into one; result is sorted by grp_id (FOREST=4 before BEARS=10).
+        let d = deck("mine", vec![cc(FOREST, 4), cc(GRIZZLY_BEARS, 4), cc(FOREST, 4)]);
+        expect![[r#"OK 'mine' [8x grp4, 4x grp10] total=12"#]].assert_eq(&render(validate(d, false)));
+    }
+
+    #[test]
+    fn validate_rejects_bad_decks() {
+        let empty = render(validate(deck("mine", vec![]), false));
+        let unknown = render(validate(deck("mine", vec![cc(999_999, 10)]), false));
+        let too_small = render(validate(deck("mine", vec![cc(FOREST, 3)]), false));
+        let preset = render(validate(deck("burn", vec![cc(FOREST, 10)]), false));
+        let bad_name = render(validate(deck("has space", vec![cc(FOREST, 10)]), false));
+        let update_missing = render(validate(deck("nope", vec![cc(FOREST, 10)]), true));
+        expect![[r#"
+            empty:          ERR deck is empty
+            unknown:        ERR unknown card (grp_id 999999)
+            too_small:      ERR deck has 3 card(s); need at least 7 to draw an opening hand
+            preset:         ERR 'burn' is a built-in preset — pick another name
+            bad_name:       ERR deck name must be 1–40 characters of letters, digits, '-' or '_' (no spaces)
+            update_missing: ERR no custom deck named 'nope'
+        "#]]
+        .assert_eq(&format!(
+            "empty:          {empty}\nunknown:        {unknown}\ntoo_small:      {too_small}\npreset:         {preset}\nbad_name:       {bad_name}\nupdate_missing: {update_missing}\n"
+        ));
+    }
 }
