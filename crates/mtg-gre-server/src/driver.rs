@@ -226,10 +226,12 @@ pub fn run_demo_game(agents: Vec<Box<dyn Agent>>, seed: u64) -> Outcome {
     run_state(demo_state(seed), agents)
 }
 
-/// The deck names this server offers, in picker order. The first three are the engine's trivial
-/// starter piles (`mtg_core::cards::preset_deck`); `"counters"` is the richer server-local deck
-/// built by [`counters_deck`]. Shared source of truth for the lobby/CLI pickers.
-pub const DECK_NAMES: &[&str] = &["selesnya", "counters", "demo", "burn", "bears"];
+/// The deck names this server offers, in picker order. `"counters"` is the richer server-local
+/// deck built by [`counters_deck`]; the rest resolve to engine presets via
+/// [`mtg_core::cards::preset_deck`] (`"selesnya"` landfall, the trivial `demo`/`burn`/`bears`
+/// piles, and the `"heralds"` RL-sanity deck — 20 Island + 40 Mist-Cloaked Herald). Shared source
+/// of truth for the lobby/CLI pickers.
+pub const DECK_NAMES: &[&str] = &["selesnya", "counters", "demo", "burn", "bears", "heralds"];
 
 /// Every `(grp_id, exact card name)` that can appear in a game this server serves: the union of all
 /// selectable decks ([`DECK_NAMES`]) resolved against the engine's [`starter_db`]. Sorted, unique.
