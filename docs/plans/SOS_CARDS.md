@@ -89,14 +89,14 @@ caps (each is a small, card-agnostic interpreter arm lowering to an already-exis
 | **E1** | `Effect::MoveZone` (bounce / return-to-hand / reanimate) | Zealous Lorecaster, Banishing Betrayal, Proctor's Gaze, Prismari Charm, Matterbending Mage, Pull from the Grave, Moment of Reckoning, Lorehold Charm | ✅ **DONE** `0e85b76` (single-target; multi-target "up to two" still TODO) |
 | **E2** | `Effect::Counter` (counter target spell), respecting `CantBeCountered` | Essence Scatter, Brush Off, Mana Sculpt, Quandrix Charm | ✅ **DONE** `eb2b364` (+ stack-zone static gathering; closed Surrak's deferral) |
 | **E3** | `Effect::Discard` (loot "then discard a card"; "target player discards") | Traumatic Critique, Stadium Tidalmage, Charging Strifeknight, Rubble Rouser, Colossus, Rapturous Moment, Borrowed Knowledge, Send in the Pest | ✅ **DONE** `506baf9` |
-| **E4** | `Effect::Sacrifice` (as an effect — "each player sacrifices", "sacrifice two lands") | Social Snub, Planar Engineering, Witherbloom Charm, Pox Plague | ⏳ |
+| **E4** | `Effect::Sacrifice` (as an effect — "each player sacrifices", "sacrifice two lands") | Planar Engineering, Witherbloom Charm, Social Snub (needs S14 copy too), Pox Plague | ✅ **DONE** `b5ea234` (per-player: Controller / EachPlayer / EachOpponent) |
 | **E5** | `Effect::Repeat` | (few) | ⏳ |
 | **E6** | `Effect::Distribute` | (few) | ⏳ |
 
 **Loud guard (`8604b34`):** `materialize()` is now an **exhaustive** match — a defined-but-unwired
 `Effect` leaf `debug_assert!`s loudly in debug/tests instead of silently no-oping (the bug class that
-hid Traumatic Critique's discard), and a NEW IR variant with no arm is a *compile* error. The
-remaining loud-assert leaves are E4 `Sacrifice`, E5 `Repeat`, E6 `Distribute`, and `Native` (no runtime yet).
+hid Traumatic Critique's discard), and a NEW IR variant with no arm is a *compile* error. The only
+remaining loud-assert leaves are E5 `Repeat`, E6 `Distribute`, and `Native` (no runtime yet).
 
 **Wired today (safe for T2 authoring):** DealDamage, Draw, Destroy, Exile, GainLife, LoseLife, PumpPT,
 GrantKeyword, GrantQualification, BecomeCreature, AddMana, PutCounters, CreateToken, Fight, Search,
@@ -225,7 +225,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Moment of Reckoning | - | `sos` | ⏳ | modal choose-up-to-four destroy/reanimate |
 | Noxious Newt | - | `sos` | ✅ done | deathtouch plus mana ability |
 | Oracle's Restoration | - | `sos` | ✅ done | pump, draw, gain life |
-| Planar Engineering | - | `sos` | ⏳ | sacrifice lands, search basics onto battlefield |
+| Planar Engineering | - | `sos` | ✅ done | sacrifice lands, search basics onto battlefield |
 | Proctor's Gaze | - | `sos` | ✅ done | bounce plus search basic to battlefield |
 | Pterafractyl | - | `sos` | ⏳ | enters with X counters, ETB gain life |
 | Pull from the Grave | - | `sos` | ⏳ | return creatures to hand, gain life |
@@ -248,7 +248,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Traumatic Critique | - | `sos` | ✅ done | X damage, draw then discard |
 | Vibrant Outburst | - | `sos` | ✅ done | damage plus tap creature |
 | Wander Off | - | `sos` | ✅ done | exile target creature |
-| Witherbloom Charm | - | `sos` | ⏳ | modal sac-draw/life/destroy |
+| Witherbloom Charm | - | `sos` | ✅ done | modal sac-draw/life/destroy |
 | Zealous Lorecaster | - | `sos` | ✅ done | return IS from graveyard |
 
 ### T3 — 142 cards
