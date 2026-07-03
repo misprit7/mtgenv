@@ -62,6 +62,12 @@ class FleetSelfPlayVecEnv(VecEnv):
         self._cardid_dim = probe._cardid_dim
         self._cardid_unknown = probe._cardid_unknown
         self._cardid_tables = probe._cardid_tables
+        # grp_id → category LUT (vectorizes the one-hot decode — no per-row Python loop). Ids past the
+        # LUT (a rare unseen token) or absent map to the "unknown" slot; id 0 (empty row) → no one-hot.
+        maxg = max(self._cardid_index) if self._cardid_index else 0
+        self._id2cat = np.full(maxg + 1, self._cardid_unknown, dtype=np.int64)
+        for g, i in self._cardid_index.items():
+            self._id2cat[g] = i
         super().__init__(num_envs, observation_space, action_space)
         self._opp = _PooledBatchedOpponent(pool_dir, p_random=p_random, rng_seed=seed, device=device)
         self._seed = (int(seed) * 2862933555777941757 + 3037000493) & _U64
@@ -92,12 +98,14 @@ class FleetSelfPlayVecEnv(VecEnv):
         for name, rows, cols, is_int in _SPEC:
             arr = np.frombuffer(t[name], dtype=np.int64 if is_int else np.float32)
             obs[name] = arr.reshape((n, cols) if rows == 1 else (n, rows, cols)).copy()
+        lut = self._id2cat
         for tbl, R in self._cardid_tables.items():
-            ids = obs[f"{tbl}_ids"]  # (n, R)
-            oh = np.zeros((n, R, self._cardid_dim), dtype=np.float32)
-            for env, row in np.argwhere(ids != 0):  # only present rows (few) — cheap
-                oh[env, row, self._cardid_index.get(int(ids[env, row]), self._cardid_unknown)] = 1.0
-            obs[f"{tbl}_cardid"] = oh
+            ids = obs[f"{tbl}_ids"].ravel()  # (n*R,)
+            cats = np.where(ids < len(lut), lut[np.clip(ids, 0, len(lut) - 1)], self._cardid_unknown)
+            oh = np.zeros((ids.size, self._cardid_dim), dtype=np.float32)
+            present = np.flatnonzero(ids != 0)  # id 0 = empty row → all-zero one-hot
+            oh[present, cats[present]] = 1.0
+            obs[f"{tbl}_cardid"] = oh.reshape(n, R, self._cardid_dim)
         mask = np.frombuffer(t["mask"], dtype=np.uint8).reshape(n, self.action_dim).astype(bool).copy()
         seat = np.frombuffer(t["seat"], dtype=np.int32).copy()
         terminal = np.frombuffer(t["terminal"], dtype=np.int32).astype(bool).copy()
