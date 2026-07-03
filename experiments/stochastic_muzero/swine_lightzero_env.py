@@ -32,6 +32,10 @@ from ding.torch_utils import to_ndarray
 
 from mtgenv_gym import MtgEnv
 
+# obs["globals"] indices (match python/mtgenv_gym/batched_selfplay.py — the PPO training's own layout).
+_G_MY_LIFE, _G_MY_HAND, _G_MY_BF = 16, 18, 22
+_G_OPP_LIFE, _G_OPP_HAND, _G_OPP_BF = 29, 31, 35
+
 
 @ENV_REGISTRY.register('mtg_swine')
 class MtgSwineEnv(BaseEnv):
@@ -48,6 +52,14 @@ class MtgSwineEnv(BaseEnv):
         max_decisions=3000,
         # (int) Fixed seat the learner plays (reward is from this seat's perspective).
         agent_seat=0,
+        # (float) Potential-based reward-shaping coefficient (0.0 = OFF = pure sparse ±1 env, the
+        # default). >0 adds F = gamma*Phi(s') - Phi(s) with the SAME card-dominant Phi the PPO
+        # training uses (batched_selfplay._phi_batch): 0.5*tanh(dcards/4)+0.3*tanh(dpower/6)+
+        # 0.2*tanh(dlife/10). Policy-invariant (Phi(terminal)=0); a cold-start crutch for MuZero's
+        # value net (eval is always the raw ±1). See README "M3 cold-start".
+        reward_shaping=0.0,
+        # (float) gamma used in the shaping term; match the policy discount_factor.
+        shaping_gamma=0.997,
     )
 
     @classmethod
@@ -65,6 +77,9 @@ class MtgSwineEnv(BaseEnv):
         self._opponent = cfg.get('opponent', 'random')
         self._max_decisions = int(cfg.get('max_decisions', 3000))
         self._agent_seat = int(cfg.get('agent_seat', 0))
+        self._shaping = float(cfg.get('reward_shaping', 0.0))
+        self._shaping_gamma = float(cfg.get('shaping_gamma', 0.997))
+        self._prev_phi = 0.0
 
         # Build one env up front to read the flat obs dimension + a stable key order for flattening
         # (Python dict insertion order is deterministic, so the concat order is fixed by these keys).
@@ -93,6 +108,19 @@ class MtgSwineEnv(BaseEnv):
         return np.concatenate(
             [np.asarray(obs_dict[k], dtype=np.float32).ravel() for k in self._obs_keys]
         ).astype(np.float32)
+
+    def _phi(self, obs_dict) -> float:
+        """Single-env potential (card-dominant), mirroring batched_selfplay._phi_batch."""
+        g = np.asarray(obs_dict["globals"], dtype=np.float32)
+        dlife = g[_G_MY_LIFE] - g[_G_OPP_LIFE]
+        dcards = (g[_G_MY_HAND] + g[_G_MY_BF]) - (g[_G_OPP_HAND] + g[_G_OPP_BF])
+        bf = np.asarray(obs_dict["bf_feat"], dtype=np.float32)
+        present = bf[:, 0] > 0.5
+        mine = present & (bf[:, 1] > 0.5)
+        dpower = (bf[:, 2] * mine).sum() - (bf[:, 2] * (present & ~mine)).sum()
+        return float(0.5 * np.tanh(dcards / 4.0)
+                     + 0.3 * np.tanh(dpower / 6.0)
+                     + 0.2 * np.tanh(dlife / 10.0))
 
     def _lz_obs(self, obs_dict, mask) -> dict:
         self._mask = np.asarray(mask, dtype=np.int8)
@@ -123,17 +151,31 @@ class MtgSwineEnv(BaseEnv):
 
         obs_dict, info = self._env.reset(seed=ep_seed)
         self._final_eval_reward = 0.0
+        if self._shaping:
+            self._prev_phi = self._phi(obs_dict)   # baseline for the first step's shaping term
         return self._lz_obs(obs_dict, info['action_mask'])
 
     def step(self, action):
         obs_dict, reward, terminated, truncated, info = self._env.step(int(action))
         done = bool(terminated or truncated)
+        # eval_episode_return stays RAW (±1) — the win/loss the evaluator reports is never shaped.
         self._final_eval_reward += float(reward)
+
+        train_reward = float(reward)
+        if self._shaping:
+            # F = gamma*Phi(s') - Phi(s); Phi(terminal) := 0 so the terminal transition uses -Phi(s).
+            if done:
+                f = -self._prev_phi
+            else:
+                phi_next = self._phi(obs_dict)
+                f = self._shaping_gamma * phi_next - self._prev_phi
+                self._prev_phi = phi_next
+            train_reward += self._shaping * f
 
         lz_obs = self._lz_obs(obs_dict, info['action_mask'])
         # Reward must be a 0-d scalar array (not shape (1,)): the buffer pads with np.array(0.) and
         # np.asarray of mixed (1,)+() shapes is inhomogeneous -> crash in _compute_target_reward_value.
-        rew = to_ndarray(float(reward)).astype(np.float32)
+        rew = to_ndarray(train_reward).astype(np.float32)
         out_info = {}
         if done:
             out_info['eval_episode_return'] = self._final_eval_reward

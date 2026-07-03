@@ -23,6 +23,11 @@ SMOKE = "--smoke" in sys.argv
 # Parallel collection across worker processes — the main throughput lever (collection is CPU/MCTS
 # bound, GPU sits ~15%). 'base' is serial. Verify workers can import this module + mtgenv_gym.
 SUBPROCESS = "--subprocess" in sys.argv
+# --shaping = the M3 cold-start remedy (v1.1): dense potential-based reward (card-dominant Phi, the
+# same one PPO uses) + a search-depth bump, to escape the "value=-0.8 everywhere" basin the pure
+# sparse-reward run fell into. Policy-invariant; eval is still raw ±1. Separate TB run (3.1).
+SHAPING = "--shaping" in sys.argv
+REWARD_SHAPING = 0.3 if SHAPING else 0.0
 
 # ── swine env-measured dims (see README M0) ──────────────────────────────────────────────────
 OBS_DIM = 2650          # flattened Dict obs (1966 spec + 684 card-id one-hots)
@@ -33,7 +38,7 @@ CHANCE_SPACE = 8        # VQ chance-code codebook size (learned, unsupervised)
 collector_env_num = 2 if SMOKE else 8
 n_episode = 2 if SMOKE else 8
 evaluator_env_num = 2 if SMOKE else 5
-num_simulations = 8 if SMOKE else 50
+num_simulations = 8 if SMOKE else (100 if SHAPING else 50)   # deeper search helps escape cold-start
 update_per_collect = 2 if SMOKE else 100
 batch_size = 32 if SMOKE else 256
 latent_state_dim = 64 if SMOKE else 256
@@ -43,7 +48,12 @@ reanalyze_ratio = 0.0
 # M3 real run keeps ckpt/data/log under the (gitignored) local tb/ dir; a symlink surfaces the TB
 # events under /tmp/mtgenv_tb/3.0-muzero-swine (the user's single versioned TensorBoard). New algo
 # family -> 3.0 major bump per house convention.
-exp_name = "tb/mtg_swine_stochastic_muzero_smoke" if SMOKE else "tb/3.0-muzero-swine"
+if SMOKE:
+    exp_name = "tb/mtg_swine_stochastic_muzero_smoke"
+elif SHAPING:
+    exp_name = "tb/3.1-muzero-swine-shaped"
+else:
+    exp_name = "tb/3.0-muzero-swine"
 
 swine_stochastic_muzero_config = dict(
     exp_name=exp_name,
@@ -53,6 +63,8 @@ swine_stochastic_muzero_config = dict(
         opponent='random',       # M3 self-play swaps in a frozen-self opponent
         max_decisions=3000,
         agent_seat=0,
+        reward_shaping=REWARD_SHAPING,   # 0.0 pure sparse (default); 0.3 with --shaping (v1.1)
+        shaping_gamma=0.997,
         collector_env_num=collector_env_num,
         evaluator_env_num=evaluator_env_num,
         n_evaluator_episode=evaluator_env_num,
