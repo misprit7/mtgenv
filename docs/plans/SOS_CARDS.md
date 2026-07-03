@@ -271,7 +271,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Brush Off | S12 | `sos` | ⏳ | conditional cost reduction if targets a spell |
 | Choreographed Sparks | S14 | `sos` | ⏳ | copy instant/sorcery or creature spell |
 | Colorstorm Stallion | S5,S14,S17 | `sos` | ⏳ | Ward cost + Opus + token-copy |
-| Comforting Counsel | S16 | `sos` | ⏳ | gain-life counter trigger + conditional anthem |
+| Comforting Counsel | S16 | `sos` | ✅ done | gain-life counter trigger + conditional anthem |
 | Conciliator's Duelist | S8 | `sos` | ⏳ | Repartee cast-targets-creature trigger |
 | Cuboid Colony | S6 | `sos` | ✅ done | Increment on flash flyer |
 | Daydream | S10 | `sos` | ⏳ | blink with counter + flashback |
