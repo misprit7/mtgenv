@@ -56,7 +56,7 @@ each cap unlocks the bracketed count. `⏳` = not yet built.
 | **S8** Repartee | `SpellCast(I/S you control **that targets a creature**)` trigger (inspect cast targets) | 12 | ✅ **DONE** |
 | **S4** Infusion | per-turn per-player "gained life this turn" state + a `Condition` reading it | 12 | ✅ **DONE** `89b3581` |
 | **S10** Flashback | alt-cast from graveyard for a flashback cost, then exile (Warp-analogue) | 11 | ⏳ |
-| **S6** Increment | `SpellCast(you)` trigger + condition "mana spent > this creature's power OR toughness" | 9 | ⏳ |
+| **S6** Increment | `SpellCast(you)` trigger + condition "mana spent > this creature's power OR toughness" | 9 | ✅ **DONE** |
 | **S7** Converge | `ValueExpr::ColorsOfManaSpent` (ETB counters / X in Converge spells) | 9 | ⏳ |
 | **S9** Graveyard-leave | "cards leave your graveyard" trigger + "a card left your graveyard this turn" cond | 8 | ⏳ |
 | **S2** Look-and-pick | look at top N, put one/some in hand, rest on bottom (impulse selection) | 8 | ⏳ |
@@ -273,7 +273,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Colorstorm Stallion | S5,S14,S17 | `sos` | ⏳ | Ward cost + Opus + token-copy |
 | Comforting Counsel | S16 | `sos` | ⏳ | gain-life counter trigger + conditional anthem |
 | Conciliator's Duelist | S8 | `sos` | ⏳ | Repartee cast-targets-creature trigger |
-| Cuboid Colony | S6 | `sos` | ⏳ | Increment on flash flyer |
+| Cuboid Colony | S6 | `sos` | ✅ done | Increment on flash flyer |
 | Daydream | S10 | `sos` | ⏳ | blink with counter + flashback |
 | Deluge Virtuoso | S3,S5 | `sos` | ⏳ | stun counter ETB + Opus trigger |
 | Diary of Dreams | S12 | `sos` | ⏳ | activation cost scales down per counter |
@@ -306,7 +306,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Growth Curve | S20 | `sos` | ⏳ | double +1/+1 counters on a target |
 | Hardened Academic | S9 | `sos` | ⏳ | cards-leave-graveyard trigger grants counter |
 | Homesickness | S3 | `sos` | ⏳ | draw, tap, stun counters |
-| Hungry Graffalon | S6 | `sos` | ⏳ | Increment mechanic |
+| Hungry Graffalon | S6 | `sos` | ✅ done | Increment mechanic |
 | Hydro-Channeler | S13 | `sos` | ⏳ | mana only for instants/sorceries |
 | Imperious Inkmage | S1 | `sos` | ✅ done | ETB surveil 2 |
 | Informed Inkwright | S8 | `sos` | ✅ done | Repartee makes Inkling token |
@@ -377,7 +377,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Teacher's Pest | S18 | `sos` | ⏳ | {B}{G} return this from graveyard |
 | Tenured Concocter | S4 | `sos` | ✅ done | Infusion: gained-life-this-turn condition |
 | Tester of the Tangential | S6 | `sos` | ⏳ | Increment trigger |
-| Textbook Tabulator | S1,S6 | `sos` | ⏳ | Increment plus surveil 2 |
+| Textbook Tabulator | S1,S6 | `sos` | ✅ done | Increment plus surveil 2 |
 | The Dawning Archaic | S10,S12 | `sos` | ⏳ | cast from graveyard; count-based cost reduction |
 | Thornfist Striker | S4,S17 | `sos` | ⏳ | Ward cost plus Infusion |
 | Thunderdrum Soloist | S5 | `sos` | ✅ done | Opus cast-IS trigger, mana spent |
