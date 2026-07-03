@@ -2,6 +2,7 @@
 
 use crate::cards::CardDb;
 
+pub mod aberrant_manawurm;
 pub mod abstract_paintmage;
 pub mod additive_evolution;
 pub mod antiquities_on_the_loose;
@@ -86,6 +87,7 @@ pub mod pterafractyl;
 pub mod pull_from_the_grave;
 pub mod pursue_the_past;
 pub mod rapturous_moment;
+pub mod rancorous_archaic;
 pub mod rearing_embermare;
 pub mod rapier_wit;
 pub mod rehearsed_debater;
@@ -113,9 +115,11 @@ pub mod thunderdrum_soloist;
 pub mod transcendent_archaic;
 pub mod together_as_one;
 pub mod tome_blast;
+pub mod thornfist_striker;
 pub mod titans_grave;
 pub mod tenured_concocter;
 pub mod textbook_tabulator;
+pub mod topiary_lecturer;
 pub mod tragedy_feaster;
 pub mod traumatic_critique;
 pub mod ulna_alley_shopkeep;
@@ -129,6 +133,7 @@ pub mod witherbloom_charm;
 pub mod zealous_lorecaster;
 
 pub fn register(db: &mut CardDb) {
+    aberrant_manawurm::register(db);
     abstract_paintmage::register(db);
     additive_evolution::register(db);
     antiquities_on_the_loose::register(db);
@@ -213,6 +218,7 @@ pub fn register(db: &mut CardDb) {
     pull_from_the_grave::register(db);
     pursue_the_past::register(db);
     rapturous_moment::register(db);
+    rancorous_archaic::register(db);
     rearing_embermare::register(db);
     rapier_wit::register(db);
     rehearsed_debater::register(db);
@@ -240,9 +246,11 @@ pub fn register(db: &mut CardDb) {
     transcendent_archaic::register(db);
     together_as_one::register(db);
     tome_blast::register(db);
+    thornfist_striker::register(db);
     titans_grave::register(db);
     tenured_concocter::register(db);
     textbook_tabulator::register(db);
+    topiary_lecturer::register(db);
     tragedy_feaster::register(db);
     traumatic_critique::register(db);
     ulna_alley_shopkeep::register(db);
