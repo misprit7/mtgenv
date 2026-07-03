@@ -129,3 +129,20 @@ pub struct TokenSpec {
     /// as their defining data, not name-matched by the core).
     pub grp_id: u32,
 }
+
+/// CR 707.9e "except" overrides applied to a **token that's a copy of a permanent**. The copy
+/// snapshots the source's *copiable* characteristics (its base `chars`; **not** counters, damage,
+/// auras, or other continuous effects — CR 707.2), then these overrides are layered on. All fields
+/// empty (`Default`) = a plain copy (e.g. Colorstorm Stallion copies itself unchanged). Card-agnostic
+/// data, so it lives in the Effect IR (Debug/Clone), not in serialized state.
+#[derive(Debug, Clone, Default)]
+pub struct TokenCopyMods {
+    /// Card types the copy gains "in addition to its other types" (e.g. Applied Geometry's Creature).
+    pub add_card_types: Vec<CardType>,
+    /// Subtypes the copy gains (e.g. Applied Geometry's Fractal).
+    pub add_subtypes: Vec<Subtype>,
+    /// Overrides the copy's base power/toughness (e.g. "it's a 0/0 …"), before any counters.
+    pub set_power_toughness: Option<(i32, i32)>,
+    /// Counters the copy enters with, evaluated at resolution (e.g. six +1/+1 counters).
+    pub counters: Vec<(CounterKind, ValueExpr)>,
+}

@@ -1015,6 +1015,49 @@ impl EngineCore {
                     });
                 }
             }
+            // C6-copy: create a token that's a copy of a permanent (CR 707.9e / 111.3). Snapshot the
+            // source's copiable characteristics (its base `chars` — NOT counters/damage/auras/other
+            // continuous effects, CR 707.2) into a `TokenSpec` (abilities ride along via the copied
+            // `grp_id`), apply the `mods` "except" overrides, then create it like any other token.
+            Effect::CreateTokenCopy { source, controller, mods } => {
+                let controller = self.eval_player(*controller, ctx);
+                if let Some(Target::Object(obj)) = self.resolve_target(source, ctx, cursor) {
+                    if let Some(src) = self.state.objects.get(&obj) {
+                        let c = &src.chars;
+                        let mut spec = TokenSpec {
+                            name: c.name.clone(),
+                            card_types: c.card_types.clone(),
+                            subtypes: c.subtypes.clone(),
+                            colors: c.colors.clone(),
+                            power: c.power.unwrap_or(0),
+                            toughness: c.toughness.unwrap_or(0),
+                            keywords: c.keywords.clone(),
+                            counters: Vec::new(),
+                            // The copy's abilities come from the copied permanent's def (CR 707.2).
+                            grp_id: c.grp_id,
+                        };
+                        for t in &mods.add_card_types {
+                            if !spec.card_types.contains(t) {
+                                spec.card_types.push(t.clone());
+                            }
+                        }
+                        for s in &mods.add_subtypes {
+                            if !spec.subtypes.contains(s) {
+                                spec.subtypes.push(s.clone());
+                            }
+                        }
+                        if let Some((p, t)) = mods.set_power_toughness {
+                            spec.power = p;
+                            spec.toughness = t;
+                        }
+                        for (kind, n) in &mods.counters {
+                            let n = self.eval_value(n, ctx).max(0) as u32;
+                            spec.counters.push((kind.clone(), n));
+                        }
+                        wb.push(Action::CreateToken { spec, controller });
+                    }
+                }
+            }
             // "Target player" declaration (CR 115.1): no action — it just consumes its target slot so
             // later `Target(...)` slots line up. The player was chosen at cast (a `Player` spec) and is
             // read by the following effects via `PlayerRef::ChosenTarget`.

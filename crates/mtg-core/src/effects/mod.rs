@@ -22,7 +22,7 @@ pub mod value;
 use self::ability::Keyword;
 use self::condition::{Condition, Duration};
 use self::native::NativeFn;
-use self::target::{CardFilter, ManaSpec, SelectSpec, TargetSpec, TokenSpec};
+use self::target::{CardFilter, ManaSpec, SelectSpec, TargetSpec, TokenCopyMods, TokenSpec};
 use self::value::{PlayerRef, ValueExpr};
 use crate::basics::{CounterKind, DamageKind, Zone, ZoneDest};
 
@@ -136,6 +136,16 @@ pub enum Effect {
         spec: TokenSpec,
         count: ValueExpr,
         controller: PlayerRef,
+    },
+    /// Create a token that's a **copy** of a permanent (CR 707.9e / 111.3). The copy snapshots the
+    /// `source`'s copiable characteristics (its base `chars` — name, types, colours, P/T, and its
+    /// abilities via `grp_id`; **not** counters, damage, auras, or other continuous effects, CR 707.2),
+    /// then applies `mods`. e.g. Applied Geometry copies a permanent "except it's a 0/0 Fractal
+    /// creature" with six +1/+1 counters; Colorstorm Stallion copies itself with empty `mods`.
+    CreateTokenCopy {
+        source: EffectTarget,
+        controller: PlayerRef,
+        mods: TokenCopyMods,
     },
     /// Counter a target spell or ability (CR 701.6).
     Counter {

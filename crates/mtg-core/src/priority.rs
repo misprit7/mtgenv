@@ -3112,6 +3112,8 @@ fn collect_specs_into(effect: &Effect, out: &mut Vec<TargetSpec>) {
         Effect::Earthbend { target: EffectTarget::Target(spec), .. } => out.push(spec.clone()),
         // Exile targets "target card from a graveyard" etc. (CR 601.2c).
         Effect::Exile { what: EffectTarget::Target(spec) } => out.push(spec.clone()),
+        // "Create a token that's a copy of target permanent" — its source is a chosen target.
+        Effect::CreateTokenCopy { source: EffectTarget::Target(spec), .. } => out.push(spec.clone()),
         // "Put a +1/+1 counter on target creature" / "target creature gains trample" — the targeted
         // reward effects (collected when walking a reflexive branch, not from a Conditional.then).
         Effect::PutCounters { what: EffectTarget::Target(spec), .. }

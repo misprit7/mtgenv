@@ -3,6 +3,7 @@
 use crate::cards::CardDb;
 
 pub mod additive_evolution;
+pub mod applied_geometry;
 pub mod arcane_omens;
 pub mod banishing_betrayal;
 pub mod blech_loafing_pest;
@@ -101,6 +102,7 @@ pub mod zealous_lorecaster;
 
 pub fn register(db: &mut CardDb) {
     additive_evolution::register(db);
+    applied_geometry::register(db);
     arcane_omens::register(db);
     banishing_betrayal::register(db);
     blech_loafing_pest::register(db);
