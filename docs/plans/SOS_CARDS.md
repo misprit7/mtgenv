@@ -279,7 +279,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Diary of Dreams | S12 | `sos` | ⏳ | activation cost scales down per counter |
 | Dig Site Inventory | S10 | `sos` | ⏳ | counter + vigilance, flashback |
 | Duel Tactics | S10 | `sos` | ⏳ | damage + can't-block, flashback |
-| Efflorescence | S4 | `sos` | ⏳ | Infusion gained-life-this-turn condition |
+| Efflorescence | S4 | `sos` | ✅ done | Infusion gained-life-this-turn condition |
 | Elemental Mascot | S5,S15 | `sos` | ⏳ | Opus + impulse play top card |
 | Emil, Vastlands Roamer | DistinctNames | `sos` | ⏳ | X = differently-named lands you control |
 | End of the Hunt | GreatestMV | `sos` | ⏳ | select greatest-MV creature/pw |
@@ -375,7 +375,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Tablet of Discovery | S13,S15 | `sos` | ⏳ | impulse-play milled card; restricted mana |
 | Tackle Artist | S5 | `sos` | ⏳ | Opus cast-IS trigger, mana spent |
 | Teacher's Pest | S18 | `sos` | ⏳ | {B}{G} return this from graveyard |
-| Tenured Concocter | S4 | `sos` | ⏳ | Infusion: gained-life-this-turn condition |
+| Tenured Concocter | S4 | `sos` | ✅ done | Infusion: gained-life-this-turn condition |
 | Tester of the Tangential | S6 | `sos` | ⏳ | Increment trigger |
 | Textbook Tabulator | S1,S6 | `sos` | ⏳ | Increment plus surveil 2 |
 | The Dawning Archaic | S10,S12 | `sos` | ⏳ | cast from graveyard; count-based cost reduction |
@@ -387,7 +387,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Topiary Lecturer | S6 | `sos` | ⏳ | Increment; mana equal to power |
 | Tragedy Feaster | S4,S17 | `sos` | ⏳ | Ward—Discard plus Infusion |
 | Transcendent Archaic | S7 | `sos` | ⏳ | converge, colors of mana spent |
-| Ulna Alley Shopkeep | S4 | `sos` | ⏳ | Infusion: gained-life-this-turn condition |
+| Ulna Alley Shopkeep | S4 | `sos` | ✅ done | Infusion: gained-life-this-turn condition |
 | Unsubtle Mockery | S1 | `sos` | ✅ done | damage plus surveil 1 |
 | Vicious Rivalry | PayXLife | `sos` | ⏳ | additional cost pay X life; destroy MV<=X |
 | Visionary's Dance | S2 | `sos` | ⏳ | look-and-pick top two |
