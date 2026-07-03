@@ -125,6 +125,19 @@ Our mapping:
 So no engine change is needed to expose draws — the stochastic model *learns* the outcome
 distribution from observed (afterstate → next obs) pairs during training.
 
+**Verified against LightZero's implementation (not just docs):** LightZero's Stochastic MuZero has
+a config flag `use_ture_chance_label_in_chance_encoder` [sic].
+- With it **True** (how the shipped 2048 example runs), the env must emit a ground-truth `chance`
+  code with a fixed, enumerable `chance_space_size` (2048's is "which empty cell got which tile").
+  **Our stochasticity is not enumerable that way**, so we do NOT use this mode.
+- With it **False** (the ICLR-2022 paper's actual method), the replay buffer never reads a `chance`
+  label, and a learned **VQ `ChanceEncoder`** (`OnehotArgmax` straight-through estimator over a
+  `chance_space_size` codebook — and there's an **MLP backbone** for vector obs, exactly our case)
+  infers the chance code from consecutive observations. This is the mode we use.
+- Practical consequence for the adapter: set `use_ture_chance_label_in_chance_encoder=False`, pick a
+  small `chance_space_size` (VQ codebook size — a hyperparameter, e.g. 4–8), and the env's obs dict
+  needs only `{observation, action_mask, to_play}` — no `chance` field required.
+
 ### Obs flattening
 
 `MtgEnv`'s `Dict` obs (globals / bf_feat / hand_feat / stack_feat + `*_ids` + card-id one-hots)
