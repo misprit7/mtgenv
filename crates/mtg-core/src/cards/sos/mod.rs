@@ -66,6 +66,7 @@ pub mod inkling_mascot;
 pub mod inkshape_demonstrator;
 pub mod interjection;
 pub mod lecturing_scornmage;
+pub mod living_history;
 pub mod lorehold_charm;
 pub mod mage_tower_referee;
 pub mod magmablood_archaic;
@@ -209,6 +210,7 @@ pub fn register(db: &mut CardDb) {
     inkshape_demonstrator::register(db);
     interjection::register(db);
     lecturing_scornmage::register(db);
+    living_history::register(db);
     lorehold_charm::register(db);
     mage_tower_referee::register(db);
     magmablood_archaic::register(db);

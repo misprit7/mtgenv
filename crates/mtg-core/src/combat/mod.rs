@@ -63,6 +63,11 @@ impl CombatState {
             .map(|b| b.blocker)
             .collect()
     }
+
+    /// Whether `id` is currently a declared attacker (CR 508.1) — the `CardFilter::Attacking` check.
+    pub fn is_attacking(&self, id: ObjId) -> bool {
+        self.attackers.iter().any(|a| a.attacker == id)
+    }
 }
 
 impl EngineCore {

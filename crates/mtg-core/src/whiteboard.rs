@@ -1975,6 +1975,7 @@ impl EngineCore {
             }
             CardFilter::Tapped => self.state.objects.get(&id).is_some_and(|o| o.status.tapped),
             CardFilter::Untapped => self.state.objects.get(&id).is_some_and(|o| !o.status.tapped),
+            CardFilter::Attacking => self.state.combat.as_ref().is_some_and(|c| c.is_attacking(id)),
             CardFilter::All(fs) => fs.iter().all(|f| self.count_filter_matches(id, f)),
             CardFilter::AnyOf(fs) => fs.iter().any(|f| self.count_filter_matches(id, f)),
             CardFilter::Not(f) => !self.count_filter_matches(id, f),

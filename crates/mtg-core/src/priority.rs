@@ -2134,6 +2134,10 @@ impl Engine {
             CardFilter::Multicolored => self.state.computed(*id).colors.len() >= 2,
             CardFilter::PowerAtMost(n) => self.state.computed(*id).power.unwrap_or(0) <= *n,
             CardFilter::Supertype(s) => o.chars.supertypes.contains(s),
+            // "target attacking creature" (Living History) — matches a current declared attacker.
+            CardFilter::Attacking => {
+                self.state.combat.as_ref().is_some_and(|c| c.is_attacking(*id))
+            }
             CardFilter::All(fs) => fs.iter().all(|f| self.target_matches_filter(t, f, caster, source)),
             CardFilter::AnyOf(fs) => fs.iter().any(|f| self.target_matches_filter(t, f, caster, source)),
             CardFilter::Not(f) => !self.target_matches_filter(t, f, caster, source),

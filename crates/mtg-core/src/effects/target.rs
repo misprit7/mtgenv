@@ -83,6 +83,10 @@ pub enum CardFilter {
     ControlledBy(PlayerRef),
     Tapped,
     Untapped,
+    /// A creature that is **currently attacking** (declared as an attacker this combat, CR 508.1) —
+    /// e.g. Living History's "target attacking creature." Matches iff the object is in
+    /// `GameState.combat.attackers`.
+    Attacking,
     /// Has a counter of this kind.
     HasCounter(CounterKind),
     /// Matches a specific named card (rare; for the few effects that name a card).

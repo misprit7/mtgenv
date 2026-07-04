@@ -6,9 +6,10 @@ per-card triage, modeled on `SELESNYA_LANDFALL_CARDS.md`.
 
 ## ▶ NEXT AGENT — start here (handoff from sos-cards-6, 2026-07-03)
 
-**▶▶ sos-cards-7 (2026-07-03) — in progress: 151 authored / 148 fully-faithful / 3 tracked-partial, 568 mtg-core
-tests green. Shipped: (1) {X}-in-an-activated-cost cap + Berta, Wise Extrapolator; (2) S20 CountersOnTarget value +
-flush-before-PutCounters + Growth Curve. See cap ledger + card rows below.**
+**▶▶ sos-cards-7 (2026-07-03) — in progress: 152 authored / 149 fully-faithful / 3 tracked-partial, 572 mtg-core
+tests green. Shipped 3 caps + 3 cards: (1) {X}-in-an-activated-cost cap + Berta, Wise Extrapolator; (2) S20
+CountersOnTarget value + flush-before-PutCounters + Growth Curve; (3) CardFilter::Attacking + Living History. See
+cap ledger + card rows below.**
 
 **▶▶ sos-cards-6 handoff (2026-07-03 late night) — READ THIS FIRST. FIRST-PASS MILESTONE DECLARED: 149 authored /
 146 fully-faithful / 3 tracked-partial, 562 mtg-core tests green, tree clean, all pushed.** Shipped **8 cards + 8
@@ -38,8 +39,11 @@ What remains all needs a MODERATE new capability (verified — don't scope as "c
   Added `ValueExpr::CountersOnTarget { target, kind }` (reads live count of a counter kind on the Nth chosen target)
   + a flush-before-`PutCounters` interpret arm (mirrors CreateToken's #61 flush) so "put a +1/+1, THEN double" reads
   the post-first-counter count. Full suite (568) confirms no counter-card regression.
-- **`CardFilter::Attacking`** (combat-state filter) → **Living History** (or ship tracked-partial, deferring the
-  "attacking" restriction). • **Treasure token def** (a token with an ACTIVATED `{T},Sac: any-color mana` ability —
+- ~~**`CardFilter::Attacking`** (combat-state filter)~~ **DONE (sos-cards-7)** → **Living History** (ETB Spirit + a
+  `YouAttack`/S9-gated pump on a target attacking creature). Added `CardFilter::Attacking` (matches a current
+  declared attacker via `CombatState::is_attacking`) to `target_matches_filter` + the exhaustive
+  `count_filter_matches`; real-turn test fires the trigger on `AttackersDeclared` and gates on the intervening-if.
+  • **Treasure token def** (a token with an ACTIVATED `{T},Sac: any-color mana` ability —
   verify token activated abilities fire; S11 did only TRIGGERED token abilities) → **Seize the Spoils** (`khm`).
 - **directed-discard `Effect`** (reveal hand → chooser picks → discard) → **Render Speechless**. • **Slumbering
   Trudge**: stun-counter core authorable now; its enter-tapped-if-X≤2 clause needs X threaded into `EntersTapped
@@ -556,7 +560,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Inkshape Demonstrator | S17,S8 | `sos` | ⏳ | Ward, Repartee pump/lifelink |
 | Killian's Confidence | S18 | `sos` | ⏳ | triggered ability functions from graveyard |
 | Lecturing Scornmage | S8 | `sos` | ✅ done | Repartee self-counter |
-| Living History | S9 | `sos` | ⏳ | attack trigger gated on graveyard-leave |
+| Living History | S9,CardFilter::Attacking | `sos` | ✅ done | ETB Spirit token + `YouAttack` trigger, intervening-if `CardLeftGraveyardThisTurn` (S9), pumps a target attacking creature (+2/+0) via new `CardFilter::Attacking` |
 | Lumaret's Favor | S14,S4 | `sos` | ⏳ | conditional copy (infusion) plus pump |
 | Magmablood Archaic | S5,S7,mono-hybrid | `sos` | ✅ done | Converge; I/S trigger scales by colors |
 | Mana Sculpt | S5 | `sos` | ⏳ | counter; delayed mana = mana spent |
