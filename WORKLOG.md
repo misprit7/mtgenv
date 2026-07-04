@@ -70,6 +70,14 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
   **Pensive Professor** `{1}{U}{U}` 0/2 = Increment + "whenever one or more +1/+1 counters are put on this, draw."
   Real-path test: a +1/+1 fires the trigger through the engine → draw; a -1/-1 does not. 560 tests. (Berta needs its
   {X},{T} Fractal ability + any-color mana trigger — assessing next.)
+- **cap+card(sos) — S22 "cast an I/S this turn" + `Restriction::OnlyIf` activation gate + `artifact()` builder →
+  Potioner's Trove.** `Player.instants_sorceries_cast_this_turn` (counted in `cast_spell` via the existing `is_is`
+  bool, reset each turn) + `Condition::CastInstantOrSorceryThisTurn`. Found `OnlyIf` was only honoured for MANA
+  abilities (mana.rs), NOT non-mana activated abilities — wired it into all three `legal_priority_actions`
+  activation blocks (battlefield/graveyard/hand) via `conditions::holds_for_source`. Added a reusable `artifact()`
+  CardDef builder (colorless permanent). **Potioner's Trove** `{3}` = {T}:any-color mana + {T}:gain 2 gated by the
+  OnlyIf. Test proves the gain-life ability is offered iff an I/S was cast this turn. 562 tests. **Berta/Emil
+  deferred** — both need `{X}` in an ACTIVATED cost (`activate_ability` hardcodes `x: None`) = a moderate cap.
 
 ## 2026-07-03 (night)
 

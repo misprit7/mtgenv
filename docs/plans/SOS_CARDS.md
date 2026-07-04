@@ -115,7 +115,11 @@ unauthored-card audit (verified vs the interpreter) found **2 zero-cap cards** �
 DONE) and **Withering Curse** (all-creatures -2/-2 or Infusion destroy-all, DONE) — plus a live vein of
 **one-small-cap** cards. Newly DONE by agent 6: **Geometer's Arthropod** (`XOfTriggeringSpell`). Still-cheap
 1-cap wins the audit surfaced (each a single small leaf, some sharing a cap):
-- **S22 `Condition` "cast an instant/sorcery this turn"** → **Burrog Barrage** + **Potioner's Trove** (2 cards).
+- ~~**S22 `Condition` "cast an instant/sorcery this turn"**~~ **DONE** (agent 6) — `Player.instants_sorceries_
+  cast_this_turn` (counted in `cast_spell`, reset each turn) + `Condition::CastInstantOrSorceryThisTurn`; ALSO
+  wired `Restriction::OnlyIf` into the activated-ability legality gate (was only honoured for mana abilities) +
+  a reusable `artifact()` builder. → **Potioner's Trove** DONE. **Burrog Barrage** still needs care — its only
+  target sits inside a `Conditional`, which `collect_specs_into` doesn't walk (targeting-collection wrinkle).
 - ~~**"counters put on self" `EventPattern`**~~ **DONE** (agent 6) — `EventPattern::CountersPutOnSelf { kind }` +
   `GameEvent::CountersPut` broadcast from the `AddCounters` executor (once per counter-adding event, battlefield
   only). → **Pensive Professor** DONE (Increment→+1/+1→draw). **Berta, Wise Extrapolator** still needs its

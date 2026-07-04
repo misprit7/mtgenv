@@ -227,6 +227,11 @@ pub struct Player {
     /// (Fractal Anomaly).
     #[serde(default)]
     pub cards_drawn_this_turn: u32,
+    /// How many instant/sorcery spells this player has cast this turn — reset each turn, incremented
+    /// in `cast_spell`. Read by "if you've cast an instant or sorcery spell this turn" (Potioner's
+    /// Trove) via `Condition::CastInstantOrSorceryThisTurn`.
+    #[serde(default)]
+    pub instants_sorceries_cast_this_turn: u32,
     pub hand_size_limit: usize,
     pub has_lost: bool,
     /// Set when a draw is attempted from an empty library; the SBA (CR 704.5b) reads it on
@@ -252,6 +257,7 @@ impl Player {
             cards_left_graveyard_this_turn: 0,
             creatures_died_this_turn: 0,
             cards_drawn_this_turn: 0,
+            instants_sorceries_cast_this_turn: 0,
             hand_size_limit: DEFAULT_HAND_SIZE,
             has_lost: false,
             drew_from_empty: false,

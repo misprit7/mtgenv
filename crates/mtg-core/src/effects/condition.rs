@@ -37,6 +37,10 @@ pub enum Condition {
     /// "if you put a counter on this creature this turn" intervening-"if" (Fractal Tender). Reads the
     /// source object's `counter_added_this_turn` flag; `false` with no source object.
     PutCounterOnSelfThisTurn,
+    /// The named player has cast one or more instant or sorcery spells this turn — "activate only if
+    /// you've cast an instant or sorcery spell this turn" (Potioner's Trove). Reads
+    /// `Player.instants_sorceries_cast_this_turn`.
+    CastInstantOrSorceryThisTurn { who: PlayerRef },
     /// Compare two values.
     ValueAtLeast(ValueExpr, ValueExpr),
     /// The source spell was cast from **anywhere other than its owner's hand** (CR 601 / flashback

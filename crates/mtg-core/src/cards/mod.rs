@@ -426,6 +426,24 @@ pub(crate) fn enchantment(grp_id: u32, name: &str, color: Color, cost: ManaCost,
     }
 }
 
+/// A noncreature Artifact permanent (CR 301) — colorless by default (CR 202.2), e.g. Potioner's
+/// Trove. Its abilities keep it on the battlefield; construct with `mana_cost(N, &[])`.
+pub(crate) fn artifact(grp_id: u32, name: &str, cost: ManaCost, abilities: Vec<Ability>) -> CardDef {
+    CardDef {
+        chars: Characteristics {
+            name: name.to_string(),
+            card_types: vec![CardType::Artifact],
+            colors: vec![],
+            mana_cost: Some(cost),
+            grp_id,
+            ..Default::default()
+        },
+        abilities,
+        text: String::new(),
+        fully_implemented: true,
+    }
+}
+
 /// An Aura (CR 303): an Enchantment with the "Aura" subtype. The engine reads the subtype to
 /// require an enchant target at cast and to enter the battlefield attached (CR 303.4f / 608.3e).
 pub(crate) fn aura(grp_id: u32, name: &str, color: Color, cost: ManaCost, abilities: Vec<Ability>) -> CardDef {
@@ -653,7 +671,7 @@ mod tests {
     #[test]
     fn starter_db_has_expected_cards() {
         let db = starter_db();
-        assert_eq!(db.len(), 199);
+        assert_eq!(db.len(), 200);
         // Forest is "type line only": a Basic Land with subtype Forest. Mana is intrinsic
         // (CR 305.6) — the engine derives {T}: Add {G} from the subtype, so the CardDef carries
         // no explicit mana ability (and `is_mana_source` only sees authored abilities).

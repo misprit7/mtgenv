@@ -81,6 +81,14 @@ pub(crate) fn holds_for_source(
         Condition::PutCounterOnSelfThisTurn => {
             source.and_then(|s| state.objects.get(&s)).is_some_and(|o| o.counter_added_this_turn)
         }
+        // "you've cast an instant or sorcery spell this turn" (Potioner's Trove).
+        Condition::CastInstantOrSorceryThisTurn { who } => {
+            let p = resolve_player(state, *who, source_controller);
+            state
+                .players
+                .get(p.0 as usize)
+                .is_some_and(|pl| pl.instants_sorceries_cast_this_turn > 0)
+        }
         Condition::ValueAtLeast(a, b) => {
             eval_value(state, a, source_controller, source)
                 >= eval_value(state, b, source_controller, source)

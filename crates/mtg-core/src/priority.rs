@@ -699,6 +699,7 @@ impl Engine {
             self.state.players[i].cards_left_graveyard_this_turn = 0;
             self.state.players[i].creatures_died_this_turn = 0;
             self.state.players[i].cards_drawn_this_turn = 0;
+            self.state.players[i].instants_sorceries_cast_this_turn = 0;
         }
         // "you put a counter on this creature this turn" is per-turn and read on EACH end step, so
         // reset the flag on every permanent (not just the active player's).
@@ -1135,6 +1136,13 @@ impl Engine {
                 if matches!(restriction, Some(Restriction::OncePerTurn)) && s.object(perm).used_once_per_turn {
                     continue;
                 }
+                // "Activate only if <condition>" (CR 602.5b) — e.g. Potioner's Trove's "only if you've
+                // cast an instant or sorcery spell this turn."
+                if let Some(Restriction::OnlyIf(cond)) = restriction {
+                    if !crate::conditions::holds_for_source(s, cond, p, Some(perm)) {
+                        continue;
+                    }
+                }
                 if !self.can_pay_cost(p, perm, cost) {
                     continue;
                 }
@@ -1175,6 +1183,11 @@ impl Engine {
                 if matches!(restriction, Some(Restriction::OnlyYourTurn)) && p != s.active_player {
                     continue;
                 }
+                if let Some(Restriction::OnlyIf(cond)) = restriction {
+                    if !crate::conditions::holds_for_source(s, cond, p, Some(gy)) {
+                        continue;
+                    }
+                }
                 if !self.can_pay_cost(p, gy, cost) {
                     continue;
                 }
@@ -1210,6 +1223,11 @@ impl Engine {
                 }
                 if matches!(restriction, Some(Restriction::OnlyYourTurn)) && p != s.active_player {
                     continue;
+                }
+                if let Some(Restriction::OnlyIf(cond)) = restriction {
+                    if !crate::conditions::holds_for_source(s, cond, p, Some(h)) {
+                        continue;
+                    }
                 }
                 if !self.can_pay_cost(p, h, cost) {
                     continue;
@@ -1863,6 +1881,10 @@ impl Engine {
             // The chosen {X} (CR 107.3) — read by a cast-with-{X} trigger's "top X cards" (Geometer's
             // Arthropod's `ValueExpr::XOfTriggeringSpell`).
             o.cast_x = if cost.x > 0 { Some(chosen_x) } else { None };
+        }
+        // "you've cast an instant or sorcery spell this turn" (Potioner's Trove) — count at cast.
+        if is_is {
+            self.state.player_mut(p).instants_sorceries_cast_this_turn += 1;
         }
 
         // 601.2i: the spell has been cast.
