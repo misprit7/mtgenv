@@ -7,11 +7,44 @@ has a known, stubborn failure (it chump-blocks the trampling 3/3 even at high li
 Everything here is **isolated**: this dir has its own venv, README, and `.gitignore`. It only
 *reads/imports* `python/mtgenv_gym/` and `crates/` — it never modifies them.
 
-> Status: **M0 ✅ · M1 ✅ · M2 ✅ · M3 CONCLUDED — two-config HONEST NEGATIVE.** Both the pure
-> sparse-reward run and the PBRS-shaped run collapse at the sub-decision cold-start (~25–34k
-> env-steps each); neither reaches even random's 53.5% win-rate, let alone PPO's 0.90. **M4 judgment
-> comparison is moot** (the policy never learns competent play — see below). The pipeline, adapter,
-> and eval harness all work; the *finding* is that Stochastic MuZero doesn't learn swine at this budget.
+> Status: **M0 ✅ · M1 ✅ · M2 ✅ · M3 negative · DEBUG AUDIT (2026-07-04) ✅ — mechanism found.**
+> The plumbing is CLEAN; the collapse is a real *policy-collapse-to-a-low-index attractor* under
+> sparse reward + a sharp collection temperature, NOT a reward/perspective bug. See the audit
+> section immediately below; the old M3 write-up (kept further down) misattributed the cause.
+
+## DEBUG AUDIT (2026-07-04) — plumbing is clean; the collapse is an exploration failure
+
+**Prompt:** the user suspected a *bug* (reward/perspective/terminal plumbing), because a random-vs-random
+mirror wins ~50% so the buffer "should be full of +1", contradicting "value −0.8 everywhere".
+
+**Finding — the plumbing is clean; the buffer really is ~all-losses; value −0.8 is faithful, not a bug.**
+The killer-argument premise (early collection ≈ random ≈ 50%) is false: the MuZero *collector* collapses
+to ~100% losses within ~2 collects, so a value net that predicts ≈ −0.8 everywhere is *correctly*
+fitting an all-loss buffer.
+
+Evidence (scripts in this dir; run with `PYTHONPATH=../../python .venv/bin/python <script>`):
+
+| check | script | result |
+|---|---|---|
+| adapter reward/terminal/perspective | `audit_plumbing.py` | uniform-random win 0.510 swine / 0.467 heralds; terminal reward ∈{−1,0,+1}, ~½ positive; `eval_episode_return`==final reward (0/300 mismatch); **reward 0 on every non-terminal step**; len ~62 |
+| mulligan phase, by hand | `audit_mulligan.py` | no spurious reward; masks sane (96=mulligan, 97=keep); reward 0 until terminal |
+| value-target math | (read `lzero/mcts/buffer/game_buffer_muzero.py`) | `not_board_games` ⇒ **no sign flip** (L483-5, L510-1); `to_play=−1` single-agent; targets faithfully track the buffer |
+| untrained MCTS, sampled vs greedy | `audit_untrained_mcts.py`, `audit_mcts_fullgame.py` | collect/**sampled** (temp 0.25) wins **0.525**; eval/**greedy** wins **0.000** |
+| real collector, instrumented | `audit_collect_trace.py` | first collect wins ~0.39; degrades to ~0.05; games normal-length (median 29), **median 0 mulligans** |
+
+**Mechanism — lowest-index tie-break → PASS/mulligan attractor, amplified by sparse reward + temp 0.25.**
+Near-tied visit counts make argmax pick the **lowest legal index**, which is PASS(0) at every Priority
+window, mulligan(96) at Mulligan, "no attack"(0) at DeclareAttackers → greedy play = do-nothing = 0% win.
+Collection *samples* (temp 0.25) so it starts healthy (~40–52%), but over collects the policy head imitates
+the slightly low-index-tilted visits, the visit distribution sharpens, temp-0.25 sampling becomes
+effectively greedy, play goes passive, the buffer fills with losses, value→−1, and it self-reinforces.
+There is **no exploration floor** (`random_collect_episode_num=0`, `eps_greedy_exploration_in_collect=None`).
+The README's original "always-mulligan" is the *eval/greedy* symptom; *collection* loses via passive play in
+normal-length games, not mulligan-to-death.
+
+**Candidate fixes (being tested on the heralds falsifier):** raise the collection temperature (→1.0) or use
+`manual_temperature_decay` from a high start; seed with `random_collect_episode_num>0`; add eps-greedy. The
+value/reward plumbing needs no change.
 
 ## M3 result — Stochastic MuZero fails the swine cold-start (two configs)
 
