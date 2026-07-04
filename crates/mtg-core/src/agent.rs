@@ -653,6 +653,10 @@ pub enum GameEvent {
     LeftGraveyard { player: PlayerId },
     ObjectMoved { obj: ObjId, to: Zone },
     PermanentDied { obj: ObjId },
+    /// One or more counters of `kind` were put on `obj` (CR 122). Fires once per counter-adding
+    /// event (not per counter). Drives "whenever one or more +1/+1 counters are put on this
+    /// creature …" (Pensive Professor / Berta).
+    CountersPut { obj: ObjId, kind: CounterKind, count: u32 },
     Revealed { to: PlayerId, objects: Vec<ObjId> },
     ValueChosen { player: PlayerId, label: String, value: i64 },
     /// `object` became the target of a spell or ability controlled by `by` (CR 603.2/601.2c) —

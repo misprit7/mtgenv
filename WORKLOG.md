@@ -62,6 +62,15 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
   `ForEachTarget`/`Each` binds **players** too. 558 tests. New cheap-win queue recorded in the ledger (S22 +
   counters-put-on-self each clear 2 cards).
 
+## 2026-07-03 (late night, agent 6 — cheap-vein sweep)
+
+- **cap+card(sos) — "counters put on self" `EventPattern` + Pensive Professor.** New `EventPattern::
+  CountersPutOnSelf { kind }` + `GameEvent::CountersPut { obj, kind, count }` broadcast from the `AddCounters`
+  executor (once per counter-adding event, battlefield only; reuses the `counter_added_this_turn` detection point).
+  **Pensive Professor** `{1}{U}{U}` 0/2 = Increment + "whenever one or more +1/+1 counters are put on this, draw."
+  Real-path test: a +1/+1 fires the trigger through the engine → draw; a -1/-1 does not. 560 tests. (Berta needs its
+  {X},{T} Fractal ability + any-color mana trigger — assessing next.)
+
 ## 2026-07-03 (night)
 
 - **cards(sos) — Inkshape Demonstrator (5th Ward card) + Hardened Academic (`9be0eb3`), no new cap — LIFELINK

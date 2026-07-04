@@ -116,8 +116,11 @@ DONE) and **Withering Curse** (all-creatures -2/-2 or Infusion destroy-all, DONE
 **one-small-cap** cards. Newly DONE by agent 6: **Geometer's Arthropod** (`XOfTriggeringSpell`). Still-cheap
 1-cap wins the audit surfaced (each a single small leaf, some sharing a cap):
 - **S22 `Condition` "cast an instant/sorcery this turn"** → **Burrog Barrage** + **Potioner's Trove** (2 cards).
-- **"counters put on self" `EventPattern`** → **Pensive Professor** + **Berta, Wise Extrapolator** (2 cards; the
-  detection point `Object.counter_added_this_turn` already exists — just emit a trigger).
+- ~~**"counters put on self" `EventPattern`**~~ **DONE** (agent 6) — `EventPattern::CountersPutOnSelf { kind }` +
+  `GameEvent::CountersPut` broadcast from the `AddCounters` executor (once per counter-adding event, battlefield
+  only). → **Pensive Professor** DONE (Increment→+1/+1→draw). **Berta, Wise Extrapolator** still needs its
+  `{X},{T}`-activated Fractal ability + "add one mana of any color" trigger (check any-color `AddMana` + {X}-in-
+  activated-cost threading before scoping).
 - **S20 `ValueExpr::CountersOnTarget(n)`** → **Growth Curve**. • **`DistinctNamedLands` value** → **Emil**.
 - **`CardFilter::Attacking`** → **Living History**. • **Treasure token def** → **Seize the Spoils**.
 - **directed-discard `Effect`** → **Render Speechless**. • **Slumbering Trudge** (stun core authorable now;

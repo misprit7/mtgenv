@@ -1529,17 +1529,24 @@ impl EngineCore {
             }
             Action::LoseLife { player, amount } => self.change_life(player, -(amount as i32)),
             Action::AddCounters { obj, kind, n } => {
+                let mut on_battlefield = false;
                 if let Some(o) = self.state.objects.get_mut(&obj) {
-                    let cur = o.counters.counts.entry(kind).or_insert(0);
+                    let cur = o.counters.counts.entry(kind.clone()).or_insert(0);
                     *cur = (*cur as i32 + n).max(0) as u32;
                     // "you put a counter on this creature this turn" (Fractal Tender) — any counter
                     // kind, only actual additions (positive `n`, not a removal).
                     if n > 0 {
                         o.counter_added_this_turn = true;
+                        on_battlefield = o.zone == Zone::Battlefield;
                     }
                 }
                 // +1/+1 / -1/-1 counters change computed P/T (CR 613 layer 7c).
                 self.state.mark_chars_dirty();
+                // "Whenever one or more counters are put on this permanent" (CR 603.2) — fire once per
+                // counter-adding event (Pensive Professor / Berta). Only for permanents in play.
+                if n > 0 && on_battlefield {
+                    self.broadcast(GameEvent::CountersPut { obj, kind, count: n as u32 });
+                }
             }
             Action::TapUntap { obj, tap } => {
                 if let Some(o) = self.state.objects.get_mut(&obj) {

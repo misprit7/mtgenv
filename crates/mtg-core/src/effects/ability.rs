@@ -113,6 +113,10 @@ pub enum EventPattern {
     /// The watcher's controller gained life (CR 603.2) — "whenever you gain life, …". Fires once per
     /// life-gain event (regardless of amount), for each permanent the gaining player controls.
     GainLife,
+    /// One or more counters of `kind` were put on THIS permanent (CR 603.2) — "whenever one or more
+    /// +1/+1 counters are put on this creature, …" (Pensive Professor / Berta). Fires once per
+    /// counter-adding event on the source, matched on `kind`.
+    CountersPutOnSelf { kind: CounterKind },
     /// A permanent matching `filter` (relative to the watcher's controller) becomes the target of a
     /// spell or ability (CR 603.2/603.3d, fired when targets are locked). `by_opponent` restricts to
     /// targeting sources controlled by an opponent of the watcher (Surrak: "a creature you control

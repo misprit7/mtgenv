@@ -453,6 +453,9 @@ impl Engine {
             GameEvent::LeftGraveyard { player } => format!("cards leave P{}'s graveyard", player.0),
             GameEvent::ObjectMoved { obj, to } => format!("{} → {to:?}", name(*obj)),
             GameEvent::PermanentDied { obj } => format!("{} dies", name(*obj)),
+            GameEvent::CountersPut { obj, kind, count } => {
+                format!("{} gets {count} {kind:?} counter(s)", name(*obj))
+            }
             GameEvent::Revealed { to, objects } => {
                 format!("P{} is shown {} card(s)", to.0, objects.len())
             }
@@ -2821,6 +2824,11 @@ impl Engine {
             }
             GameEvent::LeftGraveyard { player } => {
                 self.queue_watching_graveyard_leave_triggers(*player);
+            }
+            // "Whenever one or more [kind] counters are put on this permanent" (CR 603.2) — a
+            // self-trigger on the object that received the counters (Pensive Professor / Berta).
+            GameEvent::CountersPut { obj, kind, .. } => {
+                self.queue_self_triggers(*obj, EventPattern::CountersPutOnSelf { kind: kind.clone() });
             }
             _ => {}
         }
