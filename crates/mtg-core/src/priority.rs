@@ -1418,6 +1418,33 @@ impl Engine {
                 }
                 _ => return,
             };
+        // CR 602.2b: if the activation cost has `{X}`, choose X now (bounded by affordable mana),
+        // mirroring the spell path in `cast_spell`. The chosen value rides on the stack object's
+        // `x` and is read at resolution by `ValueExpr::X` (Berta's `{X},{T}: … X +1/+1 counters`).
+        let x_pips = cost.mana.as_ref().map_or(0, |m| m.x);
+        let chosen_x = if x_pips > 0 {
+            let m = cost.mana.as_ref().unwrap();
+            let fixed = m.generic + m.colored.values().sum::<u32>();
+            let max_x = mana::available_mana(&self.state, p).saturating_sub(fixed) / x_pips;
+            let resp = self.ask(
+                p,
+                &DecisionRequest::ChooseNumber {
+                    reason: NumberReason::ChooseX,
+                    min: 0,
+                    max: max_x as i64,
+                    step: 1,
+                    forbidden: Vec::new(),
+                    disallow_even: false,
+                    disallow_odd: false,
+                },
+            );
+            match resp {
+                DecisionResponse::Number(n) => n.clamp(0, max_x as i64) as u32,
+                _ => 0,
+            }
+        } else {
+            0
+        };
         let sid = self.state.mint_stack();
         self.state.stack.push(StackObject {
             id: sid,
@@ -1425,7 +1452,7 @@ impl Engine {
             source: Some(source),
             kind: StackObjectKind::Ability { index: idx as u32 },
             targets: Vec::new(),
-            x: None,
+            x: if x_pips > 0 { Some(chosen_x) } else { None },
             // Modal activated abilities would choose modes here (602.2b); none in the pool yet.
             modes: Vec::new(),
         });
@@ -1454,6 +1481,18 @@ impl Engine {
             // CR 603.2: each targeted object becomes the target of this activated ability.
             self.fire_targeted(&targeted, p, sid);
         }
+        // Fold the chosen `{X}` into the generic mana actually paid (the payer settles X to a
+        // concrete amount, CR 601.2f–h). `pay_cost`/`auto_pay` don't read `ManaCost.x`.
+        let cost = if x_pips > 0 {
+            let mut c = cost;
+            if let Some(m) = c.mana.as_mut() {
+                m.generic += chosen_x * m.x;
+                m.x = 0;
+            }
+            c
+        } else {
+            cost
+        };
         self.pay_cost(p, source, &cost);
         // Mark the once-per-turn limit (CR 606.3) as used on this permanent.
         if matches!(restriction, Some(Restriction::OncePerTurn)) {
@@ -2306,7 +2345,9 @@ impl Engine {
                         let ctx = ResolutionCtx {
                             controller: Some(obj.controller),
                             source: Some(src),
-                            x: None,
+                            // An activated ability's chosen `{X}` (CR 602.2b) rides on the stack
+                            // object so `ValueExpr::X` reads it at resolution (Berta's Fractal).
+                            x: obj.x,
                             target_controllers: self.snapshot_target_controllers(&obj.targets),
                             chosen_targets: obj.targets.clone(),
                             chosen_modes: Vec::new(),

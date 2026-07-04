@@ -6,6 +6,9 @@ per-card triage, modeled on `SELESNYA_LANDFALL_CARDS.md`.
 
 ## ▶ NEXT AGENT — start here (handoff from sos-cards-6, 2026-07-03)
 
+**▶▶ sos-cards-7 (2026-07-03) — in progress: 150 authored / 147 fully-faithful / 3 tracked-partial, 564 mtg-core
+tests green. Shipped the {X}-in-an-activated-cost cap + Berta, Wise Extrapolator (see cap ledger + Berta row below).**
+
 **▶▶ sos-cards-6 handoff (2026-07-03 late night) — READ THIS FIRST. FIRST-PASS MILESTONE DECLARED: 149 authored /
 146 fully-faithful / 3 tracked-partial, 562 mtg-core tests green, tree clean, all pushed.** Shipped **8 cards + 8
 engine caps + corrected a wrong "first-strike unwired" belief** (first/double-strike combat has been done since
@@ -24,9 +27,12 @@ CardDef builder. Also two zero-cap cards the audit surfaced: **Withering Curse**
 **KEY LESSON (again): the ledger's "no-cap vein is mined out" was WRONG.** A fresh unauthored-card audit (verified
 vs the interpreter) found 2 zero-cap cards + a vein of 1-small-cap cards. **The genuinely-cheap vein is now swept.**
 What remains all needs a MODERATE new capability (verified — don't scope as "cheap"):
-- **`{X}` in an ACTIVATED ability cost** (`activate_ability` at priority.rs hardcodes `x: None`) → unblocks **Berta,
-  Wise Extrapolator** + **Emil, Vastlands Roamer** (both want `{X},{T}: create a Fractal with X counters`; the
-  dynamic-token-counters cap + any-color mana are DONE, so this ONE cap clears both). **Best next pick.**
+- ~~**`{X}` in an ACTIVATED ability cost**~~ **DONE (sos-cards-7)** — `activate_ability` now `ChooseNumber{ChooseX}`s
+  (bounded by affordable mana), folds `chosen_x * pips` into generic, carries X on the stack object; the
+  ability-resolution `ResolutionCtx.x` was hardcoded `None`, now `obj.x`. → **Berta, Wise Extrapolator** authored
+  (all 3 clauses fully-faithful, 3 real-path tests incl. legality→pay→resolve activation with X=3). ⚠️ **The handoff
+  belief that this ALSO clears Emil was WRONG** — verify-the-oracle: Emil's `{4}{G},{T}` uses X = differently-named
+  lands, NOT a paid `{X}`. Emil still needs a **`DistinctNamedLands` value** (unbuilt) + its conditional trample anthem.
 - **`ValueExpr::CountersOnTarget(n)` + a commit-between-steps flush** → **Growth Curve** ("put a +1/+1, THEN double"
   — the double must read the count AFTER the first counter commits; `eval_value` reads pre-commit state, same class
   as the #61 CreateToken-ordering bug — needs a flush like CreateToken got, NOT just the ValueExpr).
@@ -266,6 +272,7 @@ each cap unlocks the bracketed count. `⏳` = not yet built.
 | **S16** Gain-life trigger | `EventPattern::GainLife` ("whenever you gain life, …") | 3 | ✅ **DONE** |
 | **S21** cast-with-{X} trigger | `SpellCast` filtered to "has {X} in its cost" | 2 | ✅ **DONE** (`134444d` + agent 6) — `HasXInCost` arm in `enter_filter_matches` → **Matterbending Mage**; `ValueExpr::XOfTriggeringSpell` (reads the triggering spell's `Object.cast_x`, recorded at cast alongside `mana_spent`) → **Geometer's Arthropod** (look at top X, keep 1). |
 | **S19** cards-drawn-this-turn value | `ValueExpr::CardsDrawnThisTurn` (reads `Player.cards_drawn_this_turn`, reset each turn + incremented in `draw`) | 1 | ✅ **DONE** (agent 6) → **Fractal Anomaly** (0/0 Fractal + X counters, X = cards drawn this turn) |
+| **{X}-in-activated-cost** | choose `{X}` when activating an ability (CR 602.2b), fold into mana paid, carry on the stack object so `ValueExpr::X` reads it at resolution — mirrors the spell-cast X path | 1 | ✅ **DONE** (sos-cards-7) — `activate_ability` (priority.rs) `ChooseNumber{ChooseX}` bounded by affordable mana + folds `chosen_x * pips` into generic; ability-resolution `ResolutionCtx.x` was `None`, now `obj.x`. → **Berta, Wise Extrapolator** (`{X},{T}: Fractal with X counters`). NOTE: Emil's `{4}{G},{T}` does NOT use a paid `{X}` — its X = differently-named lands (needs a `DistinctNamedLands` value, a separate cap). |
 | **S20/S22** | counters-on-target value / cast-I/S-this-turn cond | 1 ea | ⏳ |
 | **misc one-offs** | GreatestMV, DistinctNames, ~~SoftCounter~~, DirectedDiscard, AltCost, PayXLife, NoMaxHand, GrantAbility | 1–3 ea | ⏳ except **SoftCounter (counter-unless-pay) ✅ DONE** via `Effect::CounterUnlessPay` (Ward, `96dbc35`). The rest (GreatestMV/DistinctNames/DirectedDiscard/AltCost/PayXLife/NoMaxHand/GrantAbility) are genuinely unbuilt (verified vs codebase 2026-07-03). |
 | **Native** | genuine one-offs via the `Native` escape hatch: Mathemagics (2^X), Pox Plague (halving), Steal the Show (wheel) | 4 | ⏳ |
@@ -498,7 +505,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Ark of Hunger | S9,S15 | `sos` | ⏳ | graveyard-leave trigger + impulse play |
 | Aziza, Mage Tower Captain | S14 | `sos` | ⏳ | copy your instant/sorcery spell |
 | Banishing Betrayal | S1 | `sos` | ✅ done | bounce + Surveil 1 |
-| Berta, Wise Extrapolator | S6 | `sos` | ⏳ | Increment + counters-placed mana trigger |
+| Berta, Wise Extrapolator | S6,{X}-in-activated-cost | `sos` | ✅ done | Increment (S6) + CountersPutOnSelf→AddMana any-color + `{X},{T}` Fractal via the new {X}-in-activated-cost cap |
 | Blech, Loafing Pest | S16 | `sos` | ✅ done | whenever-you-gain-life counter trigger |
 | Brush Off | S12 | `sos` | ⏳ | conditional cost reduction if targets a spell |
 | Choreographed Sparks | S14 | `sos` | ⏳ | copy instant/sorcery or creature spell |
