@@ -65,21 +65,29 @@ def _install_recorder():
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--deck", default="swine")
+    ap.add_argument("--config", default="swine_stoch",
+                    choices=["swine_stoch", "heralds_stoch", "heralds_plain"],
+                    help="which config module drives the collector")
     ap.add_argument("--max-steps", type=int, default=4000)
-    args, _ = ap.parse_known_args()
+    ap.add_argument("--latent", type=int, default=128)
+    ap.add_argument("--up", type=int, default=20)
+    args, passthrough = ap.parse_known_args()
 
     _install_recorder()
 
-    # Force a tiny/quick real-ish run: small latent so learning is cheap, but real sims/temperature.
-    sys.argv = [sys.argv[0]]  # clear flags so configs don't see --deck etc.
-    if args.deck == "heralds":
+    # Preserve flags the imported config parses at import-time (it reads sys.argv via _argval),
+    # e.g. --nossl / --lr / --fix / --sims. Strip our own flags first.
+    sys.argv = [sys.argv[0]] + passthrough
+    if args.config == "heralds_plain":
+        from heralds_muzero_config import main_config, create_config
+    elif args.config == "heralds_stoch":
         from heralds_stochastic_muzero_config import main_config, create_config
     else:
         from swine_stochastic_muzero_config import main_config, create_config
 
-    main_config.exp_name = f"tb/_audit_collect_trace_{args.deck}"
-    main_config.policy.model.latent_state_dim = 128
-    main_config.policy.update_per_collect = 20   # keep learning cheap so we see many collects fast
+    main_config.exp_name = f"tb/_audit_collect_trace_{args.config}"
+    main_config.policy.model.latent_state_dim = args.latent
+    main_config.policy.update_per_collect = args.up   # keep learning cheap so we see many collects fast
     main_config.env.collector_env_num = 8
     main_config.env.n_evaluator_episode = 2
     main_config.env.evaluator_env_num = 2
@@ -110,9 +118,13 @@ def main():
     print(f"  win-rate | mull<5             : {(arr_rew[arr_mull<5] > 0.5).mean() if (arr_mull<5).any() else float('nan'):.3f}  (n={(arr_mull<5).sum()})")
     print(f"  win-rate | mull>=5            : {(arr_rew[arr_mull>=5] > 0.5).mean() if (arr_mull>=5).any() else float('nan'):.3f}  (n={(arr_mull>=5).sum()})")
     # first vs last third to see degradation over collects
-    third = max(1, n // 3)
-    print(f"  FIRST {third} eps reward_mean : {arr_rew[:third].mean():+.3f}  mull_mean={arr_mull[:third].mean():.2f}")
-    print(f"  LAST  {third} eps reward_mean : {arr_rew[-third:].mean():+.3f}  mull_mean={arr_mull[-third:].mean():.2f}")
+    # Quintiles (episodes ordered by completion) — shows WHEN collapse happens.
+    q = max(1, n // 5)
+    print(f"  win-rate by episode-quintile (collapse curve):")
+    for k in range(5):
+        seg = arr_rew[k*q:(k+1)*q] if k < 4 else arr_rew[4*q:]
+        if len(seg):
+            print(f"       Q{k+1} (eps {k*q}-{(k+1)*q if k<4 else n}): win={ (seg>0.5).mean():.3f} mull_mean={arr_mull[k*q:(k+1)*q].mean():.2f}")
     print(f"  --- REAL-collector lowest-index (PASS/mull) selection rate by legal-count bucket ---")
     for b in sorted(REQ_TOT):
         print(f"      {b:12s} windows={REQ_TOT[b]:6d}  lowest-idx-rate={REQ_LOW[b]/REQ_TOT[b]:.2f}")

@@ -29,6 +29,13 @@ def _argval(flag, cast, default):
 
 SMOKE = "--smoke" in sys.argv
 SUBPROCESS = "--subprocess" in sys.argv
+# --fix = the audit's PRIMARY remedy for the low-index/PASS collapse (2026-07-04 DEBUG AUDIT):
+#   manual_temperature_decay -> collect temperature starts at 1.0 (real sampling) instead of the sharp
+#   fixed 0.25 that made sampled collection drift into the greedy PASS/mulligan attractor. Clean, no
+#   LightZero patching. --randcollect additionally seeds the buffer with uniform-random games (needs a
+#   patch: LightZeroRandomPolicy doesn't support stochastic_muzero out of the box — see lz_patches).
+FIX = "--fix" in sys.argv
+RANDCOLLECT = "--randcollect" in sys.argv
 
 # ── heralds env-measured dims (audit: obs_dim 2593, action_dim 98) ────────────────────────────
 OBS_DIM = 2593          # flattened Dict obs (heralds vocab = 2 unique cards -> smaller card-id one-hot)
@@ -40,14 +47,15 @@ collector_env_num = 2 if SMOKE else 8
 n_episode = 2 if SMOKE else 8
 evaluator_env_num = 2 if SMOKE else 5
 num_simulations = _argval("--sims", int, 8 if SMOKE else 50)
-update_per_collect = 2 if SMOKE else 100
+update_per_collect = _argval("--up", int, 2 if SMOKE else 100)
 batch_size = 32 if SMOKE else 256
-latent_state_dim = 64 if SMOKE else 256
+latent_state_dim = _argval("--latent", int, 64 if SMOKE else 256)
 max_env_step = _argval("--max-steps", int, int(2e3) if SMOKE else int(300e3))
 learning_rate = _argval("--lr", float, 0.003)
 reanalyze_ratio = 0.0
 
-_default_exp = ("tb/mtg_heralds_stochastic_muzero_smoke" if SMOKE else "tb/3.2-muzero-heralds")
+_suffix = "-fix" if FIX else ""
+_default_exp = ("tb/mtg_heralds_stochastic_muzero_smoke" if SMOKE else f"tb/3.2-muzero-heralds{_suffix}")
 exp_name = _argval("--exp", str, _default_exp)
 
 heralds_stochastic_muzero_config = dict(
@@ -58,7 +66,10 @@ heralds_stochastic_muzero_config = dict(
         opponent='random',
         max_decisions=3000,
         agent_seat=0,
-        reward_shaping=0.0,            # pure sparse ±1 — the falsifier should not need a crutch
+        # --shaping F -> card-dominant PBRS potential. The 2026-07-04 audit found the sparse-reward
+        # cold-start collapse (value->negative->PASS/mulligan attractor) is ARRESTED by a dense signal
+        # (coef 0.5 on plain-muzero heralds: mull-to-death 6% vs 49% baseline, win holds ~random not ->0).
+        reward_shaping=_argval("--shaping", float, 0.0),
         shaping_gamma=0.997,
         collector_env_num=collector_env_num,
         evaluator_env_num=evaluator_env_num,
@@ -82,6 +93,9 @@ heralds_stochastic_muzero_config = dict(
         cuda=True,
         env_type='not_board_games',
         action_type='varied_action_space',
+        # --fix lever (see FIX above): high starting collect temperature. --randcollect adds seeding.
+        manual_temperature_decay=FIX,
+        random_collect_episode_num=(32 if RANDCOLLECT else 0),
         game_segment_length=200,
         num_simulations=num_simulations,
         reanalyze_ratio=reanalyze_ratio,
