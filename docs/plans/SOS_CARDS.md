@@ -4,9 +4,54 @@ Standing workstream: implement the Secrets of Strixhaven set for **limited (40-c
 `mtg-core`, easiest-first, correctness over count. This ledger is the capability index + full
 per-card triage, modeled on `SELESNYA_LANDFALL_CARDS.md`.
 
-## ▶ NEXT AGENT — start here (handoff from sos-cards-4, 2026-07-03)
+## ▶ NEXT AGENT — start here (handoff from sos-cards-6, 2026-07-03)
 
-**▶▶ sos-cards-5 handoff (2026-07-03) — READ THIS, the older queue below is superseded.** Shipped **11 cards,
+**▶▶ sos-cards-6 handoff (2026-07-03 late night) — READ THIS FIRST. FIRST-PASS MILESTONE DECLARED: 149 authored /
+146 fully-faithful / 3 tracked-partial, 562 mtg-core tests green, tree clean, all pushed.** Shipped **8 cards + 8
+engine caps + corrected a wrong "first-strike unwired" belief** (first/double-strike combat has been done since
+`a15015f`; passing tests prove it — the handoff was wrong). Caps (all with real-path tests): (1) **per-turn
+counter-added tracker** `Condition::PutCounterOnSelfThisTurn` (`Object.counter_added_this_turn`, set in the
+`AddCounters` executor) → **Fractal Tender**; (2) **`Effect::ForEachTarget{slot,body}`** (apply-to-each of a
+VARIABLE multi-target slot, reusing `EffectTarget::Each`; `foreach_current` generalized `ObjId`→`Target` so `Each`
+binds players too) → **Homesickness** + **Prismari Charm**; (3) **S19 `ValueExpr::CardsDrawnThisTurn`** → **Fractal
+Anomaly**; (4) **`ValueExpr::XOfTriggeringSpell`** (`Object.cast_x` recorded at cast) — completes S21 → **Geometer's
+Arthropod**; (5) **"counters put on self" `EventPattern::CountersPutOnSelf{kind}`** + `GameEvent::CountersPut`
+broadcast from the `AddCounters` executor → **Pensive Professor**; (6) **S22 `Condition::CastInstantOrSorceryThis
+Turn`** (`Player.instants_sorceries_cast_this_turn`); (7) **`Restriction::OnlyIf` wired into the activated-ability
+legality gate** (was only honoured for mana abilities) → **Potioner's Trove**; (8) a reusable **`artifact()`**
+CardDef builder. Also two zero-cap cards the audit surfaced: **Withering Curse** + **Prismari Charm**.
+
+**KEY LESSON (again): the ledger's "no-cap vein is mined out" was WRONG.** A fresh unauthored-card audit (verified
+vs the interpreter) found 2 zero-cap cards + a vein of 1-small-cap cards. **The genuinely-cheap vein is now swept.**
+What remains all needs a MODERATE new capability (verified — don't scope as "cheap"):
+- **`{X}` in an ACTIVATED ability cost** (`activate_ability` at priority.rs hardcodes `x: None`) → unblocks **Berta,
+  Wise Extrapolator** + **Emil, Vastlands Roamer** (both want `{X},{T}: create a Fractal with X counters`; the
+  dynamic-token-counters cap + any-color mana are DONE, so this ONE cap clears both). **Best next pick.**
+- **`ValueExpr::CountersOnTarget(n)` + a commit-between-steps flush** → **Growth Curve** ("put a +1/+1, THEN double"
+  — the double must read the count AFTER the first counter commits; `eval_value` reads pre-commit state, same class
+  as the #61 CreateToken-ordering bug — needs a flush like CreateToken got, NOT just the ValueExpr).
+- **`CardFilter::Attacking`** (combat-state filter) → **Living History** (or ship tracked-partial, deferring the
+  "attacking" restriction). • **Treasure token def** (a token with an ACTIVATED `{T},Sac: any-color mana` ability —
+  verify token activated abilities fire; S11 did only TRIGGERED token abilities) → **Seize the Spoils** (`khm`).
+- **directed-discard `Effect`** (reveal hand → chooser picks → discard) → **Render Speechless**. • **Slumbering
+  Trudge**: stun-counter core authorable now; its enter-tapped-if-X≤2 clause needs X threaded into `EntersTapped
+  Unless`'s condition eval (whiteboard.rs ~1454 evals with no X ctx) — or defer that one clause.
+- **DistinctNamedLands value** → Emil's counters-trample anthem (in addition to the {X}-activated-cost above).
+
+Bigger subsystems stay DEFERRED (lower ROI, per the milestone call): **spell-copy** (~5 cards but 4 double-blocked
+→ ~1 net; a full stack-copy subsystem — NOT worth first-pass), move-counters, conditional cost-reduction (S12),
+dynamic-ManaValue, blink-with-delayed-return, graveyard-play/recursion, grant-arbitrary-ability, **Fractalize**
+(= milestone-5 SET color/type layers, out of first-pass scope), LKI dies-triggers, Natives. 36 prepare-DFC + 2
+planeswalkers + 5 Lessons stay deferred by type.
+
+**PROCESS (unchanged, hard-won):** shared tree → `git commit --only <paths>`, never `-a`/`add -A`/stash; don't
+touch `experiments/`; `cargo test -p mtg-core` green at every commit; flip a cap's ledger Status cell in the SAME
+commit; **`git log -S "<mechanism>"` before scoping any ⏳ row as new**; **READ THE CODE, don't trust the ledger's
+prose** (three wrong "unbuilt" beliefs were overturned this session by checking — first-strike, lifelink earlier,
+"mined-out"). Ping the lead at cap boundaries. On fatigue: declare, rewrite THIS block, hand off clean.
+
+---
+**Older handoff (sos-cards-5, superseded by the block above — kept for provenance):** Shipped **11 cards,
 3 caps, 2 engine fixes; 536 mtg-core tests green; tree clean, all pushed.** Caps: **S17 Ward** (`96dbc35` —
 `Effect::CounterUnlessPay` soft-counter + `EffectTarget::Triggering`, threaded via `GameEvent::Targeted.source`
 → `state.trigger_targeting_source` → `ResolutionCtx.triggering_stack`; mana + discard cost paths; `CardFilter::
