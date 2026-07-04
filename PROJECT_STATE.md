@@ -69,6 +69,7 @@ MTGA client.
 - **✅ MOBILE WEB CLIENT (2026-07-03).** Game client + lobby fully playable from a phone: mobile
   reflow (sticky prompt sheet, opp-top/you-bottom strips, log toggle), touch previews long-press-only
   (hover gated to real mice), on-screen pass-turn button. Desktop unchanged.
+- **🎯 SOS FIRST-PASS MILESTONE (2026-07-03 night): 147 authored / 144 fully-faithful / 3 tracked-partial, 558 tests.** Of 271 distinct SOS cards: 147 done, 36 prepare-DFCs deferred (first-pass scope), 7 deferred-by-type (planeswalkers/Lessons), ~10 cheap-vein cards behind ~8 tiny caps (queued in the ledger), ~60 behind bigger subsystems (spell-copy deferred: ~1 net card ROI; Fractalize = milestone-5 layers). Six-agent relay chain, one continuous ledger (docs/plans/SOS_CARDS.md), 40+ engine caps built, six real-path engine bugs found+fixed along the way. Cheap-vein sweep continuing.
 - **▶ SOS card push (long-term, active):** Secrets of Strixhaven 271 cards triaged in
   `docs/plans/SOS_CARDS.md` — 74 authorable now, 142 behind ~small caps (7 caps unlock ~79),
   55 deferred (MDFCs + big subsystems). Agent grinding easiest-first. Latest: **S15 impulse-play DONE for
