@@ -441,7 +441,11 @@ fn matches_filter(
             };
             o.controller == want
         }
-        // Tapped/Untapped/HasCounter/ManaValue/Named/Colorless: not needed by the M5 prototype.
+        // "Creatures you control with +1/+1 counters on them have trample" (Emil) — a counter-gated
+        // anthem. Re-evaluated each recompute (CR 613.8), so trample appears/vanishes as counters
+        // change. Counters already feed layer-7 P/T, so a counter change already marks chars dirty.
+        CardFilter::HasCounter(kind) => o.counters.get(kind) > 0,
+        // Tapped/Untapped/ManaValue/Named/Colorless: not needed by the current pool.
         _ => false,
     }
 }

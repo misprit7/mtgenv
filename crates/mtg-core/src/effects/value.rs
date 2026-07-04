@@ -44,6 +44,14 @@ pub enum ValueExpr {
         filter: CardFilter,
         controller: Option<PlayerRef>,
     },
+    /// The number of **distinct names** (CR 201.2) among objects in a zone matching a filter,
+    /// optionally restricted by controller — "the number of differently named lands you control"
+    /// (Emil). Like [`Count`], but deduplicates by card name before counting.
+    DistinctNames {
+        zone: Zone,
+        filter: CardFilter,
+        controller: Option<PlayerRef>,
+    },
     /// Sum of `a` and `b` (composition so simple arithmetic is expressible without new nodes).
     Sum(Box<ValueExpr>, Box<ValueExpr>),
     /// The **computed power** of the effect's source object at resolution (CR 613) — used by the SoS

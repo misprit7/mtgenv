@@ -6,10 +6,10 @@ per-card triage, modeled on `SELESNYA_LANDFALL_CARDS.md`.
 
 ## ▶ NEXT AGENT — start here (handoff from sos-cards-6, 2026-07-03)
 
-**▶▶ sos-cards-7 (2026-07-03) — in progress: 152 authored / 149 fully-faithful / 3 tracked-partial, 572 mtg-core
-tests green. Shipped 3 caps + 3 cards: (1) {X}-in-an-activated-cost cap + Berta, Wise Extrapolator; (2) S20
-CountersOnTarget value + flush-before-PutCounters + Growth Curve; (3) CardFilter::Attacking + Living History. See
-cap ledger + card rows below.**
+**▶▶ sos-cards-7 (2026-07-03) — in progress: 153 authored / 150 fully-faithful / 3 tracked-partial, 575 mtg-core
+tests green. Shipped 5 caps + 4 cards: (1) {X}-in-an-activated-cost + Berta; (2) S20 CountersOnTarget value +
+flush-before-PutCounters + Growth Curve; (3) CardFilter::Attacking + Living History; (4) ValueExpr::DistinctNames
++ CardFilter::HasCounter-in-static-scope + Emil, Vastlands Roamer. See cap ledger + card rows below.**
 
 **▶▶ sos-cards-6 handoff (2026-07-03 late night) — READ THIS FIRST. FIRST-PASS MILESTONE DECLARED: 149 authored /
 146 fully-faithful / 3 tracked-partial, 562 mtg-core tests green, tree clean, all pushed.** Shipped **8 cards + 8
@@ -48,7 +48,9 @@ What remains all needs a MODERATE new capability (verified — don't scope as "c
 - **directed-discard `Effect`** (reveal hand → chooser picks → discard) → **Render Speechless**. • **Slumbering
   Trudge**: stun-counter core authorable now; its enter-tapped-if-X≤2 clause needs X threaded into `EntersTapped
   Unless`'s condition eval (whiteboard.rs ~1454 evals with no X ctx) — or defer that one clause.
-- **DistinctNamedLands value** → Emil's counters-trample anthem (in addition to the {X}-activated-cost above).
+- ~~**DistinctNamedLands value** → Emil~~ **DONE (sos-cards-7)** — `ValueExpr::DistinctNames{zone,filter,controller}`
+  (distinct card-names among matching objects) + wired `CardFilter::HasCounter` into the layer-system static-scope
+  matcher (`chars/mod.rs::matches_filter`) for Emil's "creatures you control with +1/+1 counters have trample" anthem.
 
 Bigger subsystems stay DEFERRED (lower ROI, per the milestone call): **spell-copy** (~5 cards but 4 double-blocked
 → ~1 net; a full stack-copy subsystem — NOT worth first-pass), move-counters, conditional cost-reduction (S12),
@@ -281,7 +283,7 @@ each cap unlocks the bracketed count. `⏳` = not yet built.
 | **{X}-in-activated-cost** | choose `{X}` when activating an ability (CR 602.2b), fold into mana paid, carry on the stack object so `ValueExpr::X` reads it at resolution — mirrors the spell-cast X path | 1 | ✅ **DONE** (sos-cards-7) — `activate_ability` (priority.rs) `ChooseNumber{ChooseX}` bounded by affordable mana + folds `chosen_x * pips` into generic; ability-resolution `ResolutionCtx.x` was `None`, now `obj.x`. → **Berta, Wise Extrapolator** (`{X},{T}: Fractal with X counters`). NOTE: Emil's `{4}{G},{T}` does NOT use a paid `{X}` — its X = differently-named lands (needs a `DistinctNamedLands` value, a separate cap). |
 | **S20** counters-on-target value | `ValueExpr::CountersOnTarget { target, kind }` (reads live count of a counter kind on the Nth chosen target) + a flush-before-`PutCounters` interpret arm so a prior counter-add commits before the read | 1 | ✅ **DONE** (sos-cards-7) → **Growth Curve** ("+1/+1 counter, then double"). The flush mirrors CreateToken's #61 fix; the full suite (568 tests) confirms no counter-card regression. |
 | **S22** cast-I/S-this-turn cond | (done — see NEXT-AGENT block) | 1 | ✅ **DONE** (agent 6) |
-| **misc one-offs** | GreatestMV, DistinctNames, ~~SoftCounter~~, DirectedDiscard, AltCost, PayXLife, NoMaxHand, GrantAbility | 1–3 ea | ⏳ except **SoftCounter (counter-unless-pay) ✅ DONE** via `Effect::CounterUnlessPay` (Ward, `96dbc35`). The rest (GreatestMV/DistinctNames/DirectedDiscard/AltCost/PayXLife/NoMaxHand/GrantAbility) are genuinely unbuilt (verified vs codebase 2026-07-03). |
+| **misc one-offs** | GreatestMV, ~~DistinctNames~~, ~~SoftCounter~~, DirectedDiscard, AltCost, PayXLife, NoMaxHand, GrantAbility | 1–3 ea | ⏳ except **SoftCounter ✅ DONE** (`Effect::CounterUnlessPay`, Ward `96dbc35`) and **DistinctNames ✅ DONE** (sos-cards-7 — `ValueExpr::DistinctNames{zone,filter,controller}`, distinct card-names among matching objects → **Emil**; that commit ALSO wired `CardFilter::HasCounter` into the layer-system static-scope matcher `chars/mod.rs::matches_filter` for Emil's counter-gated trample anthem). The rest (GreatestMV/DirectedDiscard/AltCost/PayXLife/NoMaxHand/GrantAbility) are genuinely unbuilt. |
 | **Native** | genuine one-offs via the `Native` escape hatch: Mathemagics (2^X), Pox Plague (halving), Steal the Show (wheel) | 4 | ⏳ |
 
 Building **S1, S4, S5, S6, S7, S8, S10** (the seven big-count caps) converts ~**79** T3 cards to authorable.
@@ -527,7 +529,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Duel Tactics | S10 | `sos` | ✅ done | damage + can't-block, flashback |
 | Efflorescence | S4 | `sos` | ✅ done | Infusion gained-life-this-turn condition |
 | Elemental Mascot | S5,S15 | `sos` | ✅ done | Opus cast-trigger: +1/+0; if 5+ mana spent, impulse-exile top card (`ExileForPlay{TopOfLibrary}`) castable until your next turn |
-| Emil, Vastlands Roamer | DistinctNames | `sos` | ⏳ | X = differently-named lands you control |
+| Emil, Vastlands Roamer | DistinctNames,HasCounter-static | `sos` | ✅ done | `Static GrantKeyword(Trample)` scoped by `CardFilter::HasCounter` (now wired into the layer-system static matcher) + `{4}{G},{T}` Fractal with X=`ValueExpr::DistinctNames{lands you control}` counters |
 | End of the Hunt | GreatestMV | `sos` | ⏳ | select greatest-MV creature/pw |
 | Essenceknit Scholar | S11 | `sos` | ✅ done | Pest token with attack-lifegain ability |
 | Eternal Student | S18 | `sos` | ✅ done | {1}{B},exile-from-graveyard activated ability |

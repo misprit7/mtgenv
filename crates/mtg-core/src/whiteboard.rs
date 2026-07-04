@@ -1858,6 +1858,20 @@ impl EngineCore {
                     .filter(|o| self.count_filter_matches(o.id, filter))
                     .count() as i64
             }
+            // Distinct card names (CR 201.2) among matching objects — Emil's "differently named lands".
+            ValueExpr::DistinctNames { zone, filter, controller } => {
+                let who = controller.map(|r| self.eval_player(r, ctx));
+                let names: std::collections::BTreeSet<&str> = self
+                    .state
+                    .objects
+                    .values()
+                    .filter(|o| o.zone == *zone)
+                    .filter(|o| who.is_none_or(|p| o.controller == p))
+                    .filter(|o| self.count_filter_matches(o.id, filter))
+                    .map(|o| o.chars.name.as_str())
+                    .collect();
+                names.len() as i64
+            }
             // C9b: the number of `kind` counters on the effect's source (e.g. Mossborn Hydra
             // doubling its own +1/+1 counters). For a CDA computing P/T, chars evaluates this
             // against the object being computed (see chars::compute) — here it's the resolver.
