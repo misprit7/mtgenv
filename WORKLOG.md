@@ -5,7 +5,7 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-07-03 (sos-cards-7)
 
-- **SOS: 3 caps + 3 cards, 562→572 mtg-core tests green** (152 authored / 149 fully-faithful).
+- **SOS: 5 caps + 4 cards, 562→575 mtg-core tests green** (153 authored / 150 fully-faithful).
   Each cap has a real-path test; all committed via `git commit --only` on a shared tree.
   - **{X}-in-an-activated-cost** (`7102d4a`): `activate_ability` now chooses `{X}` (ChooseNumber,
     bounded by affordable mana), folds it into generic mana, and carries it on the stack object; the
@@ -18,8 +18,12 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
   - **CardFilter::Attacking** (`e5207a1`): matches a current declared attacker
     (`CombatState::is_attacking`), added to `target_matches_filter` + exhaustive `count_filter_matches`.
     → **Living History** (ETB Spirit + `YouAttack`/S9-gated pump on a target attacking creature).
-  - Handoff correction: the {X}-activated-cost cap does NOT clear Emil (its X = differently-named
-    lands, not a paid {X}); Emil still needs a `DistinctNamedLands` value cap.
+  - **DistinctNames value + HasCounter static-scope** (`9b0937f`): `ValueExpr::DistinctNames{zone,
+    filter,controller}` (distinct card-names among matching objects) + wired `CardFilter::HasCounter`
+    into the layer-system static-scope matcher (`chars/mod.rs::matches_filter`). → **Emil, Vastlands
+    Roamer** — counter-gated trample anthem + `{4}{G},{T}` Fractal with X = differently-named lands.
+    (This corrected the earlier belief that the {X}-activated-cost cap would clear Emil — it wouldn't;
+    Emil uses X = differently-named lands, not a paid {X}.)
 
 ## 2026-07-03 (late night)
 
