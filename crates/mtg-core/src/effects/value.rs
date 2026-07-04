@@ -60,6 +60,13 @@ pub enum ValueExpr {
     /// adds the target's current power to itself. `0` if the target isn't an object on the
     /// battlefield.
     PowerOfTarget(u32),
+    /// The number of `kind` counters on the Nth chosen target, read at resolution. Unlike a value
+    /// snapshotted once, this reads **live** state — so a prior counter-adding step in the same
+    /// resolution is visible IF it committed first. The `PutCounters` interpret arm flushes staged
+    /// actions before it runs, so "put a +1/+1 counter on target creature, then double the number of
+    /// +1/+1 counters on it" (Growth Curve) reads the post-first-counter count. `0` if the target
+    /// isn't an object.
+    CountersOnTarget { target: u32, kind: CounterKind },
     /// The total mana spent to cast the effect's source object (CR 601.2f–h, incl. any `{X}`),
     /// recorded as it was cast and read when it enters. For "enters with +1/+1 counters equal to
     /// the mana spent to cast it" (Dyadrine). `0` if the source wasn't cast (token / put onto the

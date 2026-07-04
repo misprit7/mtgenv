@@ -366,6 +366,16 @@ impl EngineCore {
                 self.flush_pending(wb);
                 true
             }
+            // Put counters, but FLUSH prior staged actions first (#61 deferred→imperative ordering) so
+            // this step's `n` reads post-prior-step state — Growth Curve's "put a +1/+1 counter, then
+            // double the number of +1/+1 counters" needs the first counter committed before the doubling
+            // step evaluates `CountersOnTarget`. Still lowers via `materialize` (staged, committed at the
+            // resolution's end or by the next flush); a lone `PutCounters` is unchanged (empty flush).
+            Effect::PutCounters { .. } => {
+                self.flush_pending(wb);
+                self.materialize(effect, ctx, wb, cursor);
+                true
+            }
             // Pure leaves (and not-yet-interactive nodes) lower without agent interaction; a leaf
             // that lowers is considered performed.
             _ => {
@@ -1868,6 +1878,15 @@ impl EngineCore {
             // C15: the computed power of the Nth chosen target, read once at resolution (608.2h).
             ValueExpr::PowerOfTarget(n) => match ctx.chosen_targets.get(*n as usize) {
                 Some(Target::Object(id)) => self.state.computed(*id).power.unwrap_or(0) as i64,
+                _ => 0,
+            },
+            // The `kind` counters on the Nth chosen target — live state (the `PutCounters` interpret
+            // arm flushes prior counter-adds first, so Growth Curve's "then double" reads the fresh
+            // count). `0` if the target isn't an object.
+            ValueExpr::CountersOnTarget { target, kind } => match ctx.chosen_targets.get(*target as usize) {
+                Some(Target::Object(id)) => {
+                    self.state.objects.get(id).map(|o| o.counters.get(kind) as i64).unwrap_or(0)
+                }
                 _ => 0,
             },
             // The mana spent to cast the source object (recorded at cast, CR 601.2f–h) — Dyadrine.

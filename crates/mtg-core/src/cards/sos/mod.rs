@@ -52,6 +52,7 @@ pub mod geometers_arthropod;
 pub mod glorious_decay;
 pub mod graduation_day;
 pub mod grapple_with_death;
+pub mod growth_curve;
 pub mod hardened_academic;
 pub mod harsh_annotation;
 pub mod heated_argument;
@@ -194,6 +195,7 @@ pub fn register(db: &mut CardDb) {
     glorious_decay::register(db);
     graduation_day::register(db);
     grapple_with_death::register(db);
+    growth_curve::register(db);
     hardened_academic::register(db);
     harsh_annotation::register(db);
     heated_argument::register(db);

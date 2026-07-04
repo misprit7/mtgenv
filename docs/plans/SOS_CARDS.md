@@ -6,8 +6,9 @@ per-card triage, modeled on `SELESNYA_LANDFALL_CARDS.md`.
 
 ## ▶ NEXT AGENT — start here (handoff from sos-cards-6, 2026-07-03)
 
-**▶▶ sos-cards-7 (2026-07-03) — in progress: 150 authored / 147 fully-faithful / 3 tracked-partial, 564 mtg-core
-tests green. Shipped the {X}-in-an-activated-cost cap + Berta, Wise Extrapolator (see cap ledger + Berta row below).**
+**▶▶ sos-cards-7 (2026-07-03) — in progress: 151 authored / 148 fully-faithful / 3 tracked-partial, 568 mtg-core
+tests green. Shipped: (1) {X}-in-an-activated-cost cap + Berta, Wise Extrapolator; (2) S20 CountersOnTarget value +
+flush-before-PutCounters + Growth Curve. See cap ledger + card rows below.**
 
 **▶▶ sos-cards-6 handoff (2026-07-03 late night) — READ THIS FIRST. FIRST-PASS MILESTONE DECLARED: 149 authored /
 146 fully-faithful / 3 tracked-partial, 562 mtg-core tests green, tree clean, all pushed.** Shipped **8 cards + 8
@@ -33,9 +34,10 @@ What remains all needs a MODERATE new capability (verified — don't scope as "c
   (all 3 clauses fully-faithful, 3 real-path tests incl. legality→pay→resolve activation with X=3). ⚠️ **The handoff
   belief that this ALSO clears Emil was WRONG** — verify-the-oracle: Emil's `{4}{G},{T}` uses X = differently-named
   lands, NOT a paid `{X}`. Emil still needs a **`DistinctNamedLands` value** (unbuilt) + its conditional trample anthem.
-- **`ValueExpr::CountersOnTarget(n)` + a commit-between-steps flush** → **Growth Curve** ("put a +1/+1, THEN double"
-  — the double must read the count AFTER the first counter commits; `eval_value` reads pre-commit state, same class
-  as the #61 CreateToken-ordering bug — needs a flush like CreateToken got, NOT just the ValueExpr).
+- ~~**`ValueExpr::CountersOnTarget(n)` + a commit-between-steps flush**~~ **DONE (sos-cards-7)** → **Growth Curve**.
+  Added `ValueExpr::CountersOnTarget { target, kind }` (reads live count of a counter kind on the Nth chosen target)
+  + a flush-before-`PutCounters` interpret arm (mirrors CreateToken's #61 flush) so "put a +1/+1, THEN double" reads
+  the post-first-counter count. Full suite (568) confirms no counter-card regression.
 - **`CardFilter::Attacking`** (combat-state filter) → **Living History** (or ship tracked-partial, deferring the
   "attacking" restriction). • **Treasure token def** (a token with an ACTIVATED `{T},Sac: any-color mana` ability —
   verify token activated abilities fire; S11 did only TRIGGERED token abilities) → **Seize the Spoils** (`khm`).
@@ -273,7 +275,8 @@ each cap unlocks the bracketed count. `⏳` = not yet built.
 | **S21** cast-with-{X} trigger | `SpellCast` filtered to "has {X} in its cost" | 2 | ✅ **DONE** (`134444d` + agent 6) — `HasXInCost` arm in `enter_filter_matches` → **Matterbending Mage**; `ValueExpr::XOfTriggeringSpell` (reads the triggering spell's `Object.cast_x`, recorded at cast alongside `mana_spent`) → **Geometer's Arthropod** (look at top X, keep 1). |
 | **S19** cards-drawn-this-turn value | `ValueExpr::CardsDrawnThisTurn` (reads `Player.cards_drawn_this_turn`, reset each turn + incremented in `draw`) | 1 | ✅ **DONE** (agent 6) → **Fractal Anomaly** (0/0 Fractal + X counters, X = cards drawn this turn) |
 | **{X}-in-activated-cost** | choose `{X}` when activating an ability (CR 602.2b), fold into mana paid, carry on the stack object so `ValueExpr::X` reads it at resolution — mirrors the spell-cast X path | 1 | ✅ **DONE** (sos-cards-7) — `activate_ability` (priority.rs) `ChooseNumber{ChooseX}` bounded by affordable mana + folds `chosen_x * pips` into generic; ability-resolution `ResolutionCtx.x` was `None`, now `obj.x`. → **Berta, Wise Extrapolator** (`{X},{T}: Fractal with X counters`). NOTE: Emil's `{4}{G},{T}` does NOT use a paid `{X}` — its X = differently-named lands (needs a `DistinctNamedLands` value, a separate cap). |
-| **S20/S22** | counters-on-target value / cast-I/S-this-turn cond | 1 ea | ⏳ |
+| **S20** counters-on-target value | `ValueExpr::CountersOnTarget { target, kind }` (reads live count of a counter kind on the Nth chosen target) + a flush-before-`PutCounters` interpret arm so a prior counter-add commits before the read | 1 | ✅ **DONE** (sos-cards-7) → **Growth Curve** ("+1/+1 counter, then double"). The flush mirrors CreateToken's #61 fix; the full suite (568 tests) confirms no counter-card regression. |
+| **S22** cast-I/S-this-turn cond | (done — see NEXT-AGENT block) | 1 | ✅ **DONE** (agent 6) |
 | **misc one-offs** | GreatestMV, DistinctNames, ~~SoftCounter~~, DirectedDiscard, AltCost, PayXLife, NoMaxHand, GrantAbility | 1–3 ea | ⏳ except **SoftCounter (counter-unless-pay) ✅ DONE** via `Effect::CounterUnlessPay` (Ward, `96dbc35`). The rest (GreatestMV/DistinctNames/DirectedDiscard/AltCost/PayXLife/NoMaxHand/GrantAbility) are genuinely unbuilt (verified vs codebase 2026-07-03). |
 | **Native** | genuine one-offs via the `Native` escape hatch: Mathemagics (2^X), Pox Plague (halving), Steal the Show (wheel) | 4 | ⏳ |
 
@@ -542,7 +545,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Graduation Day | S8 | `sos` | ✅ done | Repartee grants counter |
 | Great Hall of the Biblioplex | S13 | `sos` | ⏳ | I/S-restricted mana; animates to creature |
 | Group Project | S10 | `sos` | ⏳ | flashback with tap-creatures cost |
-| Growth Curve | S20 | `sos` | ⏳ | double +1/+1 counters on a target |
+| Growth Curve | S20 | `sos` | ✅ done | +1/+1 counter on target you control, then double — `ValueExpr::CountersOnTarget` + the new flush-before-`PutCounters` interpret arm (reads post-first-counter count) |
 | Hardened Academic | S9 | `sos` | ⏳ | cards-leave-graveyard trigger grants counter |
 | Homesickness | S3 | `sos` | ⏳ | draw, tap, stun counters |
 | Hungry Graffalon | S6 | `sos` | ✅ done | Increment mechanic |
