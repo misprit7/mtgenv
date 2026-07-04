@@ -6,10 +6,47 @@ per-card triage, modeled on `SELESNYA_LANDFALL_CARDS.md`.
 
 ## ▶ NEXT AGENT — start here (handoff from sos-cards-6, 2026-07-03)
 
-**▶▶ sos-cards-7 (2026-07-03) — in progress: 153 authored / 150 fully-faithful / 3 tracked-partial, 575 mtg-core
-tests green. Shipped 5 caps + 4 cards: (1) {X}-in-an-activated-cost + Berta; (2) S20 CountersOnTarget value +
-flush-before-PutCounters + Growth Curve; (3) CardFilter::Attacking + Living History; (4) ValueExpr::DistinctNames
-+ CardFilter::HasCounter-in-static-scope + Emil, Vastlands Roamer. See cap ledger + card rows below.**
+**▶▶ sos-cards-7 HANDOFF (2026-07-03) — READ THIS FIRST. 153 authored / 150 fully-faithful / 3 tracked-partial,
+575 mtg-core tests green, tree clean, all pushed.** Shipped **5 caps + 4 cards**, each with a real-path test
+(activation-with-X, put-then-double, YouAttack-trigger-on-`AttackersDeclared`, distinct-named-lands activation),
+all committed via `git commit --only` on the shared tree:
+1. **{X}-in-an-activated-cost** (`7102d4a`) — `activate_ability` now `ChooseNumber{ChooseX}`s (bounded by affordable
+   mana), folds `chosen_x*pips` into generic, carries X on the stack object; ability-resolution `ResolutionCtx.x`
+   was hardcoded `None` → now `obj.x`. → **Berta, Wise Extrapolator** (all 3 clauses).
+2. **S20 `ValueExpr::CountersOnTarget{target,kind}` + flush-before-`PutCounters`** (`6fe5aaf`) — the `PutCounters`
+   interpret arm now flushes staged actions first (mirrors CreateToken's #61 flush) so "put a +1/+1, then double"
+   reads the post-first count. → **Growth Curve**. Full suite confirms **no counter-card regression**.
+3. **`CardFilter::Attacking`** (`e5207a1`) — matches a current declared attacker (`CombatState::is_attacking`),
+   added to `target_matches_filter` + exhaustive `count_filter_matches`. → **Living History** (ETB Spirit +
+   `YouAttack`/S9-gated pump on a target attacking creature).
+4. **`ValueExpr::DistinctNames{zone,filter,controller}`** (distinct card-names among matching objects) + wired
+   **`CardFilter::HasCounter` into the layer-system static-scope matcher** (`chars/mod.rs::matches_filter`, was
+   `_ => false`) (`9b0937f`) → **Emil, Vastlands Roamer** (counter-gated trample anthem + `{4}{G},{T}` Fractal with
+   X = differently-named lands). ⚠️ Corrected the sos-cards-6 belief that {X}-activated-cost would clear Emil — it
+   would NOT; Emil's X = differently-named lands, not a paid {X} (always verify the oracle).
+
+**▶ NEXT AGENT — the moderate queue is now down to heavier single-card caps (each ~1–2 caps, one card):**
+- **directed-discard `Effect`** → **Render Speechless** (`{2}{W}{B}`): "target opponent reveals their hand, YOU
+  choose a nonland card, that player discards it" + "put two +1/+1 counters on up to one target creature." Needs a
+  NEW interactive `Effect` leaf (reveal target player's hand → the CHOOSER/caster picks a matching card → that
+  player discards it — unlike `interpret_discard` where the discarder chooses) + a player target (slot 0) and a
+  creature target (slot 1). Only unblocks THIS card in SOS (scoped 2026-07-03).
+- **Treasure token with an ACTIVATED mana ability** → **Seize the Spoils** (`khm`): a token with `{T}, Sacrifice:
+  add one mana of any color`. ⚠️ HEAVIER than it looks — that's a *sacrifice-cost mana ability*, and the mana
+  payment path (`auto_pay`/`usable_mana_sources`) only *taps* sources; it has no "sacrifice for mana" support.
+  Verify/extend the mana system before scoping as cheap. (S11 did only TRIGGERED token abilities.)
+- **Slumbering Trudge** — stun-counter core is authorable now (S3 done); its "enters tapped unless X≤2" clause needs
+  X threaded into `EntersTappedUnless`'s condition eval (whiteboard.rs ~1454 evals with no X ctx) — or defer that
+  one clause and ship tracked-partial.
+- Bigger subsystems stay **DEFERRED** (lower ROI): spell-copy (~1 net card), move-counters, cost-reduction (S12),
+  dynamic-ManaValue, blink-with-delayed-return, graveyard-play, grant-arbitrary-ability, Fractalize (= milestone-5
+  SET color/type layers), LKI dies-triggers. 36 prepare-DFC + 2 planeswalkers + 5 Lessons stay deferred by type.
+
+**PROCESS (unchanged, hard-won):** shared tree → `git commit --only <paths>` (stage a NEW file with `git add`
+first, then `--only` it), never `-a`/`add -A`/stash; don't touch `experiments/`; `cargo test -p mtg-core` green at
+every commit; flip a cap's ledger Status cell in the SAME commit; **`git log -S "<mechanism>"` + READ THE CODE
+before scoping any ⏳ row as new** (multiple prose beliefs were wrong in BOTH directions). Ping the lead at cap
+boundaries. On fatigue: declare, rewrite THIS block, hand off clean.
 
 **▶▶ sos-cards-6 handoff (2026-07-03 late night) — READ THIS FIRST. FIRST-PASS MILESTONE DECLARED: 149 authored /
 146 fully-faithful / 3 tracked-partial, 562 mtg-core tests green, tree clean, all pushed.** Shipped **8 cards + 8
