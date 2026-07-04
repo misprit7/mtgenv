@@ -1159,18 +1159,23 @@ impl Engine {
         }
 
         // Graveyard-activated abilities (CR 601.3e): a card in your graveyard whose `Activated`
-        // ability carries `ExileSelfFromGraveyard` (Eternal Student, Stone Docent). Same gates as the
-        // battlefield scan (timing / restriction / mana / targets), but the source lives in the
-        // graveyard and paying the cost exiles it.
+        // ability is marked graveyard-usable — either `ExileSelfFromGraveyard` (the ability exiles
+        // itself as a cost: Eternal Student, Stone Docent) or `ActivateFromGraveyard` (a pure marker
+        // whose effect itself returns the source: self-recursion, Summoned Dromedary). Same gates as
+        // the battlefield scan (timing / restriction / mana / targets); the source lives in the gy.
         for &gy in &s.player(p).graveyard {
             let Some(def) = s.def_of(gy) else { continue };
             for (i, ab) in def.abilities.iter().enumerate() {
                 let Ability::Activated { cost, effect, timing, restriction, is_mana } = ab else {
                     continue;
                 };
-                if *is_mana
-                    || !cost.components.iter().any(|c| matches!(c, CostComponent::ExileSelfFromGraveyard))
-                {
+                let gy_usable = cost.components.iter().any(|c| {
+                    matches!(
+                        c,
+                        CostComponent::ExileSelfFromGraveyard | CostComponent::ActivateFromGraveyard
+                    )
+                });
+                if *is_mana || !gy_usable {
                     continue;
                 }
                 let timing_ok = match timing {

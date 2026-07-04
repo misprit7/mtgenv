@@ -54,6 +54,14 @@ pub enum CostComponent {
     /// ability is usable **from the hand** (a cycling-style ability: Visionary's Dance). Paying it
     /// moves the source card to its owner's graveyard.
     DiscardSelfFromHand,
+    /// A **pure marker** (no cost effect) that this `Activated` ability functions **from the
+    /// graveyard** (CR 113.6 / 601.3e) even though its cost doesn't exile the source — e.g. a
+    /// self-recursion ability "{cost}: Return this card from your graveyard to your hand/the
+    /// battlefield" (Summoned Dromedary, Teacher's Pest). The effect itself moves the source out
+    /// of the graveyard; this component only makes `legal_priority_actions` scan the graveyard for
+    /// the ability. Always payable; paying it does nothing. (Distinct from `ExileSelfFromGraveyard`,
+    /// which is both marker AND an exile cost.)
+    ActivateFromGraveyard,
 }
 
 /// Timing restriction for casting/activating (CR 117.1a, 602.5d/e).
