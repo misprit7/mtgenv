@@ -4,9 +4,69 @@ Standing workstream: implement the Secrets of Strixhaven set for **limited (40-c
 `mtg-core`, easiest-first, correctness over count. This ledger is the capability index + full
 per-card triage, modeled on `SELESNYA_LANDFALL_CARDS.md`.
 
-## ▶ NEXT AGENT — start here (handoff from sos-cards-6, 2026-07-03)
+## ▶ NEXT AGENT — start here (handoff from sos-cards-8, 2026-07-04)
 
-**▶▶ sos-cards-7 HANDOFF (2026-07-03) — READ THIS FIRST. 153 authored / 150 fully-faithful / 3 tracked-partial,
+**▶▶ sos-cards-8 HANDOFF (2026-07-04) — READ FIRST. SCOPE IS NOW THE FULL SET** (T4 deferral REVOKED —
+prepare-DFCs, Lessons, planeswalkers, spell-copy, Fractalize, all subsystems in scope). Quality bar:
+each subsystem built as the GENERAL CR capability, not the minimal hack. **154→158 authored / 154 fully-
+faithful / 3 tracked-partial, 583 mtg-core tests green, tree clean, pushed.** Shipped **4 cards + 4 caps**,
+each with a real-path test, via `git commit --only` on the shared tree:
+1. **`Effect::DirectedDiscard` + `TargetKind::Player(PlayerFilter)`** (`4faa6d9`) — "target opponent reveals
+   hand, YOU choose a nonland, they discard it" (chooser ≠ discarder, CR 701.8) + a general player-target
+   restriction (`Any`/`Opponent`/`You`; `Effect::TargetPlayer` now carries the filter — 5 existing consumers
+   updated to `Any`). → **Render Speechless**.
+2. **`CostComponent::ActivateFromGraveyard`** (`4b70bc1`) — a pure graveyard-usability marker (no cost effect)
+   decoupling "this activated ability functions from the graveyard" from S18's `ExileSelfFromGraveyard` (which
+   is marker AND exile cost); the graveyard scan accepts either. → **Summoned Dromedary** (`{1}{W}`: return
+   self gy→hand, via `MoveZone{SourceSelf→Hand}`).
+3. **LKI dies-triggers (CR 603.10a)** (`3ef761d`) — **load-bearing.** New `GameState.last_known: BTreeMap<ObjId,
+   Lki>` (Lki = computed chars + controller), captured in `move_object` when a permanent LEAVES the battlefield
+   (before status/controller reset); `ComputedChars` gained serde. Wired `EventPattern::CreatureDies(filter)`
+   (was defined-but-unfired) via `queue_watching_dies_triggers` + a new LKI-aware `dies_filter_matches` (the
+   dies analogue of `enter_filter_matches`, reading the LKI snapshot). + `CardFilter::ToughnessAtMost`. →
+   **Arnyn, Deathbloom Botanist** (deathtouch + drain when a P/T≤1 creature you control dies) + **Cauldron of
+   Essence** (drain when a creature you control dies + sac-cost sorcery reanimation). ⚠️ **LKI groundwork for
+   the WHOLE future** — every dies/LTB-trigger and "draw cards = its power"-style effect should read `last_known`.
+   Only the FILTER path reads LKI so far; when a dies-trigger's *effect/value* needs the dead object's stats,
+   thread the LKI into `ResolutionCtx` (not built yet — no consumer). `SelfDies` effects still read the live
+   (graveyard) object; fine for current self-dies cards, revisit when one reads its own dying stats.
+
+**▶ NEXT AGENT — recommended order (adjust with judgment; the lead's suggested order is in the brief):**
+- **S12 conditional cost-reduction (CR 601.2f)** — the highest-yield unbuilt heavy subsystem (7 cards). **No
+  cost-modification pipeline exists** (`cast_spell` reads `chars.mana_cost` raw; `CostReductionGeneric` static
+  is defined-but-never-applied). Design `effective_cast_cost(state, card[, chosen_targets])` used by BOTH the
+  offer gate (`priority.rs` ~1041 `can_pay_ex`) and `cast_spell` (~1772). Split cleanly: (a) **state/count
+  conditions** (Orysa "toughness≥10", Wilt "card left gy this turn" [S9 flag], Dawning Archaic "{1} per I/S in
+  gy") are EXACT at offer-time (no target dependence) → do these first, fully correct; (b) **target-dependent**
+  (Ajani's Response, Brush Off [note: {1}{U} COLORED reduction], Run Behind) need affordability-aware targeting
+  — a distinct sub-capability, do second. Also **Diary of Dreams** = activated-ability cost reduction (per page
+  counter) — a per-ability variant. Represent as `Ability::CostReduction { amount: {Generic(u32)|GenericPerUnit
+  (ValueExpr)|Colored(ManaCost)}, condition }`.
+- **Enters-tapped** (`ZoneDest` has no tapped flag; 43 literals so DON'T add a required field — add a small
+  builder or a separate `Effect::MoveZone` tapped variant / an entering-tapped continuous). Unblocks the rest of
+  graveyard-recursion (**Teacher's Pest** gy→battlefield tapped) + Mind Roots / Mind into Matter enters-tapped.
+- **Postmortem Professor** — needs an exile-an-I/S-from-gy cost variant (like `ExileSelfFromGraveyard` but exile
+  a DIFFERENT gy card) + a "can't block" qualification (Defender = can't-attack; can't-block is separate) + the
+  `ActivateFromGraveyard` marker (done) for its gy→battlefield reanimation.
+- **Killian's Confidence** — triggered-ability-that-functions-from-graveyard (combat-damage trigger → pay {W/B}
+  → return self gy→hand). A NEW class: triggered (not activated) abilities usable from the graveyard.
+- Then the lead's list: dynamic-ManaValue filters, blink-with-delayed-return, move-counters, grant-arbitrary-
+  ability (layer 6), repeatable-modal + dynamic-X targeting, spell-copy, Fractalize.
+- **The big three (design-sketch to the lead BEFORE building):** Lessons/Learn (OutsideTheGame zone), Planeswalkers
+  (NOTE: `CostComponent::Loyalty` + a `planeswalker_enters_with_loyalty_and_dies_at_zero` test ALREADY exist —
+  groundwork is partly there; read it first), Prepare-DFCs (36 — card-faces model, biggest piece).
+
+**PROCESS (unchanged, hard-won):** shared tree → `git commit --only <paths>` (stage a NEW file with `git add`
+first), never `-a`/`add -A`/stash; DON'T touch `experiments/` (muzero-debug lives there + GPU runs); `cargo test
+-p mtg-core` green at every commit; flip a cap's ledger Status cell in the SAME commit; **`git log -S "<mechanism>"`
++ READ THE CODE before scoping any ⏳ row as new** (several drifted stale historically); real-path integration
+test (cast→pay→target→resolve) for every mechanism. Ping the lead at subsystem boundaries. On fatigue: declare,
+rewrite THIS block, hand off clean.
+
+---
+## Prior handoffs (superseded by the block above, kept for provenance)
+
+**▶▶ sos-cards-7 HANDOFF (2026-07-03) — 153 authored / 150 fully-faithful / 3 tracked-partial,
 575 mtg-core tests green, tree clean, all pushed.** Shipped **5 caps + 4 cards**, each with a real-path test
 (activation-with-X, put-then-double, YouAttack-trigger-on-`AttackersDeclared`, distinct-named-lands activation),
 all committed via `git commit --only` on the shared tree:
@@ -320,7 +380,9 @@ each cap unlocks the bracketed count. `⏳` = not yet built.
 | **{X}-in-activated-cost** | choose `{X}` when activating an ability (CR 602.2b), fold into mana paid, carry on the stack object so `ValueExpr::X` reads it at resolution — mirrors the spell-cast X path | 1 | ✅ **DONE** (sos-cards-7) — `activate_ability` (priority.rs) `ChooseNumber{ChooseX}` bounded by affordable mana + folds `chosen_x * pips` into generic; ability-resolution `ResolutionCtx.x` was `None`, now `obj.x`. → **Berta, Wise Extrapolator** (`{X},{T}: Fractal with X counters`). NOTE: Emil's `{4}{G},{T}` does NOT use a paid `{X}` — its X = differently-named lands (needs a `DistinctNamedLands` value, a separate cap). |
 | **S20** counters-on-target value | `ValueExpr::CountersOnTarget { target, kind }` (reads live count of a counter kind on the Nth chosen target) + a flush-before-`PutCounters` interpret arm so a prior counter-add commits before the read | 1 | ✅ **DONE** (sos-cards-7) → **Growth Curve** ("+1/+1 counter, then double"). The flush mirrors CreateToken's #61 fix; the full suite (568 tests) confirms no counter-card regression. |
 | **S22** cast-I/S-this-turn cond | (done — see NEXT-AGENT block) | 1 | ✅ **DONE** (agent 6) |
-| **misc one-offs** | GreatestMV, ~~DistinctNames~~, ~~SoftCounter~~, DirectedDiscard, AltCost, PayXLife, NoMaxHand, GrantAbility | 1–3 ea | ⏳ except **SoftCounter ✅ DONE** (`Effect::CounterUnlessPay`, Ward `96dbc35`) and **DistinctNames ✅ DONE** (sos-cards-7 — `ValueExpr::DistinctNames{zone,filter,controller}`, distinct card-names among matching objects → **Emil**; that commit ALSO wired `CardFilter::HasCounter` into the layer-system static-scope matcher `chars/mod.rs::matches_filter` for Emil's counter-gated trample anthem). The rest (GreatestMV/DirectedDiscard/AltCost/PayXLife/NoMaxHand/GrantAbility) are genuinely unbuilt. |
+| **misc one-offs** | GreatestMV, ~~DistinctNames~~, ~~SoftCounter~~, ~~DirectedDiscard~~, AltCost, PayXLife, NoMaxHand, GrantAbility | 1–3 ea | ⏳ except **SoftCounter ✅** (`Effect::CounterUnlessPay`, Ward `96dbc35`), **DistinctNames ✅** (sos-cards-7, `ValueExpr::DistinctNames`), and **DirectedDiscard ✅ DONE** (sos-cards-8 `4faa6d9` — `Effect::DirectedDiscard{who,chooser,count,filter}` chooser≠discarder + `TargetKind::Player(PlayerFilter::{Any,Opponent,You})` general player-target restriction → **Render Speechless**). The rest (GreatestMV/AltCost/PayXLife/NoMaxHand/GrantAbility) genuinely unbuilt. |
+| **LKI dies-triggers** | last-known-info store (CR 603.10a) + `CreatureDies(filter)` wiring so other permanents' filtered dies-triggers fire, matched against the dead object's pre-death chars/controller | 2+ | ✅ **DONE** (sos-cards-8 `3ef761d`) — `GameState.last_known` captured in `move_object`, `queue_watching_dies_triggers`/`dies_filter_matches`, `CardFilter::ToughnessAtMost` → **Arnyn, Cauldron of Essence**. LKI store is groundwork for ALL future dies/LTB abilities (effect-time LKI reads still TODO). |
+| **graveyard-recursion** | `CostComponent::ActivateFromGraveyard` (pure gy-usability marker, no cost effect — cf. S18's `ExileSelfFromGraveyard`) for "{cost}: return this from your graveyard" self-recursion | 3+ | ◑ **self→hand DONE** (sos-cards-8 `4b70bc1`) → **Summoned Dromedary**. Remaining: **Teacher's Pest** (self→battlefield TAPPED — needs enters-tapped), **Postmortem Professor** (exile-I/S-from-gy cost + can't-block), **Killian's Confidence** (triggered-from-gy). |
 | **Native** | genuine one-offs via the `Native` escape hatch: Mathemagics (2^X), Pox Plague (halving), Steal the Show (wheel) | 4 | ⏳ |
 
 Building **S1, S4, S5, S6, S7, S8, S10** (the seven big-count caps) converts ~**79** T3 cards to authorable.
@@ -469,14 +531,14 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 |---|---|---|---|---|
 | Additive Evolution | - | `sos` | ✅ done | fractal token + combat counter, all IR |
 | Ancestral Anger | - | `vow` | ✅ done | grant trample, named-card-count pump, draw |
-| Arnyn, Deathbloom Botanist | - | `sos` | ⏳ | deathtouch, filtered dies-trigger drain |
+| Arnyn, Deathbloom Botanist | LKI-dies | `sos` | ✅ done | deathtouch + `CreatureDies` LKI trigger (P/T≤1 you control) drain 2/gain 2 |
 | Artistic Process | - | `sos` | ✅ done | modal: 6-to-target / 2-to-each-opp-creature (ForEach chooser:Opponent) / flying+haste token |
 | Ascendant Dustspeaker | - | `sos` | ⏳ | flying, ETB counter, exile graveyard card |
 | Bogwater Lumaret | - | `sos` | ✅ done | creature-ETB gain-life trigger, IR |
 | Borrowed Knowledge | - | `sos` | ⏳ | modal discard hand, draw by count |
 | Burrog Banemaker | - | `sos` | ✅ done | deathtouch + activated pump |
 | Burrog Barrage | - | `sos` | ⏳ | conditional pump + power-based damage |
-| Cauldron of Essence | - | `sos` | ⏳ | dies-drain + activated reanimation |
+| Cauldron of Essence | LKI-dies | `sos` | ✅ done | `CreatureDies(you control)` LKI drain + sac-cost sorcery reanimation |
 | Charging Strifeknight | discard-cost | `sos` | ✅ done | haste + {T},Discard-a-card: draw (CostComponent::Discard wired) |
 | Chase Inspiration | - | `sos` | ✅ done | pump + grant hexproof |
 | Chelonian Tackle | - | `sos` | ✅ done | pump + fight up to one |
@@ -635,7 +697,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Rancorous Archaic | S7 | `sos` | ⏳ | Converge counters equal colors spent |
 | Rapier Wit | S3 | `sos` | ✅ done | stun counter |
 | Rehearsed Debater | S8 | `sos` | ✅ done | Repartee targets-a-creature trigger |
-| Render Speechless | DirectedDiscard | `sos` | ⏳ | you choose opponent's discarded card |
+| Render Speechless | DirectedDiscard,PlayerFilter | `sos` | ✅ done | `DirectedDiscard` (you choose opp's discard) + `TargetKind::Player(Opponent)` |
 | Root Manipulation | GrantAbility | `sos` | ⏳ | grant ad-hoc attacks-gain-life EOT |
 | Run Behind | S12 | `sos` | ⏳ | conditional cost reduction targeting attacker |
 | Scolding Administrator | S8 | `sos` | ⏳ | Repartee targets-a-creature trigger |
@@ -654,7 +716,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Stirring Hopesinger | S8 | `sos` | ✅ done | Repartee: cast IS targeting creature |
 | Stone Docent | S1,S18 | `sos` | ✅ done | graveyard-activated gain-life + surveil |
 | Stress Dream | S2 | `sos` | ✅ done | look-and-pick top two |
-| Summoned Dromedary | S18 | `sos` | ⏳ | {1}{W} return this from graveyard to hand |
+| Summoned Dromedary | ActivateFromGraveyard | `sos` | ✅ done | vigilance + `{1}{W}` graveyard-recursion (self→hand) via the marker |
 | Sundering Archaic | S7 | `sos` | ⏳ | converge, colors of mana spent |
 | Suspend Aggression | S15 | `sos` | ✅ done | exile target nonland permanent + top of library; each playable through its OWNER's next turn (Sequence of two `ExileForPlay`, per-owner window) |
 | Tablet of Discovery | S13,S15 | `sos` | ⏳ | impulse-play milled card; restricted mana |
