@@ -11,6 +11,7 @@ use crate::cards::helpers::instant_or_sorcery;
 use crate::cards::{creature, mana_cost, CardDb};
 use crate::effects::ability::{Ability, EventPattern};
 use crate::effects::condition::Condition;
+use crate::effects::target::PlayerFilter;
 use crate::effects::value::{PlayerRef, ValueExpr};
 use crate::effects::Effect;
 use crate::subtypes::CreatureType;
@@ -37,7 +38,7 @@ pub fn register(db: &mut CardDb) {
                 condition: None,
                 intervening_if: false,
                 effect: Effect::Sequence(vec![
-                    Effect::TargetPlayer,
+                    Effect::TargetPlayer(PlayerFilter::Any),
                     Effect::Conditional {
                         cond: Condition::ValueAtLeast(ValueExpr::ManaSpentOnTrigger, ValueExpr::Fixed(5)),
                         then: Box::new(mill(10)),
@@ -79,7 +80,9 @@ mod tests {
                     intervening_if: false,
                     effect: Sequence(
                         [
-                            TargetPlayer,
+                            TargetPlayer(
+                                Any,
+                            ),
                             Conditional {
                                 cond: ValueAtLeast(
                                     ManaSpentOnTrigger,

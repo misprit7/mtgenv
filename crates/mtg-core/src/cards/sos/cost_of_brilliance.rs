@@ -9,7 +9,7 @@
 
 use crate::basics::{CardType, Color, CounterKind};
 use crate::cards::{mana_cost, spell, CardDb};
-use crate::effects::target::{CardFilter, TargetKind, TargetSpec};
+use crate::effects::target::{CardFilter, PlayerFilter, TargetKind, TargetSpec};
 use crate::effects::value::{PlayerRef, ValueExpr};
 use crate::effects::{Effect, EffectTarget};
 
@@ -18,7 +18,7 @@ pub const COST_OF_BRILLIANCE: u32 = 270;
 
 pub fn register(db: &mut CardDb) {
     let effect = Effect::Sequence(vec![
-        Effect::TargetPlayer,
+        Effect::TargetPlayer(PlayerFilter::Any),
         Effect::Draw { who: PlayerRef::ChosenTarget(0), count: ValueExpr::Fixed(2) },
         Effect::LoseLife { who: PlayerRef::ChosenTarget(0), amount: ValueExpr::Fixed(2) },
         Effect::PutCounters {
@@ -58,7 +58,9 @@ mod tests {
         expect![[r#"
             Sequence(
                 [
-                    TargetPlayer,
+                    TargetPlayer(
+                        Any,
+                    ),
                     Draw {
                         who: ChosenTarget(
                             0,

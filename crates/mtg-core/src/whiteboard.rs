@@ -173,6 +173,16 @@ impl EngineCore {
                 let count = self.eval_value(count, ctx).max(0) as u32;
                 self.interpret_discard(player, count) > 0
             }
+            // Directed discard (CR 701.8): `who` reveals their hand, `chooser` picks up to `count`
+            // cards matching `filter`, and `who` discards them (Render Speechless's "you choose").
+            // Imperative + asks two different players, so it lives here. Flush staged first.
+            Effect::DirectedDiscard { who, chooser, count, filter } => {
+                self.flush_pending(wb);
+                let discarder = self.eval_player(*who, ctx);
+                let chooser = self.eval_player(*chooser, ctx);
+                let count = self.eval_value(count, ctx).max(0) as u32;
+                self.interpret_directed_discard(discarder, chooser, count, filter) > 0
+            }
             // Counter a target spell/ability on the stack (CR 701.5). Imperative (mutates the stack),
             // so it lives here. A spell with the `CantBeCountered` qualification (CR 701.5f) is left
             // on the stack — the counterspell still resolved, it just did nothing to that spell.
@@ -481,6 +491,66 @@ impl EngineCore {
         };
         // Discard is mandatory: if the agent under-picked, fill from the front of the hand.
         for &o in &hand {
+            if chosen.len() >= n {
+                break;
+            }
+            if seen.insert(o) {
+                chosen.push(o);
+            }
+        }
+        let discarded = chosen.len();
+        for card in chosen {
+            let owner = self.state.object(card).owner;
+            self.state.move_object(card, Zone::Graveyard, owner);
+            self.broadcast(GameEvent::ObjectMoved { obj: card, to: Zone::Graveyard });
+        }
+        discarded
+    }
+
+    /// Directed discard (CR 701.8, chooser ≠ discarder): reveal `discarder`'s hand, let `chooser`
+    /// pick up to `count` cards matching `filter` (revealing is implicit — the chooser's agent sees
+    /// the eligible cards), then `discarder` discards the picks. Mandatory up to the number of
+    /// eligible cards: if `chooser` under-selects, the front of the eligible set fills in. Returns
+    /// the number discarded (for the `IfYouDo`/"performed" flag).
+    fn interpret_directed_discard(
+        &mut self,
+        discarder: PlayerId,
+        chooser: PlayerId,
+        count: u32,
+        filter: &CardFilter,
+    ) -> usize {
+        let hand = self.state.player(discarder).hand.clone();
+        let eligible: Vec<ObjId> =
+            hand.iter().copied().filter(|&o| self.count_filter_matches(o, filter)).collect();
+        let n = (count as usize).min(eligible.len());
+        if n == 0 {
+            return 0;
+        }
+        let req = DecisionRequest::SelectCards {
+            reason: SelectReason::Reveal,
+            from: eligible.clone(),
+            min: n as u32,
+            max: n as u32,
+            description: "Choose card(s) for that player to discard".into(),
+        };
+        let mut seen = std::collections::BTreeSet::new();
+        let mut chosen: Vec<ObjId> = match self.ask(chooser, &req) {
+            DecisionResponse::Indices(idxs) => idxs
+                .iter()
+                .filter_map(|&i| eligible.get(i as usize).copied())
+                .filter(|o| seen.insert(*o))
+                .take(n)
+                .collect(),
+            DecisionResponse::Index(i) => eligible
+                .get(i as usize)
+                .copied()
+                .filter(|o| seen.insert(*o))
+                .into_iter()
+                .collect(),
+            _ => Vec::new(),
+        };
+        // Mandatory: if the chooser under-picked, fill from the front of the eligible cards.
+        for &o in &eligible {
             if chosen.len() >= n {
                 break;
             }
@@ -1213,7 +1283,7 @@ impl EngineCore {
             // "Target player" declaration (CR 115.1): no action — it just consumes its target slot so
             // later `Target(...)` slots line up. The player was chosen at cast (a `Player` spec) and is
             // read by the following effects via `PlayerRef::ChosenTarget`.
-            Effect::TargetPlayer => {
+            Effect::TargetPlayer(_) => {
                 *cursor += 1;
             }
             // ── Leaves defined in the IR but not yet given a whiteboard runtime. These fail
@@ -1243,6 +1313,7 @@ impl EngineCore {
             | Effect::Sacrifice { .. }
             | Effect::Surveil { .. }
             | Effect::LookAndPick { .. }
+            | Effect::DirectedDiscard { .. }
             | Effect::Nothing => {}
         }
     }

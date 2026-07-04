@@ -16,7 +16,9 @@ use serde::{Deserialize, Serialize};
 pub enum TargetKind {
     /// "any target" — creature / player / planeswalker / battle (CR 115.4).
     Any,
-    Player,
+    /// "target player" / "target opponent" / "target you" (CR 115.1) — the candidate set is
+    /// restricted by the `PlayerFilter` relative to the source's controller.
+    Player(PlayerFilter),
     /// A permanent matching the filter.
     Permanent(CardFilter),
     /// A creature (sugar for `Permanent` of creatures).
@@ -25,6 +27,19 @@ pub enum TargetKind {
     StackObject(CardFilter),
     /// A card in a public zone (graveyard/exile).
     CardInZone { zone: Zone, filter: CardFilter },
+}
+
+/// Which players a "target player" word accepts, relative to the source's controller (CR 115.1 /
+/// 109.5). Kept small and extensible — a new restriction (e.g. "a player who controls a creature")
+/// becomes a new variant, not a special case.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PlayerFilter {
+    /// "target player" — any player (including yourself).
+    Any,
+    /// "target opponent" — any player other than the source's controller (CR 102.1).
+    Opponent,
+    /// "you" as a target (rare; kept for completeness).
+    You,
 }
 
 /// One "target" requirement (one instance of the word "target"): its kind and how many.

@@ -9,7 +9,7 @@
 
 use crate::basics::{CardType, Color, DamageKind};
 use crate::cards::{mana_cost, spell, CardDb};
-use crate::effects::target::{TargetKind, TargetSpec};
+use crate::effects::target::{PlayerFilter, TargetKind, TargetSpec};
 use crate::effects::value::{PlayerRef, ValueExpr};
 use crate::effects::{Effect, EffectTarget};
 
@@ -18,7 +18,7 @@ pub const TOGETHER_AS_ONE: u32 = 293;
 
 pub fn register(db: &mut CardDb) {
     let effect = Effect::Sequence(vec![
-        Effect::TargetPlayer,
+        Effect::TargetPlayer(PlayerFilter::Any),
         Effect::Draw { who: PlayerRef::ChosenTarget(0), count: ValueExpr::ColorsSpent },
         Effect::DealDamage {
             amount: ValueExpr::ColorsSpent,
@@ -46,7 +46,9 @@ mod tests {
         expect![[r#"
             Sequence(
                 [
-                    TargetPlayer,
+                    TargetPlayer(
+                        Any,
+                    ),
                     Draw {
                         who: ChosenTarget(
                             0,

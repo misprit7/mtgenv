@@ -8,6 +8,7 @@
 
 use crate::basics::{CardType, Color};
 use crate::cards::{mana_cost, spell, CardDb};
+use crate::effects::target::PlayerFilter;
 use crate::effects::value::{PlayerRef, ValueExpr};
 use crate::effects::Effect;
 
@@ -16,7 +17,7 @@ pub const ARCANE_OMENS: u32 = 292;
 
 pub fn register(db: &mut CardDb) {
     let effect = Effect::Sequence(vec![
-        Effect::TargetPlayer,
+        Effect::TargetPlayer(PlayerFilter::Any),
         Effect::Discard { who: PlayerRef::ChosenTarget(0), count: ValueExpr::ColorsSpent },
     ]);
     db.insert(
@@ -38,7 +39,9 @@ mod tests {
         expect![[r#"
             Sequence(
                 [
-                    TargetPlayer,
+                    TargetPlayer(
+                        Any,
+                    ),
                     Discard {
                         who: ChosenTarget(
                             0,

@@ -15,7 +15,7 @@
 
 use crate::basics::{CardType, Color, CounterKind};
 use crate::cards::{mana_cost, spell, CardDb};
-use crate::effects::target::{CardFilter, TargetKind, TargetSpec};
+use crate::effects::target::{CardFilter, PlayerFilter, TargetKind, TargetSpec};
 use crate::effects::value::{PlayerRef, ValueExpr};
 use crate::effects::{Effect, EffectTarget};
 
@@ -24,7 +24,7 @@ pub const HOMESICKNESS: u32 = 343;
 
 pub fn register(db: &mut CardDb) {
     let effect = Effect::Sequence(vec![
-        Effect::TargetPlayer,
+        Effect::TargetPlayer(PlayerFilter::Any),
         Effect::Draw { who: PlayerRef::ChosenTarget(0), count: ValueExpr::Fixed(2) },
         Effect::ForEachTarget {
             slot: TargetSpec {
@@ -80,7 +80,9 @@ mod tests {
         expect![[r#"
             Sequence(
                 [
-                    TargetPlayer,
+                    TargetPlayer(
+                        Any,
+                    ),
                     Draw {
                         who: ChosenTarget(
                             0,
@@ -128,7 +130,7 @@ mod tests {
         let effect = db.get(HOMESICKNESS).unwrap().spell_effect().unwrap().clone();
         let specs = target_specs_for(&effect, &[]);
         assert_eq!(specs.len(), 2, "one player slot + one creature slot");
-        assert!(matches!(specs[0].kind, TargetKind::Player), "slot 0 = target player");
+        assert!(matches!(specs[0].kind, TargetKind::Player(_)), "slot 0 = target player");
         assert!(matches!(specs[1].kind, TargetKind::Creature(_)), "slot 1 = target creature(s)");
         assert_eq!((specs[1].min, specs[1].max), (0, 2), "up to two creatures");
     }

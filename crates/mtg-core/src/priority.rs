@@ -21,7 +21,7 @@ use crate::effects::ability::{
     Ability, Cost, CostComponent, EventPattern, Keyword, Restriction, StaticContribution, Timing,
 };
 use crate::effects::action::{Action, MoveCause, ResolutionCtx, Whiteboard, WbReason};
-use crate::effects::target::{CardFilter, SelectSpec, TargetKind, TargetSpec};
+use crate::effects::target::{CardFilter, PlayerFilter, SelectSpec, TargetKind, TargetSpec};
 use crate::effects::value::{PlayerRef, ValueExpr};
 use crate::effects::{Effect, EffectTarget};
 use crate::ids::{ObjId, PlayerId, StackId};
@@ -2073,7 +2073,16 @@ impl Engine {
         };
         match &spec.kind {
             TargetKind::Any => creatures().chain(players()).collect(),
-            TargetKind::Player => players().collect(),
+            // "target player" / "target opponent" / "you" — restrict by the `PlayerFilter` relative
+            // to the caster (CR 115.1 / 102.1).
+            TargetKind::Player(f) => players()
+                .filter(|t| match (f, t) {
+                    (PlayerFilter::Any, _) => true,
+                    (PlayerFilter::Opponent, Target::Player(p)) => *p != caster,
+                    (PlayerFilter::You, Target::Player(p)) => *p == caster,
+                    _ => false,
+                })
+                .collect(),
             TargetKind::Creature(filter) => creatures()
                 .filter(|t| self.target_matches_filter(t, filter, caster, source))
                 .collect(),
@@ -3435,8 +3444,8 @@ fn collect_specs_into(effect: &Effect, out: &mut Vec<TargetSpec>) {
         }
         // "Target player" (CR 115.1) — a targeting slot the following effects reference via
         // `PlayerRef::ChosenTarget`. Declares a single Player target.
-        Effect::TargetPlayer => out.push(TargetSpec {
-            kind: TargetKind::Player,
+        Effect::TargetPlayer(filter) => out.push(TargetSpec {
+            kind: TargetKind::Player(*filter),
             min: 1,
             max: 1,
             distinct: true,

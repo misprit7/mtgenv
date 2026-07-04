@@ -104,6 +104,7 @@ pub mod rancorous_archaic;
 pub mod rearing_embermare;
 pub mod rapier_wit;
 pub mod rehearsed_debater;
+pub mod render_speechless;
 pub mod shattered_acolyte;
 pub mod shopkeepers_bane;
 pub mod send_in_the_pest;
@@ -249,6 +250,7 @@ pub fn register(db: &mut CardDb) {
     rearing_embermare::register(db);
     rapier_wit::register(db);
     rehearsed_debater::register(db);
+    render_speechless::register(db);
     shattered_acolyte::register(db);
     shopkeepers_bane::register(db);
     send_in_the_pest::register(db);

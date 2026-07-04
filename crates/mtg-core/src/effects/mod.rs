@@ -22,7 +22,9 @@ pub mod value;
 use self::ability::{Cost, Keyword};
 use self::condition::{Condition, Duration};
 use self::native::NativeFn;
-use self::target::{CardFilter, ManaSpec, SelectSpec, TargetSpec, TokenCopyMods, TokenSpec};
+use self::target::{
+    CardFilter, ManaSpec, PlayerFilter, SelectSpec, TargetSpec, TokenCopyMods, TokenSpec,
+};
 use self::value::{PlayerRef, ValueExpr};
 use crate::basics::{CounterKind, DamageKind, Zone, ZoneDest};
 
@@ -215,6 +217,21 @@ pub enum Effect {
         who: PlayerRef,
         count: ValueExpr,
     },
+    /// "Target player reveals their hand. You choose N `filter` card(s) from it. That player
+    /// discards them" (CR 701.8 discard driven by *another* player's choice — Render Speechless,
+    /// Coercion, Thoughtseize-likes). Unlike `Discard` (the discarding player chooses which),
+    /// `chooser` (usually the caster) picks, then `who` discards the picks. Mandatory up to the
+    /// number of eligible cards; if fewer than `count` match `filter`, all eligible are chosen.
+    DirectedDiscard {
+        /// The player whose hand is revealed and who discards — a `PlayerRef::ChosenTarget(n)`
+        /// bound by a preceding `TargetPlayer` slot (or a relative ref).
+        who: PlayerRef,
+        /// The player who chooses which card(s) — usually `PlayerRef::Controller` ("you choose").
+        chooser: PlayerRef,
+        count: ValueExpr,
+        /// Which cards are eligible to be chosen (e.g. `Not(HasCardType(Land))` = "a nonland card").
+        filter: CardFilter,
+    },
     Exile {
         what: EffectTarget,
     },
@@ -323,10 +340,10 @@ pub enum Effect {
     /// Declare a **"target player"** (CR 115.1) for the spell/ability — a targeting slot with no
     /// effect of its own. The player-affecting effects that follow reference the chosen player via
     /// `PlayerRef::ChosenTarget(n)` (e.g. "target player draws two and loses 2 life"). Collected as a
-    /// `TargetKind::Player` spec at cast (so the engine prompts for a player); at resolution it just
-    /// advances the target cursor so later `Target(...)` slots line up. Use `PlayerRef::Opponent` for
-    /// the forced "target opponent" case (single opponent in 2-player) rather than this.
-    TargetPlayer,
+    /// `TargetKind::Player(filter)` spec at cast (so the engine prompts for a legal player); at
+    /// resolution it just advances the target cursor so later `Target(...)` slots line up. The
+    /// `PlayerFilter` restricts the candidates ("target opponent" = `PlayerFilter::Opponent`).
+    TargetPlayer(PlayerFilter),
 
     /// No-op (e.g. an unchosen optional, or a placeholder mode).
     Nothing,
