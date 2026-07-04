@@ -3,6 +3,24 @@
 Short, dated entries for future-agent consumption. Newest first. One line or a few bullets
 per unit of meaningful progress. Keep it terse — detail lives in `docs/` and git history.
 
+## 2026-07-03 (sos-cards-7)
+
+- **SOS: 3 caps + 3 cards, 562→572 mtg-core tests green** (152 authored / 149 fully-faithful).
+  Each cap has a real-path test; all committed via `git commit --only` on a shared tree.
+  - **{X}-in-an-activated-cost** (`7102d4a`): `activate_ability` now chooses `{X}` (ChooseNumber,
+    bounded by affordable mana), folds it into generic mana, and carries it on the stack object; the
+    ability-resolution `ResolutionCtx.x` was hardcoded `None` → now `obj.x`. → **Berta, Wise
+    Extrapolator** (all 3 clauses; legality→pay→resolve activation with X=3 tested).
+  - **S20 CountersOnTarget + flush-before-PutCounters** (`6fe5aaf`): `ValueExpr::CountersOnTarget{
+    target, kind }` reads a target's live counter count; the `PutCounters` interpret arm now flushes
+    staged actions first (mirrors CreateToken's #61 flush) so "put a +1/+1, then double" reads the
+    post-first count. → **Growth Curve**. No counter-card regression across the suite.
+  - **CardFilter::Attacking** (`e5207a1`): matches a current declared attacker
+    (`CombatState::is_attacking`), added to `target_matches_filter` + exhaustive `count_filter_matches`.
+    → **Living History** (ETB Spirit + `YouAttack`/S9-gated pump on a target attacking creature).
+  - Handoff correction: the {X}-activated-cost cap does NOT clear Emil (its X = differently-named
+    lands, not a paid {X}); Emil still needs a `DistinctNamedLands` value cap.
+
 ## 2026-07-03 (late night)
 
 - **Stochastic MuZero on swine: CONCLUDED — two-config honest negative** (experiments/
