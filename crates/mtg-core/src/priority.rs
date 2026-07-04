@@ -2147,6 +2147,7 @@ impl Engine {
             CardFilter::Colorless => self.state.computed(*id).colors.is_empty(),
             CardFilter::Multicolored => self.state.computed(*id).colors.len() >= 2,
             CardFilter::PowerAtMost(n) => self.state.computed(*id).power.unwrap_or(0) <= *n,
+            CardFilter::ToughnessAtMost(n) => self.state.computed(*id).toughness.unwrap_or(0) <= *n,
             CardFilter::Supertype(s) => o.chars.supertypes.contains(s),
             // "target attacking creature" (Living History) — matches a current declared attacker.
             CardFilter::Attacking => {
@@ -2861,6 +2862,9 @@ impl Engine {
             }
             GameEvent::PermanentDied { obj } => {
                 self.queue_self_triggers(*obj, EventPattern::SelfDies);
+                // Other permanents watching "a [filter] creature dies" (CR 603.2), evaluated against
+                // the dying creature's last-known info (CR 603.10a) — Arnyn, Cauldron of Essence.
+                self.queue_watching_dies_triggers(*obj);
                 // Delayed "when this dies …" abilities (CR 603.7) fire on death.
                 self.fire_delayed_triggers(*obj);
             }
@@ -3331,6 +3335,97 @@ impl Engine {
                     self.state.trigger_targeting_source.insert(id, source);
                 }
             }
+        }
+    }
+
+    /// Queue every other permanent's "whenever a [filter] creature dies" trigger (CR 603.2 /
+    /// `EventPattern::CreatureDies`) for a creature that just died. The filter is evaluated against
+    /// the dying creature's **last-known information** (CR 603.10a) — its computed characteristics +
+    /// controller as it last existed on the battlefield — because the live object is now in the
+    /// graveyard (no controller, base P/T). Mirrors `queue_watching_enters_triggers`.
+    fn queue_watching_dies_triggers(&mut self, died: ObjId) {
+        let Some(lki) = self.state.last_known.get(&died).cloned() else { return };
+        // `CreatureDies` only fires for creatures (CR 603.2) — a planeswalker's death doesn't match.
+        if !lki.chars.card_types.contains(&CardType::Creature) {
+            return;
+        }
+        let watchers: Vec<ObjId> =
+            self.state.players.iter().flat_map(|p| p.battlefield.iter().copied()).collect();
+        for watcher in watchers {
+            let wctrl = self.state.object(watcher).controller;
+            let candidates: Vec<(u32, CardFilter)> = match self.state.def_of(watcher) {
+                Some(def) => def
+                    .abilities
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, a)| match a {
+                        Ability::Triggered { event: EventPattern::CreatureDies(f), .. } => {
+                            Some((i as u32, f.clone()))
+                        }
+                        _ => None,
+                    })
+                    .collect(),
+                None => continue,
+            };
+            for (index, filter) in candidates {
+                if self.dies_filter_matches(&lki, &filter, wctrl) {
+                    let id = self.state.mint_stack();
+                    self.state.pending_triggers.push(StackObject {
+                        id,
+                        controller: wctrl,
+                        source: Some(watcher),
+                        kind: StackObjectKind::Ability { index },
+                        targets: Vec::new(),
+                        x: None,
+                        modes: Vec::new(),
+                    });
+                }
+            }
+        }
+    }
+
+    /// Evaluate a `CardFilter` against a dead permanent's last-known info (CR 603.10a), relative to
+    /// the watcher's controller (`wctrl`). Reads the LKI snapshot rather than the live object — the
+    /// dies-trigger analogue of `enter_filter_matches`. Handles the filter set the leaves-battlefield
+    /// abilities need; combinators recurse.
+    fn dies_filter_matches(
+        &self,
+        lki: &crate::state::Lki,
+        filter: &CardFilter,
+        wctrl: PlayerId,
+    ) -> bool {
+        let cc = &lki.chars;
+        match filter {
+            CardFilter::Any => true,
+            CardFilter::HasCardType(t) => cc.card_types.contains(t),
+            CardFilter::HasSubtype(s) => cc.subtypes.contains(s),
+            CardFilter::HasKeyword(k) => cc.has_keyword(*k),
+            CardFilter::HasColor(c) => cc.colors.contains(c),
+            CardFilter::Colorless => cc.colors.is_empty(),
+            CardFilter::Multicolored => cc.colors.len() >= 2,
+            CardFilter::PowerAtMost(n) => cc.power.unwrap_or(0) <= *n,
+            CardFilter::ToughnessAtMost(n) => cc.toughness.unwrap_or(0) <= *n,
+            // "a creature YOU control" (CR 109.5) — the dead creature's last controller vs the
+            // watcher's controller (or an opponent of it).
+            CardFilter::ControlledBy(pref) => {
+                let want = match pref {
+                    PlayerRef::Opponent | PlayerRef::EachOpponent => self
+                        .state
+                        .players
+                        .iter()
+                        .map(|p| p.id)
+                        .find(|&q| q != wctrl)
+                        .unwrap_or(wctrl),
+                    _ => wctrl, // Controller / Owner
+                };
+                lki.controller == want
+            }
+            CardFilter::All(fs) => fs.iter().all(|f| self.dies_filter_matches(lki, f, wctrl)),
+            CardFilter::AnyOf(fs) => fs.iter().any(|f| self.dies_filter_matches(lki, f, wctrl)),
+            CardFilter::Not(f) => !self.dies_filter_matches(lki, f, wctrl),
+            // Filters that reference live/attachment/targeting state have no LKI meaning for a dead
+            // object; conservatively no-match (mirrors `enter_filter_matches`'s catch-all).
+            _ => false,
         }
     }
 

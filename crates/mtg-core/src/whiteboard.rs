@@ -2054,6 +2054,7 @@ impl EngineCore {
                 .and_then(|o| o.chars.mana_cost.as_ref())
                 .is_some_and(|mc| mc.x > 0),
             CardFilter::PowerAtMost(n) => cc.power.unwrap_or(0) <= *n,
+            CardFilter::ToughnessAtMost(n) => cc.toughness.unwrap_or(0) <= *n,
             CardFilter::ManaValue { min, max } => {
                 let mv = self.state.objects.get(&id).map_or(0, |o| o.chars.mana_value());
                 min.is_none_or(|lo| mv >= lo) && max.is_none_or(|hi| mv <= hi)

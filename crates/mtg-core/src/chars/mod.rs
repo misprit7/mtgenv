@@ -30,7 +30,7 @@ use crate::subtypes::Subtype;
 /// The post-layer computed characteristics of an object (CR 613 output). Milestone 5 fills
 /// P/T, keywords, types and colors; the rest of the closed characteristic list (CR 109.3)
 /// joins as layers 1–3 land.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ComputedChars {
     pub power: Option<i32>,
     pub toughness: Option<i32>,

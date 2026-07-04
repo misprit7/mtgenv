@@ -289,6 +289,15 @@ impl Player {
     }
 }
 
+/// Last-known information for a permanent that left the battlefield (CR 603.10a): its computed
+/// characteristics and controller as they last existed on the battlefield. Read by dies/LTB
+/// triggers (whose object is now in another zone, where its controller/counters/P-T differ).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Lki {
+    pub chars: crate::chars::ComputedChars,
+    pub controller: PlayerId,
+}
+
 /// An armed delayed triggered ability (CR 603.7) waiting on its watched object. Carries the
 /// concrete [`Action`]s to run when it resolves (not an `Effect` tree), so it stays serializable
 /// and card-agnostic — the engine never matches on card identity to fire it.
@@ -343,6 +352,14 @@ pub struct GameState {
     /// Armed delayed triggered abilities (CR 603.7): "when [watching] dies/is exiled, do …". The
     /// engine fires (and consumes) one when its watched object leaves the battlefield. Real state.
     pub delayed_triggers: Vec<DelayedTrigger>,
+    /// Last-known information (CR 603.10a / 608.2h): a snapshot of each permanent's computed
+    /// characteristics + controller, taken as it **left the battlefield**. Leaves-the-battlefield
+    /// triggers (dies-triggers) evaluate their filter/value against this — a creature in the
+    /// graveyard has no controller and its base P/T (no counters/effects), so the live object is the
+    /// wrong source. Captured in `move_object`, keyed by the object's stable `ObjId`; overwritten on
+    /// each battlefield-leave. Load-bearing for every present and future dies/LTB ability.
+    #[serde(default)]
+    pub last_known: BTreeMap<ObjId, Lki>,
     pub game_over: bool,
     pub winner: Option<PlayerId>,
     /// Why the game ended (the loss reason of the first player to lose), or `None` while the
@@ -391,6 +408,7 @@ impl GameState {
             combat: None,
             continuous_effects: Vec::new(),
             delayed_triggers: Vec::new(),
+            last_known: BTreeMap::new(),
             game_over: false,
             winner: None,
             end_reason: None,
@@ -637,6 +655,14 @@ impl GameState {
             Some(o) => (o.zone, o.owner),
             None => return false,
         };
+        // Capture last-known information (CR 603.10a) as the permanent LEAVES the battlefield —
+        // before its controller/counters/damage are reset below — so dies/LTB triggers see how it
+        // last existed. Snapshot the computed chars now (immutable borrow ends before we mutate).
+        if from_zone == Zone::Battlefield && to != Zone::Battlefield {
+            let chars = self.computed(id);
+            let controller = self.objects.get(&id).map(|o| o.controller).unwrap_or(from_owner);
+            self.last_known.insert(id, Lki { chars, controller });
+        }
         // Remove from the source zone vector.
         if let Some(v) = self.player_mut(from_owner).zone_vec_mut(from_zone) {
             if let Some(pos) = v.iter().position(|&x| x == id) {

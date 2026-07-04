@@ -94,6 +94,9 @@ pub enum CardFilter {
     ManaValue { min: Option<u32>, max: Option<u32> },
     /// Computed power at most `n` (CR — "creature with power 2 or less"). Escape Tunnel.
     PowerAtMost(i32),
+    /// Computed toughness at most `n` (CR — "with toughness 1 or less"). Pairs with `PowerAtMost`
+    /// under `AnyOf` for "power or toughness N or less" (Arnyn's dies-trigger filter).
+    ToughnessAtMost(i32),
     /// Controlled by the named player.
     ControlledBy(PlayerRef),
     Tapped,
