@@ -61,6 +61,10 @@ pub enum ValueExpr {
     },
     /// Sum of `a` and `b` (composition so simple arithmetic is expressible without new nodes).
     Sum(Box<ValueExpr>, Box<ValueExpr>),
+    /// `2` raised to the (non-negative) inner value — "draws 2ˣ cards" (Mathemagics: `Pow2(X)`, so
+    /// 2⁰=1, 2¹=2, 2²=4, …). The exponent is clamped to `[0, 62]` before shifting (an exponent beyond a
+    /// real deck size decks the player out regardless), so it never overflows `i64`.
+    Pow2(Box<ValueExpr>),
     /// Total **toughness** of the battlefield permanents matching `filter`, optionally restricted by
     /// controller — "creatures you control have total toughness 10 or greater" (Orysa's cost
     /// reduction, via `Condition::ValueAtLeast`). Sums computed toughness; `None`-toughness = 0.

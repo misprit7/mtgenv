@@ -3009,6 +3009,8 @@ impl EngineCore {
             ValueExpr::XTimes(k) => k * ctx.x.unwrap_or(0) as i64,
             ValueExpr::NumTargets => ctx.chosen_targets.len() as i64,
             ValueExpr::Sum(a, b) => self.eval_value(a, ctx) + self.eval_value(b, ctx),
+            // 2ˣ (Mathemagics) — `1 << exp`, exponent clamped to [0, 62] so it never overflows i64.
+            ValueExpr::Pow2(exp) => 1i64 << self.eval_value(exp, ctx).clamp(0, 62),
             // C9: count objects in a zone matching the filter, optionally restricted to a
             // player's permanents (e.g. "the number of lands you control").
             ValueExpr::Count { zone, filter, controller } => {
