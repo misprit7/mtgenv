@@ -497,10 +497,13 @@ async fn card_catalog() -> impl IntoResponse {
     let db = mtg_core::cards::starter_db();
     let mut cards: Vec<DeckCard> = db
         .iter()
-        // Exclude non-deckbuildable runtime objects: tokens (Token supertype) and emblems (CR 114 —
-        // no card types, so `card_types.is_empty()`).
-        .filter(|(_, def)| {
-            !def.chars.supertypes.contains(&Supertype::Token) && !def.chars.card_types.is_empty()
+        // Exclude non-deckbuildable runtime objects: tokens (Token supertype), emblems (CR 114 — no
+        // card types, so `card_types.is_empty()`), and SoS Prepare back-face spell defs (the reserved
+        // 9700+ block — copy-only faces reachable only via the front creature, never a deck entry).
+        .filter(|(grp, def)| {
+            !def.chars.supertypes.contains(&Supertype::Token)
+                && !def.chars.card_types.is_empty()
+                && *grp < mtg_core::cards::grp::PREPARE_BACK_BLOCK
         })
         .map(|(grp, def)| card_view(grp, 1, def))
         .collect();

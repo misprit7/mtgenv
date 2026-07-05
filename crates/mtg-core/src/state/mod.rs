@@ -179,6 +179,15 @@ pub struct Object {
     /// Reset on any zone change (a copy should never reach a normal zone, but keep the invariant).
     #[serde(default)]
     pub is_copy: bool,
+    /// Set on a **prepared** permanent (SoS "Prepare" DFCs, CR 711-adjacent — modeled as a spell-copy
+    /// consumer, not a transform). While a creature with an [`crate::effects::ability::Ability::Prepare`]
+    /// marker is prepared, its controller may cast a *copy* of its back-face spell (a paid
+    /// [`crate::agent::PlayableAction::CastPrepared`]); doing so unprepares it. Set by
+    /// [`crate::effects::Effect::BecomePrepared`] (via [`crate::effects::action::Action::SetPrepared`]),
+    /// which every "becomes prepared" clause (enters-prepared / at-first-main / on-attack / activated /
+    /// landfall …) lowers to. Reset on any zone change (a fresh object identity, CR 400.7).
+    #[serde(default)]
+    pub prepared: bool,
 }
 
 impl Object {
@@ -481,6 +490,11 @@ impl GameState {
         let grp = self.objects.get(&id)?.chars.grp_id;
         self.card_db.get(grp)
     }
+    /// A registered card definition by `grp_id` directly — for defs with no live object yet (a
+    /// prepared creature's copy-only back-face spell, minted on demand; SoS Prepare).
+    pub fn def_by_grp(&self, grp: u32) -> Option<&CardDef> {
+        self.card_db.get(grp)
+    }
 
     pub fn player(&self, p: PlayerId) -> &Player {
         &self.players[p.0 as usize]
@@ -664,6 +678,7 @@ impl GameState {
             play_until_turn: None,
             counter_added_this_turn: false,
             is_copy: false,
+            prepared: false,
         };
         self.objects.insert(id, obj);
         if let Some(v) = self.player_mut(owner).zone_vec_mut(zone) {
@@ -757,6 +772,7 @@ impl GameState {
             o.play_until_turn = None; // impulse-play window drops on any zone change (400.7)
             o.counter_added_this_turn = false; // counters exist only on the battlefield (110.5d / 400.7)
             o.is_copy = false; // a copy never legitimately changes zones (it ceases to exist, 707.10a)
+            o.prepared = false; // a fresh object identity (CR 400.7); the "prepared" status ends on leaving play
             if to == Zone::Battlefield {
                 o.controller = to_owner;
                 o.summoning_sick = o.chars.is_creature();

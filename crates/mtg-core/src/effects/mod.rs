@@ -199,6 +199,15 @@ pub enum Effect {
         what: EffectTarget,
         exile_on_leave: bool,
     },
+    /// "This creature becomes prepared" (SoS "Prepare" DFCs). Sets the `prepared` status on the
+    /// ability's source (`ctx.source`) — every "becomes prepared" clause (enters-prepared,
+    /// at-the-beginning-of-your-first-main, whenever-this-attacks, landfall, an activated ability, …)
+    /// is just an ordinary trigger/ability whose effect is this leaf, so no new trigger machinery is
+    /// needed. Lowers to [`crate::effects::action::Action::SetPrepared`]. While the source is prepared
+    /// its controller may cast a *paid copy* of its back-face spell (an
+    /// [`crate::agent::PlayableAction::CastPrepared`]), which unprepares it — the spell-copy subsystem
+    /// (CR 707) is the substrate; the back face is copy-only and never cast from hand.
+    BecomePrepared,
     /// "You get an emblem with '…'" (CR 114). Puts an emblem — an object with no characteristics
     /// other than the abilities of the registered def `emblem` (in the reserved 9000+ block) — into
     /// the controller's command zone. The emblem's ability functions from `Zone::Command` (its def

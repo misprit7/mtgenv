@@ -1076,6 +1076,14 @@ impl EngineCore {
                     });
                 }
             }
+            // "This creature becomes prepared" (SoS Prepare) — set the status on the ability's source.
+            // Every "becomes prepared" clause funnels through this one leaf, so any prepare-trigger
+            // variant is an ordinary ability with no bespoke machinery.
+            Effect::BecomePrepared => {
+                if let Some(obj) = ctx.source {
+                    wb.push(Action::SetPrepared { obj, prepared: true });
+                }
+            }
             // C17: exile a target (e.g. "{1}: Exile target card from a graveyard"). `source` is
             // carried so the exile can later be associated with its source (linked-exile sets).
             Effect::Exile { what } => {
@@ -1883,6 +1891,11 @@ impl EngineCore {
             Action::Mill { player, count } => self.mill(player, count),
             Action::CreateToken { spec, controller } => self.create_token(&spec, controller),
             Action::CreateEmblem { emblem_grp, controller } => self.create_emblem(emblem_grp, controller),
+            Action::SetPrepared { obj, prepared } => {
+                if let Some(o) = self.state.objects.get_mut(&obj) {
+                    o.prepared = prepared;
+                }
+            }
             Action::AddFloatingReplacement { scope, pattern, rewrite, until_turn, one_shot } => {
                 self.state.floating_replacements.push(crate::state::FloatingReplacement {
                     scope,

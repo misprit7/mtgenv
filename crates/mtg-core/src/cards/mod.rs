@@ -130,6 +130,15 @@ pub mod grp {
     // in a distinct sub-block from tokens; created by `Effect::CreateEmblem`.
     /// Professor Dellian Fel's −6 emblem — "Whenever you gain life, target opponent loses that much life."
     pub const DELLIAN_EMBLEM: u32 = 9500;
+
+    // ── Reserved prepare-back-face-def block (9700+) ──────────────────────────────────────────────
+    // Registered back-face SPELL defs of SoS "Prepare" DFCs live here. A front creature links to its
+    // back face via `Ability::Prepare{spell}`; the back face is **copy-only** — it never lives in a
+    // real zone, only ever reaching the stack as a minted copy (`Engine::cast_prepared`). Kept above
+    // the token/emblem blocks; excluded from the deck-builder `/api/cards` catalog by this threshold
+    // (a back face is not a separately deckbuildable card — the front creature is the deck entry).
+    /// The first registered prepare back-face def id (inclusive lower bound of the reserved block).
+    pub const PREPARE_BACK_BLOCK: u32 = 9700;
 }
 
 /// A card definition: its printed characteristics + abilities (the Effect IR). Card *data*, not
@@ -727,7 +736,7 @@ mod tests {
     #[test]
     fn starter_db_has_expected_cards() {
         let db = starter_db();
-        assert_eq!(db.len(), 225);
+        assert_eq!(db.len(), 233);
         // Forest is "type line only": a Basic Land with subtype Forest. Mana is intrinsic
         // (CR 305.6) — the engine derives {T}: Add {G} from the subtype, so the CardDef carries
         // no explicit mana ability (and `is_mana_source` only sees authored abilities).

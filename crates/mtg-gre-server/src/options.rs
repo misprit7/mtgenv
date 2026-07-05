@@ -107,6 +107,7 @@ fn action_obj(a: &PlayableAction) -> Option<u64> {
         PlayableAction::Activate { source, .. } | PlayableAction::ActivateMana { source, .. } => {
             Some(source.0)
         }
+        PlayableAction::CastPrepared { source } => Some(source.0),
         PlayableAction::Special { .. } => None,
     }
 }
@@ -200,6 +201,9 @@ fn describe_action(view: &PlayerView, a: &PlayableAction) -> String {
         }
         PlayableAction::ActivateMana { source, .. } => {
             format!("Tap {} for mana", name_of(view, *source))
+        }
+        PlayableAction::CastPrepared { source } => {
+            format!("Cast prepared spell — {}", name_of(view, *source))
         }
         PlayableAction::Special { kind } => format!("Special action: {kind:?}"),
     }

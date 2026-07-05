@@ -1134,6 +1134,39 @@ impl Engine {
             }
         }
 
+        // Cast a copy of a **prepared** permanent's back-face spell (SoS Prepare DFCs, CR 707.12).
+        // While a permanent carrying `Ability::Prepare{spell}` is prepared, its controller may cast a
+        // paid COPY of the linked back-face spell at that spell's own timing (instant/Flash → any
+        // priority; else sorcery speed). Masked by timing, back-face affordability, and back-face
+        // target legality — mirroring the hand-cast gate. Casting mints the copy, pays the back-face
+        // cost, and unprepares the permanent (`cast_prepared`).
+        let prepared_perms: Vec<ObjId> =
+            s.player(p).battlefield.iter().copied().filter(|&perm| s.object(perm).prepared).collect();
+        for perm in prepared_perms {
+            let Some(spell_grp) = s.def_of(perm).and_then(prepare_spell_grp) else { continue };
+            let Some(back) = s.def_by_grp(spell_grp) else { continue };
+            let chars = &back.chars;
+            let instant_speed =
+                chars.has_type(CardType::Instant) || chars.keywords.contains(&Keyword::Flash);
+            if !(instant_speed || sorcery_speed) {
+                continue;
+            }
+            // Affordability: the back-face printed cost. Cost reductions are card-def-local
+            // (`effective_cast_cost` reads only the cast card's OWN `CostReduction` statics), and a
+            // back-face spell carries none — so the printed cost equals what `cast_spell` will charge,
+            // with no offer/cast drift. Restricted (I/S-only) mana counts iff casting an I/S.
+            let is_is = chars.has_type(CardType::Instant) || chars.has_type(CardType::Sorcery);
+            let affordable =
+                chars.mana_cost.as_ref().is_some_and(|c| mana::can_pay_ex(s, p, c, is_is));
+            if !affordable {
+                continue;
+            }
+            // Legal targets for the back-face spell effect (CR 601.2c), modal-aware (as the hand gate).
+            if back.spell_effect().is_some_and(|e| self.spell_castable_targets(e, p)) {
+                actions.push(PlayableAction::CastPrepared { source: perm });
+            }
+        }
+
         // Activated abilities (CR 602) of permanents `p` controls — e.g. Equip. Mana abilities
         // (CR 605) use a separate no-stack path and are skipped here. Masked by timing, the
         // activation restriction, cost payability, and (if it targets) a legal target.
@@ -1401,6 +1434,7 @@ impl Engine {
         match action {
             PlayableAction::PlayLand { card } => self.play_land(p, *card),
             PlayableAction::Cast { spell, variant } => self.cast_spell(p, *spell, *variant),
+            PlayableAction::CastPrepared { source } => self.cast_prepared(p, *source),
             PlayableAction::Activate { source, ability } => {
                 self.activate_ability(p, *source, *ability)
             }
@@ -2240,6 +2274,34 @@ impl Engine {
             spell: sid,
             controller: p,
         });
+    }
+
+    /// Cast a **copy** of a prepared permanent's back-face spell (SoS Prepare DFCs, CR 707.12). `source`
+    /// is the prepared creature on the battlefield (carrying `Ability::Prepare{spell}`). This mints a
+    /// fresh copy `Object` from the back-face spell's def (its copiable characteristics, CR 707.2 — so
+    /// its ability/effect/mana cost ride along via `grp_id`), marks it `is_copy` (it ceases to exist off
+    /// the stack, 707.10a), unprepares `source` ("Doing so unprepares it"), then casts the copy through
+    /// the normal cast pipeline — **paying** its back-face mana cost (the key difference from Paradigm's
+    /// free `CastCopy`). The offer gate (`legal_priority_actions`) already checked timing/affordability/
+    /// targets, so the cast won't rewind. The back face is copy-only: it never lives in a real zone, and
+    /// only ever reaches the stack as this copy.
+    pub(crate) fn cast_prepared(&mut self, p: PlayerId, source: ObjId) {
+        // The linked back-face spell's grp_id, from the source's Prepare marker.
+        let Some(spell_grp) = self.state.def_of(source).and_then(prepare_spell_grp) else { return };
+        // Snapshot the back-face's copiable characteristics (CR 707.2) to build the copy.
+        let Some(chars) = self.state.def_by_grp(spell_grp).map(|d| d.chars.clone()) else { return };
+        // Mint the copy directly onto the stack, owned+controlled by the caster (CR 707.10 — the caster
+        // owns a cast copy), marked so it ceases to exist as it leaves the stack.
+        let copy = self.state.add_card(p, chars, Zone::Stack);
+        if let Some(o) = self.state.objects.get_mut(&copy) {
+            o.is_copy = true;
+        }
+        // "Doing so unprepares it" — casting the copy clears the source's prepared status.
+        if let Some(o) = self.state.objects.get_mut(&source) {
+            o.prepared = false;
+        }
+        // Cast the copy for its (back-face) mana cost through the real pipeline (modes/targets/X/pay).
+        self.cast_spell(p, copy, CastVariant::Normal);
     }
 
     /// Abort a cast in progress whose CR 601.2c target choice can't be satisfied (a required slot
@@ -3928,6 +3990,15 @@ pub(crate) fn collect_target_specs(effect: &Effect) -> Vec<TargetSpec> {
     let mut out = Vec::new();
     collect_specs_into(effect, &mut out);
     out
+}
+
+/// The back-face spell's `grp_id` a def links to via its `Ability::Prepare` marker (SoS Prepare DFCs),
+/// or `None` if the def isn't a prepare front face.
+fn prepare_spell_grp(def: &crate::cards::CardDef) -> Option<u32> {
+    def.abilities.iter().find_map(|a| match a {
+        Ability::Prepare { spell } => Some(*spell),
+        _ => None,
+    })
 }
 
 /// The `TargetSpec`s an effect's targets were chosen against, in the SAME order they were collected

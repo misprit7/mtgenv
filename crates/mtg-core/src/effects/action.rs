@@ -65,6 +65,13 @@ pub enum Action {
         spec: TokenSpec,
         controller: PlayerId,
     },
+    /// Set (or clear) a permanent's **prepared** status (SoS "Prepare" DFCs). `Effect::BecomePrepared`
+    /// lowers "this creature becomes prepared" to `SetPrepared { obj, prepared: true }`; casting the
+    /// while-prepared copy clears it directly (not through the whiteboard). Card-agnostic flag flip.
+    SetPrepared {
+        obj: ObjId,
+        prepared: bool,
+    },
     /// Put an emblem (CR 114) into `controller`'s command zone. `emblem_grp` is the registered
     /// emblem def (reserved 9000+ block) supplying its abilities via `def_of`.
     CreateEmblem {

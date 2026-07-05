@@ -321,6 +321,16 @@ pub enum Ability {
     /// — active only once the card reaches exile (so "after you first resolve it" falls out for free).
     /// Assemble the whole bundle with `cards::helpers::paradigm_lesson`.
     Paradigm,
+    /// **Prepare** (SoS DFCs): a front-face creature marker linking it to its back-face spell. `spell`
+    /// is the back face's registered `grp_id` (in the reserved 9700+ block). The reminder reads "While
+    /// it's prepared, you may cast a copy of its spell. Doing so unprepares it." — so while a permanent
+    /// carrying this marker is [`crate::state::Object::prepared`], `legal_priority_actions` offers a
+    /// [`crate::agent::PlayableAction::CastPrepared`] at the back face's own timing (instant vs sorcery
+    /// speed), which mints and **pays for** a copy of `spell` (CR 707.12 — a spell-copy consumer, not a
+    /// CR 711 transform) and clears the prepared status. The back face is copy-only: it never enters a
+    /// zone or is cast from hand, so it is registered purely as a def and excluded from the deck-builder
+    /// catalog. "Becomes prepared" itself is an ordinary ability via [`crate::effects::Effect::BecomePrepared`].
+    Prepare { spell: u32 },
     /// A cost-modification static (CR 601.2f / 118) applying to **casting this card**: while the
     /// card is being cast, reduce its total cost by `amount` if `condition` holds. Self-referential
     /// — read during cost determination (`effective_cast_cost`), evaluated relative to the caster.

@@ -241,7 +241,8 @@ impl Interaction {
                         PlayableAction::Cast { spell, .. } => self.obj_slot(*spell),
                         PlayableAction::PlayLand { card } => self.obj_slot(*card),
                         PlayableAction::Activate { source, .. }
-                        | PlayableAction::ActivateMana { source, .. } => self.perm_slot(*source),
+                        | PlayableAction::ActivateMana { source, .. }
+                        | PlayableAction::CastPrepared { source } => self.perm_slot(*source),
                         PlayableAction::Special { .. } => None,
                     };
                     if let Some(s) = slot {

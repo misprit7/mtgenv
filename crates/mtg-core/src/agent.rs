@@ -409,6 +409,11 @@ pub enum PlayableAction {
     Activate { source: ObjId, ability: AbilityRef },
     ActivateMana { source: ObjId, ability: AbilityRef },
     PlayLand { card: ObjId },
+    /// Cast a **copy** of a prepared permanent's back-face spell (SoS Prepare DFCs). `source` is the
+    /// prepared creature on the battlefield (carrying `Ability::Prepare{spell}`); casting mints a copy
+    /// of the linked back-face spell, pays its mana cost through the normal cast pipeline (CR 707.12),
+    /// and unprepares `source`. Offered only while `source` is prepared and at the back face's timing.
+    CastPrepared { source: ObjId },
     Special { kind: SpecialAction },
 }
 
