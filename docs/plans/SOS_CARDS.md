@@ -8,9 +8,9 @@ per-card triage, modeled on `SELESNYA_LANDFALL_CARDS.md`.
 
 **▶▶ sos-cards-8 HANDOFF (2026-07-04) — READ FIRST. SCOPE IS NOW THE FULL SET** (T4 deferral REVOKED —
 prepare-DFCs, Lessons, planeswalkers, spell-copy, Fractalize, all subsystems in scope). Quality bar:
-each subsystem built as the GENERAL CR capability, not the minimal hack. **154→158 authored / 154 fully-
-faithful / 3 tracked-partial, 583 mtg-core tests green, tree clean, pushed.** Shipped **4 cards + 4 caps**,
-each with a real-path test, via `git commit --only` on the shared tree:
+each subsystem built as the GENERAL CR capability, not the minimal hack. **153→158 authored / 155 fully-
+faithful / 3 tracked-partial, 586 mtg-core tests green, tree clean (commits local, not yet pushed — ask lead).**
+Shipped **5 cards + 5 caps**, each with a real-path test, via `git commit --only` on the shared tree:
 1. **`Effect::DirectedDiscard` + `TargetKind::Player(PlayerFilter)`** (`4faa6d9`) — "target opponent reveals
    hand, YOU choose a nonland, they discard it" (chooser ≠ discarder, CR 701.8) + a general player-target
    restriction (`Any`/`Opponent`/`You`; `Effect::TargetPlayer` now carries the filter — 5 existing consumers
@@ -30,18 +30,26 @@ each with a real-path test, via `git commit --only` on the shared tree:
    Only the FILTER path reads LKI so far; when a dies-trigger's *effect/value* needs the dead object's stats,
    thread the LKI into `ResolutionCtx` (not built yet — no consumer). `SelfDies` effects still read the live
    (graveyard) object; fine for current self-dies cards, revisit when one reads its own dying stats.
+4. **S12 cost-reduction pipeline (CR 601.2f / 118)** (`9621fef`) — `Ability::CostReduction{amount, condition}`
+   (`CostReductionAmount::{Generic(u32)|GenericValue(ValueExpr)|Cost(ManaCost)}`) + `effective_cast_cost(p,card,
+   base)` applied at BOTH the offer gate AND `cast_spell` (so affordability == payment for state/count conditions)
+   + `ValueExpr::TotalToughness`. → **Orysa** (costs {3} less if creatures you control total toughness ≥10).
+   ⚠️ **Only state/count conditions so far** (exact affordability). **Target-dependent** (Ajani's Response, Brush
+   Off, Run Behind) is a distinct sub-cap: the reduction depends on CHOSEN targets, so the offer gate must be
+   optimistic (offer if a qualifying target EXISTS makes it affordable) and the actual reduction computed from
+   chosen targets at cast — mind the no-rewind invariant (over-offer → auto_pay underpays). The `GenericValue`
+   and `Cost` (coloured) arms are built but not yet exercised by a card.
 
 **▶ NEXT AGENT — recommended order (adjust with judgment; the lead's suggested order is in the brief):**
-- **S12 conditional cost-reduction (CR 601.2f)** — the highest-yield unbuilt heavy subsystem (7 cards). **No
-  cost-modification pipeline exists** (`cast_spell` reads `chars.mana_cost` raw; `CostReductionGeneric` static
-  is defined-but-never-applied). Design `effective_cast_cost(state, card[, chosen_targets])` used by BOTH the
-  offer gate (`priority.rs` ~1041 `can_pay_ex`) and `cast_spell` (~1772). Split cleanly: (a) **state/count
-  conditions** (Orysa "toughness≥10", Wilt "card left gy this turn" [S9 flag], Dawning Archaic "{1} per I/S in
-  gy") are EXACT at offer-time (no target dependence) → do these first, fully correct; (b) **target-dependent**
-  (Ajani's Response, Brush Off [note: {1}{U} COLORED reduction], Run Behind) need affordability-aware targeting
-  — a distinct sub-capability, do second. Also **Diary of Dreams** = activated-ability cost reduction (per page
-  counter) — a per-ability variant. Represent as `Ability::CostReduction { amount: {Generic(u32)|GenericPerUnit
-  (ValueExpr)|Colored(ManaCost)}, condition }`.
+- **S12 cost-reduction — finish it.** The general pipeline is IN (`effective_cast_cost`, state/count conditions,
+  Orysa). Remaining 6 cards need: (a) **target-dependent affordability** (Ajani's Response — Destroy target
+  creature, {3} less if targets a TAPPED creature — is FULLY faithful once this lands; also Brush Off, Run Behind).
+  Add `CostReductionAmount`/condition awareness of chosen targets: offer gate optimistic (a qualifying target
+  exists → reduced), actual reduction from chosen targets at cast; guard the no-rewind invariant. (b) **coloured
+  reduction** consumer (Brush Off's {1}{U}, `Cost` arm built) + Counter (built). (c) **activated-ability cost
+  reduction** (Diary of Dreams — attach a reduction to an `Activated` ability, per page counter). (d) **Wilt in
+  the Heat** ({2} less if `CardLeftGraveyardThisTurn`, cond built — trivial; needs an exile-if-would-die
+  replacement rider). (e) **The Dawning Archaic** (`GenericValue(Count{I/S in gy})`, arm built) + S10-on-attack.
 - **Enters-tapped** (`ZoneDest` has no tapped flag; 43 literals so DON'T add a required field — add a small
   builder or a separate `Effect::MoveZone` tapped variant / an entering-tapped continuous). Unblocks the rest of
   graveyard-recursion (**Teacher's Pest** gy→battlefield tapped) + Mind Roots / Mind into Matter enters-tapped.
@@ -366,7 +374,7 @@ each cap unlocks the bracketed count. `⏳` = not yet built.
 | **S7** Converge | `ValueExpr::ColorsOfManaSpent` (ETB counters / X in Converge spells) | 9 | ✅ **DONE** `ba8c183` (`ValueExpr::ColorsSpent` — `Object.colors_spent` recorded at cast; consumers Arcane Omens, Together as One, Magmablood/Transcendent/Wildgrowth Archaic) |
 | **S9** Graveyard-leave | "cards leave your graveyard" trigger + "a card left your graveyard this turn" cond | 8 | ✅ **DONE** (flag `f9b5584` + trigger: LeftGraveyard event snapshot in resolve_effect → Spirit Mascot, Owlin Historian, Garrison Excavator) |
 | **S2** Look-and-pick | look at top N, put one/some in hand, rest on bottom (impulse selection) | 8 | ✅ **DONE** (`Effect::LookAndPick{ count, take, take_to, rest_to, take_filter }` — implemented; consumers Flow State, Stress Dream, Stirring Honormancer, Paradox Surveyor, Follow the Lumarets, Visionary's Dance). The ledger previously mis-listed this as ⏳. Geometer's Arthropod still needs "top-X" = reading the *triggering spell's* X (a separate need). |
-| **S12** Cost-reduction cond. | "costs {N} less if it targets X / you control Y / a card left your gy" (cast-time) | 7 | ⏳ |
+| **S12** Cost-reduction cond. | "costs {N} less if it targets X / you control Y / a card left your gy" (cast-time) | 7 | ◑ **PIPELINE DONE** (sos-cards-8 `9621fef`) — `Ability::CostReduction{amount:CostReductionAmount::{Generic\|GenericValue\|Cost}, condition}` + `effective_cast_cost(p,card,base)` applied at BOTH the offer gate (~1041) and `cast_spell` (~1772); `ValueExpr::TotalToughness`. → **Orysa** (state condition). **Remaining:** target-dependent conditions (Ajani's Response=Destroy+targets-tapped [FULLY faithful once built], Brush Off=Counter+{1}{U} colored+targets-a-spell, Run Behind) need affordability-aware targeting (offer optimistically if a qualifying target exists; reduction computed from CHOSEN targets at cast — the tricky part, a distinct sub-cap); **Diary of Dreams** = activated-ability cost reduction (per-ability variant); **The Dawning Archaic** = `GenericValue(Count{I/S in gy})` [arm built, untested by a card] + S10-on-attack body; **Wilt in the Heat** = `CardLeftGraveyardThisTurn` cond (trivial) + 5 dmg + exile-if-dies replacement rider. |
 | **S14** Copy spell/perm | "copy target spell", "create a token that's a copy of" (heavier small-cap) | 7 | ◑ **token-copy DONE** (`Effect::CreateTokenCopy`+`TokenCopyMods`, `a8c8a2d` → Applied Geometry); **spell-copy** portion ⏳ — a real subsystem (copy a stack spell per CR 707.10: mint a new StackObject copy above the original + a "you may choose new targets" reselection). **Low practical yield (scoped 2026-07-03):** of the 7 spell-copy cards, most are ALSO blocked elsewhere — Aziza (tap-3-creatures cost), Choreographed Sparks (modal + creature-spell-copy-with-grants + "can't be copied"), Mica (Ward—Pay-life), Prismari (Storm + Elder Dragon). Spell-copy ALONE unblocks essentially only **Lumaret's Favor** (Infusion "copy it if you gained life this turn" + a +2/+4 pump). So build it for the subsystem, not the count. |
 | **S17** Ward {cost} | Ward N / Ward—Pay life / Ward—Discard (counter-unless-pay on becoming targeted) | 7 | ◑ **mana DONE** `96dbc35` — `Effect::CounterUnlessPay{ what, cost:Cost }` soft-counter + `EffectTarget::Triggering` (the targeting spell/ability, threaded via `GameEvent::Targeted.source` → `state.trigger_targeting_source` → `ResolutionCtx.triggering_stack`); `CardFilter::ItSelf` now matches in `enter_filter_matches` (source-threaded, opt-in from the targeted path). Reuses `Cost`+`can_pay_cost`/`pay_cost`. Ward constructors live in `cards/helpers.rs` (`ward`/`ward_mana`/`ward_discard`). → **Colorstorm Stallion** (Ward {1}, mana) + **Forum Necroscribe** (Ward—Discard, the non-mana path — reuses the `Discard` cost arms). **Ward—Pay life** (Mica/Prismari): `pay_cost` has NO `PayLife` arm yet (falls to `_ => {}`, so life isn't deducted) — add it first; their *secondaries* are also blocked (spell-copy/storm). Side-fix landed here: `Effect::MoveZone`'s target was missing from `collect_specs_into` (never collected through the REAL cast/trigger path — prior MoveZone tests bypassed casting), now fixed. |
 | **S15** Impulse play | exile/mill → "you may play it until end of turn / your next turn" | 6 | ◑ **DONE for exile cases** (`d079eb0` base + `0e17d3e` top-of-library source + land-play) → Practiced Scrollsmith, Elemental Mascot, Suspend Aggression (3). Only **graveyard-play** (milled card played from gy — Ark of Hunger, Tablet) still ⏳; the other 2 S15 cards are cap-blocked (Archaic's Agony=S7, Tablet=S13) |
@@ -675,7 +683,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Muse Seeker | S5 | `sos` | ✅ done | Opus cast-trigger |
 | Muse's Encouragement | S1 | `sos` | ✅ done | surveil 2 (keyword-only token) |
 | Old-Growth Educator | S4 | `sos` | ✅ done | Infusion gained-life-this-turn condition |
-| Orysa, Tide Choreographer | S12 | `sos` | ⏳ | conditional cost reduction on toughness |
+| Orysa, Tide Choreographer | S12 | `sos` | ✅ done | cost {3} less if total toughness≥10 (S12 pipeline + `ValueExpr::TotalToughness`) + ETB draw 2 |
 | Owlin Historian | S1,S9 | `sos` | ✅ done | surveil + cards-leave-graveyard trigger |
 | Paradox Gardens | S1 | `sos` | ✅ done | surveil activated ability |
 | Paradox Surveyor | S2 | `sos` | ✅ done | look-and-pick ETB selection |
