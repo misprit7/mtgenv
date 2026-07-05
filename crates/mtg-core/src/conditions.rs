@@ -149,6 +149,11 @@ fn eval_value(
             let p = resolve_player(state, *who, source_controller);
             state.players.get(p.0 as usize).map(|pl| pl.life_gained_this_turn as i64).unwrap_or(0)
         }
+        // Life-gain events `who` had this turn (Leech Collector's "first time each turn" queue-gate).
+        ValueExpr::LifeGainEventsThisTurn { who } => {
+            let p = resolve_player(state, *who, source_controller);
+            state.players.get(p.0 as usize).map(|pl| pl.life_gain_events_this_turn as i64).unwrap_or(0)
+        }
         // Creatures that died this turn, any controller (Emeritus of Woe's "if two or more died").
         ValueExpr::CreaturesDiedThisTurn => {
             state.players.iter().map(|pl| pl.creatures_died_this_turn as i64).sum()

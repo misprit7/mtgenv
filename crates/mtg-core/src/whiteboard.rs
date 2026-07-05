@@ -2504,6 +2504,11 @@ impl EngineCore {
                 let p = self.eval_player(*who, ctx);
                 self.state.players.get(p.0 as usize).map(|pl| pl.life_gained_this_turn as i64).unwrap_or(0)
             }
+            // The number of life-gain events `who` has had this turn — Leech Collector's "first time".
+            ValueExpr::LifeGainEventsThisTurn { who } => {
+                let p = self.eval_player(*who, ctx);
+                self.state.players.get(p.0 as usize).map(|pl| pl.life_gain_events_this_turn as i64).unwrap_or(0)
+            }
             // Creatures that died this turn, any controller — Emeritus of Woe's gate.
             ValueExpr::CreaturesDiedThisTurn => {
                 self.state.players.iter().map(|pl| pl.creatures_died_this_turn as i64).sum()

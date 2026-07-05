@@ -714,6 +714,7 @@ impl Engine {
         // reset them for every player at turn start.
         for i in 0..self.state.players.len() {
             self.state.players[i].life_gained_this_turn = 0;
+            self.state.players[i].life_gain_events_this_turn = 0;
             self.state.players[i].cards_left_graveyard_this_turn = 0;
             self.state.players[i].creatures_died_this_turn = 0;
             self.state.players[i].cards_drawn_this_turn = 0;
@@ -3352,6 +3353,11 @@ impl Engine {
             // "Whenever you gain life" (CR 603.2) — a positive life change fires each GainLife
             // trigger on a permanent the gaining player controls, once per gain event.
             GameEvent::LifeChanged { player, delta, .. } if *delta > 0 => {
+                // Count this as one life-gain event BEFORE queuing triggers, so a "first time each turn"
+                // trigger's queue-time condition (`life_gain_events_this_turn == 1`) reads the right count.
+                if let Some(p) = self.state.players.get_mut(player.0 as usize) {
+                    p.life_gain_events_this_turn = p.life_gain_events_this_turn.saturating_add(1);
+                }
                 let watchers: Vec<ObjId> = self.state.player(*player).battlefield.clone();
                 for w in watchers {
                     self.queue_self_triggers(w, EventPattern::GainLife);
@@ -3571,19 +3577,25 @@ impl Engine {
     fn queue_you_attack_triggers(&mut self, attacker: PlayerId) {
         let watchers: Vec<ObjId> = self.state.player(attacker).battlefield.clone();
         for watcher in watchers {
-            let indices: Vec<u32> = match self.state.def_of(watcher) {
-                Some(def) => def
-                    .abilities
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, a)| {
-                        matches!(a, Ability::Triggered { event: EventPattern::YouAttack, .. })
-                    })
-                    .map(|(i, _)| i as u32)
-                    .collect(),
-                None => continue,
-            };
-            for index in indices {
+            let matches: Vec<(u32, Option<crate::effects::condition::Condition>, bool)> =
+                match self.state.def_of(watcher) {
+                    Some(def) => def
+                        .abilities
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(i, a)| match a {
+                            Ability::Triggered { event: EventPattern::YouAttack, condition, intervening_if, .. } => {
+                                Some((i as u32, condition.clone(), *intervening_if))
+                            }
+                            _ => None,
+                        })
+                        .collect(),
+                    None => continue,
+                };
+            for (index, condition, intervening_if) in matches {
+                if !self.trigger_queues(&condition, intervening_if, attacker, Some(watcher)) {
+                    continue;
+                }
                 let id = self.state.mint_stack();
                 self.state.pending_triggers.push(StackObject {
                     id,
@@ -3870,22 +3882,52 @@ impl Engine {
     }
 
     /// Queue `subject`'s own triggered abilities matching `want` (the Self* patterns).
+    /// Whether a triggered ability with the given `condition`/`intervening_if` should be QUEUED now
+    /// (CR 603.2/603.4). Mirrors `queue_begin_of_step_triggers`: a **non-intervening-if** trigger's
+    /// `condition` (CR 603.2c) is checked at trigger time and, if false, the trigger simply doesn't
+    /// trigger. Intervening-if triggers (`intervening_if: true`) are NOT gated here — they're checked at
+    /// resolution via `trigger_intervening_if_holds` (so this is inert for every such existing card).
+    fn trigger_queues(
+        &self,
+        condition: &Option<crate::effects::condition::Condition>,
+        intervening_if: bool,
+        controller: PlayerId,
+        source: Option<ObjId>,
+    ) -> bool {
+        if intervening_if {
+            return true;
+        }
+        match condition {
+            Some(cond) => crate::conditions::holds_for_source(&self.state, cond, controller, source),
+            None => true,
+        }
+    }
+
     fn queue_self_triggers(&mut self, subject: ObjId, want: EventPattern) {
         let Some(def) = self.state.def_of(subject) else {
             return;
         };
-        let matches: Vec<u32> = def
+        // (index, condition, intervening_if) for each matching trigger — so a non-intervening-if
+        // condition (CR 603.2c) can be checked at queue time (mirrors begin-of-step).
+        let matches: Vec<(u32, Option<crate::effects::condition::Condition>, bool)> = def
             .abilities
             .iter()
             .enumerate()
-            .filter(|(_, a)| matches!(a, Ability::Triggered { event, .. } if *event == want))
-            .map(|(i, _)| i as u32)
+            .filter_map(|(i, a)| match a {
+                Ability::Triggered { event, condition, intervening_if, .. } if *event == want => {
+                    Some((i as u32, condition.clone(), *intervening_if))
+                }
+                _ => None,
+            })
             .collect();
         if matches.is_empty() {
             return;
         }
         let controller = self.state.object(subject).controller;
-        for index in matches {
+        for (index, condition, intervening_if) in matches {
+            if !self.trigger_queues(&condition, intervening_if, controller, Some(subject)) {
+                continue;
+            }
             let id = self.state.mint_stack();
             self.state.pending_triggers.push(StackObject {
                 id,
@@ -3920,27 +3962,32 @@ impl Engine {
         });
         let watchers: Vec<ObjId> = self.state.player(caster).battlefield.clone();
         for watcher in watchers {
-            // (index, filter, needs_creature_target)
-            let candidates: Vec<(u32, CardFilter, bool)> = match self.state.def_of(watcher) {
-                Some(def) => def
-                    .abilities
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(i, a)| match a {
-                        Ability::Triggered { event: EventPattern::SpellCast(f), .. } => {
-                            Some((i as u32, f.clone(), false))
-                        }
-                        Ability::Triggered {
-                            event: EventPattern::SpellCastTargetingCreature(f), ..
-                        } => Some((i as u32, f.clone(), true)),
-                        _ => None,
-                    })
-                    .collect(),
-                None => continue,
-            };
-            for (index, filter, needs_creature_target) in candidates {
+            // (index, filter, needs_creature_target, condition, intervening_if)
+            let candidates: Vec<(u32, CardFilter, bool, Option<crate::effects::condition::Condition>, bool)> =
+                match self.state.def_of(watcher) {
+                    Some(def) => def
+                        .abilities
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(i, a)| match a {
+                            Ability::Triggered {
+                                event: EventPattern::SpellCast(f), condition, intervening_if, ..
+                            } => Some((i as u32, f.clone(), false, condition.clone(), *intervening_if)),
+                            Ability::Triggered {
+                                event: EventPattern::SpellCastTargetingCreature(f),
+                                condition,
+                                intervening_if,
+                                ..
+                            } => Some((i as u32, f.clone(), true, condition.clone(), *intervening_if)),
+                            _ => None,
+                        })
+                        .collect(),
+                    None => continue,
+                };
+            for (index, filter, needs_creature_target, condition, intervening_if) in candidates {
                 if (!needs_creature_target || targets_a_creature)
                     && self.enter_filter_matches(card, &filter, caster, None)
+                    && self.trigger_queues(&condition, intervening_if, caster, Some(watcher))
                 {
                     let id = self.state.mint_stack();
                     self.state.pending_triggers.push(StackObject {
@@ -3967,24 +4014,27 @@ impl Engine {
             .collect();
         for watcher in watchers {
             let wctrl = self.state.object(watcher).controller;
-            // Clone the (index, filter) of this watcher's PermanentEnters triggers so the `def`
-            // borrow is released before we mutate `pending_triggers`.
-            let candidates: Vec<(u32, CardFilter)> = match self.state.def_of(watcher) {
-                Some(def) => def
-                    .abilities
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(i, a)| match a {
-                        Ability::Triggered { event: EventPattern::PermanentEnters(f), .. } => {
-                            Some((i as u32, f.clone()))
-                        }
-                        _ => None,
-                    })
-                    .collect(),
-                None => continue,
-            };
-            for (index, filter) in candidates {
-                if self.enter_filter_matches(entered, &filter, wctrl, None) {
+            // Clone the (index, filter, condition, intervening_if) of this watcher's PermanentEnters
+            // triggers so the `def` borrow is released before we mutate `pending_triggers`.
+            let candidates: Vec<(u32, CardFilter, Option<crate::effects::condition::Condition>, bool)> =
+                match self.state.def_of(watcher) {
+                    Some(def) => def
+                        .abilities
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(i, a)| match a {
+                            Ability::Triggered {
+                                event: EventPattern::PermanentEnters(f), condition, intervening_if, ..
+                            } => Some((i as u32, f.clone(), condition.clone(), *intervening_if)),
+                            _ => None,
+                        })
+                        .collect(),
+                    None => continue,
+                };
+            for (index, filter, condition, intervening_if) in candidates {
+                if self.enter_filter_matches(entered, &filter, wctrl, None)
+                    && self.trigger_queues(&condition, intervening_if, wctrl, Some(watcher))
+                {
                     let id = self.state.mint_stack();
                     self.state.pending_triggers.push(StackObject {
                         id,

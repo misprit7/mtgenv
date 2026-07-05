@@ -128,6 +128,10 @@ pub enum ValueExpr {
     /// Total life `who` has **gained this turn** (CR 119) — reads `Player.life_gained_this_turn`. For
     /// a "if you gained N or more life this turn" gate (Scheming Silvertongue), via `ValueAtLeast`.
     LifeGainedThisTurn { who: PlayerRef },
+    /// The number of separate life-gain **events** `who` has had this turn — reads
+    /// `Player.life_gain_events_this_turn`. For "whenever you gain life for the first time each turn"
+    /// (Leech Collector): the trigger gates on this being exactly 1 at queue time.
+    LifeGainEventsThisTurn { who: PlayerRef },
     /// The number of **creatures that died this turn** (any controller) — summed across players'
     /// `Player.creatures_died_this_turn`. For a "if two or more creatures died this turn" gate
     /// (Emeritus of Woe), via `ValueAtLeast`.

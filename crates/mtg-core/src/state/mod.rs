@@ -232,6 +232,12 @@ pub struct Player {
     /// `GainLife`. Read by the SoS "Infusion — if you gained life this turn …" condition.
     #[serde(default)]
     pub life_gained_this_turn: u32,
+    /// How many separate life-gain **events** this player has had this turn (CR 119.3) — reset each
+    /// turn, incremented once per positive `LifeChanged`. Distinct from `life_gained_this_turn` (which
+    /// sums amounts): this counts occurrences, for "whenever you gain life for the first time each turn"
+    /// (Leech Collector), gated as `life_gain_events_this_turn == 1` at trigger-queue time.
+    #[serde(default)]
+    pub life_gain_events_this_turn: u32,
     /// How many cards have left this player's graveyard this turn — reset each turn, incremented when
     /// an object moves out of the graveyard. Read by the SoS Lorehold "if a card left your graveyard
     /// this turn …" condition.
@@ -280,6 +286,7 @@ impl Player {
             counters: CounterBag::default(),
             lands_played_this_turn: 0,
             life_gained_this_turn: 0,
+            life_gain_events_this_turn: 0,
             cards_left_graveyard_this_turn: 0,
             creatures_died_this_turn: 0,
             cards_drawn_this_turn: 0,
