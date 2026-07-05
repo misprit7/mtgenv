@@ -140,6 +140,7 @@ pub mod pest_mascot;
 pub mod pigment_wrangler;
 pub mod planar_engineering;
 pub mod prismari_the_inspiration;
+pub mod silverquill_the_disputant;
 pub mod owlin_historian;
 pub mod paradox_surveyor;
 pub mod pestbrood_sloth;
@@ -353,6 +354,7 @@ pub fn register(db: &mut CardDb) {
     pest_mascot::register(db);
     pigment_wrangler::register(db);
     prismari_the_inspiration::register(db);
+    silverquill_the_disputant::register(db);
     planar_engineering::register(db);
     owlin_historian::register(db);
     paradox_surveyor::register(db);
