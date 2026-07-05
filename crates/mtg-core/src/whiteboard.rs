@@ -2410,11 +2410,20 @@ impl EngineCore {
                 }
             }
             Rewrite::EntersTappedUnless(cond) => {
-                // "Enters tapped unless <condition>" (check lands): tap iff the condition fails,
-                // evaluated for the entering permanent's controller. No choice.
+                // "Enters tapped unless <condition>": tap iff the condition fails, evaluated for the
+                // entering permanent's controller. Threads the object as source and the resolution's X
+                // (so "enters tapped if X ≤ 2" = `EntersTappedUnless(ValueAtLeast(X, 3))` reads the
+                // creature's own cast X — Slumbering Trudge). Non-value conditions (check lands' "unless
+                // you control a basic") still route controller-relative through `cond_holds`. No choice.
                 let controller =
                     self.state.objects.get(&obj).map(|o| o.controller).unwrap_or(PlayerId(0));
-                if !crate::conditions::holds(&self.state, cond, controller) {
+                let ctx = ResolutionCtx {
+                    controller: Some(controller),
+                    source: Some(obj),
+                    x: wb.ctx.x,
+                    ..Default::default()
+                };
+                if !self.cond_holds(cond, &ctx) {
                     wb.actions.insert(ai + 1, Action::TapUntap { obj, tap: true });
                 }
             }
