@@ -1793,7 +1793,8 @@ impl Engine {
                     description: String::new(),
                     legal: self.target_candidates(spec, p, Some(source)),
                     min: spec.min,
-                    max: spec.max,
+                    // "up to X target" — the sentinel resolves to the chosen {X} (CR 601.2b/c).
+                    max: if spec.max == crate::effects::target::TARGET_COUNT_X { chosen_x } else { spec.max },
                 })
                 .collect();
             let req = DecisionRequest::ChooseTargets {
@@ -2589,8 +2590,9 @@ impl Engine {
                     TargetSlot {
                         description: String::new(),
                         legal,
+                        // "up to X target" — the sentinel resolves to the chosen {X} (CR 601.2b/c).
+                        max: if spec.max == crate::effects::target::TARGET_COUNT_X { chosen_x } else { spec.max },
                         min: spec.min,
-                        max: spec.max,
                     }
                 })
                 .collect();

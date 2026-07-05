@@ -47,10 +47,18 @@ pub enum PlayerFilter {
 pub struct TargetSpec {
     pub kind: TargetKind,
     pub min: u32,
+    /// The maximum number of targets. The sentinel [`TARGET_COUNT_X`] means "up to X" — resolved to
+    /// the spell's chosen `{X}` at cast-time slot construction (CR 601.2b/c; the value, not the pip
+    /// count). Only the cast slot-builders interpret it; it's never read at resolution re-validation.
     pub max: u32,
     /// If true, the targets must be distinct objects (the common case).
     pub distinct: bool,
 }
+
+/// `TargetSpec.max` sentinel: "up to X target …" — the maximum is the spell's chosen `{X}` (Divergent
+/// Equation's "return up to X target instant and/or sorcery cards"). Resolved to `chosen_x` where the
+/// cast slot-builder has it in scope; `u32::MAX` is never a real printed maximum, so it's unambiguous.
+pub const TARGET_COUNT_X: u32 = u32::MAX;
 
 /// A selection of objects an effect operates on *without* the word "target" (e.g. "sacrifice a
 /// creature", "each creature you control"). Resolved at resolution time, not locked at cast.

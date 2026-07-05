@@ -72,6 +72,7 @@ pub mod deluge_virtuoso;
 pub mod diary_of_dreams;
 pub mod dig_site_inventory;
 pub mod dinas_guidance;
+pub mod divergent_equation;
 pub mod daydream;
 pub mod dissection_practice;
 pub mod duel_tactics;
@@ -297,6 +298,7 @@ pub fn register(db: &mut CardDb) {
     ark_of_hunger::register(db);
     tablet_of_discovery::register(db);
     slumbering_trudge::register(db);
+    divergent_equation::register(db);
     cauldron_of_essence::register(db);
     charging_strifeknight::register(db);
     chase_inspiration::register(db);
