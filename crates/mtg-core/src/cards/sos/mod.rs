@@ -69,6 +69,7 @@ pub mod deluge_virtuoso;
 pub mod diary_of_dreams;
 pub mod dig_site_inventory;
 pub mod dinas_guidance;
+pub mod daydream;
 pub mod dissection_practice;
 pub mod duel_tactics;
 pub mod eager_glyphmage;
@@ -277,6 +278,7 @@ pub fn register(db: &mut CardDb) {
     deluge_virtuoso::register(db);
     diary_of_dreams::register(db);
     dig_site_inventory::register(db);
+    daydream::register(db);
     dinas_guidance::register(db);
     dissection_practice::register(db);
     duel_tactics::register(db);
