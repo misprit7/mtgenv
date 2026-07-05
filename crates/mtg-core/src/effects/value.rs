@@ -160,6 +160,12 @@ pub enum ValueExpr {
     /// "whenever you cast your third spell each turn" gate (Emeritus of Conflict): an *exactly-N* check
     /// via `All(ValueAtLeast(v, N), Not(ValueAtLeast(v, N+1)))`.
     SpellsCastThisTurn { who: PlayerRef },
+    /// The number of instant/sorcery spells `who` has cast this turn — `Player.instants_sorceries_cast_this_turn`.
+    /// The counter increments at cast (601.2i), so a resolving I/S spell counts *itself* here — an
+    /// "if you've cast **another** instant or sorcery this turn" gate (Burrog Barrage) is therefore
+    /// `ValueAtLeast(InstantsSorceriesCastThisTurn{Controller}, 2)`. The value analogue of the boolean
+    /// [`super::condition::Condition::CastInstantOrSorceryThisTurn`] (≥1).
+    InstantsSorceriesCastThisTurn { who: PlayerRef },
 }
 
 impl ValueExpr {

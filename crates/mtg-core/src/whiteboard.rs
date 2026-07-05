@@ -932,6 +932,15 @@ impl EngineCore {
                 self.materialize(effect, ctx, wb, cursor);
                 true
             }
+            // "Then IT deals damage equal to its power …" (Burrog Barrage) — FLUSH first so a
+            // same-resolution pump on the source (the "+1/+0 until end of turn" step above it in the
+            // sequence) is committed before `amount` reads the source's now-buffed power (CR 608.2h).
+            // Still lowers via `materialize` (staged); a lone `SourcedDamage` is unchanged (empty flush).
+            Effect::SourcedDamage { .. } => {
+                self.flush_pending(wb);
+                self.materialize(effect, ctx, wb, cursor);
+                true
+            }
             // Pure leaves (and not-yet-interactive nodes) lower without agent interaction; a leaf
             // that lowers is considered performed.
             _ => {
@@ -1607,6 +1616,20 @@ impl EngineCore {
                         source: ctx.source.unwrap_or(ObjId(0)),
                         kind: *kind,
                     });
+                }
+            }
+            // "`source` deals `amount` damage to `to`" (CR 119.2) — the damaging object is `source`,
+            // not the resolving spell. Resolve `source` then `to` (in that cursor order — matching the
+            // slot order `collect_specs_into` produces), so `to` can be a declined "up to one" (no
+            // damage). A missing `source` object degrades to the spell (`ctx.source`).
+            Effect::SourcedDamage { source, to, amount, kind } => {
+                let amount = self.eval_value(amount, ctx).max(0) as u32;
+                let src_obj = match self.resolve_target(source, ctx, cursor) {
+                    Some(Target::Object(o)) => o,
+                    _ => ctx.source.unwrap_or(ObjId(0)),
+                };
+                if let Some(target) = self.resolve_target(to, ctx, cursor) {
+                    wb.push(Action::Damage { target, amount, source: src_obj, kind: *kind });
                 }
             }
             Effect::Draw { who, count } => {
@@ -2940,6 +2963,12 @@ impl EngineCore {
             ValueExpr::SpellsCastThisTurn { who } => {
                 let p = self.eval_player(*who, ctx);
                 self.state.players.get(p.0 as usize).map(|pl| pl.spells_cast_this_turn as i64).unwrap_or(0)
+            }
+            // Instant/sorcery spells `who` cast this turn (incl. the resolving spell itself) — Burrog
+            // Barrage's "if you've cast another instant or sorcery this turn" (≥2) gate.
+            ValueExpr::InstantsSorceriesCastThisTurn { who } => {
+                let p = self.eval_player(*who, ctx);
+                self.state.players.get(p.0 as usize).map(|pl| pl.instants_sorceries_cast_this_turn as i64).unwrap_or(0)
             }
             // The {X} chosen for the triggering spell of a cast-with-{X} trigger — Geometer's Arthropod.
             ValueExpr::XOfTriggeringSpell => ctx

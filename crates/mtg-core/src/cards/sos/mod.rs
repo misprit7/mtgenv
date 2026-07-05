@@ -55,6 +55,7 @@ pub mod berta_wise_extrapolator;
 pub mod blech_loafing_pest;
 pub mod bogwater_lumaret;
 pub mod burrog_banemaker;
+pub mod burrog_barrage;
 pub mod cauldron_of_essence;
 pub mod charging_strifeknight;
 pub mod chase_inspiration;
@@ -289,6 +290,7 @@ pub fn register(db: &mut CardDb) {
     blech_loafing_pest::register(db);
     bogwater_lumaret::register(db);
     burrog_banemaker::register(db);
+    burrog_barrage::register(db);
     cauldron_of_essence::register(db);
     charging_strifeknight::register(db);
     chase_inspiration::register(db);

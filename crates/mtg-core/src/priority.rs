@@ -4811,6 +4811,16 @@ fn collect_specs_into(effect: &Effect, out: &mut Vec<TargetSpec>) {
                 }
             }
         }
+        // "`source` deals damage to `to`" (Burrog Barrage) — both may be declared targets; collect
+        // them in source→to order so `to` (usually the "up to one" opponent creature) is the higher
+        // slot and a decline just shortens the target vec.
+        Effect::SourcedDamage { source, to, .. } => {
+            for t in [source, to] {
+                if let EffectTarget::Target(spec) = t {
+                    out.push(spec.clone());
+                }
+            }
+        }
         // "Target player" (CR 115.1) — a targeting slot the following effects reference via
         // `PlayerRef::ChosenTarget`. Declares a single Player target.
         Effect::TargetPlayer(filter) => out.push(TargetSpec {

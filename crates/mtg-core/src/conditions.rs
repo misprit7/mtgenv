@@ -172,6 +172,11 @@ fn eval_value(
             let p = resolve_player(state, *who, source_controller);
             state.players.get(p.0 as usize).map(|pl| pl.spells_cast_this_turn as i64).unwrap_or(0)
         }
+        // Instant/sorcery spells `who` cast this turn, incl. the resolving spell itself (Burrog Barrage).
+        ValueExpr::InstantsSorceriesCastThisTurn { who } => {
+            let p = resolve_player(state, *who, source_controller);
+            state.players.get(p.0 as usize).map(|pl| pl.instants_sorceries_cast_this_turn as i64).unwrap_or(0)
+        }
         // Counters on the source object — for an intervening-"if" like "if it has four or more
         // quest counters on it" (Earthbender Ascension). Live count while on the battlefield;
         // otherwise the last-known counter bag (CR 603.10a) so a dies-trigger "if it had one or more

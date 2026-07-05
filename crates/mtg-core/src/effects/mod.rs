@@ -88,6 +88,20 @@ pub enum Effect {
         to: EffectTarget,
         kind: DamageKind,
     },
+    /// "`source` deals `amount` damage to `to`" — damage whose SOURCE is a chosen object, not the
+    /// resolving spell/ability (CR 119.2). Unlike [`DealDamage`] (source = `ctx.source`), the object
+    /// dealing the damage matters here: it's what deathtouch/lifelink/"a creature you control deals
+    /// damage" read. Burrog Barrage's "then **it** deals damage equal to its power to up to one target
+    /// creature an opponent controls" — `source` = the buffed creature you control (`amount` =
+    /// `PowerOfTarget(0)`), `to` = the up-to-one opponent creature. Both `source` and `to` are declared
+    /// targets, collected in that order. Resolved via the flushing interpret arm so any same-resolution
+    /// pump on `source` is committed before `amount`/the source's characteristics are read.
+    SourcedDamage {
+        source: EffectTarget,
+        to: EffectTarget,
+        amount: ValueExpr,
+        kind: DamageKind,
+    },
     Draw {
         who: PlayerRef,
         count: ValueExpr,
