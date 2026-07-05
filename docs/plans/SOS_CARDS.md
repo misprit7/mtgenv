@@ -29,8 +29,11 @@ re-scoping):
 - **`4b41def` — Quandrix Charm** (base-P/T-set cap) — modal instant reusing CounterUnlessPay + Destroy-enchantment + the new
   **`Effect::SetBasePT{power,toughness,duration}`** (CR 613 layer 7b), which lowers to the existing `GrantContinuous{SetBasePT}`
   path (a later +1/+1 counter still stacks on top → tested 6/6). No architecture; the base-P/T-set triage row is DONE.
+- **`cd1fbe2` — End of the Hunt** (GreatestMV cap) — greatest-MV edict: `TargetPlayer(Opponent)` + `Exile{Select}` whose filter
+  is the new **`ValueExpr::GreatestManaValue{filter,controller}`** feeding a dynamic `ManaValueExpr{min:g,max:g}` (reuses the
+  additional-cast-cost session's `resolve_dynamic_filter`). The GreatestMV row is DONE.
 
-**Census now 220/271 authored (81%). 0 Native escape hatches. The additional-cast-cost + base-P/T-set rows below are DONE.**
+**Census now 221/271 authored (82%). 0 Native escape hatches. The additional-cast-cost + base-P/T-set + GreatestMV rows are DONE.**
 
 ### ▶ Where sos-cards-15 points you (unchanged tail, minus the additional-cast-cost row)
 Work the by-cap triage below (grouped by yield). Highest-yield remaining caps: **Grant-a-triggered-ability-until-EOT** (Rabid
@@ -75,7 +78,8 @@ the bracketed cards fall out. Grouped by yield (verify oracle from sqlite; real-
   lowering to `GrantContinuous{SetBasePT}`. Reusable for any "has base P/T X/Y until EOT".
 - **Flashback with a NON-mana cost** (widen `Ability::Flashback{cost: ManaCost}` → a full `Cost`, or add a component) →
   **Group Project** (Flashback = Tap three creatures = the shipped `TapCreatures(3)`; +`spirit_token`, both exist).
-- **GreatestMV** (highest-mana-value among a set) → **End of the Hunt**. **NoMaxHandSize** (player static) → **Wisdom of Ages**.
+- ~~**GreatestMV** (highest-mana-value among a set) → **End of the Hunt**.~~ ✅ **DONE (sos-cards-15, `cd1fbe2`)** —
+  `ValueExpr::GreatestManaValue`. **NoMaxHandSize** (player static) → **Wisdom of Ages** (also needs mass-return-I/S + self-exile).
   **Increment** (mana-spent vs P/T self-counter) → **Tester of the Tangential**, **Ambitious Augmenter**. **LKI-counter-count**
   → **Scolding Administrator** (move the counters it died with). **Dynamic-MV reanimate filter** → **Moseo** (MV≤life-gained).
   **Discarded-this-resolution tracking** → **Mind Roots**, **Borrowed Knowledge**, and **Colossus of the Blood Age** (partial

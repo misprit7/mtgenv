@@ -75,7 +75,9 @@ MTGA client.
   X announced from an additional cost (not just `{X}` in mana); reusable **`CardFilter::ManaValueExpr`** (dynamic X-keyed MV
   bound, resolved via `resolve_dynamic_filter` — the "Dynamic-MV filter" cap, **also unblocks Moseo**). Cards: Seize the
   Spoils (discard), Vicious Rivalry + Fix What's Broken (pay X life + mass destroy/reanimate by MV), Soaring Stoneglider
-  (modal exile-two-OR-pay-{1}{W} on a creature). 0 Native hatches.
+  (modal exile-two-OR-pay-{1}{W} on a creature). Then **Quandrix Charm** (`Effect::SetBasePT` until EOT, layer 7b) + **End of
+  the Hunt** (`ValueExpr::GreatestManaValue` greatest-MV edict). **221/271 authored (82%), 717 mtg-core green.** 0 Native hatches.
+  grant-a-triggered-ability-until-EOT sketched to lead (Rabid Attack / Root Manipulation), awaiting approval.
 - **▶ SOS (prior — sos-cards-14): 215/271 authored (79%), 698 mtg-core tests green (2026-07-05).** **THE FINAL
   FIVE PREPARE STRAGGLERS DONE + 2 subsystems + honest census.** Shipped Jadzi // Oracle's Gift (no new cap), Harmonized
   Trio // Brainstorm (`CostComponent::TapCreatures` + `Effect::PutFromHandOnTop`), Grave Researcher // Reanimate

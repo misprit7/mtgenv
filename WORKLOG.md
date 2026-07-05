@@ -18,6 +18,13 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
   Stoneglider** (`eed8a13`) — modal (exile two from gy OR pay {1}{W}) on a **creature** cast; exercises the option choice +
   mana fold.
 - Census 215→**219/271 (81%)**, 0 Native hatches. Ledger + census updated; the additional-cast-cost triage row struck.
+- **Then two more by-cap wins (no architecture):** **Quandrix Charm** (`4b41def`) — new `Effect::SetBasePT` (layer 7b, "base
+  P/T X/Y until EOT") lowering to the existing `GrantContinuous{SetBasePT}`; a +1/+1 counter still stacks (tested 6/6).
+  **End of the Hunt** (`cd1fbe2`) — new `ValueExpr::GreatestManaValue` feeding a dynamic `ManaValueExpr` for a greatest-MV
+  edict (`TargetPlayer(Opponent)` + `Exile{Select}`). Census **221/271 (82%)**, 717 mtg-core green.
+- **Design-sketch sent to lead:** grant-a-triggered-ability-until-EOT (Rabid Attack, Root Manipulation) — proposed
+  `StaticContribution::GrantAbility{source_grp, ability_index}` (serde-safe reference-by-grp) + granted-ability scan in
+  `queue_self_triggers` + `source_grp` on the trigger stack object. Awaiting approval before building.
 
 ## 2026-07-05 (SOS relay sos-cards-14 — the FINAL FIVE prepare stragglers + 2 subsystems + honest census)
 
