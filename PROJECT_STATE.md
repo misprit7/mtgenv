@@ -69,10 +69,11 @@ MTGA client.
 - **✅ MOBILE WEB CLIENT (2026-07-03).** Game client + lobby fully playable from a phone: mobile
   reflow (sticky prompt sheet, opp-top/you-bottom strips, log toggle), touch previews long-press-only
   (hover gated to real mice), on-screen pass-turn button. Desktop unchanged.
-- **▶ SOS FULL-SET scope: 256/271 authored (94%, 253 faithful · 3 tracked-partial), 830 mtg-core tests green (2026-07-05,
-  sos-cards-18).** 8 fully-faithful cards + 7 reusable caps; the **clean cap-blocked tail is now EXHAUSTED** (15 unauthored: 11
+- **▶ SOS FULL-SET scope: 257/271 authored (95%, 254 faithful · 3 tracked-partial), 833 mtg-core tests green (2026-07-05,
+  sos-cards-18).** 9 fully-faithful cards + 8 reusable caps; the **clean cap-blocked tail is now EXHAUSTED** (14 unauthored: 10
   subsystem-scale caps/one-offs + 4 parked). Also shipped **Skycoach Waypoint** (`Effect::SetPrepared`), **Biblioplex
-  Tomekeeper** (modal triggered-ability support), **Mana Sculpt** (delayed-mana cap). **Burrog Barrage**
+  Tomekeeper** (modal triggered-ability support), **Mana Sculpt** (delayed-mana cap), **Archaic's Agony** (excess-damage impulse).
+  **Burrog Barrage**
   (new `Effect::SourcedDamage` creature-as-source "bite" primitive, flushes the +1/+0 pump before reading `PowerOfTarget` +
   `ValueExpr::InstantsSorceriesCastThisTurn`); **mill-then-play cap** (`Effect::MillThenPlay` + `Object.playable_from_graveyard` +
   graveyard offer scans) → **Ark of Hunger** + **Tablet of Discovery**; **Slumbering Trudge** (enters-with-(3−X)-stun via

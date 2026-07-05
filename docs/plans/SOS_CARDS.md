@@ -6,10 +6,15 @@ per-card triage, modeled on `SELESNYA_LANDFALL_CARDS.md`.
 
 ## ▶ NEXT AGENT — start here (handoff from sos-cards-18, 2026-07-05)
 
-**▶▶ sos-cards-18 SHIPPED — 8 fully-faithful cards + 7 reusable caps. 830 mtg-core green, whole workspace builds, tree clean,
-LEAD pushes.** Census **248→256/271 authored (94%, 253 faithful · 3 tracked-partial)**, 0 Native hatches. **The clean
+**▶▶ sos-cards-18 SHIPPED — 9 fully-faithful cards + 8 reusable caps. 833 mtg-core green, whole workspace builds, tree clean,
+LEAD pushes.** Census **248→257/271 authored (95%, 254 faithful · 3 tracked-partial)**, 0 Native hatches. **The clean
 cap-blocked tail is now EXHAUSTED** — every remaining unauthored card needs a subsystem-scale cap or a lead sketch (bucketed
 below). Own-commits (`git log -S` before re-scoping — header PROCESS RULES apply):
+- **`58e1cca` — Archaic's Agony** (Converge damage + **excess-damage → impulse-exile**). New
+  **`Effect::DealDamageExcessImpulse{ amount, to, window }`** — deals `amount` (`ColorsSpent`) to a target creature, computes
+  `excess = max(0, amount − (toughness − marked_damage))` from the PRE-damage state (flushing interpret arm), then exiles that
+  many cards from the top of the controller's library with the impulse play-permission (`castable_from_exile` + `play_until_turn`,
+  `YourNextTurn`). ⚠️ excess uses the intended amount (no prevention/replacement/deathtouch in the pool).
 - **`237e01e` — Mana Sculpt** (Counter + **delayed mana**). New time-based **`DelayedTriggerEvent::AtBeginningOfYourNextMainPhase`**
   (+ firing hook `fire_main_phase_delayed_triggers` wired into the `PhaseBegan` handler, gated on `active == controller`) +
   **`Action::AddMana`** (concrete pool add usable as a delayed-trigger action; `DelayedAbility` runs `Vec<Action>`) +
@@ -53,9 +58,6 @@ below). Own-commits (`git log -S` before re-scoping — header PROCESS RULES app
   still route controller-relative). `{X}{G}` cost = `mc.x = 1`.
 
 **▶ RECOMMENDED NEXT — the remaining buildables are all subsystem-scale (no clean wins left); pick by appetite:**
-- **Archaic's Agony** (Converge damage + exile-equal-to-**excess damage** + impulse-play). Needs excess-damage tracking — at the
-  moment the damage is dealt, `excess = max(0, dealt − remaining_toughness)`; then exile that many from the top of library with
-  a `YourNextTurn` play window (like `ExileForPlay` but N-from-top-of-library). The damage-path excess capture is the cap.
 - **Great Hall of the Biblioplex** (mana land — near-free — + `{5}: becomes a 2/4 Wizard` **layer-4/7 animation** = the cap).
 - **Rubble Rouser** (loot ETB + `{T},Exile-from-gy: Add {R}` + reflexive damage) — mana-ability-with-cost-and-rider, the same
   class as the **Hydro-Channeler** tracked-partial; do that roadmap item first.

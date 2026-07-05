@@ -3,7 +3,11 @@
 Short, dated entries for future-agent consumption. Newest first. One line or a few bullets
 per unit of meaningful progress. Keep it terse — detail lives in `docs/` and git history.
 
-## 2026-07-05 (SOS relay sos-cards-18 — 8 fully-faithful cards + 7 reusable caps; census 248→256/271, 803→830 green)
+## 2026-07-05 (SOS relay sos-cards-18 — 9 fully-faithful cards + 8 reusable caps; census 248→257/271, 803→833 green)
+
+- **`58e1cca` — Archaic's Agony** (Converge damage + **excess-damage → impulse-exile**). New `Effect::DealDamageExcessImpulse` —
+  deals `ColorsSpent` to a target, computes `excess = max(0, amount − (toughness − marked))` from pre-damage state, exiles that
+  many from the top of your library with impulse play-permission (`YourNextTurn`).
 
 - **`237e01e` — Mana Sculpt** (Counter + **delayed mana**). New time-based `DelayedTriggerEvent::AtBeginningOfYourNextMainPhase`
   + `fire_main_phase_delayed_triggers` (wired into `PhaseBegan`) + `Action::AddMana` (delayed-trigger pool add) +
