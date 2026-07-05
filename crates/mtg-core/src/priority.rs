@@ -4912,6 +4912,8 @@ fn collect_specs_into(effect: &Effect, out: &mut Vec<TargetSpec>) {
                 }
             }
         }
+        // "Deal N damage to target creature, exile excess from top of library" (Archaic's Agony).
+        Effect::DealDamageExcessImpulse { to: EffectTarget::Target(spec), .. } => out.push(spec.clone()),
         // "`source` deals damage to `to`" (Burrog Barrage) — both may be declared targets; collect
         // them in source→to order so `to` (usually the "up to one" opponent creature) is the higher
         // slot and a decline just shortens the target vec.

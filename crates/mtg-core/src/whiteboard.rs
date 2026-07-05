@@ -932,6 +932,52 @@ impl EngineCore {
                 self.materialize(effect, ctx, wb, cursor);
                 true
             }
+            // "Deal N damage to target; exile that many cards from the top of your library as its
+            // EXCESS damage, playable until `window`" (Archaic's Agony). Excess is read from the
+            // target's pre-damage state, so flush first, then stage the damage and impulse-exile.
+            Effect::DealDamageExcessImpulse { amount, to, window } => {
+                self.flush_pending(wb);
+                if let Some(Target::Object(obj)) = self.resolve_target(to, ctx, cursor) {
+                    let amt = self.eval_value(amount, ctx).max(0) as u32;
+                    // Excess = amount − lethal-needed (toughness − damage already marked), floored at 0.
+                    let toughness = self.state.computed(obj).toughness.unwrap_or(0).max(0) as u32;
+                    let marked = self.state.object(obj).damage_marked;
+                    let remaining = toughness.saturating_sub(marked);
+                    let excess = amt.saturating_sub(remaining);
+                    wb.push(Action::Damage {
+                        target: Target::Object(obj),
+                        amount: amt,
+                        source: ctx.source.unwrap_or(ObjId(0)),
+                        kind: DamageKind::Noncombat,
+                    });
+                    // Impulse-exile `excess` top-of-library cards with play permission through `window`.
+                    let controller = ctx.controller.unwrap_or(self.state.active_player);
+                    let until = match window {
+                        crate::effects::PlayWindow::ThisTurn => self.state.turn_number,
+                        crate::effects::PlayWindow::YourNextTurn => {
+                            if self.state.active_player == controller {
+                                self.state.turn_number + 2
+                            } else {
+                                self.state.turn_number + 1
+                            }
+                        }
+                    };
+                    for _ in 0..excess {
+                        let top = match self.state.player(controller).library.last().copied() {
+                            Some(c) => c,
+                            None => break,
+                        };
+                        if self.state.move_object(top, Zone::Exile, controller) {
+                            if let Some(o) = self.state.objects.get_mut(&top) {
+                                o.castable_from_exile = true;
+                                o.play_until_turn = Some(until);
+                            }
+                            self.broadcast(GameEvent::ObjectMoved { obj: top, to: Zone::Exile });
+                        }
+                    }
+                }
+                true
+            }
             // "Then IT deals damage equal to its power …" (Burrog Barrage) — FLUSH first so a
             // same-resolution pump on the source (the "+1/+0 until end of turn" step above it in the
             // sequence) is committed before `amount` reads the source's now-buffed power (CR 608.2h).
@@ -2112,6 +2158,7 @@ impl EngineCore {
             | Effect::IfYouDo { .. }
             | Effect::ForEach { .. }
             | Effect::ForEachTarget { .. }
+            | Effect::DealDamageExcessImpulse { .. }
             | Effect::Search { .. }
             | Effect::AddMana { .. }
             | Effect::Discard { .. }

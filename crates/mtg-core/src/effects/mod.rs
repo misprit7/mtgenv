@@ -482,6 +482,19 @@ pub enum Effect {
         what: EffectTarget,
         window: PlayWindow,
     },
+    /// "Deal `amount` damage to `to`; exile cards from the top of your library equal to the **excess
+    /// damage** dealt to it this way — you may play those until `window`" (Archaic's Agony). Excess
+    /// (CR 120.7) = `max(0, amount − (toughness − damage already marked))`, computed from the target's
+    /// pre-damage state; the source is the resolving spell (`ctx.source`). The exiled cards get the
+    /// impulse play-permission (`castable_from_exile` + `play_until_turn`), like `ExileForPlay` but N
+    /// cards from the top of the controller's library. `to` is a chosen target.
+    /// ⚠️ Excess is computed from the *intended* amount (no damage prevention/replacement modelled here
+    /// — none applies in the SoS pool); deathtouch would lower "lethal" but this effect has none.
+    DealDamageExcessImpulse {
+        amount: ValueExpr,
+        to: EffectTarget,
+        window: PlayWindow,
+    },
     /// "Mill a card. You may play that card this turn." (Ark of Hunger / Tablet of Discovery) — mill the
     /// top card of `who`'s library and grant permission to **play** it (cast it / play it as a land)
     /// straight from the graveyard until the end of `window`. Sets `Object.playable_from_graveyard` +

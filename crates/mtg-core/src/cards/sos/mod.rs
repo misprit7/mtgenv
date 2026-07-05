@@ -47,6 +47,7 @@ pub mod ajanis_response;
 pub mod antiquities_on_the_loose;
 pub mod applied_geometry;
 pub mod arcane_omens;
+pub mod archaics_agony;
 pub mod ark_of_hunger;
 pub mod arnyn_deathbloom_botanist;
 pub mod artistic_process;
@@ -305,6 +306,7 @@ pub fn register(db: &mut CardDb) {
     skycoach_waypoint::register(db);
     biblioplex_tomekeeper::register(db);
     mana_sculpt::register(db);
+    archaics_agony::register(db);
     cauldron_of_essence::register(db);
     charging_strifeknight::register(db);
     chase_inspiration::register(db);
