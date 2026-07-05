@@ -2943,6 +2943,24 @@ impl Engine {
                 let mv = o.chars.mana_value();
                 min.map_or(true, |lo| mv >= lo) && max.map_or(true, |hi| mv <= hi)
             }
+            // Dynamic (source-keyed) mana-value bound — "target … with mana value X or less" where the
+            // bound is the SOURCE's chosen X / colors-of-mana-spent / life-gained-this-turn etc. The
+            // ctx-free matcher can only compare against a concrete `ManaValue`, so resolve the bound
+            // here against a source-derived ctx (its `cast_x`/`colors_spent` were recorded at cast).
+            // Without this the filter hit the fail-closed `_` arm and a dynamic-MV target NEVER matched
+            // (silent-inert). Moseo Vein's New Dean (MV ≤ life gained), Sundering Archaic (MV ≤ colors).
+            CardFilter::ManaValueExpr { min, max } => {
+                let mv = o.chars.mana_value();
+                let ctx = ResolutionCtx {
+                    controller: Some(caster),
+                    source,
+                    x: source.and_then(|s| self.state.objects.get(&s)).and_then(|obj| obj.cast_x),
+                    ..Default::default()
+                };
+                let lo = min.as_ref().map(|e| self.eval_value(e, &ctx).max(0) as u32);
+                let hi = max.as_ref().map(|e| self.eval_value(e, &ctx).max(0) as u32);
+                lo.map_or(true, |l| mv >= l) && hi.map_or(true, |h| mv <= h)
+            }
             CardFilter::All(fs) => fs.iter().all(|f| self.target_matches_filter(t, f, caster, source)),
             CardFilter::AnyOf(fs) => fs.iter().any(|f| self.target_matches_filter(t, f, caster, source)),
             CardFilter::Not(f) => !self.target_matches_filter(t, f, caster, source),
