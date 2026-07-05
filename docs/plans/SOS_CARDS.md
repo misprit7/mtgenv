@@ -60,6 +60,42 @@ re-scoping):
 
 **Census now 227/271 authored (84%). 0 Native escape hatches. Rows DONE: additional-cast-cost · base-P/T-set · GreatestMV · Flashback-non-mana · repeatable-modal · GRANT-ABILITY · timed-blink · (Daydream = pure composition).**
 
+### ★ ELDER-DRAGON COMPOSITION ASSESSMENT (sos-cards-15, lead-requested — ASSESS, verdicts verified against the current cap set)
+The "5 genuine subsystems" framing predates this session's cap explosion. Verdict: **only 1 of 5 is a real subsystem; 4 are
+compose-now/small-cap, and TWO share a single thin cap.** Verified: `copy_spell_on_stack` (707.10, priority.rs:3990) built ·
+`ValueExpr::SpellsCastThisTurn` + `Player.spells_cast_this_turn` built · `CostReductionAmount::GenericValue(ValueExpr)` built
+(Dawning Archaic) · `CastVariant::WithoutPayingManaCost` free-cast + `ExileTopUntilManaValueMayCastFree` loop built ·
+`state.rng` seeded RNG present · `effective_cast_cost` reads ONLY the cast card's OWN `CostReduction` statics (the one real
+pipeline limit for granted cost-reduction).
+
+- **Prismari, the Inspiration (Storm) — SMALL-CAP (compose-now once the shared copy cap lands).** 7/7 flying vanilla body +
+  **Ward—Pay 5 life** (tiny: wire `CostComponent::PayLife` into `pay_cost` — currently `_ => {}` there; I only wired it in the
+  cast-path `pay_additional_nonmana`) + Storm = `Triggered{ SpellCast(I/S, by you) }` → **`Effect::CopySpellOnStack{ what:
+  TriggeringSpell, count: SpellsCastThisTurn−1, choose_new_targets:true }`** (loops the built `copy_spell_on_stack` `count`×). No subsystem.
+- **Silverquill, the Disputant (Casualty) — SMALL-CAP (SHARES the copy cap with Prismari).** 4/4 flying-vig body + Casualty 1 on
+  your I/S = `Triggered{ SpellCast(I/S, by you) }` → `Optional{ IfYouDo{ Sacrifice(a creature power≥1 = `All([Creature,
+  Not(PowerAtMost(0))])`), CopySpellOnStack{ TriggeringSpell, count:1, new targets } } }`. ⚠️ Timing caveat: real Casualty is a
+  601.2b cast-time optional cost; the cast-trigger model creates the copy a beat later (trigger resolves above the still-on-stack
+  spell — order is right, only the sacrifice timing differs). Note it; observable result matches. No subsystem.
+- **Witherbloom, the Balancer (Affinity) — SMALL-CAP (own clause composes; granted clause = a modest pipeline extension).** 5/5
+  flying-deathtouch + **own affinity** = `CostReduction{ GenericValue(Count{creatures, Controller}), Always, Cast }` (COMPOSE-NOW,
+  Dawning-Archaic-proven) + **granted affinity to your I/S** = the one gap: `effective_cast_cost` is self-only, so grant needs it
+  to ALSO gather cost-reductions from OTHER permanents you control scoped by a filter on the cast spell ("your I/S spells cost {1}
+  less per creature"). Bounded extension, not a subsystem.
+- **Quandrix, the Proof (Cascade) — SMALL-CAP (a bounded new effect).** 6/6 flying-trample + Cascade on itself + granted to your
+  I/S from hand = a dedicated **`Effect::Cascade`** (exile top until a nonland with MV < the cast spell's MV; may free-cast it via
+  the built `WithoutPayingManaCost`; bottom the rest in RANDOM order via `state.rng`). A cousin of the built Improvisation loop
+  (until-one-cheaper vs until-total-MV + random-bottom). Trigger = `SpellCast` reading the triggering spell's MV. Biggest small-cap; still not a subsystem.
+- **Lorehold, the Historian (Miracle) — REAL SUBSYSTEM (the one genuine gap).** 5/5 flying-haste + opp-upkeep loot (`Triggered{
+  BeginningOfStep(Upkeep) on each opponent's turn }` → `Optional{ IfYouDo{ Discard 1, Draw 1 } }`, COMPOSE-NOW) + **Miracle {2}**
+  = the real gap: a first-card-drawn-this-turn tracker + a **draw-triggered reveal/cast window** + an alternate cast cost, granted
+  to I/S cards in hand. No existing machinery for the draw-triggered cast window. DESIGN-SKETCH before building.
+
+**▶ Highest-leverage move: build the thin `Effect::CopySpellOnStack{ what, count, choose_new_targets }` (over the built
+`copy_spell_on_stack`) → it unlocks BOTH Prismari (Storm) and Silverquill (Casualty) as compositions (2 Elder Dragons for ~1 small
+cap). Then Witherbloom (own affinity now + the effective_cast_cost grant extension), then Quandrix (`Effect::Cascade`). Lorehold
+(Miracle) is the only one needing a design sketch.** Net: 4 of 5 dragons are NOT subsystems — the stale framing overcounted by 4×.
+
 ### ▶ Where sos-cards-15 points you (tail after 9 cards + 8 caps; the clean non-architecture caps are cleared)
 sos-cards-15 cleared the easy-to-medium caps. The **remaining tail needs either a lead sketch or a genuine new cap** (grouped):
 - ~~**Grant-a-triggered-ability-until-EOT** (Rabid Attack, Root Manipulation).~~ ✅ **DONE (sos-cards-15, `7ede626`+`7fa973f`)** —
