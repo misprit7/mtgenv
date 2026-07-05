@@ -2716,10 +2716,16 @@ impl EngineCore {
             // C9b: the number of `kind` counters on the effect's source (e.g. Mossborn Hydra
             // doubling its own +1/+1 counters). For a CDA computing P/T, chars evaluates this
             // against the object being computed (see chars::compute) — here it's the resolver.
+            // Counters on the source: live counts while it's on the battlefield; otherwise its
+            // last-known counter bag (CR 603.10a) — so a dies/LTB trigger reads "this creature's
+            // counters" it had at death (Ambitious Augmenter / Scolding Administrator), which are 0
+            // on the fresh graveyard object.
             ValueExpr::CountersOnSelf(kind) => ctx
                 .source
-                .and_then(|s| self.state.objects.get(&s))
-                .map(|o| o.counters.get(kind) as i64)
+                .map(|s| match self.state.objects.get(&s) {
+                    Some(o) if o.zone == Zone::Battlefield => o.counters.get(kind) as i64,
+                    _ => self.state.last_known.get(&s).map(|l| l.counters.get(kind)).unwrap_or(0) as i64,
+                })
                 .unwrap_or(0),
             // The computed power/toughness of the source itself (Increment's stat comparison).
             ValueExpr::PowerOfSelf => ctx

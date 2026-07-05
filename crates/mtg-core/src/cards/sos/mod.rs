@@ -146,6 +146,8 @@ pub mod aziza_mage_tower_captain;
 pub mod wisdom_of_ages;
 pub mod mind_into_matter;
 pub mod practiced_offense;
+pub mod ambitious_augmenter;
+pub mod scolding_administrator;
 pub mod pigment_wrangler;
 pub mod planar_engineering;
 pub mod prismari_the_inspiration;
@@ -372,6 +374,8 @@ pub fn register(db: &mut CardDb) {
     wisdom_of_ages::register(db);
     mind_into_matter::register(db);
     practiced_offense::register(db);
+    ambitious_augmenter::register(db);
+    scolding_administrator::register(db);
     pigment_wrangler::register(db);
     prismari_the_inspiration::register(db);
     quandrix_the_proof::register(db);

@@ -169,10 +169,14 @@ fn eval_value(
             state.players.get(p.0 as usize).map(|pl| pl.spells_cast_this_turn as i64).unwrap_or(0)
         }
         // Counters on the source object — for an intervening-"if" like "if it has four or more
-        // quest counters on it" (Earthbender Ascension).
+        // quest counters on it" (Earthbender Ascension). Live count while on the battlefield;
+        // otherwise the last-known counter bag (CR 603.10a) so a dies-trigger "if it had one or more
+        // counters" (Ambitious Augmenter) reads the count it had at death, not the fresh-object 0.
         ValueExpr::CountersOnSelf(kind) => source
-            .and_then(|s| state.objects.get(&s))
-            .map(|o| o.counters.get(kind) as i64)
+            .map(|s| match state.objects.get(&s) {
+                Some(o) if o.zone == Zone::Battlefield => o.counters.get(kind) as i64,
+                _ => state.last_known.get(&s).map(|l| l.counters.get(kind)).unwrap_or(0) as i64,
+            })
             .unwrap_or(0),
         // Total toughness of matching battlefield permanents (base chars, per this module's model) —
         // Orysa's "creatures you control have total toughness 10 or greater" cost-reduction gate.

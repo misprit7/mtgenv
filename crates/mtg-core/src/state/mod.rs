@@ -332,6 +332,10 @@ impl Player {
 pub struct Lki {
     pub chars: crate::chars::ComputedChars,
     pub controller: PlayerId,
+    /// The counter bag the permanent had as it left the battlefield (CR 603.10a) — so a dies/LTB
+    /// trigger can read "this creature's counters" (Ambitious Augmenter's Fractal, Scolding
+    /// Administrator's counter transfer) after the counters themselves were reset on the zone change.
+    pub counters: crate::basics::CounterBag,
 }
 
 /// An armed delayed triggered ability (CR 603.7) waiting on its watched object. Carries the
@@ -751,8 +755,12 @@ impl GameState {
         // last existed. Snapshot the computed chars now (immutable borrow ends before we mutate).
         if from_zone == Zone::Battlefield && to != Zone::Battlefield {
             let chars = self.computed(id);
-            let controller = self.objects.get(&id).map(|o| o.controller).unwrap_or(from_owner);
-            self.last_known.insert(id, Lki { chars, controller });
+            let (controller, counters) = self
+                .objects
+                .get(&id)
+                .map(|o| (o.controller, o.counters.clone()))
+                .unwrap_or((from_owner, Default::default()));
+            self.last_known.insert(id, Lki { chars, controller, counters });
             // CR 400.7: an object leaving the battlefield becomes a *new* object; floating replacement
             // riders scoped to it (e.g. "if that creature would die this turn, exile it instead") are
             // invalidated so they never chase the object back if it returns. (A death that was itself
