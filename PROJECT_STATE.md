@@ -80,8 +80,9 @@ MTGA client.
   `Cost` → non-mana flashback costs) + **Moment of Reckoning** (repeatable modal, no new cap) + **Daydream** (blink+counter+
   flashback, no new cap) + the **GRANT-A-TRIGGERED-ABILITY-UNTIL-EOT subsystem** (lead-approved, CR 613.1f — `GrantAbility`
   contribution + reserved 9800+ template block + granted-ability scan in `queue_self_triggers` + `source_grp` on the trigger
-  stack object) with **Rabid Attack + Root Manipulation**. **226/271 authored (83%), 730 mtg-core green.** 0 Native hatches.
-  Session: 11 cards + 9 reusable caps + a Scryfall-diff census re-verification.
+  stack object) with **Rabid Attack + Root Manipulation**, and **Conciliator's Duelist** (`Effect::ExileReturnNextEndStep`
+  timed-blink cap). **227/271 authored (84%), 732 mtg-core green.** 0 Native hatches. Session: 12 cards + 10 reusable caps +
+  a Scryfall-diff census re-verification.
 - **▶ SOS (prior — sos-cards-14): 215/271 authored (79%), 698 mtg-core tests green (2026-07-05).** **THE FINAL
   FIVE PREPARE STRAGGLERS DONE + 2 subsystems + honest census.** Shipped Jadzi // Oracle's Gift (no new cap), Harmonized
   Trio // Brainstorm (`CostComponent::TapCreatures` + `Effect::PutFromHandOnTop`), Grave Researcher // Reanimate

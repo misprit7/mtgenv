@@ -53,15 +53,21 @@ re-scoping):
   `recompute` expires the effect), so the queued trigger — referencing the template — survives. Tested: dies→draw / attacks→gain,
   and **post-EOT death/attack does NOT trigger** (required test). ZERO regression on the hot trigger path (730 green).
 
-**Census now 226/271 authored (83%). 0 Native escape hatches. Rows DONE: additional-cast-cost · base-P/T-set · GreatestMV · Flashback-non-mana · repeatable-modal · GRANT-ABILITY · (Daydream = pure composition).**
+- **`db859f6` — Conciliator's Duelist** (timed-blink cap) — **`Effect::ExileReturnNextEndStep`** (CR 603.7): exile now + arm a
+  `DelayedTriggerEvent::AtBeginningOfNextEndStep` carrying a `MoveZone{→Battlefield}` (owner's control). Its Repartee
+  (`SpellCastTargetingCreature`) trigger drives it; ETB = draw + each player loses 1. **Reusable for Ennis** — but Ennis ALSO
+  needs a "cards put into exile this turn" tracker (not built) for its end-step +1/+1 counter, so Ennis is not yet done.
+
+**Census now 227/271 authored (84%). 0 Native escape hatches. Rows DONE: additional-cast-cost · base-P/T-set · GreatestMV · Flashback-non-mana · repeatable-modal · GRANT-ABILITY · timed-blink · (Daydream = pure composition).**
 
 ### ▶ Where sos-cards-15 points you (tail after 9 cards + 8 caps; the clean non-architecture caps are cleared)
 sos-cards-15 cleared the easy-to-medium caps. The **remaining tail needs either a lead sketch or a genuine new cap** (grouped):
 - ~~**Grant-a-triggered-ability-until-EOT** (Rabid Attack, Root Manipulation).~~ ✅ **DONE (sos-cards-15, `7ede626`+`7fa973f`)** —
   `StaticContribution::GrantAbility{template_grp}` + reserved 9800+ template block + granted-ability scan in `queue_self_triggers`
   + `source_grp` on the trigger stack object. Reusable for any "gains [triggered ability] until EOT". See the SHIPPED block above.
-- **Medium caps still open (each a real new piece):** **timed-blink** (Ennis, Conciliator's Duelist — reuse `Effect::Blink` +
-  a delayed end-step-return trigger; both cards also have a 2nd ability — exiled-this-turn counter / Repartee); **Increment**
+- **Medium caps still open (each a real new piece):** ~~timed-blink~~ **DONE** (`Effect::ExileReturnNextEndStep`, sos-cards-15) —
+  **Ennis** just needs a "cards put into exile this turn" per-turn tracker (bump on any →Exile move, reset each turn) + a `Condition`
+  reading it for its end-step +1/+1; **Increment**
   keyword (Tester, Ambitious Augmenter — SpellCast-trigger comparing `ManaSpentOnTrigger` vs `Power/ToughnessOfSelf`; both cards
   ALSO have a hard 2nd ability — move-X-counters / dies-with-counters→token); **spell-copy consumers** (Choreographed Sparks,
   Lumaret's Favor, Social Snub, Aziza, Mica — need a thin `Effect::CopySpellOnStack{what}` / copy-on-cast-self trigger over the
@@ -204,9 +210,9 @@ name across `crates/mtg-core/src/cards/**` (DFC fronts matched on the pre-`//` n
 per-card ⏳ triage table below is STALE** (dozens of ⏳ rows are actually shipped: Pull from the Grave, Aberrant Manawurm,
 Brush Off, Antiquities on the Loose, Stun/Look-and-pick/Graveyard-activated subsystems, …). Trust code + this diff, not the table.
 
-**Headline (Scryfall-diff RE-VERIFIED 2026-07-05 by sos-cards-15; +Moment of Reckoning +Daydream +Rabid Attack +Root
-Manipulation since): 226 / 271 authored (83%). 222 fully faithful · 4 tracked-partial · 45 unauthored. 0 Native escape hatches
-used. 730 mtg-core tests green.** (Diff method: every sos set name —
+**Headline (Scryfall-diff RE-VERIFIED 2026-07-05 by sos-cards-15; + Moment of Reckoning, Daydream, Rabid Attack, Root
+Manipulation, Conciliator's Duelist since): 227 / 271 authored (84%). 223 fully faithful · 4 tracked-partial · 44 unauthored.
+0 Native escape hatches used. 732 mtg-core tests green.** (Diff method: every sos set name —
 front face, pre-`//` — checked against string literals in `crates/mtg-core/src/cards/**`; the 49 unauthored match the buckets
 below exactly. sos-cards-15 added Seize the Spoils, Vicious Rivalry, Fix What's Broken, Soaring Stoneglider, Quandrix Charm,
 End of the Hunt, Group Project.) (Goblin Glasswright shipped since the first census; Seize the Spoils remains — it

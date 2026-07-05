@@ -38,8 +38,12 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
   granted-ability scan in `queue_self_triggers`. Fires synchronously at the death/attack broadcast (before `recompute` expires
   the effect); the queued trigger references the template, so it survives. Tested dies→draw / attacks→gain-life + **post-EOT
   death/attack does NOT trigger**. ZERO regression on the hot trigger path. Census **226/271 (83%)**, 730 green.
-- **Session total: 11 cards + 9 reusable engine caps (incl. the grant-ability subsystem) + a Scryfall-diff census verification**
-  (215→226/271, 698→730 green).
+- **Then Conciliator's Duelist** (`db859f6`) — **`Effect::ExileReturnNextEndStep`** (timed-blink cap, CR 603.7): exile now +
+  arm an `AtBeginningOfNextEndStep` delayed trigger carrying the return `MoveZone{→Battlefield}`. Repartee
+  (`SpellCastTargetingCreature`) drives it; ETB = draw + each loses 1. (Ennis reuses this but also needs an unbuilt
+  cards-exiled-this-turn tracker.) Census **227/271 (84%)**, 732 green.
+- **Session total: 12 cards + 10 reusable engine caps (incl. the grant-ability subsystem + timed-blink) + a Scryfall-diff
+  census verification** (215→227/271, 698→732 green).
 
 ## 2026-07-05 (SOS relay sos-cards-14 — the FINAL FIVE prepare stragglers + 2 subsystems + honest census)
 
