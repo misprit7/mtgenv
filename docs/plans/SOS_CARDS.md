@@ -6,8 +6,88 @@ per-card triage, modeled on `SELESNYA_LANDFALL_CARDS.md`.
 
 ## ▶ NEXT AGENT — start here (handoff from sos-cards-10, 2026-07-04)
 
-**▶▶ sos-cards-10 HANDOFF (2026-07-04) — READ FIRST. SCOPE = FULL SET; quality bar = general CR capability,
-not the minimal hack.** 163→166 authored / **616 mtg-core tests green, tree clean** (LEAD pushes).
+**▶▶ sos-cards-10 HANDOFF (2026-07-04) — READ FIRST. SCOPE = FULL SET; quality bar = general CR capability
+("nicest way that extends for any future card"), not the minimal hack.** **166 authored / 616 mtg-core tests
+green, tree clean, LEAD pushes.** sos-cards-10 shipped **3 subsystems + 3 cards + 2 dead-path revivals**
+(full detail in "Prior handoff — sos-cards-10" below): **planeswalkers** (verify-and-finish; the loyalty
+groundwork was already built — 4 primitives incl. `PlayerRef::Each` + a fail-closed `CardFilter::ManaValue`
+targeting fix), **emblems / `Zone::Command`** (CR 114 — Dellian −6 → **Dellian fully faithful**), and the
+**floating delayed-replacement subsystem** (CR 614 — `GameState.floating_replacements`, `Effect::ExileIfWouldDie`,
+"dies" = any battlefield→graveyard move; **revived the dead `WouldBeDestroyed`/`WouldDie` static path** and
+**routed SBA-death + sacrifice through the replacement pass** — both had bypassed it via direct `move_object`)
+→ **Wilt in the Heat**. Ral Zarek is the one tracked-partial (−7 coin-flip+skip-turns deferred indefinitely).
+
+### ▶ Sketches & plans for YOU (sos-cards-11) — design-sketch to the lead before building any subsystem
+
+**⚠️ TWO READ-THE-CODE CORRECTIONS from sos-cards-10 (so you scope right — beliefs drift in this ledger):**
+- **Wildgrowth Archaic is NOT free** off the floating-replacement cap. Its deferred clause ("whenever you cast a
+  creature spell, THAT creature enters with X additional +1/+1 counters") is a *delayed enters-with-counters* on a
+  future object — a **modest extension on the FloatingReplacement rails**: add a `FloatingRewrite::EntersWithCounters`
+  variant + match `ActionPattern::WouldEnterBattlefield` for floating riders (currently only `WouldDie` is matched for
+  floaters). Not a freebie, but the container + pass already exist — small follow-on.
+- **The Dawning Archaic's exile rider rides FLASHBACK, not my cap.** "If that spell would be put into your graveyard,
+  exile it instead" is a **spell leaving the STACK** (stack→graveyard, CR 608.2n), not a creature dying (battlefield→
+  graveyard). `Effect::ExileIfWouldDie` = battlefield→graveyard only. But the flashback machinery already exiles a
+  spell as it leaves the stack (`Object.flashback_cast` → exile-on-leave-stack in `resolve_top`) — so set that flag
+  on the free-cast card and the rider is free THAT way.
+
+**A. THE DAWNING ARCHAIC** ({10} Legendary Avatar 7/7, Reach — ⏳ ~1 moderate cap): cost reduction ({1} per I/S in
+your gy) is **DONE** (`GenericValue(Count{I/S in gy})`, built + now exercise it). Reach = done. Remaining: a
+**`SelfAttacks` trigger → "you may cast target I/S card from your graveyard without paying its mana cost"** (a
+free-cast of a DIFFERENT graveyard card — like flashback's cast-from-gy but granted by another permanent; target a
+gy I/S card, cast free, set the `flashback_cast`/exile-on-leave-stack flag so the "exile instead of graveyard" rider
+comes along). Reuses: `EventPattern::SelfAttacks`, `TargetKind::CardInZone{Graveyard}`, the flashback cast+exile
+path. The genuinely-new bit is "cast target [gy] card for free" as a granted one-off (vs the card's own flashback).
+
+**B. PARADIGM — the SOS "Lessons" mechanic (NOT real-Strixhaven "Learn").** ⚠️ **READ-THE-CODE: the lead's brief
+called this "Lessons/Learn (CR 715 outside-the-game / sideboard-pool)" — that's real Strixhaven and DOES NOT apply
+here.** This set has **NO "Learn" cards, no sideboard/outside-the-game mechanic** (verified vs sqlite). The 5
+`Sorcery — Lesson` cards — **Decorum Dissertation** {3}{B}{B} (target player draws 2, loses 2), **Germination
+Practicum** {3}{G}{G} (two +1/+1 on each creature you control), **Restoration Seminar** {5}{W}{W} (reanimate a
+nonland permanent card from your gy), **Echocasting Symposium** {4}{U}{U} (target player makes a token copy of
+target creature you control), **Improvisation Capstone** {5}{R}{R} (exile top until MV≥4, cast any # free) — all
+carry **Paradigm**: *"Then exile this spell. After you first resolve a spell with this name, you may cast a copy of
+it from exile without paying its mana cost at the beginning of each of your first main phases."* Paradigm = **3
+engine pieces** (the middle one is the big subsystem — design-sketch before building):
+  1. **Self-exile-on-resolve** — the Lesson exiles ITSELF on resolve (not to graveyard) + records a "Paradigm recast"
+     marker on the exiled object. Distinct from impulse-play (`castable_from_exile` casts the CARD once); Paradigm
+     keeps the card in exile permanently and casts COPIES. Adapt the flashback exile-on-leave-stack + impulse
+     `castable_from_exile` machinery.
+  2. **A recurring optional free-cast trigger from exile** — "at the beginning of each of your first main phases, you
+     may cast a copy" = `EventPattern::BeginningOfStep(Phase::PrecombatMain)` (gated to your turn), OPTIONAL, anchored
+     to the exiled object. **Composes with the emblem precedent**: `Ability::FunctionsFrom(vec![Zone::Exile])` + a
+     `queue_*_functioning_triggers` exile-zone scan (mirror the `Zone::Command` one I built for emblems).
+  3. **SPELL-COPY (CR 707.12 "cast a copy") — THE BIG UNBUILT PIECE.** "cast a copy of it from exile" mints a
+     StackObject copy of the Lesson on the stack (copiable characteristics from the card), lets you choose new
+     targets, casts it free. This is the ledger's long-deferred **spell-copy subsystem** (real StackObject-copy +
+     new-target reselection, CR 707.10/12). **Build spell-copy FIRST — it's the reusable foundation** (also unblocks
+     the set's other spell-copy cards AND overlaps The Dawning Archaic's free-cast-from-a-nonhand-zone), then
+     Paradigm = spell-copy + self-exile + the recurring trigger. The 5 Lessons' underlying effects range easy
+     (Decorum/Germination) → moderate (Restoration reanimate, Echocasting token-copy [`CreateTokenCopy` mostly
+     built]) → heaviest (Improvisation's impulse-cast-multiple).
+
+**C. Remaining S12 cost-reduction cards** (mechanism done): **Run Behind** (needs "put target on top OR bottom of
+owner's library, owner chooses" — a small owner-side binary decision), **Brush Off** (needs `TargetKind::StackObject`
+real-path candidate enumeration — the counterspell gap in the Systemic notes below; its own commit w/ real
+counterspell cast-path tests, per the lead — it's been latent too long). **Wildgrowth Archaic** = the modest
+`FloatingRewrite::EntersWithCounters` extension above.
+
+**PROCESS (unchanged, hard-won):** shared tree → `git commit --only <paths>` (stage a NEW file with `git add`
+first), never `-a`/`add -A`/stash; DON'T touch `experiments/` (MuZero + GPU runs live there); `cargo test -p
+mtg-core` green at every commit; flip a cap's ledger Status cell in the SAME commit; **`git log -S "<mechanism>"`
++ READ THE CODE before scoping any ⏳ row as new** (three sos-cards-10 corrections above prove beliefs drift BOTH
+ways). Real-path integration test for every mechanism; expect-test snapshots. Ping the lead at subsystem boundaries
++ design-sketch new subsystems (spell-copy / Paradigm) before building. On fatigue: declare, rewrite THIS block,
+hand off clean. **Read the Systemic notes (no-rewind economy + the counterspell/StackObject gap) below before
+scoping cost/targeting/counterspell work.**
+
+*(sos-cards-10 retiring here at a clean boundary — 3 subsystems + 3 cards shipped, tree clean, all green, this
+block rewritten for the successor.)*
+
+---
+### ▶ Prior handoff — sos-cards-10 (full detail; superseded by the block above)
+
+**▶▶ sos-cards-10 HANDOFF (2026-07-04) — full detail.** 163→166 authored / **616 mtg-core tests green, tree clean** (LEAD pushes).
 **PLANESWALKERS DONE** + **EMBLEMS (CR 114 / Zone::Command) DONE** + **FLOATING DELAYED-REPLACEMENTS (CR 614)
 DONE** (all lead-greenlit) → **Professor Dellian Fel FULLY FAITHFUL** + **Wilt in the Heat** shipped (only Ral
 stays tracked-partial: its −7 coin-flip+skip-turns is deferred indefinitely). Shipped **3 cards + 5 reusable
