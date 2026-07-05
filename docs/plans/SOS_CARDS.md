@@ -4,7 +4,65 @@ Standing workstream: implement the Secrets of Strixhaven set for **limited (40-c
 `mtg-core`, easiest-first, correctness over count. This ledger is the capability index + full
 per-card triage, modeled on `SELESNYA_LANDFALL_CARDS.md`.
 
-## ▶ NEXT AGENT — start here (handoff from sos-cards-9, 2026-07-04)
+## ▶ NEXT AGENT — start here (handoff from sos-cards-10, 2026-07-04)
+
+**▶▶ sos-cards-10 HANDOFF (2026-07-04) — READ FIRST. SCOPE = FULL SET; quality bar = general CR capability,
+not the minimal hack.** 163→165 authored (2 tracked-partial planeswalkers) / **609 mtg-core tests green, tree
+clean** (LEAD pushes). **PLANESWALKERS are DONE** (verify-and-finish, as briefed) + **2 cards + 4 reusable
+primitives**, each with real-path tests, `git commit --only` on the shared tree (`experiments/` untouched):
+
+1. **Verified the 4 planeswalker points are ALREADY BUILT + TESTED** (as the handoff predicted — read-the-code
+   confirmed, no fixes needed): (1) **enters with printed loyalty** through the REAL cast path — `resolve_top`
+   routes a permanent spell → `move_object` → `enter_with_loyalty` (state/mod.rs:712), not just `add_card`;
+   (2) **loyalty abilities are sorcery-speed + once/turn per PW across all of them** — the activation gate reads
+   `Timing::Sorcery`→`sorcery_speed` + `Restriction::OncePerTurn`→`used_once_per_turn` (priority.rs:1145/1157);
+   tests `loyalty_ability_is_once_per_turn_across_all_abilities`, `cannot_activate_a_minus_ability_without_enough_
+   loyalty`; (3) **combat damage removes loyalty** — the `Action::Damage` executor decrements `CounterKind::Loyalty`
+   saturating (whiteboard.rs:1834); test `combat::a_planeswalker_can_be_attacked_and_loses_loyalty`; (4) the
+   **±N activation path** pays loyalty at `activate_ability` (`pay_cost` Loyalty arm) — tests `loyalty_plus/minus_
+   ability_*`. Added a NEW end-to-end `priority::planeswalker_lifecycle_cast_activate_ultimate_dies` (cast from hand
+   → enters loyalty 5 → +2→7 → −3 kills a creature→4 → drain to 0 → 0-loyalty SBA dies).
+2. **`planeswalker()` + `loyalty_ability()` builders** (cards/mod.rs) — the general PW primitives (Legendary +
+   PlaneswalkerType subtype + starting loyalty; a loyalty ability = sorcery/once-per-turn/`Loyalty(±N)` cost).
+3. **`PlayerRef::Each`** (value.rs + `eval_player`, whiteboard.rs) — the player analogue of `EffectTarget::Each`
+   (reads the same `foreach_current` cursor). Makes "**any number of target players each do X**" expressible as
+   `ForEachTarget{ slot: player, body: …{ who: Each } }`. **Blast radius was 1 arm** (every other `PlayerRef` match
+   routes through `eval_player` via `other =>` or a wildcard).
+4. **`CardFilter::ManaValue` targeting arm** (priority.rs `target_matches_filter`) — was **fail-closed** (`_ =>
+   false`), so any "target card with mana value ≤ N" was un-enumerable through the real cast/activation path.
+   Now reads `o.chars.mana_value()` (mirrors the `count_filter_matches` arm). Reusable for every MV-bounded target.
+5. **Professor Dellian Fel** `{2}{B}{G}` loyalty 5 (**tracked-partial**): +2 gain 3 life / 0 draw-a-card-lose-1 /
+   −3 destroy target creature — all faithful; **−6 emblem DEFERRED** (needs the CR 114 emblem subsystem).
+6. **Ral Zarek, Guest Lecturer** `{1}{B}{B}` loyalty 3 (**tracked-partial**): +1 Surveil 2 / −1 any-number-of-
+   target-players-each-discard (via `PlayerRef::Each`) / −2 reanimate a MV≤3 creature from your graveyard — all
+   faithful; **−7 DEFERRED** (needs a coin-flip randomness primitive + a skip-turns mechanism, neither built).
+
+**▶ DEFERRED PW-completion subsystems (design-sketch to the lead before building; each is a real subsystem, not a
+hack):** (a) **Emblems (CR 114)** — a command-zone object with abilities but no characteristics, can't be removed;
+Dellian's −6 needs a triggered emblem ("whenever you gain life, target opponent loses that much"). The clean shape
+is a `Zone::Command` emblem object carrying an `Ability::Triggered`; likely also unblocks future PW ultimates.
+(b) **Coin flips + skip-turns** (Ral −7) — a `flip N coins` randomness leaf (seeded RNG already in the engine) +
+an extra/skipped-turn tracker on `Player`. Lower priority (one ultimate).
+
+**▶ RECOMMENDED NEXT ORDER (unchanged from the brief, minus planeswalkers):**
+- **Remaining S12 cards** (the cost-reduction MECHANISM is done; each blocked on a DIFFERENT secondary — see the
+  detailed list under "Remaining S12 cards" further down): **Run Behind** (top-or-bottom owner-choice), **Brush Off**
+  (needs `TargetKind::StackObject` real-path enumeration — the counterspell gap in the Systemic notes), **The Dawning
+  Archaic** (free-cast-an-I/S-from-gy-on-attack), **Wilt in the Heat** (exile-if-would-die replacement rider).
+- **Lessons/Learn** (CR 715 outside-the-game / a sideboard-pool concept — **design-sketch to the lead first**; gym
+  decks may need a sideboard notion — note the boundary).
+- **Prepare-DFCs** (~36 — the CR 712 card-faces model: face selection on cast, characteristics from the active face
+  through the layer system; the biggest single piece — **design-sketch first**).
+
+**PROCESS (unchanged, hard-won):** shared tree → `git commit --only <paths>` (stage a NEW file with `git add`
+first), never `-a`/`add -A`/stash; DON'T touch `experiments/` (MuZero + GPU runs live there); `cargo test -p
+mtg-core` green at every commit; flip a cap's ledger Status cell in the SAME commit; **`git log -S "<mechanism>"`
++ READ THE CODE before scoping any ⏳ row as new** (beliefs have drifted in BOTH directions). Real-path integration
+test for every mechanism; expect-test snapshots. Ping the lead at subsystem boundaries + design sketches for
+Emblems / Lessons / prepare-DFCs before building. On fatigue: declare, rewrite THIS block, hand off clean.
+
+---
+### ▶ Prior handoff — sos-cards-9 (superseded by the block above, kept for provenance)
 
 **▶▶ sos-cards-9 HANDOFF (2026-07-04) — READ FIRST. SCOPE = FULL SET; quality bar = general CR capability,
 not the minimal hack.** 158→163 authored / all fully-faithful, **602 mtg-core tests green, tree clean** (LEAD
@@ -886,10 +944,10 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Petrified Hamlet | NameChoice | `sos` | ⏳ | choose a card name -> name-scoped statics |
 | Pigment Wrangler // Striking Palette | DFC | `sos` | ⏳ | modal double-faced card |
 | Prismari, the Inspiration | Storm | `sos` | ⏳ | Elder Dragon granting storm |
-| Professor Dellian Fel | PW | `sos` | ⏳ | planeswalker loyalty subsystem |
+| Professor Dellian Fel | PW | `sos` | ◐ tracked-partial | +2/0/−3 faithful; −6 emblem deferred (CR 114) (`this session`) |
 | Quandrix, the Proof | Cascade | `sos` | ⏳ | Elder Dragon granting cascade |
 | Quill-Blade Laureate // Twofold Intent | DFC | `sos` | ⏳ | modal double-faced card |
-| Ral Zarek, Guest Lecturer | PW | `sos` | ⏳ | planeswalker loyalty subsystem |
+| Ral Zarek, Guest Lecturer | PW | `sos` | ◐ tracked-partial | +1/−1/−2 faithful; −7 coin-flip+skip-turns deferred (`this session`) |
 | Resonating Lute | GrantAbility | `sos` | ⏳ | grant mana ability to all your lands |
 | Restoration Seminar | Paradigm | `sos` | ⏳ | Lesson Paradigm subsystem |
 | Sanar, Unfinished Genius // Wild Idea | DFC | `sos` | ⏳ | modal double-faced card |

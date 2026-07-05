@@ -2451,6 +2451,13 @@ impl Engine {
             // Tap status (CR 110.5) — "a tapped creature" (Ajani's Response's cost-reduction filter).
             CardFilter::Tapped => o.status.tapped,
             CardFilter::Untapped => !o.status.tapped,
+            // Mana value bound (CR 202.3) — "target creature card with mana value 3 or less from your
+            // graveyard" (Ral Zarek, Guest Lecturer). Reads the printed mana cost (mirrors the
+            // `count_filter_matches` ManaValue arm); mana value is a copiable value off the card.
+            CardFilter::ManaValue { min, max } => {
+                let mv = o.chars.mana_value();
+                min.map_or(true, |lo| mv >= lo) && max.map_or(true, |hi| mv <= hi)
+            }
             CardFilter::All(fs) => fs.iter().all(|f| self.target_matches_filter(t, f, caster, source)),
             CardFilter::AnyOf(fs) => fs.iter().any(|f| self.target_matches_filter(t, f, caster, source)),
             CardFilter::Not(f) => !self.target_matches_filter(t, f, caster, source),
@@ -5136,6 +5143,55 @@ mod expect_tests {
         assert!(!abilities.contains(&1), "−3 needs ≥3 loyalty (has 2)");
     }
 
+    /// End-to-end loyalty lifecycle through the REAL cast + activation paths: cast a planeswalker
+    /// from hand → it resolves onto the battlefield with printed loyalty → `+2` raises it → (next
+    /// turn) `−3` lowers it and destroys a creature → draining the last loyalty triggers the 0-loyalty
+    /// SBA (CR 704.5i) and it dies. (Combat damage to a planeswalker removing loyalty is proven in
+    /// `combat::tests::a_planeswalker_can_be_attacked_and_loses_loyalty`.)
+    #[test]
+    fn planeswalker_lifecycle_cast_activate_ultimate_dies() {
+        use crate::basics::CounterKind;
+        let mut state = synth_state(1);
+        let walker = put(&mut state, PlayerId(0), synth::WALKER, Zone::Hand);
+        let prey = put(&mut state, PlayerId(1), grp::GRIZZLY_BEARS, Zone::Battlefield); // −3 target
+        state.active_player = PlayerId(0);
+        state.phase = Phase::PrecombatMain;
+        let mut e = Engine::new(state, vec![Box::new(ActivateAgent { want: 0 }), Box::new(PassAgent)]);
+
+        // 1) Cast from hand → resolve. It enters the battlefield with printed loyalty 5 (CR 306.5b),
+        //    through the real permanent-spell resolution (not a direct `add_card`).
+        e.cast_spell(PlayerId(0), walker, CastVariant::Normal);
+        e.resolve_top();
+        assert_eq!(e.state.object(walker).zone, Zone::Battlefield, "the planeswalker resolved onto the battlefield");
+        assert_eq!(e.state.object(walker).counters.get(&CounterKind::Loyalty), 5, "entered with printed loyalty 5");
+
+        // 2) +2 loyalty ability (index 0): loyalty 5 → 7, each opponent takes 2.
+        e.activate_ability(PlayerId(0), walker, AbilityRef(0));
+        e.resolve_top();
+        assert_eq!(e.state.object(walker).counters.get(&CounterKind::Loyalty), 7, "+2 loyalty (5 → 7)");
+        assert_eq!(e.state.player(PlayerId(1)).life, 18, "+2 dealt 2 to the opponent");
+
+        // 3) Next turn (loyalty abilities are once per turn, CR 606.3): −3 (index 1) destroys the 2/2
+        //    and pays 3 loyalty (7 → 4).
+        e.state.objects.get_mut(&walker).unwrap().used_once_per_turn = false;
+        e.activate_ability(PlayerId(0), walker, AbilityRef(1));
+        e.resolve_top();
+        let sbas = sba::collect(&e.state); // lethal damage (CR 704.5g) is an SBA, not immediate
+        e.perform_sbas(&sbas);
+        assert_eq!(e.state.object(prey).zone, Zone::Graveyard, "−3 dealt 4 to the 2/2, killing it");
+        assert_eq!(e.state.object(walker).counters.get(&CounterKind::Loyalty), 4, "−3 loyalty (7 → 4)");
+
+        // 4) Drain the remaining loyalty to 0 → the 0-loyalty SBA (CR 704.5i) puts it in the graveyard.
+        e.state.objects.get_mut(&walker).unwrap().counters.counts.insert(CounterKind::Loyalty, 0);
+        let sbas = sba::collect(&e.state);
+        assert!(
+            sbas.iter().any(|s| matches!(s, StateBasedAction::PlaneswalkerDies { pw } if *pw == walker)),
+            "0-loyalty planeswalker is collected for death"
+        );
+        e.perform_sbas(&sbas);
+        assert_eq!(e.state.object(walker).zone, Zone::Graveyard, "the 0-loyalty planeswalker died");
+    }
+
     #[test]
     fn put_counters_adds_a_plus_one_counter_c2() {
         use crate::basics::CounterKind;
@@ -7184,6 +7240,10 @@ mod expect_tests {
                 name: "Test Walker".into(),
                 card_types: vec![CardType::Planeswalker],
                 loyalty: Some(5),
+                // A free ({0}) cost so a test can cast it from hand through the real cast path without
+                // a mana setup (the loyalty-ability tests `put` it straight onto the battlefield and
+                // don't read this).
+                mana_cost: Some(cards::mana_cost(0, &[])),
                 grp_id: synth::WALKER,
                 ..Default::default()
             },

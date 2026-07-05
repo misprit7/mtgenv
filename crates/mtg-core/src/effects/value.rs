@@ -20,6 +20,13 @@ pub enum PlayerRef {
     Owner,
     /// A player chosen as the Nth target of this effect.
     ChosenTarget(u32),
+    /// The player currently bound by an enclosing [`Effect::ForEachTarget`] over a **player** slot
+    /// (the player analogue of [`crate::effects::EffectTarget::Each`], which reads the same
+    /// `foreach_current` cursor). Lets a per-iteration body name "that player" — e.g. "any number of
+    /// target players each discard a card" = `ForEachTarget{ slot: player, body: Discard{ who: Each } }`
+    /// (Ral Zarek, Guest Lecturer). Resolves to the source's controller if used outside such a loop
+    /// (or if the current binding isn't a player).
+    Each,
     /// The *controller* of the Nth (object) target of this effect, snapshotted at resolution
     /// start — so it survives that object leaving play during the same resolution (e.g. Erode's
     /// "Destroy target creature. Its controller may search…", where "its controller" is read

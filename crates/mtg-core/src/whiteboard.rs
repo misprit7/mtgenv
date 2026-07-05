@@ -2131,6 +2131,13 @@ impl EngineCore {
                 Some(Target::Player(p)) => *p,
                 _ => controller,
             },
+            // The player bound by an enclosing `ForEachTarget` over a player slot (CR "each of them")
+            // — reads the same `foreach_current` cursor as `EffectTarget::Each`. Falls back to the
+            // controller outside such a loop or if the current binding isn't a player.
+            PlayerRef::Each => match self.foreach_current {
+                Some(Target::Player(p)) => p,
+                _ => controller,
+            },
             // The controller of the Nth object target, snapshotted at resolution start (so it
             // survives that object leaving play this resolution — CR 608.2). Falls back to the
             // effect's controller if the snapshot is missing.

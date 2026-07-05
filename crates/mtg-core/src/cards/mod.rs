@@ -18,13 +18,13 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use crate::basics::{CardType, Color, DamageKind, ManaCost, Zone};
-use crate::effects::ability::{Ability, Cost, CostComponent, Keyword, Timing};
+use crate::effects::ability::{Ability, Cost, CostComponent, Keyword, Restriction, Timing};
 use crate::effects::target::{ManaSpec, TargetKind, TargetSpec};
 use crate::effects::value::{PlayerRef, ValueExpr};
 use crate::effects::{Effect, EffectTarget};
 use crate::ids::PlayerId;
 use crate::state::{Characteristics, GameState};
-use crate::subtypes::{CreatureType, EnchantmentType, Subtype};
+use crate::subtypes::{CreatureType, EnchantmentType, PlaneswalkerType, Subtype, Supertype};
 
 /// Shared card-construction fragments (`CardFilter`/`SelectSpec`/`ValueExpr` pieces). Card modules
 /// import from here, never from a sibling card module.
@@ -445,6 +445,52 @@ pub(crate) fn artifact(grp_id: u32, name: &str, cost: ManaCost, abilities: Vec<A
     }
 }
 
+/// A Legendary Planeswalker (CR 306). It enters the battlefield with `loyalty` loyalty counters
+/// (CR 306.5b — set by `enter_with_loyalty` on any move to the battlefield); a 0-loyalty planeswalker
+/// dies (CR 704.5i, the SBA). `subtype` is its planeswalker type (CR 205.3j). Build its loyalty
+/// abilities (CR 606) with `loyalty_ability`; other printed abilities (statics/triggers) are passed
+/// through unchanged. Every planeswalker is Legendary (CR 306.3).
+pub(crate) fn planeswalker(
+    grp_id: u32,
+    name: &str,
+    subtype: PlaneswalkerType,
+    colors: &[Color],
+    cost: ManaCost,
+    loyalty: i32,
+    abilities: Vec<Ability>,
+) -> CardDef {
+    CardDef {
+        chars: Characteristics {
+            name: name.to_string(),
+            card_types: vec![CardType::Planeswalker],
+            supertypes: vec![Supertype::Legendary],
+            subtypes: vec![Subtype::Planeswalker(subtype)],
+            colors: colors.to_vec(),
+            mana_cost: Some(cost),
+            loyalty: Some(loyalty),
+            grp_id,
+            ..Default::default()
+        },
+        abilities,
+        text: String::new(),
+        fully_implemented: true,
+    }
+}
+
+/// A planeswalker **loyalty ability** (CR 606): sorcery-timed (CR 606.3), once per turn per
+/// planeswalker across *all* its loyalty abilities (`Restriction::OncePerTurn`), whose only cost is a
+/// loyalty adjustment (CR 606.2 — `+N`/`0`/`−N` via `CostComponent::Loyalty`). `loyalty_cost` is the
+/// printed number (`+2` → `2`, `0` → `0`, `−3` → `-3`). A `−N` is only payable with ≥ N loyalty.
+pub(crate) fn loyalty_ability(loyalty_cost: i32, effect: Effect) -> Ability {
+    Ability::Activated {
+        cost: Cost { mana: None, components: vec![CostComponent::Loyalty(loyalty_cost)] },
+        effect,
+        timing: Timing::Sorcery,
+        restriction: Some(Restriction::OncePerTurn),
+        is_mana: false,
+    }
+}
+
 /// An Aura (CR 303): an Enchantment with the "Aura" subtype. The engine reads the subtype to
 /// require an enchant target at cast and to enter the battlefield attached (CR 303.4f / 608.3e).
 pub(crate) fn aura(grp_id: u32, name: &str, color: Color, cost: ManaCost, abilities: Vec<Ability>) -> CardDef {
@@ -672,7 +718,7 @@ mod tests {
     #[test]
     fn starter_db_has_expected_cards() {
         let db = starter_db();
-        assert_eq!(db.len(), 215);
+        assert_eq!(db.len(), 217);
         // Forest is "type line only": a Basic Land with subtype Forest. Mana is intrinsic
         // (CR 305.6) — the engine derives {T}: Add {G} from the subtype, so the CardDef carries
         // no explicit mana ability (and `is_mana_source` only sees authored abilities).
