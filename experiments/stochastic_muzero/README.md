@@ -16,6 +16,23 @@ Everything here is **isolated**: this dir has its own venv, README, and `.gitign
 > (random 0.535, PPO 0.90) — swine's trample-blocking credit assignment is harder than heralds' "attack all."
 > Full arc + PPO comparison + observability in the two sections below; the old M3 write-up (bottom) misattributed the cause.
 
+> **BOTTOM LINE (the memorable finding).** It was never a bug — it's a MuZero *recipe / credit-assignment
+> mismatch*, **fixable on trivial heralds (0 → 0.9) but insufficient on swine (0 → 0.12)** at practical budget.
+> On the original combat-judgment question the honest contrast is: **PPO OVER-blocks (chump-blocks the
+> trampler 94–97% at life ≥ 15); MuZero UNDER-plays (blocks ~0%, but only because it barely engages combat —
+> wins 12%).** Neither demonstrates competent trample judgment. Best-checkpoint win-rate vs random:
+>
+> | run | greedy | sampled | productive | attack |
+> |---|---|---|---|---|
+> | 3.0 pure (collapse) | 0.00 | ~0 | 0.10 | 0.00 |
+> | 3.1 shaped@0.1 (collapse) | 0.00 | 0.30 | 0.19 | 0.10 |
+> | **3.3 combined (best)** | **0.12** | 0.075 | **0.48** | **0.19** |
+> | random baseline | 0.535 | — | — | — |
+> | PPO 2.9 | ~0.90 | — | 1.0 | ~1.0 |
+>
+> Next attempt (for a fresh agent, if wanted): warm-start swine from the heralds policy, or macro-compose a
+> full engine decision into one search action, or a much larger budget — all lower-yield than the working PPO baseline.
+
 ## SWINE RE-RUN (3.3) + FINAL COMPARISON (2026-07-04) — recipe helps but does NOT solve swine
 
 Applied the heralds-winning recipe (plain MuZero, `--shaping 0.5 --td 40 --up 20`) to swine (TB
