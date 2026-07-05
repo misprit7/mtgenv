@@ -127,6 +127,9 @@ pub enum ValueExpr {
     /// `Player.creatures_died_this_turn`. For a "if two or more creatures died this turn" gate
     /// (Emeritus of Woe), via `ValueAtLeast`.
     CreaturesDiedThisTurn,
+    /// The number of cards in `who`'s hand (CR 402). For an "if an opponent has more cards in hand
+    /// than you" gate (Joined Researchers): `ValueAtLeast(HandSize(Opponent), Sum(HandSize(Controller), 1))`.
+    HandSize { who: PlayerRef },
 }
 
 impl ValueExpr {

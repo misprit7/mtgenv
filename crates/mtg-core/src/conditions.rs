@@ -153,6 +153,11 @@ fn eval_value(
         ValueExpr::CreaturesDiedThisTurn => {
             state.players.iter().map(|pl| pl.creatures_died_this_turn as i64).sum()
         }
+        // Cards in `who`'s hand (Joined Researchers' "an opponent has more cards in hand than you").
+        ValueExpr::HandSize { who } => {
+            let p = resolve_player(state, *who, source_controller);
+            state.players.get(p.0 as usize).map(|pl| pl.hand.len() as i64).unwrap_or(0)
+        }
         // Counters on the source object — for an intervening-"if" like "if it has four or more
         // quest counters on it" (Earthbender Ascension).
         ValueExpr::CountersOnSelf(kind) => source
