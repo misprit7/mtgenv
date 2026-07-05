@@ -1732,7 +1732,7 @@ impl Engine {
             id: sid,
             controller: p,
             source: Some(source),
-            kind: StackObjectKind::Ability { index: idx as u32 },
+            kind: StackObjectKind::Ability { index: idx as u32, source_grp: None },
             targets: Vec::new(),
             x: if x_pips > 0 { Some(chosen_x) } else { None },
             // Modal activated abilities would choose modes here (602.2b); none in the pool yet.
@@ -3078,12 +3078,12 @@ impl Engine {
                     }
                 }
             }
-            StackObjectKind::Ability { index } => {
+            StackObjectKind::Ability { index, source_grp } => {
                 // A triggered or activated ability on the stack: run its effect, then it ceases
-                // to exist (CR 608.2n). The effect is looked up from the source's CardDef by
-                // `grp_id` (persists across zones, so dies-triggers resolve too).
+                // to exist (CR 608.2n). The effect is looked up from the ability's def (the source's
+                // own, or a granted template when `source_grp` is set — `ability_def`).
                 let effect = obj.source.and_then(|src| {
-                    self.state.def_of(src).and_then(|d| match d.abilities.get(index as usize) {
+                    self.ability_def(src, source_grp).and_then(|d| match d.abilities.get(index as usize) {
                         Some(Ability::Triggered { effect, .. })
                         | Some(Ability::Activated { effect, .. }) => Some(effect.clone()),
                         _ => None,
@@ -3362,8 +3362,8 @@ impl Engine {
             return;
         }
         let effect = match (t.source, &t.kind) {
-            (Some(src), StackObjectKind::Ability { index }) => {
-                self.state.def_of(src).and_then(|d| match d.abilities.get(*index as usize) {
+            (Some(src), StackObjectKind::Ability { index, source_grp }) => {
+                self.ability_def(src, *source_grp).and_then(|d| match d.abilities.get(*index as usize) {
                     Some(Ability::Triggered { effect, .. }) => Some(effect.clone()),
                     _ => None,
                 })
@@ -3763,7 +3763,7 @@ impl Engine {
                     id,
                     controller,
                     source: Some(c),
-                    kind: StackObjectKind::Ability { index },
+                    kind: StackObjectKind::Ability { index, source_grp: None },
                     targets: Vec::new(),
                     x,
                     modes: Vec::new(),
@@ -3798,7 +3798,7 @@ impl Engine {
                     id,
                     controller,
                     source: Some(watcher),
-                    kind: StackObjectKind::Ability { index },
+                    kind: StackObjectKind::Ability { index, source_grp: None },
                     targets: Vec::new(),
                     x: None,
                     modes: Vec::new(),
@@ -3862,7 +3862,7 @@ impl Engine {
                     id,
                     controller: attacker,
                     source: Some(watcher),
-                    kind: StackObjectKind::Ability { index },
+                    kind: StackObjectKind::Ability { index, source_grp: None },
                     targets: Vec::new(),
                     x: None,
                     modes: Vec::new(),
@@ -4113,7 +4113,7 @@ impl Engine {
                     id,
                     controller,
                     source: Some(subject),
-                    kind: StackObjectKind::Ability { index },
+                    kind: StackObjectKind::Ability { index, source_grp: None },
                     targets: Vec::new(),
                     x: None,
                     modes: Vec::new(),
@@ -4127,10 +4127,10 @@ impl Engine {
     /// unless the object is a `Triggered { condition: Some, intervening_if: true }` whose condition is
     /// currently false — so ordinary (condition-less / non-intervening-if) triggers are unaffected.
     fn trigger_intervening_if_holds(&self, obj: &StackObject) -> bool {
-        let (Some(src), StackObjectKind::Ability { index }) = (obj.source, &obj.kind) else {
+        let (Some(src), StackObjectKind::Ability { index, source_grp }) = (obj.source, &obj.kind) else {
             return true;
         };
-        let cond = self.state.def_of(src).and_then(|d| match d.abilities.get(*index as usize) {
+        let cond = self.ability_def(src, *source_grp).and_then(|d| match d.abilities.get(*index as usize) {
             Some(Ability::Triggered { condition: Some(c), intervening_if: true, .. }) => Some(c.clone()),
             _ => None,
         });
@@ -4140,6 +4140,32 @@ impl Engine {
             }
             None => true,
         }
+    }
+
+    /// The def whose `abilities[index]` an on-stack [`StackObjectKind::Ability`] indexes: the granting
+    /// **template** def (the reserved `GRANT_TEMPLATE_BLOCK`, 9800+) when `source_grp` is set — a
+    /// granted triggered ability (CR 613.1f) — else the source object's own def (by `grp_id`, so it
+    /// persists across zones and a dies-trigger still resolves).
+    fn ability_def(&self, source: ObjId, source_grp: Option<u32>) -> Option<&crate::cards::CardDef> {
+        match source_grp {
+            Some(g) => self.state.def_by_grp(g),
+            None => self.state.def_of(source),
+        }
+    }
+
+    /// The template grp_ids of triggered abilities granted to `subject` by `GrantAbility` continuous
+    /// effects (CR 613.1f layer 6). Each names a one-ability def in the reserved template block.
+    fn granted_ability_templates(&self, subject: ObjId) -> Vec<u32> {
+        self.state
+            .continuous_effects
+            .iter()
+            .filter(|ce| ce.affected.contains(&subject))
+            .flat_map(|ce| ce.contributions.iter())
+            .filter_map(|c| match c {
+                StaticContribution::GrantAbility { template_grp } => Some(*template_grp),
+                _ => None,
+            })
+            .collect()
     }
 
     /// Queue `subject`'s own triggered abilities matching `want` (the Self* patterns).
@@ -4165,27 +4191,38 @@ impl Engine {
     }
 
     fn queue_self_triggers(&mut self, subject: ObjId, want: EventPattern) {
-        let Some(def) = self.state.def_of(subject) else {
-            return;
-        };
-        // (index, condition, intervening_if) for each matching trigger — so a non-intervening-if
-        // condition (CR 603.2c) can be checked at queue time (mirrors begin-of-step).
-        let matches: Vec<(u32, Option<crate::effects::condition::Condition>, bool)> = def
-            .abilities
-            .iter()
-            .enumerate()
-            .filter_map(|(i, a)| match a {
-                Ability::Triggered { event, condition, intervening_if, .. } if *event == want => {
-                    Some((i as u32, condition.clone(), *intervening_if))
+        // (index, source_grp, condition, intervening_if) for each matching trigger — so a
+        // non-intervening-if condition (CR 603.2c) can be checked at queue time (mirrors begin-of-step).
+        // `source_grp` is `None` for the object's own printed abilities, `Some(template_grp)` for a
+        // triggered ability GRANTED by a continuous effect (CR 613.1f — Rabid Attack / Root Manipulation).
+        type TrigMatch = (u32, Option<u32>, Option<crate::effects::condition::Condition>, bool);
+        let mut matches: Vec<TrigMatch> = Vec::new();
+        if let Some(def) = self.state.def_of(subject) {
+            for (i, a) in def.abilities.iter().enumerate() {
+                if let Ability::Triggered { event, condition, intervening_if, .. } = a {
+                    if *event == want {
+                        matches.push((i as u32, None, condition.clone(), *intervening_if));
+                    }
                 }
-                _ => None,
-            })
-            .collect();
+            }
+        }
+        // Granted triggered abilities (from `GrantAbility` continuous effects): each template def in
+        // the reserved block carries exactly one `Triggered` (index 0), resolved with `subject` as the
+        // source so "this creature" / the granting controller read correctly.
+        for tg in self.granted_ability_templates(subject) {
+            if let Some(Ability::Triggered { event, condition, intervening_if, .. }) =
+                self.state.def_by_grp(tg).and_then(|d| d.abilities.first())
+            {
+                if *event == want {
+                    matches.push((0, Some(tg), condition.clone(), *intervening_if));
+                }
+            }
+        }
         if matches.is_empty() {
             return;
         }
         let controller = self.state.object(subject).controller;
-        for (index, condition, intervening_if) in matches {
+        for (index, source_grp, condition, intervening_if) in matches {
             if !self.trigger_queues(&condition, intervening_if, controller, Some(subject)) {
                 continue;
             }
@@ -4194,7 +4231,7 @@ impl Engine {
                 id,
                 controller,
                 source: Some(subject),
-                kind: StackObjectKind::Ability { index },
+                kind: StackObjectKind::Ability { index, source_grp },
                 targets: Vec::new(),
                 x: None,
                 modes: Vec::new(),
@@ -4255,7 +4292,7 @@ impl Engine {
                         id,
                         controller: caster,
                         source: Some(watcher),
-                        kind: StackObjectKind::Ability { index },
+                        kind: StackObjectKind::Ability { index, source_grp: None },
                         targets: Vec::new(),
                         x: None,
                         modes: Vec::new(),
@@ -4301,7 +4338,7 @@ impl Engine {
                         id,
                         controller: wctrl,
                         source: Some(watcher),
-                        kind: StackObjectKind::Ability { index },
+                        kind: StackObjectKind::Ability { index, source_grp: None },
                         targets: Vec::new(),
                         x: None,
                         modes: Vec::new(),
@@ -4352,7 +4389,7 @@ impl Engine {
                         id,
                         controller: wctrl,
                         source: Some(watcher),
-                        kind: StackObjectKind::Ability { index },
+                        kind: StackObjectKind::Ability { index, source_grp: None },
                         targets: Vec::new(),
                         x: None,
                         modes: Vec::new(),
@@ -4402,7 +4439,7 @@ impl Engine {
                         id,
                         controller: wctrl,
                         source: Some(watcher),
-                        kind: StackObjectKind::Ability { index },
+                        kind: StackObjectKind::Ability { index, source_grp: None },
                         targets: Vec::new(),
                         x: None,
                         modes: Vec::new(),
@@ -4639,6 +4676,7 @@ fn collect_specs_into(effect: &Effect, out: &mut Vec<TargetSpec>) {
         | Effect::GrantQualification { what: EffectTarget::Target(spec), .. }
         | Effect::Tap { what: EffectTarget::Target(spec), .. }
         | Effect::SetBasePT { what: EffectTarget::Target(spec), .. }
+        | Effect::GrantAbility { what: EffectTarget::Target(spec), .. }
         | Effect::MayTapOrUntap { what: EffectTarget::Target(spec) } => out.push(spec.clone()),
         // "tap up to two target creatures. Put a stun counter on each of them" — the slot's targets
         // are chosen at cast; `body` applies to each via `Each` (Homesickness).
@@ -5629,7 +5667,7 @@ mod expect_tests {
             id: sid,
             controller: PlayerId(0),
             source: None,
-            kind: StackObjectKind::Ability { index: 0 },
+            kind: StackObjectKind::Ability { index: 0, source_grp: None },
             targets: vec![],
             x: None,
             modes: Vec::new(),

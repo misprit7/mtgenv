@@ -154,6 +154,7 @@ pub mod proctors_gaze;
 pub mod pterafractyl;
 pub mod pull_from_the_grave;
 pub mod pursue_the_past;
+pub mod rabid_attack;
 pub mod rapturous_moment;
 pub mod rancorous_archaic;
 pub mod ral_zarek_guest_lecturer;
@@ -365,6 +366,7 @@ pub fn register(db: &mut CardDb) {
     pterafractyl::register(db);
     pull_from_the_grave::register(db);
     pursue_the_past::register(db);
+    rabid_attack::register(db);
     rapturous_moment::register(db);
     rancorous_archaic::register(db);
     ral_zarek_guest_lecturer::register(db);

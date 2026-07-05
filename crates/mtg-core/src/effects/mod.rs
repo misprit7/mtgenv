@@ -130,6 +130,17 @@ pub enum Effect {
         keyword: Keyword,
         duration: Duration,
     },
+    /// Grant a **triggered ability** to the target for a duration (CR 613.1f) — "gains 'When this
+    /// creature dies, draw a card' until end of turn" (Rabid Attack) / "'Whenever this creature
+    /// attacks, you gain 1 life'" (Root Manipulation). `template_grp` names a one-ability def in the
+    /// reserved `grp::GRANT_TEMPLATE_BLOCK` (9800+). Lowers to `GrantContinuous{ GrantAbility{
+    /// template_grp }, duration }` (same path as `GrantKeyword`); the granted trigger fires from the
+    /// affected object with the granting card's effect and expires with the continuous effect.
+    GrantAbility {
+        what: EffectTarget,
+        template_grp: u32,
+        duration: Duration,
+    },
     /// Paint a qualification on the target for a duration (CR 611 / §2.4) — e.g. "target creature
     /// can't be blocked this turn." Lowers to `GrantContinuous{ Qualification(q), duration }`.
     GrantQualification {

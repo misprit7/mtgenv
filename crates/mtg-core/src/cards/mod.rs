@@ -34,6 +34,7 @@ pub mod misc;
 
 /// Registered token defs (the reserved 9000+ `grp_id` block) — abilities for tokens that have them.
 pub mod emblems;
+pub mod grant_templates;
 pub mod tokens;
 
 // Per-first-printing-set folders (real card pool).
@@ -143,6 +144,20 @@ pub mod grp {
     // (a back face is not a separately deckbuildable card — the front creature is the deck entry).
     /// The first registered prepare back-face def id (inclusive lower bound of the reserved block).
     pub const PREPARE_BACK_BLOCK: u32 = 9700;
+
+    // ── Reserved granted-ability-template block (9800+) ───────────────────────────────────────────
+    // Registered *template* defs for triggered abilities GRANTED to permanents by a continuous effect
+    // (CR 613.1f — "gains '[ability]' until end of turn"; `StaticContribution::GrantAbility{template_grp}`
+    // / `Effect::GrantAbility`). Each def carries exactly ONE `Ability::Triggered`; the granted trigger
+    // fires from the affected object (via `granted_ability_templates` in `queue_self_triggers`) with the
+    // GRANTING card's effect. Not real cards — no card_types; above 9700 so the `/api/cards` threshold
+    // already excludes them, like the token/emblem/prepare blocks.
+    /// The first granted-ability-template def id (inclusive lower bound of the reserved block).
+    pub const GRANT_TEMPLATE_BLOCK: u32 = 9800;
+    /// "When this creature dies, draw a card." (Rabid Attack.)
+    pub const GRANT_DIES_DRAW: u32 = 9800;
+    /// "Whenever this creature attacks, you gain 1 life." (Root Manipulation.)
+    pub const GRANT_ATTACKS_GAIN_LIFE: u32 = 9801;
 }
 
 /// A card definition: its printed characteristics + abilities (the Effect IR). Card *data*, not
@@ -576,6 +591,7 @@ pub fn starter_db() -> CardDb {
     misc::register(&mut db);
     tokens::register(&mut db);
     emblems::register(&mut db);
+    grant_templates::register(&mut db);
     // Per-set real cards (Selesnya Landfall push).
     lea::register(&mut db);
     dsk::register(&mut db);
@@ -760,7 +776,7 @@ mod tests {
     #[test]
     fn starter_db_has_expected_cards() {
         let db = starter_db();
-        assert_eq!(db.len(), 309);
+        assert_eq!(db.len(), 312);
         // Forest is "type line only": a Basic Land with subtype Forest. Mana is intrinsic
         // (CR 305.6) — the engine derives {T}: Add {G} from the subtype, so the CardDef carries
         // no explicit mana ability (and `is_mana_source` only sees authored abilities).

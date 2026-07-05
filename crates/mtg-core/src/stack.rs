@@ -19,10 +19,18 @@ use crate::ids::{ObjId, PlayerId, StackId};
 pub enum StackObjectKind {
     /// A spell — references the card/copy object now on the stack.
     Spell(ObjId),
-    /// An activated or triggered ability on the stack. `index` selects which ability of the
-    /// source object (`StackObject::source`) it is — into that object's `CardDef.abilities`,
-    /// looked up by `grp_id` (which persists across zones, so a dies-trigger still resolves).
-    Ability { index: u32 },
+    /// An activated or triggered ability on the stack. `index` selects which ability it is — into
+    /// the indexed `CardDef.abilities`. Normally that's the source object's (`StackObject::source`)
+    /// own def, looked up by `grp_id` (which persists across zones, so a dies-trigger still resolves).
+    /// When `source_grp` is `Some(g)`, this is a **granted** triggered ability (CR 613.1f): the
+    /// ability is read from the template def `g` (the reserved `GRANT_TEMPLATE_BLOCK`, one ability →
+    /// `index` is `0`) but still resolves with `source` as the object that has it (so its controller /
+    /// "this creature" read correctly). `#[serde(default)]` keeps old saves loading as `None`.
+    Ability {
+        index: u32,
+        #[serde(default)]
+        source_grp: Option<u32>,
+    },
     /// A delayed triggered ability (CR 603.7) that fired — it has no printed `CardDef` ability to
     /// index, so it carries its own concrete [`Action`]s (e.g. Earthbend's "return it tapped").
     DelayedAbility { actions: Vec<Action> },
@@ -99,7 +107,7 @@ mod tests {
             id: StackId(1),
             controller: PlayerId(0),
             source: None,
-            kind: StackObjectKind::Ability { index: 0 },
+            kind: StackObjectKind::Ability { index: 0, source_grp: None },
             targets: vec![],
             x: None,
             modes: Vec::new(),
@@ -108,7 +116,7 @@ mod tests {
             id: StackId(2),
             controller: PlayerId(1),
             source: None,
-            kind: StackObjectKind::Ability { index: 0 },
+            kind: StackObjectKind::Ability { index: 0, source_grp: None },
             targets: vec![],
             x: None,
             modes: Vec::new(),

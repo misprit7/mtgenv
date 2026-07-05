@@ -250,6 +250,13 @@ pub enum StaticContribution {
     SetBasePTValue { power: ValueExpr, toughness: ValueExpr },
     /// Layer 6: grant a keyword ability.
     GrantKeyword(Keyword),
+    /// Layer 6: grant a **triggered ability** (CR 613.1f — "gains [ability]"). `template_grp` names a
+    /// def in the reserved template block (`grp::GRANT_TEMPLATE_BLOCK`, 9800+) carrying exactly one
+    /// [`Ability::Triggered`]; the granted trigger fires from each affected object with the GRANTING
+    /// card's effect (its controller = the object's controller). Referenced by grp — the same idiom as
+    /// tokens/emblems/prepare-backs — so the layer/continuous state stays serde-safe (an `Ability`/
+    /// `Effect` isn't). Read by the granted-ability scan in `queue_self_triggers`.
+    GrantAbility { template_grp: u32 },
     /// Layer 6: remove a keyword ability.
     RemoveKeyword(Keyword),
     /// Layer 4: add a card type.
