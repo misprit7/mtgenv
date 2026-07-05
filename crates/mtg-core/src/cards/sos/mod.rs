@@ -10,6 +10,7 @@ pub mod improvisation_capstone;
 pub mod infirmary_healer;
 pub mod emeritus_of_abundance;
 pub mod emeritus_of_ideation;
+pub mod emeritus_of_truce;
 pub mod emeritus_of_woe;
 pub mod scheming_silvertongue;
 pub mod skycoach_conductor;
@@ -205,6 +206,7 @@ pub fn register(db: &mut CardDb) {
     infirmary_healer::register(db);
     emeritus_of_abundance::register(db);
     emeritus_of_ideation::register(db);
+    emeritus_of_truce::register(db);
     emeritus_of_woe::register(db);
     scheming_silvertongue::register(db);
     skycoach_conductor::register(db);

@@ -71,8 +71,8 @@ pub fn register(db: &mut CardDb) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent::{Agent, CastVariant, DecisionRequest, DecisionResponse, PlayableAction, PlayerView};
-    use crate::basics::{CounterKind, Phase, Target, Zone};
+    use crate::agent::{Agent, DecisionRequest, DecisionResponse, PlayableAction, PlayerView};
+    use crate::basics::{CounterKind, Phase, Zone};
     use crate::cards::grp;
     use crate::effects::ability::{Ability, EventPattern};
     use crate::ids::{ObjId, PlayerId};

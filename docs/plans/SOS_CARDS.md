@@ -73,7 +73,7 @@ SPELL-COPY subsystem** and its consumers.
   `intervening_if: false` the condition is silently IGNORED. (BeginningOfStep triggers may use `false` — checked
   at queue.) Emeritus of Conflict's gate was initially `false` → fixed to `true` + a real 3-cast integration test.
 
-- **▶ REMAINING PREPARE: 7 cards (was 9; #6 Skycoach + #9 Pigment Wrangler DONE by sos-cards-13) — each blocked on a distinct BACK-FACE (or activation-cost) cap, NOT prepare.**
+- **▶ REMAINING PREPARE: 6 cards (was 9; #3 Emeritus of Truce + #6 Skycoach + #9 Pigment Wrangler DONE by sos-cards-13) — each blocked on a distinct BACK-FACE (or activation-cost) cap, NOT prepare.**
   The prepare front/trigger for every one is trivial (`Effect::BecomePrepared`); what's unbuilt is the back
   effect / front cost. Precise blockers (build the cap → the card is mechanical; back ids continue from 9727):
   1. **Leech Collector // Bloodletting** — front "gain life for the FIRST time each turn": needs a
@@ -86,10 +86,14 @@ SPELL-COPY subsystem** and its consumers.
      `ValueExpr::ManaValueOfTarget` (lose life = the reanimated card's MV) **and** a MoveZone controller-override
      (reanimate a creature from ANY graveyard to the battlefield *under your control* — Forum Necroscribe only does
      your-own-gy where owner==you, so cross-gy steal needs `Action::MoveZone` to carry a controller).
-  3. **Emeritus of Truce // Swords to Plowshares** — front enters + "opp controls more creatures" (expressible now
-     via `ValueAtLeast(Count{opp creatures}, Sum(Count{your creatures}, 1))`). Back "exile target creature, its
-     controller gains life = its power": needs the exiled creature's **LKI power** threaded into a `ValueExpr`
-     (sos-cards-8's noted "LKI value into ResolutionCtx", still unbuilt).
+  3. ~~**Emeritus of Truce // Swords to Plowshares**~~ ✅ **DONE (sos-cards-13)** — front ETB = target-player Inkling
+     + `Conditional{ ValueAtLeast(Count{opp creatures}, Sum(Count{your creatures}, 1)) → BecomePrepared }` (all
+     pieces existed). Back Swords: **no LKI cap needed** — sequence the life gain BEFORE the exile (`Sequence[GainLife{
+     ControllerOfTarget(0), PowerOfTarget(0)}, Exile{target}]`) so "its power" reads the live creature (identical
+     value, since the same resolution then removes it) and `ControllerOfTarget` reads the resolution-start snapshot.
+     **General trick for "remove X, then Y = X's own stat": read the stat before the removal — no LKI plumbing.**
+     Back id 9729. (The genuine LKI-into-ValueExpr cap is still only needed where the value depends on the removal
+     having happened, which no current card requires.)
   4. **Jadzi, Steward of Fate // Oracle's Gift** — back `{X}{X}` create X Fractals then X counters on each Fractal
      you control: dynamic-X token count + a for-each-Fractal counter pass. Heaviest back.
   5. **Vastlands Scavenger // Bind to Life** — back "mill 7, then put a creature card from among them onto the
