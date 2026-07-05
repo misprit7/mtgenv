@@ -25,6 +25,9 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 - **Then Group Project** (`b7a1e51`) — **widened `Ability::Flashback` from `ManaCost` → a full `Cost`** so a flashback cost can
   be non-mana ("Flashback—Tap three creatures" = the shipped `TapCreatures(3)`); factored `cost_components_payable` out of
   `can_pay_cost`, migrated the 6 existing flashback cards to a `cards::flashback(mana)` helper. Census **222/271 (82%)**, 720 green.
+- **Then Moment of Reckoning** (`b2d822d`) — NO new cap: a repeatable `Modal{max:4, allow_repeat:true}` over two existing
+  effects (Destroy nonland permanent · MoveZone nonland-permanent-card gy→battlefield); the modal cursor already targets each
+  instance. Census **223/271 (82%)**, 722 green. (Noted a minor modal cross-instance-distinctness mask caveat.)
 - **Design-sketch sent to lead:** grant-a-triggered-ability-until-EOT (Rabid Attack, Root Manipulation) — proposed
   `StaticContribution::GrantAbility{source_grp, ability_index}` (serde-safe reference-by-grp) + granted-ability scan in
   `queue_self_triggers` + `source_grp` on the trigger stack object. Awaiting approval before building.

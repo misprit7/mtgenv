@@ -36,8 +36,12 @@ re-scoping):
   flashback cost can be non-mana (Group Project's "Flashback—Tap three creatures" = the shipped `TapCreatures(3)`). Offer gate +
   cast path pay the flashback components (factored `Engine::cost_components_payable` out of `can_pay_cost`; `pay_additional_nonmana`
   pays them at cast); the 6 existing flashback cards migrated to the new `cards::flashback(mana)` helper. Flashback-non-mana row DONE.
+- **`b2d822d` — Moment of Reckoning** (repeatable-modal) — NO new engine cap: a `Modal{min:0,max:4,allow_repeat:true}` over two
+  EXISTING effects (Destroy a nonland permanent · MoveZone a nonland permanent card gy→battlefield); the modal cursor already
+  gives each mode instance its own target. (Minor caveat noted in the card: cross-instance target *distinctness* for repeated
+  modes isn't enforced — a same-mode-same-object double just fizzles the 2nd; a general modal-mask nicety, no functional loss.)
 
-**Census now 222/271 authored (82%). 0 Native escape hatches. Rows DONE: additional-cast-cost · base-P/T-set · GreatestMV · Flashback-non-mana.**
+**Census now 223/271 authored (82%). 0 Native escape hatches. Rows DONE: additional-cast-cost · base-P/T-set · GreatestMV · Flashback-non-mana · repeatable-modal.**
 
 ### ▶ Where sos-cards-15 points you (unchanged tail, minus the additional-cast-cost row)
 Work the by-cap triage below (grouped by yield). Highest-yield remaining caps: **Grant-a-triggered-ability-until-EOT** (Rabid
@@ -179,8 +183,8 @@ name across `crates/mtg-core/src/cards/**` (DFC fronts matched on the pre-`//` n
 per-card ⏳ triage table below is STALE** (dozens of ⏳ rows are actually shipped: Pull from the Grave, Aberrant Manawurm,
 Brush Off, Antiquities on the Loose, Stun/Look-and-pick/Graveyard-activated subsystems, …). Trust code + this diff, not the table.
 
-**Headline (Scryfall-diff RE-VERIFIED 2026-07-05 by sos-cards-15): 222 / 271 authored (82%). 218 fully faithful · 4
-tracked-partial · 49 unauthored. 0 Native escape hatches used. 720 mtg-core tests green.** (Diff method: every sos set name —
+**Headline (Scryfall-diff RE-VERIFIED 2026-07-05 by sos-cards-15; +Moment of Reckoning since): 223 / 271 authored (82%).
+219 fully faithful · 4 tracked-partial · 48 unauthored. 0 Native escape hatches used. 722 mtg-core tests green.** (Diff method: every sos set name —
 front face, pre-`//` — checked against string literals in `crates/mtg-core/src/cards/**`; the 49 unauthored match the buckets
 below exactly. sos-cards-15 added Seize the Spoils, Vicious Rivalry, Fix What's Broken, Soaring Stoneglider, Quandrix Charm,
 End of the Hunt, Group Project.) (Goblin Glasswright shipped since the first census; Seize the Spoils remains — it
