@@ -43,15 +43,23 @@ re-scoping):
 
 - **`497f1b3` — Daydream** (no new cap) — `Sequence[ Blink{target creature you control}, PutCounters{ChosenIndex(0), +1/+1} ]`
   (the blink reuses the object id, so the locked target still names the returned creature) + a mana `flashback`. Pure composition.
+- **grant-a-triggered-ability-until-EOT SUBSYSTEM (lead-approved) + Rabid Attack (`7ede626`) + Root Manipulation
+  (`7fa973f`)** — CR 613.1f. `StaticContribution::GrantAbility{template_grp}` + `Effect::GrantAbility{what,template_grp,duration}`
+  lowering to the existing `GrantContinuous` path; templates in the **reserved 9800+ block** (`cards/grant_templates.rs`, one
+  `Triggered` def each — GRANT_DIES_DRAW, GRANT_ATTACKS_GAIN_LIFE — auto-excluded from `/api/cards` by the ≥9700 threshold, the
+  lead's revision vs a phantom ability on the instant); `StackObjectKind::Ability` gained `#[serde(default)] source_grp:
+  Option<u32>` (`ability_def` resolves the template def) + a granted-ability scan in `queue_self_triggers`
+  (`granted_ability_templates` walks `continuous_effects`). Fires synchronously at the death/attack broadcast (before
+  `recompute` expires the effect), so the queued trigger — referencing the template — survives. Tested: dies→draw / attacks→gain,
+  and **post-EOT death/attack does NOT trigger** (required test). ZERO regression on the hot trigger path (730 green).
 
-**Census now 224/271 authored (83%). 0 Native escape hatches. Rows DONE: additional-cast-cost · base-P/T-set · GreatestMV · Flashback-non-mana · repeatable-modal · (Daydream = pure composition).**
+**Census now 226/271 authored (83%). 0 Native escape hatches. Rows DONE: additional-cast-cost · base-P/T-set · GreatestMV · Flashback-non-mana · repeatable-modal · GRANT-ABILITY · (Daydream = pure composition).**
 
 ### ▶ Where sos-cards-15 points you (tail after 9 cards + 8 caps; the clean non-architecture caps are cleared)
 sos-cards-15 cleared the easy-to-medium caps. The **remaining tail needs either a lead sketch or a genuine new cap** (grouped):
-- **⚠️ Awaiting the lead (sketch sent):** **Grant-a-triggered-ability-until-EOT** (Rabid Attack, Root Manipulation) — the
-  highest-yield remaining cap. Proposed `StaticContribution::GrantAbility{source_grp, ability_index}` (serde-safe reference-by-grp)
-  + a granted-ability scan in `queue_self_triggers` + `#[serde(default)] source_grp: Option<u32>` on `StackObjectKind::Ability`.
-  Touches the continuous-effect layer + trigger collection → don't build without lead OK on the representation.
+- ~~**Grant-a-triggered-ability-until-EOT** (Rabid Attack, Root Manipulation).~~ ✅ **DONE (sos-cards-15, `7ede626`+`7fa973f`)** —
+  `StaticContribution::GrantAbility{template_grp}` + reserved 9800+ template block + granted-ability scan in `queue_self_triggers`
+  + `source_grp` on the trigger stack object. Reusable for any "gains [triggered ability] until EOT". See the SHIPPED block above.
 - **Medium caps still open (each a real new piece):** **timed-blink** (Ennis, Conciliator's Duelist — reuse `Effect::Blink` +
   a delayed end-step-return trigger; both cards also have a 2nd ability — exiled-this-turn counter / Repartee); **Increment**
   keyword (Tester, Ambitious Augmenter — SpellCast-trigger comparing `ManaSpentOnTrigger` vs `Power/ToughnessOfSelf`; both cards
@@ -196,8 +204,9 @@ name across `crates/mtg-core/src/cards/**` (DFC fronts matched on the pre-`//` n
 per-card ⏳ triage table below is STALE** (dozens of ⏳ rows are actually shipped: Pull from the Grave, Aberrant Manawurm,
 Brush Off, Antiquities on the Loose, Stun/Look-and-pick/Graveyard-activated subsystems, …). Trust code + this diff, not the table.
 
-**Headline (Scryfall-diff RE-VERIFIED 2026-07-05 by sos-cards-15; +Moment of Reckoning +Daydream since): 224 / 271 authored
-(83%). 220 fully faithful · 4 tracked-partial · 47 unauthored. 0 Native escape hatches used. 725 mtg-core tests green.** (Diff method: every sos set name —
+**Headline (Scryfall-diff RE-VERIFIED 2026-07-05 by sos-cards-15; +Moment of Reckoning +Daydream +Rabid Attack +Root
+Manipulation since): 226 / 271 authored (83%). 222 fully faithful · 4 tracked-partial · 45 unauthored. 0 Native escape hatches
+used. 730 mtg-core tests green.** (Diff method: every sos set name —
 front face, pre-`//` — checked against string literals in `crates/mtg-core/src/cards/**`; the 49 unauthored match the buckets
 below exactly. sos-cards-15 added Seize the Spoils, Vicious Rivalry, Fix What's Broken, Soaring Stoneglider, Quandrix Charm,
 End of the Hunt, Group Project.) (Goblin Glasswright shipped since the first census; Seize the Spoils remains — it

@@ -30,11 +30,16 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
   instance. Census **223/271 (82%)**, 722 green. (Noted a minor modal cross-instance-distinctness mask caveat.)
 - **Then Daydream** (`497f1b3`) — NO new cap: `Sequence[Blink{target creature you control}, PutCounters{ChosenIndex(0),+1/+1}]`
   (blink reuses the object id, so the locked target still names it) + mana flashback. Census **224/271 (83%)**, 725 green.
-- **Session total: 9 cards + 8 reusable engine caps + a Scryfall-diff census verification** (215→224/271, 698→725 green).
-- **Design-sketch sent to lead (awaiting approval):** grant-a-triggered-ability-until-EOT (Rabid Attack, Root Manipulation) —
-  proposed `StaticContribution::GrantAbility{source_grp, ability_index}` (serde-safe reference-by-grp) + granted-ability scan in
-  `queue_self_triggers` + `source_grp` on the trigger stack object. Highest-yield remaining cap but the only architecture-adjacent
-  one, so held for the lead's OK on the reference-by-grp representation.
+- **Then the GRANT-A-TRIGGERED-ABILITY-UNTIL-EOT subsystem (lead-approved, CR 613.1f) + Rabid Attack (`7ede626`) + Root
+  Manipulation (`7fa973f`).** `StaticContribution::GrantAbility{template_grp}` + `Effect::GrantAbility` lowering to the existing
+  `GrantContinuous` path; grant templates in a **reserved 9800+ block** (`cards/grant_templates.rs`, one `Triggered` def each —
+  the lead's revision vs a phantom ability on the granting instant; auto-excluded from `/api/cards` by the ≥9700 threshold);
+  `StackObjectKind::Ability` gained `#[serde(default)] source_grp: Option<u32>` (`ability_def` picks the template def) + a
+  granted-ability scan in `queue_self_triggers`. Fires synchronously at the death/attack broadcast (before `recompute` expires
+  the effect); the queued trigger references the template, so it survives. Tested dies→draw / attacks→gain-life + **post-EOT
+  death/attack does NOT trigger**. ZERO regression on the hot trigger path. Census **226/271 (83%)**, 730 green.
+- **Session total: 11 cards + 9 reusable engine caps (incl. the grant-ability subsystem) + a Scryfall-diff census verification**
+  (215→226/271, 698→730 green).
 
 ## 2026-07-05 (SOS relay sos-cards-14 — the FINAL FIVE prepare stragglers + 2 subsystems + honest census)
 

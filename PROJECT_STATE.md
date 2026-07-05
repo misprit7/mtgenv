@@ -78,9 +78,10 @@ MTGA client.
   (modal exile-two-OR-pay-{1}{W} on a creature). Then **Quandrix Charm** (`Effect::SetBasePT` until EOT, layer 7b) + **End of
   the Hunt** (`ValueExpr::GreatestManaValue` greatest-MV edict) + **Group Project** (widened `Ability::Flashback` to a full
   `Cost` → non-mana flashback costs) + **Moment of Reckoning** (repeatable modal, no new cap) + **Daydream** (blink+counter+
-  flashback, no new cap). **224/271 authored (83%), 725 mtg-core green.** 0 Native hatches. Session: 9 cards + 8 reusable caps +
-  a Scryfall-diff census re-verification. grant-a-triggered-ability-until-EOT sketched to lead (Rabid Attack / Root
-  Manipulation), awaiting approval — the only architecture-adjacent remaining cap.
+  flashback, no new cap) + the **GRANT-A-TRIGGERED-ABILITY-UNTIL-EOT subsystem** (lead-approved, CR 613.1f — `GrantAbility`
+  contribution + reserved 9800+ template block + granted-ability scan in `queue_self_triggers` + `source_grp` on the trigger
+  stack object) with **Rabid Attack + Root Manipulation**. **226/271 authored (83%), 730 mtg-core green.** 0 Native hatches.
+  Session: 11 cards + 9 reusable caps + a Scryfall-diff census re-verification.
 - **▶ SOS (prior — sos-cards-14): 215/271 authored (79%), 698 mtg-core tests green (2026-07-05).** **THE FINAL
   FIVE PREPARE STRAGGLERS DONE + 2 subsystems + honest census.** Shipped Jadzi // Oracle's Gift (no new cap), Harmonized
   Trio // Brainstorm (`CostComponent::TapCreatures` + `Effect::PutFromHandOnTop`), Grave Researcher // Reanimate
