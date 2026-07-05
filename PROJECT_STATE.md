@@ -69,7 +69,18 @@ MTGA client.
 - **✅ MOBILE WEB CLIENT (2026-07-03).** Game client + lobby fully playable from a phone: mobile
   reflow (sticky prompt sheet, opp-top/you-bottom strips, log toggle), touch previews long-press-only
   (hover gated to real mice), on-screen pass-turn button. Desktop unchanged.
-- **▶ SOS FULL-SET scope: ~205 authored, 683 mtg-core tests green (2026-07-05, sos-cards-13).** **THE STACKOBJECT
+- **▶ SOS FULL-SET scope: 215/271 authored (79%), 698 mtg-core tests green (2026-07-05, sos-cards-14).** **THE FINAL
+  FIVE PREPARE STRAGGLERS DONE + 2 subsystems + honest census.** Shipped Jadzi // Oracle's Gift (no new cap), Harmonized
+  Trio // Brainstorm (`CostComponent::TapCreatures` + `Effect::PutFromHandOnTop`), Grave Researcher // Reanimate
+  (`Effect::ReanimateUnderControl` + `ValueExpr::ManaValueOfTarget` + the `move_object` control-vs-owner fix — control≠owner
+  now works), Leech Collector // Bloodletting (the **queue-time trigger-condition check** on all 4 non-begin-of-step queue
+  sites, ZERO regression + `life_gain_events_this_turn`), Goblin Glasswright // Craft with Pride (**option-B Treasure** —
+  cost-bearing mana abilities excluded from the auto-pay pool, paid via `pay_cost` only through manual activation; 🚩 inert
+  for gym seats, option-A auto-spend deferred to the WHITEBOARD §2.6 transactional-cast roadmap). **Honest Scryfall-diff
+  census** replaced the "complete except a shortlist" framing: 4 tracked-partial, 56 unauthored (all cap-blocked or
+  design-deferred) — the tail is pre-triaged by cap in the ledger's NEXT-AGENT block (one cap → several cards). Elder Dragons
+  (5, genuine subsystems) need a lead-approved sketch; 3 Natives + Fractalize deferred.
+- **▶ SOS (prior — sos-cards-13): ~205 authored, 683 mtg-core tests green.** **THE STACKOBJECT
   CLUSTER DONE + 4 of 9 prepare stragglers** — 6 cards + 6 reusable subsystems: (1) **StackObject counterspell
   real-cast targeting** (the gap was `collect_specs_into` dropping `Effect::Counter`'s spec + no `target_candidates`
   StackObject arm) → **Brush Off**; (2) **CR 707.10 copy-a-spell-ON-the-stack** (`copy_spell_on_stack` mints an

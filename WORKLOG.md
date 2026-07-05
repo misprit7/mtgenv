@@ -3,6 +3,23 @@
 Short, dated entries for future-agent consumption. Newest first. One line or a few bullets
 per unit of meaningful progress. Keep it terse — detail lives in `docs/` and git history.
 
+## 2026-07-05 (SOS relay sos-cards-14 — the FINAL FIVE prepare stragglers + 2 subsystems + honest census)
+
+- **Shipped all 5 remaining prepare stragglers** (683→698 green): **Jadzi // Oracle's Gift** (`7a45fbf`, no new cap —
+  `CreateToken{count:X}` + `ForEach{Fractals→PutCounters{Each,X}}`), **Harmonized Trio // Brainstorm** (`5345c20` —
+  new `CostComponent::TapCreatures(n)` + `Effect::PutFromHandOnTop`), **Grave Researcher // Reanimate** (`f09c497` —
+  new `Effect::ReanimateUnderControl` + `ValueExpr::ManaValueOfTarget` + the `move_object` control-vs-owner source-removal
+  fix, so control≠owner now works), **Leech Collector // Bloodletting** (`88465ed` — the **queue-time trigger-condition
+  check** across all 4 non-begin-of-step queue sites via `Engine::trigger_queues`; ZERO regression, exhaustive survey found
+  Bucket B empty; + `life_gain_events_this_turn`), **Goblin Glasswright // Craft with Pride** (`c7d067c` — **option-B
+  Treasure**: cost-bearing mana abilities excluded from the auto-pay pool, paid via `pay_cost` only through manual
+  activation; `grp::TREASURE_TOKEN`).
+- **Honest full-set CENSUS** (Scryfall-diff): **215/271 authored (79%)**, 4 tracked-partial, 56 unauthored — corrected the
+  "complete except a shortlist" framing and flagged the ledger's per-card ⏳ triage table as STALE. Pre-triaged the tail
+  by cap (one cap → several cards) for the successor.
+- **🚩 Treasure gym-inertness (option B):** agent seats (`manual_mana=false`) can't spend Treasures → inert in training;
+  option (A) auto-spend recorded under the WHITEBOARD §2.6 transactional-cast roadmap, not a standalone TODO.
+
 ## 2026-07-05 (SOS relay sos-cards-13 — the StackObject cluster: counterspell + 707.10 copy + Lessons)
 
 - **Filled the long-latent counterspell real-cast gap + Brush Off** (commit d6349eb; 662→668 green). Root

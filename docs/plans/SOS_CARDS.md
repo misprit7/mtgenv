@@ -4,13 +4,56 @@ Standing workstream: implement the Secrets of Strixhaven set for **limited (40-c
 `mtg-core`, easiest-first, correctness over count. This ledger is the capability index + full
 per-card triage, modeled on `SELESNYA_LANDFALL_CARDS.md`.
 
-## ▶ NEXT AGENT — start here (handoff from sos-cards-13, 2026-07-05)
+## ▶ NEXT AGENT — start here (handoff from sos-cards-14, 2026-07-05)
 
-**▶▶ sos-cards-13 HANDOFF — READ FIRST. SCOPE = FULL SET; bar = general CR capability ("nicest way that
-extends for any future card").** ~205 authored, **683 mtg-core tests green, whole workspace builds, tree clean,
-LEAD pushes** (6 commits since last push: d6349eb, dedb749, a30b648, ccebbc9, 19e2f5e, 6c3508f — plus tracker
-commit 4eac66c). sos-cards-13 shipped **the StackObject cluster + 4 of the 9 prepare stragglers = 6 cards + 6
-reusable subsystems.**
+**▶▶ sos-cards-14 HANDOFF — READ FIRST. SCOPE = FULL SET (215/271 authored); bar = general CR capability
+("nicest way that extends for any future card").** **698 mtg-core tests green, whole workspace builds, tree clean,
+LEAD pushes.** sos-cards-14 finished **the FINAL FIVE prepare stragglers (Jadzi, Harmonized Trio, Grave Researcher,
+Leech Collector, Goblin Glasswright)** + **2 reusable engine subsystems** (queue-time trigger-condition check; the
+option-B sac-for-mana Treasure) + the **honest Scryfall-diff FULL-SET CENSUS** (the "★ FINAL FULL-SET CENSUS"
+section — read it; it corrects the stale ⏳ triage table and buckets the 56 remaining unauthored cards).
+
+### ✅ SHIPPED by sos-cards-14 (commits `7a45fbf` Jadzi · `5345c20` Harmonized Trio · `f09c497` Grave Researcher · `88465ed` Leech Collector · `c7d067c` Goblin Glasswright; `git log -S` before re-scoping)
+- **Reusable caps this session:** `CostComponent::TapCreatures(n)` (tap-N-others cost, Crew-modeled), `Effect::PutFromHandOnTop`
+  (Brainstorm), `Effect::ReanimateUnderControl` + `ValueExpr::ManaValueOfTarget` + the **`move_object` control-vs-owner
+  source-removal fix** (control≠owner now works — reanimate/steal), the **queue-time trigger-condition check** (helper
+  `Engine::trigger_queues` on all 4 non-begin-of-step queue sites — a non-intervening-if `condition` now gates at event
+  time; ZERO regression, Bucket B empty) + `Player.life_gain_events_this_turn` / `ValueExpr::LifeGainEventsThisTurn`, and the
+  **option-B Treasure** (`Cost::is_simple_tap_mana`, auto-pay pool excludes cost-bearing mana abilities, manual activation
+  pays them via `pay_cost` — see the ⚠️ TREASURE flag block).
+
+### ▶ REMAINING = the tail (56 unauthored) — **triaged by cap so ONE cap unlocks SEVERAL cards** (sos-cards-14 pre-scoped this)
+Every remaining buildable card needs a small NEW cap (the pure-existing-machinery cards are all harvested). Build the cap →
+the bracketed cards fall out. Grouped by yield (verify oracle from sqlite; real-path test each):
+- **Additional-cast-cost (spell-level, CR 601.2f)** → **Seize the Spoils** (discard a card; +draw2+Treasure), **Vicious Rivalry**
+  & **Fix What's Broken** (pay X life; +mass destroy/reanimate by MV=X), **Soaring Stoneglider** (exile 2 from gy OR pay {1}{W}).
+  A `spell`-level `Cost` (non-mana components paid at cast) — the biggest-yield cap. Mind the no-rewind cast path.
+- **Grant-a-triggered-ability-until-EOT** → **Rabid Attack** (grant "when this dies, draw"), **Root Manipulation** (anthem +
+  menace + attack-trigger). A continuous grant of a full `Ability::Triggered`.
+- **Exile-and-return-at-next-end-step (timed blink, reuse `Effect::Blink` + a delayed return trigger)** → **Ennis, Debate
+  Moderator**, **Conciliator's Duelist** (Repartee returns).
+- **Base-P/T-set until EOT (layer 7b)** → **Quandrix Charm** (mode 3: base 5/5; modes 1–2 = CounterUnlessPay/Destroy, exist).
+- **Flashback with a NON-mana cost** (widen `Ability::Flashback{cost: ManaCost}` → a full `Cost`, or add a component) →
+  **Group Project** (Flashback = Tap three creatures = the shipped `TapCreatures(3)`; +`spirit_token`, both exist).
+- **GreatestMV** (highest-mana-value among a set) → **End of the Hunt**. **NoMaxHandSize** (player static) → **Wisdom of Ages**.
+  **Increment** (mana-spent vs P/T self-counter) → **Tester of the Tangential**, **Ambitious Augmenter**. **LKI-counter-count**
+  → **Scolding Administrator** (move the counters it died with). **Dynamic-MV reanimate filter** → **Moseo** (MV≤life-gained).
+  **Discarded-this-resolution tracking** → **Mind Roots**, **Borrowed Knowledge**, and **Colossus of the Blood Age** (partial
+  dies-clause). **Copy-a-spell (S14, exists)** consumers → **Choreographed Sparks, Lumaret's Favor, Aziza, Mica** (sac-artifact-copy).
+- **⚠️ Do NOT start without a lead-approved design sketch:** the **5 Elder Dragons** (Prismari=Storm, Quandrix=Cascade,
+  Lorehold=Miracle, Silverquill=Casualty, Witherbloom=Affinity — five genuine subsystems). **Deferred:** 3 Natives
+  (Mathemagics/Pox Plague/Steal the Show), Fractalize (milestone-5 layers), the special-one-off legends/permanents (Grandeur/
+  theft-cast/name-choice/free-cast/grant-mana/prepare-marker). See the census buckets.
+
+**PROCESS (unchanged, hard-won):** shared tree → `git commit --only <paths>`; never `-a`/`add -A`/stash; DON'T touch
+`experiments/`; `cargo test -p mtg-core` green at EVERY commit; flip a cap's ledger Status cell in the SAME commit; **`git
+log -S "<mechanism>"` + READ THE CODE before scoping any ⏳ row as new (the ⏳ triage table is STALE — trust the census);**
+real-path integration test for every mechanism; expect-test snapshots; ping the lead at subsystem boundaries + design-sketch
+new subsystems before building; honest flags; keep the ledger + WORKLOG + PROJECT_STATE current. On fatigue: declare, rewrite
+THIS block, hand off clean.
+
+*(sos-cards-14 retiring at a clean boundary — the final five prepare stragglers + 2 subsystems shipped, honest census
+delivered, tail pre-triaged by cap for the successor.)*
 
 ### ✅ SHIPPED by sos-cards-13 (all real-path tested; `git log -S` before re-scoping — beliefs drift)
 - **StackObject counterspell real-cast targeting** — the "counterspells never work through the real cast path"
