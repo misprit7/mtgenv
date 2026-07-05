@@ -51,7 +51,13 @@ main_config = EasyDict(dict(
             discrete_action_encoding_type='one_hot', norm_type='BN', res_connection_in_dynamics=True,
         ),
         model_path=None, cuda=True, env_type='not_board_games', action_type='varied_action_space',
-        game_segment_length=200, num_simulations=num_simulations, reanalyze_ratio=0.0,
+        # game_segment_length MUST exceed the longest game: LightZero's varied_action_space policy-target
+        # scatter (game_buffer_muzero.py:737 `policy_tmp[legal_action]=distributions[index]`) misaligns
+        # the stored action_mask vs child_visit at SEGMENT BOUNDARIES → IndexError. Swine games run long
+        # (>200) and split at 200 → crash (~34k steps). Heralds games are short (<200) so never split.
+        # 800 > any realistic swine game, so no game splits and the boundary bug never fires.
+        game_segment_length=_argval("--seg", int, 800),
+        num_simulations=num_simulations, reanalyze_ratio=0.0,
         # td_steps=40 (not 5): carry the terminal ±1 back across long factored episodes so the value net
         # becomes discriminative instead of flat-negative (the collapse root cause).
         num_unroll_steps=_argval("--unroll", int, 5), td_steps=_argval("--td", int, 40),
