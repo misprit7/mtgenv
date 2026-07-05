@@ -142,6 +142,7 @@ pub mod lumarets_favor;
 pub mod social_snub;
 pub mod mica_reader_of_ruins;
 pub mod borrowed_knowledge;
+pub mod aziza_mage_tower_captain;
 pub mod pigment_wrangler;
 pub mod planar_engineering;
 pub mod prismari_the_inspiration;
@@ -364,6 +365,7 @@ pub fn register(db: &mut CardDb) {
     social_snub::register(db);
     mica_reader_of_ruins::register(db);
     borrowed_knowledge::register(db);
+    aziza_mage_tower_captain::register(db);
     pigment_wrangler::register(db);
     prismari_the_inspiration::register(db);
     quandrix_the_proof::register(db);
