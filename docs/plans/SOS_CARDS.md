@@ -60,6 +60,57 @@ reusable subsystems.**
   N hand cards ordered → library top, first-chosen on top; `move_object` pushes to the tail=top) drives Brainstorm =
   `Sequence[Draw 3, PutFromHandOnTop 2]`.
 
+---
+
+## ★ FINAL FULL-SET CENSUS (sos-cards-14, 2026-07-05) — Scryfall-diff verified, corrects the stale ⏳ triage
+
+**Method:** diffed the real 271-card `sos` set (`data/scryfall/cards.sqlite`, `set_code='sos'`) against every authored card
+name across `crates/mtg-core/src/cards/**` (DFC fronts matched on the pre-`//` name). This is ground truth — **the ledger's
+per-card ⏳ triage table below is STALE** (dozens of ⏳ rows are actually shipped: Pull from the Grave, Aberrant Manawurm,
+Brush Off, Antiquities on the Loose, Stun/Look-and-pick/Graveyard-activated subsystems, …). Trust code + this diff, not the table.
+
+**Headline: 214 / 271 authored (79%). 210 fully faithful · 4 tracked-partial · 57 unauthored. 0 Native escape hatches used.
+695 mtg-core tests green.** (214 counts sos-set cards covered by a def in ANY set folder — 199 are sos-first-printed modules;
+~15 are reprints whose defs live in their first-printing folders.)
+
+### The 4 TRACKED-PARTIAL cards (authored, one documented clause each deferred)
+1. **Ral Zarek, Guest Lecturer** (`ral_zarek_guest_lecturer.rs`, id 365) — +1/−1/−2 fully faithful; **−7 ultimate deferred**
+   (coin-flip randomness primitive + skip-turns tracker — neither in the core). The shortlist "coin-flip+skip-turns" item.
+2. **Wildgrowth Archaic** (`wildgrowth_archaic.rs`, id 308) — mono-hybrid cost + Trample/Reach + Converge self-enter done;
+   **"whenever you cast a creature spell, THAT creature enters with X extra +1/+1 counters" deferred** (needs a delayed
+   enters-with-counters replacement keyed to another spell still on the stack — unbuilt).
+3. **Hydro-Channeler** (`hydro_channeler.rs`, id 321) — 1st ability (`{T}: Add {U}`, I/S-restricted) done; **2nd ability
+   `{1},{T}: Add any color (restricted)` deferred** — a mana ability with a *mana activation cost*; the auto-pay source model
+   treats sources as free-to-tap. **Same class as the Treasure sac-for-mana (③) — a general fix there unlocks this too.**
+4. **Colossus of the Blood Age** (`colossus_of_the_blood_age.rs`, id 314) — ETB (3 dmg each opp + gain 3) done; **dies clause
+   "discard any number, then draw that many PLUS ONE" deferred** (needs a "cards discarded this resolution" value — unbuilt).
+
+### The 57 UNAUTHORED cards (bucketed honestly — not all are "deferred by design")
+- **③ pending (1):** Goblin Glasswright // Craft with Pride — the Treasure card, awaiting the lead's scope pick below.
+- **Design-deferred major subsystems (~16):** the **5 college Elder Dragons** — Lorehold the Historian (Miracle), Prismari
+  the Inspiration (Storm), Quandrix the Proof (Cascade), Silverquill the Disputant (Casualty), Witherbloom the Balancer
+  (Affinity); **3 Natives** (never authored, no Native hack used) — Mathemagics (2^X), Pox Plague (halving), Steal the Show
+  (wheel/theft); **Fractalize** (milestone-5 SET-type + base-P/T layers); **Grandeur** — Page, Loose Leaf; **theft/ownership-
+  cast** — Nita, Forum Conciliator; **name-choice static** — Petrified Hamlet; **once/turn free-cast** — Zaffai and the
+  Tempests; **grant-mana-ability** — Resonating Lute; **non-DFC prepare markers** — Biblioplex Tomekeeper, Skycoach Waypoint.
+- **Treasure-blocked (unlocked by ③'s work) (1):** Seize the Spoils (create two Treasure tokens).
+- **Cap-blocked / buildable-but-not-yet-reached (~39):** modal/one-off spells & creatures whose caps are unbuilt or which
+  were simply not reached — e.g. Quandrix Charm (modal), Ambitious Augmenter (Increment), Archaic's Agony (excess-damage +
+  multi-card impulse-exile), Ark of Hunger (graveyard impulse-play), Sundering Archaic, Rubble Rouser (mana-ability-with-
+  damage), Mind Roots / Mind into Matter (put-permanent-into-play), Moment of Reckoning (modal ×4), Divergent Equation
+  (X-return I/S), Choreographed Sparks / Lumaret's Favor / Aziza (spell-copy consumers — the S14 copy subsystem exists),
+  Tablet of Discovery (S13), and combat tricks/spells (Rabid Attack, Vicious Rivalry, Social Snub, Practiced Offense, End of
+  the Hunt, Fix What's Broken, Daydream, Flashback, Mana Sculpt, Root Manipulation, Wisdom of Ages, Group Project, Borrowed
+  Knowledge, Burrog Barrage, Zimone's Experiment, …) + creatures (Conciliator's Duelist, Scolding Administrator, Snooping
+  Page, Slumbering Trudge, Soaring Stoneglider, Mica/Moseo/Ennis/Tester legends) + lands (Great Hall of the Biblioplex).
+
+**Honest bottom line:** the **prepare sub-track is complete** (the "final five" — Jadzi, Harmonized Trio, Grave Researcher,
+Leech Collector shipped; Goblin Glasswright ③ pending). The **full set is 79% authored**; the remaining 57 are ~16 design-
+deferred (Elder Dragons / Natives / layers / special one-offs) + ~40 cap-blocked-or-not-yet-reached buildable cards + ③. The
+set is NOT "complete except a tiny shortlist" — that framing tracked only the prepare sub-track, not the whole 271.
+
+---
+
 ### ▶ REMAINING for sos-cards-14: **Goblin Glasswright // Craft with Pride** (③) — awaiting lead's scope pick (A/B/C below)
 - ✅ **Jadzi, Steward of Fate // Oracle's Gift** (commit `7a45fbf`, back id 9731) — **NO new cap.** {X}{X} = `ManaCost.x=2`
   (charges 2X; `cast_x`→`ValueExpr::X`). Back = `Sequence[CreateToken{fractal(0), count:X}, ForEach{Fractals you control →
