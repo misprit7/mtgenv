@@ -149,6 +149,10 @@ pub enum ValueExpr {
     /// `Player.creatures_died_this_turn`. For a "if two or more creatures died this turn" gate
     /// (Emeritus of Woe), via `ValueAtLeast`.
     CreaturesDiedThisTurn,
+    /// The number of cards **put into exile this turn** (any owner) — summed across players'
+    /// `Player.cards_exiled_this_turn`. For "if one or more cards were put into exile this turn"
+    /// (Ennis, Debate Moderator), via `ValueAtLeast`.
+    CardsExiledThisTurn,
     /// The number of cards in `who`'s hand (CR 402). For an "if an opponent has more cards in hand
     /// than you" gate (Joined Researchers): `ValueAtLeast(HandSize(Opponent), Sum(HandSize(Controller), 1))`.
     HandSize { who: PlayerRef },

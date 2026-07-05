@@ -243,6 +243,12 @@ pub struct Player {
     /// this turn …" condition.
     #[serde(default)]
     pub cards_left_graveyard_this_turn: u32,
+    /// How many of this player's cards were **put into exile** this turn — reset each turn, incremented
+    /// in `move_object` on any move to `Zone::Exile`. Summed across players by
+    /// `ValueExpr::CardsExiledThisTurn` for "if one or more cards were put into exile this turn" (Ennis,
+    /// Debate Moderator).
+    #[serde(default)]
+    pub cards_exiled_this_turn: u32,
     /// How many creatures died under this player's control this turn (CR 700.4) — reset each turn,
     /// incremented in the creature-death SBA. Read by "if a creature died under your control this
     /// turn" (Essenceknit Scholar).
@@ -288,6 +294,7 @@ impl Player {
             life_gained_this_turn: 0,
             life_gain_events_this_turn: 0,
             cards_left_graveyard_this_turn: 0,
+            cards_exiled_this_turn: 0,
             creatures_died_this_turn: 0,
             cards_drawn_this_turn: 0,
             instants_sorceries_cast_this_turn: 0,
@@ -776,6 +783,10 @@ impl GameState {
         // "A card left your graveyard this turn" (SoS Lorehold): count departures from the graveyard.
         if from_zone == Zone::Graveyard && to != Zone::Graveyard {
             self.player_mut(from_owner).cards_left_graveyard_this_turn += 1;
+        }
+        // "A card was put into exile this turn" (Ennis): count arrivals into exile from elsewhere.
+        if to == Zone::Exile && from_zone != Zone::Exile {
+            self.player_mut(from_owner).cards_exiled_this_turn += 1;
         }
         // A permanent entering the battlefield gets a fresh layer-system timestamp (613.7d).
         let new_ts = if to == Zone::Battlefield {

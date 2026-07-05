@@ -722,6 +722,7 @@ impl Engine {
             self.state.players[i].life_gained_this_turn = 0;
             self.state.players[i].life_gain_events_this_turn = 0;
             self.state.players[i].cards_left_graveyard_this_turn = 0;
+            self.state.players[i].cards_exiled_this_turn = 0;
             self.state.players[i].creatures_died_this_turn = 0;
             self.state.players[i].cards_drawn_this_turn = 0;
             self.state.players[i].instants_sorceries_cast_this_turn = 0;

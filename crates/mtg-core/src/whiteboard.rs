@@ -2927,6 +2927,10 @@ impl EngineCore {
             ValueExpr::CreaturesDiedThisTurn => {
                 self.state.players.iter().map(|pl| pl.creatures_died_this_turn as i64).sum()
             }
+            // Cards put into exile this turn, any owner — Ennis's end-step gate.
+            ValueExpr::CardsExiledThisTurn => {
+                self.state.players.iter().map(|pl| pl.cards_exiled_this_turn as i64).sum()
+            }
             // Cards in `who`'s hand — Joined Researchers' hand-size comparison.
             ValueExpr::HandSize { who } => {
                 let p = self.eval_player(*who, ctx);

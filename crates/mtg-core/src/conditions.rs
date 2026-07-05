@@ -158,6 +158,10 @@ fn eval_value(
         ValueExpr::CreaturesDiedThisTurn => {
             state.players.iter().map(|pl| pl.creatures_died_this_turn as i64).sum()
         }
+        // Cards put into exile this turn, any owner (Ennis's "if one or more cards … exiled").
+        ValueExpr::CardsExiledThisTurn => {
+            state.players.iter().map(|pl| pl.cards_exiled_this_turn as i64).sum()
+        }
         // Cards in `who`'s hand (Joined Researchers' "an opponent has more cards in hand than you").
         ValueExpr::HandSize { who } => {
             let p = resolve_player(state, *who, source_controller);
