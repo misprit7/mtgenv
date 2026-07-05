@@ -51,6 +51,7 @@ pub fn register(db: &mut CardDb) {
                 effect: Effect::MoveZone {
                     what: EffectTarget::Target(instant_or_sorcery_in_graveyard()),
                     to: ZoneDest { zone: Zone::Hand, pos: ZonePos::Any },
+                    tapped: false,
                 },
             }],
         )
@@ -101,6 +102,7 @@ mod tests {
                             zone: Hand,
                             pos: Any,
                         },
+                        tapped: false,
                     },
                 },
             ]"#]].assert_eq(&format!("{:#?}", def.abilities));

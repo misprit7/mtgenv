@@ -36,6 +36,7 @@ pub fn register(db: &mut CardDb) {
             effect: Effect::MoveZone {
                 what: EffectTarget::SourceSelf,
                 to: ZoneDest { zone: Zone::Hand, pos: ZonePos::Any },
+                tapped: false,
             },
             // "Activate only as a sorcery." (CR 601.3e — main-phase, empty stack, your turn.)
             timing: Timing::Sorcery,

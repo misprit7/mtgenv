@@ -1017,7 +1017,7 @@ impl EngineCore {
             // the LAST targeting sub-effect of its spell — the flat cursor can't tell where one
             // multi-slot's picks end and a following targeting slot begins; every real card ("return
             // up to N …") satisfies this (later clauses are non-targeting, e.g. "You gain 2 life").
-            Effect::MoveZone { what, to } => {
+            Effect::MoveZone { what, to, tapped } => {
                 let max = match what {
                     EffectTarget::Target(spec) => spec.max.max(1),
                     _ => 1,
@@ -1029,6 +1029,7 @@ impl EngineCore {
                             to: to.zone,
                             pos: to.pos,
                             cause: MoveCause::Returned,
+                            tapped: *tapped,
                         }),
                         _ => break,
                     }
@@ -1120,6 +1121,7 @@ impl EngineCore {
                                 to: Zone::Battlefield,
                                 pos: ZonePos::Any,
                                 cause: MoveCause::Returned,
+                                tapped: false,
                             },
                             Action::TapUntap { obj: land, tap: true },
                         ],
@@ -1634,12 +1636,19 @@ impl EngineCore {
                     o.status.tapped = tap;
                 }
             }
-            Action::MoveZone { obj, to, .. } => {
+            Action::MoveZone { obj, to, tapped, .. } => {
                 let owner = match self.state.objects.get(&obj) {
                     Some(o) => o.owner,
                     None => return,
                 };
                 if self.state.move_object(obj, to, owner) {
+                    // Enter tapped (CR 110.5) — `move_object` reset status to untapped, so apply the
+                    // tap now that it's on the battlefield (Teacher's Pest's tapped reanimation).
+                    if tapped && to == Zone::Battlefield {
+                        if let Some(o) = self.state.objects.get_mut(&obj) {
+                            o.status.tapped = true;
+                        }
+                    }
                     self.broadcast(GameEvent::ObjectMoved { obj, to });
                 }
             }

@@ -212,6 +212,10 @@ pub enum Effect {
     MoveZone {
         what: EffectTarget,
         to: ZoneDest,
+        /// When `to` is the battlefield, the permanent enters **tapped** (CR 110.5 — e.g. Teacher's
+        /// Pest's "return this card from your graveyard to the battlefield tapped"). Ignored for
+        /// non-battlefield destinations. Mirrors `Effect::Search { tapped }`.
+        tapped: bool,
     },
     Discard {
         who: PlayerRef,

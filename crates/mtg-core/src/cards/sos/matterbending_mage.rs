@@ -58,6 +58,7 @@ pub fn register(db: &mut CardDb) {
                 effect: Effect::MoveZone {
                     what: EffectTarget::Target(other_target_creature()),
                     to: ZoneDest { zone: Zone::Hand, pos: ZonePos::Any },
+                    tapped: false,
                 },
             },
             Ability::Triggered {
@@ -111,6 +112,7 @@ mod tests {
                             zone: Hand,
                             pos: Any,
                         },
+                        tapped: false,
                     },
                 },
                 Triggered {

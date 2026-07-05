@@ -82,6 +82,7 @@ pub mod grp {
     pub const ISLAND: u32 = 2;
     pub const MOUNTAIN: u32 = 3;
     pub const FOREST: u32 = 4;
+    pub const SWAMP: u32 = 5;
     pub const GRIZZLY_BEARS: u32 = 10;
     pub const HILL_GIANT: u32 = 11;
     pub const SHOCK: u32 = 20;
@@ -671,7 +672,7 @@ mod tests {
     #[test]
     fn starter_db_has_expected_cards() {
         let db = starter_db();
-        assert_eq!(db.len(), 210);
+        assert_eq!(db.len(), 212);
         // Forest is "type line only": a Basic Land with subtype Forest. Mana is intrinsic
         // (CR 305.6) — the engine derives {T}: Add {G} from the subtype, so the CardDef carries
         // no explicit mana ability (and `is_mana_source` only sees authored abilities).

@@ -9,4 +9,5 @@ pub fn register(db: &mut CardDb) {
     db.insert(basic_land(grp::ISLAND, "Island").with_text("({T}: Add {U}.)"));
     db.insert(basic_land(grp::MOUNTAIN, "Mountain").with_text("({T}: Add {R}.)"));
     db.insert(basic_land(grp::FOREST, "Forest").with_text("({T}: Add {G}.)"));
+    db.insert(basic_land(grp::SWAMP, "Swamp").with_text("({T}: Add {B}.)"));
 }

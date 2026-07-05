@@ -17,6 +17,13 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
   **Ajani's Response** ({4}{W} Destroy, {3} off if it targets a tapped creature); a real-cast-path
   test proves the untapped creature is excluded from the offered targets when only {1}{W} is
   affordable. Orysa migrated to `State(...)` (unchanged behaviour).
+- **Enters-tapped (MoveZone) + Teacher's Pest. 590→592 tests.** Added `tapped: bool` to
+  `Effect::MoveZone` + `Action::MoveZone` (set in the executor after `move_object` re-untaps, CR
+  110.5 — the `Effect::Search { tapped }` analogue). Threaded through the 13 existing MoveZone
+  literals (`tapped: false`) + regenerated IR snapshots. → **Teacher's Pest** ({B}{G} Menace +
+  gain-life-on-attack + `{B}{G}` graveyard-recursion to the battlefield **tapped** — completes the
+  graveyard-recursion trio). Also registered the missing **Swamp** basic land (`grp::SWAMP=5` — no
+  black basic land existed).
 
 ## 2026-07-03 (sos-cards-7)
 

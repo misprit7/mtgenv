@@ -55,6 +55,7 @@ pub fn register(db: &mut CardDb) {
                     effect: Effect::MoveZone {
                         what: EffectTarget::Target(nonland_permanent_mv3_in_graveyard()),
                         to: ZoneDest { zone: Zone::Battlefield, pos: ZonePos::Any },
+                        tapped: false,
                     },
                 },
                 Ability::Triggered {
@@ -129,6 +130,7 @@ mod tests {
                             zone: Battlefield,
                             pos: Any,
                         },
+                        tapped: false,
                     },
                 },
                 Triggered {

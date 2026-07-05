@@ -26,6 +26,7 @@ pub fn register(db: &mut CardDb) {
                 distinct: true,
             }),
             to: ZoneDest { zone: Zone::Hand, pos: ZonePos::Any },
+            tapped: false,
         },
         Effect::Surveil { count: ValueExpr::Fixed(1) },
     ]);
@@ -75,6 +76,7 @@ mod tests {
                             zone: Hand,
                             pos: Any,
                         },
+                        tapped: false,
                     },
                     Surveil {
                         count: Fixed(

@@ -47,6 +47,9 @@ pub enum Action {
         to: Zone,
         pos: ZonePos,
         cause: MoveCause,
+        /// Enter the battlefield **tapped** (CR 110.5) when `to == Battlefield` — e.g. a permanent
+        /// returned from the graveyard tapped (Teacher's Pest). Ignored for other destinations.
+        tapped: bool,
     },
     TapUntap {
         obj: ObjId,

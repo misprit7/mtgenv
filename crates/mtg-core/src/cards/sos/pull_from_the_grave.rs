@@ -34,6 +34,7 @@ pub fn register(db: &mut CardDb) {
                 distinct: true,
             }),
             to: ZoneDest { zone: Zone::Hand, pos: ZonePos::Any },
+            tapped: false,
         },
         Effect::GainLife {
             who: PlayerRef::Controller,
@@ -96,6 +97,7 @@ mod tests {
                             zone: Hand,
                             pos: Any,
                         },
+                        tapped: false,
                     },
                     GainLife {
                         who: Controller,

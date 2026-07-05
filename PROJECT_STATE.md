@@ -69,8 +69,8 @@ MTGA client.
 - **✅ MOBILE WEB CLIENT (2026-07-03).** Game client + lobby fully playable from a phone: mobile
   reflow (sticky prompt sheet, opp-top/you-bottom strips, log toggle), touch previews long-press-only
   (hover gated to real mice), on-screen pass-turn button. Desktop unchanged.
-- **▶ SOS FULL-SET scope (2026-07-04, user directive — T4 deferral revoked): ~159 authored, 590 mtg-core
-  tests green.** Each subsystem built as the general CR capability, not the minimal hack (the big three still
+- **▶ SOS FULL-SET scope (2026-07-04, user directive — T4 deferral revoked): ~160 authored, 592 mtg-core
+  tests green (+ registered the missing Swamp basic land).** Each subsystem built as the general CR capability, not the minimal hack (the big three still
   ahead: Lessons/Learn, Planeswalkers, prepare-DFCs). **sos-cards-9 finished the S12 target-dependent
   cost-reduction sub-cap** (the piece agent-8 deferred as risky): `CostReductionCondition::{State|TargetMatches}`
   + `effective_cast_cost(TargetCtx::{Optimistic|Chosen})`; `cast_spell` recomputes cost from chosen targets and

@@ -130,6 +130,7 @@ pub mod stirring_hopesinger;
 pub mod suspend_aggression;
 pub mod summoned_dromedary;
 pub mod tackle_artist;
+pub mod teachers_pest;
 pub mod thunderdrum_soloist;
 pub mod transcendent_archaic;
 pub mod together_as_one;
@@ -281,6 +282,7 @@ pub fn register(db: &mut CardDb) {
     suspend_aggression::register(db);
     summoned_dromedary::register(db);
     tackle_artist::register(db);
+    teachers_pest::register(db);
     thunderdrum_soloist::register(db);
     transcendent_archaic::register(db);
     together_as_one::register(db);

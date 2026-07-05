@@ -29,6 +29,7 @@ pub fn register(db: &mut CardDb) {
                 distinct: true,
             }),
             to: ZoneDest { zone: Zone::Hand, pos: ZonePos::Any },
+            tapped: false,
         },
         Effect::Search {
             who: PlayerRef::Controller,
@@ -87,6 +88,7 @@ mod tests {
                             zone: Hand,
                             pos: Any,
                         },
+                        tapped: false,
                     },
                     Search {
                         who: Controller,

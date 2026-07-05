@@ -1757,6 +1757,7 @@ impl Engine {
             to: Zone::Battlefield,
             pos: ZonePos::Any,
             cause: MoveCause::Other,
+            tapped: false,
         });
         self.commit(wb);
         self.state.player_mut(p).lands_played_this_turn += 1;
@@ -2475,6 +2476,7 @@ impl Engine {
                         to: Zone::Battlefield,
                         pos: ZonePos::Any,
                         cause: MoveCause::Resolved,
+                        tapped: false,
                     });
                     self.commit(wb);
                     // Warp (CR 702.x): arm "exile this at the beginning of the next end step" as a

@@ -45,6 +45,7 @@ fn repartee_reanimate() -> Ability {
                 distinct: true,
             }),
             to: ZoneDest { zone: Zone::Battlefield, pos: ZonePos::Any },
+            tapped: false,
         },
     }
 }
@@ -157,6 +158,7 @@ mod tests {
                             zone: Battlefield,
                             pos: Any,
                         },
+                        tapped: false,
                     },
                 },
             ]"#]]

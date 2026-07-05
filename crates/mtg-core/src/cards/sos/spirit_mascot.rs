@@ -86,6 +86,7 @@ mod tests {
         let effect = Effect::MoveZone {
             what: EffectTarget::Target(TargetSpec { kind: TargetKind::CardInZone { zone: Zone::Graveyard, filter: CardFilter::Any }, min: 1, max: 1, distinct: true }),
             to: ZoneDest { zone: Zone::Hand, pos: ZonePos::Any },
+            tapped: false,
         };
         let mut e = Engine::new(state, vec![Box::new(RandomAgent::new(0)), Box::new(RandomAgent::new(1))]);
         e.resolve_effect(&effect, &ResolutionCtx { controller: Some(PlayerId(0)), chosen_targets: vec![Target::Object(gycard)], ..Default::default() }, WbReason::Resolve(StackId(0)));

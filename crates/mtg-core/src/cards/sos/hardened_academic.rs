@@ -175,6 +175,7 @@ mod tests {
                     distinct: true,
                 }),
                 to: crate::basics::ZoneDest { zone: Zone::Exile, pos: crate::basics::ZonePos::Any },
+                tapped: false,
             },
             &ResolutionCtx {
                 controller: Some(PlayerId(0)),

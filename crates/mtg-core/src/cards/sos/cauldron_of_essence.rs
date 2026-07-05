@@ -63,6 +63,7 @@ pub fn register(db: &mut CardDb) {
                 distinct: true,
             }),
             to: ZoneDest { zone: Zone::Battlefield, pos: ZonePos::Any },
+            tapped: false,
         },
         timing: Timing::Sorcery,
         restriction: None,
