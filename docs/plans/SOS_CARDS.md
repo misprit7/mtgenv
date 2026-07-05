@@ -179,8 +179,11 @@ name across `crates/mtg-core/src/cards/**` (DFC fronts matched on the pre-`//` n
 per-card ⏳ triage table below is STALE** (dozens of ⏳ rows are actually shipped: Pull from the Grave, Aberrant Manawurm,
 Brush Off, Antiquities on the Loose, Stun/Look-and-pick/Graveyard-activated subsystems, …). Trust code + this diff, not the table.
 
-**Headline (post-③ + sos-cards-15's 4 additional-cast-cost cards): 219 / 271 authored (81%). 215 fully faithful · 4
-tracked-partial · 52 unauthored. 0 Native escape hatches used. 713 mtg-core tests green.** (Goblin Glasswright shipped since the first census; Seize the Spoils remains — it
+**Headline (Scryfall-diff RE-VERIFIED 2026-07-05 by sos-cards-15): 222 / 271 authored (82%). 218 fully faithful · 4
+tracked-partial · 49 unauthored. 0 Native escape hatches used. 720 mtg-core tests green.** (Diff method: every sos set name —
+front face, pre-`//` — checked against string literals in `crates/mtg-core/src/cards/**`; the 49 unauthored match the buckets
+below exactly. sos-cards-15 added Seize the Spoils, Vicious Rivalry, Fix What's Broken, Soaring Stoneglider, Quandrix Charm,
+End of the Hunt, Group Project.) (Goblin Glasswright shipped since the first census; Seize the Spoils remains — it
 needs an ADDITIONAL-CAST-COST cap "as an additional cost, discard a card", NOT just the Treasure.) (215 counts sos-set cards
 covered by a def in ANY set folder — 200 are sos-first-printed modules;
 ~15 are reprints whose defs live in their first-printing folders.)
