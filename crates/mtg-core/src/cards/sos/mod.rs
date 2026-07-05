@@ -138,6 +138,7 @@ pub mod orysa_tide_choreographer;
 pub mod paradox_gardens;
 pub mod pest_mascot;
 pub mod lumarets_favor;
+pub mod social_snub;
 pub mod pigment_wrangler;
 pub mod planar_engineering;
 pub mod prismari_the_inspiration;
@@ -356,6 +357,7 @@ pub fn register(db: &mut CardDb) {
     paradox_gardens::register(db);
     pest_mascot::register(db);
     lumarets_favor::register(db);
+    social_snub::register(db);
     pigment_wrangler::register(db);
     prismari_the_inspiration::register(db);
     quandrix_the_proof::register(db);
