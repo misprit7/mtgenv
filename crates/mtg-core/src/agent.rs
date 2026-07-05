@@ -666,6 +666,10 @@ pub enum GameEvent {
     /// Player `by` declared `attackers` as attacking creatures (CR 508.1). Drives "whenever you
     /// attack" (player-level, once) and "whenever this creature attacks" (per attacker) triggers.
     AttackersDeclared { attackers: Vec<ObjId>, by: PlayerId },
+    /// One or more creatures `controller` controls dealt combat damage to a player this combat-damage
+    /// step (CR 510.1c). Broadcast once per such controller per step — drives the batched
+    /// `YouDealCombatDamageToPlayer` trigger (Killian's Confidence).
+    CombatDamageToPlayerBy { controller: PlayerId },
     GameEnded { winner: Option<PlayerId> },
     /// `player`'s mana pool changed (mana produced or spent during payment/resolution). A *live-view*
     /// notification: it refreshes observers so the client shows floating mana mid-resolution

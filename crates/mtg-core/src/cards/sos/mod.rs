@@ -69,6 +69,7 @@ pub mod informed_inkwright;
 pub mod inkling_mascot;
 pub mod inkshape_demonstrator;
 pub mod interjection;
+pub mod killians_confidence;
 pub mod lecturing_scornmage;
 pub mod living_history;
 pub mod lorehold_charm;
@@ -222,6 +223,7 @@ pub fn register(db: &mut CardDb) {
     inkling_mascot::register(db);
     inkshape_demonstrator::register(db);
     interjection::register(db);
+    killians_confidence::register(db);
     lecturing_scornmage::register(db);
     living_history::register(db);
     lorehold_charm::register(db);

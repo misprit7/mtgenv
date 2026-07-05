@@ -7,9 +7,9 @@ per-card triage, modeled on `SELESNYA_LANDFALL_CARDS.md`.
 ## ▶ NEXT AGENT — start here (handoff from sos-cards-9, 2026-07-04)
 
 **▶▶ sos-cards-9 HANDOFF (2026-07-04) — READ FIRST. SCOPE = FULL SET; quality bar = general CR capability,
-not the minimal hack.** 158→161 authored / all fully-faithful, **595 mtg-core tests green, tree clean, 3 clean
-commits** (LEAD pushes). Shipped **4 caps + 3 cards** (each a real-path test, `git commit --only` on the shared
-tree; MuZero's `experiments/` untouched):
+not the minimal hack.** 158→162 authored / all fully-faithful, **598 mtg-core tests green, tree clean** (LEAD
+pushes). Shipped **5 caps + 4 cards + the missing Swamp basic land** (each a real-path test, `git commit --only`
+on the shared tree; MuZero's `experiments/` untouched):
 1. **S12 target-dependent cost reduction** (`583f30f`) — the risky sub-cap agent-8 deferred. `CostReduction`'s
    condition is now `CostReductionCondition::{State(Condition) | TargetMatches(CardFilter)}`; `effective_cast_cost`
    takes a `TargetCtx::{Optimistic | Chosen(&targets)}`. Offer gate applies a target-dependent discount
@@ -25,19 +25,23 @@ tree; MuZero's `experiments/` untouched):
    `exile_cost_candidates`/`pay_exile_cost` mirror the Discard pair, exclude the source). → **Postmortem Professor**.
    Reusable for escape/delve. **The graveyard-recursion trio (Summoned Dromedary/Teacher's Pest/Postmortem) is
    now COMPLETE.**
+4. **graveyard-functioning triggers (NEW CLASS)** (`5b79e8d`-range) — `Ability::FunctionsFrom(Vec<Zone>)` marker
+   (lead-approved **Design B generalized**: battlefield is the implicit default zone-of-function, only deviating
+   cards carry the marker; CR 113.6; generalizes to hand/exile by adding zones) + `collect_triggers` graveyard
+   scan + batched `EventPattern::YouDealCombatDamageToPlayer` (`GameEvent::CombatDamageToPlayerBy`, once/controller/
+   combat-damage-step) + **`Effect::MayPayCost{cost,then}`** ("you may pay …; if you do, …" — the mana analogue of
+   `IfYouDo`, broadly reusable). → **Killian's Confidence** (real-path: combat damage → gy trigger → pay {W/B} →
+   return self; + the declined/unpayable path stays in gy).
 
 **▶ RECOMMENDED NEXT ORDER (all remaining need a genuine subsystem — none is a quick win):**
-- **Killian's Confidence — DESIGN-SKETCHED, sketch to the lead before building.** {W}{B} Sorcery (spell =
-  PumpPT+Draw, trivial) + a **graveyard-triggered ability** (NEW CLASS): "whenever one or more creatures you
-  control deal combat damage to a player, you may pay {W/B}; if you do, return this from your gy to hand." THREE
-  new mechanisms: **(1) graveyard-triggered abilities** — `collect_triggers` only scans the battlefield today.
-  Two designs: *(A)* a `from_zone` field on `Ability::Triggered` (general but churns EVERY Triggered literal —
-  dozens, risky); *(B, RECOMMENDED)* a per-card marker `Ability::FunctionsFromGraveyard` (mirrors
-  `CostComponent::ActivateFromGraveyard` exactly — low churn, `collect_triggers` gains a graveyard scan gated on
-  the marker). **(2) batched combat-damage-to-a-player event** — fires ONCE per combat-damage step if ≥1 of your
-  creatures dealt combat damage to a player (a new `EventPattern`; `DamageDealt{Combat}` is per-instance, wrong
-  granularity). **(3) "you may pay {cost}; if you do, {effect}"** in resolution ({W/B} hybrid, hybrid mana done)
-  — check whether `Effect::Optional`/`IfYouDo` can gate on paying a mana cost, else add a `MayPayCost` effect.
+- **Diary of Dreams** — activated-ability cost reduction (a natural extension of the S12 cast-time work applied at
+  `activate_ability`/the activated-ability offer gate). Needs: a `Page` `CounterKind`; a per-ability cost
+  reduction ("costs {1} less to activate for each page counter") — cleanest is to give `Ability::CostReduction`
+  a scope (Cast vs ActivatedAbilities) and add an `effective_activation_cost` sibling of `effective_cast_cost`
+  (low churn — CostReduction has ~3 literals); + a `SpellCast(I/S)`→add-page-counter trigger (machinery exists).
+- **The big three (DESIGN-SKETCH TO THE LEAD BEFORE EACH; lead wants Planeswalkers first — most groundwork):**
+  Planeswalkers (CR 306/606 — `CostComponent::Loyalty` + a PW-dies test already exist), Lessons/Learn (CR 715
+  outside-the-game/sideboard), Prepare-DFCs (~36, the card-faces model — the biggest piece).
 - **Remaining S12 cards** (target-dependent MECHANISM done; each blocked on a DIFFERENT secondary): **Run Behind**
   (uses the new cap w/ `Attacking` filter; needs "put target on top OR bottom of owner's library, owner chooses"
   — an owner-side binary decision, no clean existing primitive — a small decision-plumbing effect); **Brush Off**
@@ -465,9 +469,10 @@ each cap unlocks the bracketed count. `⏳` = not yet built.
 | **S22** cast-I/S-this-turn cond | (done — see NEXT-AGENT block) | 1 | ✅ **DONE** (agent 6) |
 | **misc one-offs** | GreatestMV, ~~DistinctNames~~, ~~SoftCounter~~, ~~DirectedDiscard~~, AltCost, PayXLife, NoMaxHand, GrantAbility | 1–3 ea | ⏳ except **SoftCounter ✅** (`Effect::CounterUnlessPay`, Ward `96dbc35`), **DistinctNames ✅** (sos-cards-7, `ValueExpr::DistinctNames`), and **DirectedDiscard ✅ DONE** (sos-cards-8 `4faa6d9` — `Effect::DirectedDiscard{who,chooser,count,filter}` chooser≠discarder + `TargetKind::Player(PlayerFilter::{Any,Opponent,You})` general player-target restriction → **Render Speechless**). The rest (GreatestMV/AltCost/PayXLife/NoMaxHand/GrantAbility) genuinely unbuilt. |
 | **LKI dies-triggers** | last-known-info store (CR 603.10a) + `CreatureDies(filter)` wiring so other permanents' filtered dies-triggers fire, matched against the dead object's pre-death chars/controller | 2+ | ✅ **DONE** (sos-cards-8 `3ef761d`) — `GameState.last_known` captured in `move_object`, `queue_watching_dies_triggers`/`dies_filter_matches`, `CardFilter::ToughnessAtMost` → **Arnyn, Cauldron of Essence**. LKI store is groundwork for ALL future dies/LTB abilities (effect-time LKI reads still TODO). |
-| **graveyard-recursion** | `CostComponent::ActivateFromGraveyard` (pure gy-usability marker, no cost effect — cf. S18's `ExileSelfFromGraveyard`) for "{cost}: return this from your graveyard" self-recursion | 3+ | ◑ **self→hand + self→battlefield-tapped DONE** — `4b70bc1` (self→hand) → **Summoned Dromedary**; sos-cards-9 (self→battlefield TAPPED, via the new **enters-tapped** cap below) → **Teacher's Pest** (completes the trio's tapped-reanimation). **Postmortem Professor** DONE (sos-cards-9): self `Qualification::CantBlock` static + `SelfAttacks` drain (`Sequence[LoseLife EachOpponent, GainLife]`) + graveyard-recursion whose cost exiles *another* I/S card from the gy via the newly-wired **`CostComponent::Exile`** (see below). Remaining: **Killian's Confidence** (triggered-from-gy — a NEW class). |
+| **graveyard-recursion** | `CostComponent::ActivateFromGraveyard` (pure gy-usability marker, no cost effect — cf. S18's `ExileSelfFromGraveyard`) for "{cost}: return this from your graveyard" self-recursion | 3+ | ◑ **self→hand + self→battlefield-tapped DONE** — `4b70bc1` (self→hand) → **Summoned Dromedary**; sos-cards-9 (self→battlefield TAPPED, via the new **enters-tapped** cap below) → **Teacher's Pest** (completes the trio's tapped-reanimation). **Postmortem Professor** DONE (sos-cards-9): self `Qualification::CantBlock` static + `SelfAttacks` drain (`Sequence[LoseLife EachOpponent, GainLife]`) + graveyard-recursion whose cost exiles *another* I/S card from the gy via the newly-wired **`CostComponent::Exile`** (see below). **Killian's Confidence** DONE (sos-cards-9): the new-class **graveyard-functioning triggered abilities** cap (see below). ✅ **The whole graveyard-recursion vein is now cleared.** |
 | **enters-tapped (MoveZone)** | `tapped: bool` on `Effect::MoveZone` + `Action::MoveZone` (set in the executor after `move_object` re-untaps, CR 110.5 — the `Effect::Search { tapped }` analogue for reanimation/bounce-to-battlefield) | 3 | ✅ **DONE** (sos-cards-9) → **Teacher's Pest** (gy→battlefield tapped). Also registered the **Swamp** basic land (`grp::SWAMP=5` — was missing; no black mana source existed). Now unblocks the enters-tapped *clause* of **Mind Roots** (discard 2, put a discarded land tapped) + **Mind into Matter** (put a permanent from hand tapped) — each still needs its OTHER clauses (Mind Roots = put-from-hand/discard-driven; Mind into Matter = draw-X + put-from-hand + dynamic-MV). |
 | **Exile-as-cost** | `CostComponent::Exile(SelectSpec)` wired in `can_pay_cost`/`pay_cost` (`exile_cost_candidates`/`pay_exile_cost`, mirror the Discard pair; excludes the source; moves chosen cards to Exile) — was defined-but-unpaid ("for escape/delve"). | 1+ | ✅ **DONE** (sos-cards-9) → **Postmortem Professor** ("Exile an I/S card from your graveyard:"). Reusable for future escape/delve. |
+| **graveyard-functioning triggers** | `Ability::FunctionsFrom(Vec<Zone>)` marker (CR 113.6 — battlefield is the implicit default zone-of-function; only deviating cards carry the marker, zero churn) + `collect_triggers` graveyard scan (`queue_graveyard_functioning_triggers`, reuses `queue_self_triggers`) + batched `EventPattern::YouDealCombatDamageToPlayer` / `GameEvent::CombatDamageToPlayerBy` (once per controller per combat-damage step, broadcast from `deal_combat_substep`) + `Effect::MayPayCost{cost,then}` ("you may pay …; if you do, …" — the mana analogue of `IfYouDo`). | 1+ | ✅ **DONE** (sos-cards-9) → **Killian's Confidence**. `FunctionsFrom` generalizes to hand/exile (madness/suspend) by adding zones to the scan; `MayPayCost` is broadly reusable. |
 | **Native** | genuine one-offs via the `Native` escape hatch: Mathemagics (2^X), Pox Plague (halving), Steal the Show (wheel) | 4 | ⏳ |
 
 Building **S1, S4, S5, S6, S7, S8, S10** (the seven big-count caps) converts ~**79** T3 cards to authorable.
@@ -744,7 +749,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Informed Inkwright | S8 | `sos` | ✅ done | Repartee makes Inkling token |
 | Inkling Mascot | S8,S1 | `sos` | ✅ done | Repartee grants flying, surveil |
 | Inkshape Demonstrator | S17,S8 | `sos` | ⏳ | Ward, Repartee pump/lifelink |
-| Killian's Confidence | S18 | `sos` | ⏳ | triggered ability functions from graveyard |
+| Killian's Confidence | gy-triggers,MayPayCost | `sos` | ✅ done | pump+draw spell + graveyard-functioning trigger (`FunctionsFrom`) on batched combat-damage → `MayPayCost {W/B}` return-self |
 | Lecturing Scornmage | S8 | `sos` | ✅ done | Repartee self-counter |
 | Living History | S9,CardFilter::Attacking | `sos` | ✅ done | ETB Spirit token + `YouAttack` trigger, intervening-if `CardLeftGraveyardThisTurn` (S9), pumps a target attacking creature (+2/+0) via new `CardFilter::Attacking` |
 | Lumaret's Favor | S14,S4 | `sos` | ⏳ | conditional copy (infusion) plus pump |

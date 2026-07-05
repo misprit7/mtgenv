@@ -7,7 +7,7 @@ use super::condition::{Condition, Duration};
 use super::target::{CardFilter, SelectSpec};
 use super::value::ValueExpr;
 use super::Effect;
-use crate::basics::{CardType, Color, CounterKind, DamageKind, ManaCost};
+use crate::basics::{CardType, Color, CounterKind, DamageKind, ManaCost, Zone};
 use serde::{Deserialize, Serialize};
 
 /// A cost to be paid (CR 118): an optional mana component plus any number of non-mana
@@ -113,6 +113,11 @@ pub enum EventPattern {
     /// once-per-combat "whenever you attack …" trigger for the attacking player). Distinct from
     /// `SelfAttacks` (per-attacking-creature): fires once for the watcher whose controller attacked.
     YouAttack,
+    /// One or more creatures the watcher's controller controls deal **combat damage to a player**
+    /// (CR 510.1c/603.2) — fires ONCE per combat-damage step for that controller, regardless of how
+    /// many creatures dealt or how much (the "one or more" batch), for each watcher whose controller
+    /// dealt such damage. Distinct from per-instance `DamageDealt`. Killian's Confidence.
+    YouDealCombatDamageToPlayer,
     /// This creature blocks or becomes blocked (CR 509.1i).
     SelfBlocks,
     /// You tap a creature for mana (CR 605.1b) — drives "whenever you tap a creature for mana, add
@@ -316,6 +321,14 @@ pub enum Ability {
         duration: Duration,
         condition: Condition,
     },
+    /// A marker that this card's **triggered abilities function from the listed zone(s)** in
+    /// addition to the battlefield default (CR 113.6 — "an ability functions only while its source
+    /// is on the battlefield unless the ability states otherwise"). The default zone-of-function is
+    /// implicit, so only *deviating* cards carry this marker — zero churn on the pool. Killian's
+    /// Confidence carries `FunctionsFrom(vec![Zone::Graveyard])` so its combat-damage trigger fires
+    /// while it sits in the graveyard. `collect_triggers` scans the marked zones (graveyard today;
+    /// the scan generalizes to hand/exile — madness/suspend-style — as those markers arrive).
+    FunctionsFrom(Vec<Zone>),
 }
 
 /// How much an [`Ability::CostReduction`] takes off a spell's total cost (CR 118).

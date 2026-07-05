@@ -481,6 +481,9 @@ impl Engine {
             GameEvent::AttackersDeclared { attackers, by } => {
                 format!("P{} attacks with {} creature(s)", by.0, attackers.len())
             }
+            GameEvent::CombatDamageToPlayerBy { controller } => {
+                format!("P{}'s creatures deal combat damage to a player", controller.0)
+            }
             GameEvent::GameEnded { winner } => match winner {
                 Some(w) => format!("Game over — P{} wins", w.0),
                 None => "Game over — draw".to_string(),
@@ -3150,7 +3153,36 @@ impl Engine {
             GameEvent::CountersPut { obj, kind, .. } => {
                 self.queue_self_triggers(*obj, EventPattern::CountersPutOnSelf { kind: kind.clone() });
             }
+            // "Whenever one or more creatures you control deal combat damage to a player" (CR 603.2) —
+            // fired once per controller per combat-damage step. The watcher is typically in a NON-
+            // battlefield zone (Killian's Confidence in the graveyard), so scan the marked zones.
+            GameEvent::CombatDamageToPlayerBy { controller } => {
+                self.queue_graveyard_functioning_triggers(
+                    *controller,
+                    EventPattern::YouDealCombatDamageToPlayer,
+                );
+            }
             _ => {}
+        }
+    }
+
+    /// Queue the graveyard-functioning triggered abilities (CR 113.6 — [`Ability::FunctionsFrom`]) of
+    /// `owner`'s graveyard cards matching `want`. Battlefield is the implicit default zone-of-function;
+    /// a card carrying `FunctionsFrom(vec![Zone::Graveyard, …])` also has its triggered abilities active
+    /// from those zones (Killian's Confidence). Reuses `queue_self_triggers` — a graveyard card's
+    /// `controller` is its owner, so the trigger is controlled by the right seat. Generalizes to
+    /// hand/exile (madness/suspend-style) as those markers arrive.
+    fn queue_graveyard_functioning_triggers(&mut self, owner: PlayerId, want: EventPattern) {
+        let cards: Vec<ObjId> = self.state.player(owner).graveyard.clone();
+        for c in cards {
+            let functions_from_gy = self.state.def_of(c).is_some_and(|d| {
+                d.abilities.iter().any(|a| {
+                    matches!(a, Ability::FunctionsFrom(zones) if zones.contains(&Zone::Graveyard))
+                })
+            });
+            if functions_from_gy {
+                self.queue_self_triggers(c, want.clone());
+            }
         }
     }
 

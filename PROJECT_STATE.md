@@ -69,10 +69,12 @@ MTGA client.
 - **✅ MOBILE WEB CLIENT (2026-07-03).** Game client + lobby fully playable from a phone: mobile
   reflow (sticky prompt sheet, opp-top/you-bottom strips, log toggle), touch previews long-press-only
   (hover gated to real mice), on-screen pass-turn button. Desktop unchanged.
-- **▶ SOS FULL-SET scope (2026-07-04, user directive — T4 deferral revoked): ~161 authored, 595 mtg-core
-  tests green (+ registered the missing Swamp basic land).** sos-cards-9 shipped 4 caps + 3 cards: S12
+- **▶ SOS FULL-SET scope (2026-07-04, user directive — T4 deferral revoked): ~162 authored, 598 mtg-core
+  tests green (+ registered the missing Swamp basic land).** sos-cards-9 shipped 5 caps + 4 cards: S12
   target-dependent cost reduction (Ajani's Response), enters-tapped MoveZone (Teacher's Pest), Exile-as-cost
-  (Postmortem Professor) — the graveyard-recursion trio is complete. Each subsystem built as the general CR capability, not the minimal hack (the big three still
+  (Postmortem Professor), **graveyard-functioning triggers + MayPayCost (Killian's Confidence)** — the entire
+  graveyard-recursion/graveyard-ability vein is now cleared. No-rewind recorded as a pragmatic economy (transactional
+  pending-cast is the sanctioned evolution, per the GRE model) in WHITEBOARD_MODEL §2.6. Each subsystem built as the general CR capability, not the minimal hack (the big three still
   ahead: Lessons/Learn, Planeswalkers, prepare-DFCs). **sos-cards-9 finished the S12 target-dependent
   cost-reduction sub-cap** (the piece agent-8 deferred as risky): `CostReductionCondition::{State|TargetMatches}`
   + `effective_cast_cost(TargetCtx::{Optimistic|Chosen})`; `cast_spell` recomputes cost from chosen targets and

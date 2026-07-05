@@ -29,6 +29,18 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
   the source, moves chosen cards to Exile) — it was defined-but-unpaid. → **Postmortem Professor** ({1}{B}
   can't-block Zombie + attack drain + `{1}{B}`,exile-an-I/S-from-gy graveyard-recursion). Reusable for
   future escape/delve.
+- **Generalized the target-affordability filter** (lead note): consumes each candidate's full effective cost
+  instead of special-casing "reduction present", so a future target-dependent cost *increase* works by
+  construction. Recorded no-rewind as a pragmatic economy (transactional pending-cast = the sanctioned evolution,
+  GRE model) in WHITEBOARD_MODEL §2.6 + ledger systemic notes; flagged the counterspell StackObject-candidate gap.
+- **Graveyard-functioning triggers (new class) + Killian's Confidence. 595→598 tests.** Lead-approved Design B
+  generalized: `Ability::FunctionsFrom(Vec<Zone>)` marker (battlefield is the implicit default zone-of-function,
+  only deviating cards carry the marker — CR 113.6, zero churn) + a `collect_triggers` graveyard scan
+  (`queue_graveyard_functioning_triggers`, reuses `queue_self_triggers`). Plus a batched
+  `EventPattern::YouDealCombatDamageToPlayer` (`GameEvent::CombatDamageToPlayerBy`, once per controller per
+  combat-damage step, broadcast from `deal_combat_substep`) and `Effect::MayPayCost{cost,then}` ("you may pay …;
+  if you do, …" — the mana analogue of `IfYouDo`, broadly reusable). → **Killian's Confidence** (pump+draw spell +
+  the graveyard trigger; real-path test drives combat→trigger→pay {W/B}→return-self, plus the unpaid-stays path).
 
 ## 2026-07-03 (sos-cards-7)
 

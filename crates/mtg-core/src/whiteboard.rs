@@ -305,6 +305,25 @@ impl EngineCore {
                 }
                 did
             }
+            // "You may pay `cost`. If you do, `then`." — the mana/cost analogue of `IfYouDo`. Ask the
+            // resolving ability's controller (only if the cost is payable); on payment, run `then`.
+            // Flush staged actions first so `then` sees committed state (mirrors CounterUnlessPay).
+            Effect::MayPayCost { cost, then } => {
+                self.flush_pending(wb);
+                let payer = ctx.controller.unwrap_or(PlayerId(0));
+                let src = ctx.source.unwrap_or(ObjId(0));
+                let pay = self.can_pay_cost(payer, src, cost)
+                    && matches!(
+                        self.ask(payer, &DecisionRequest::Confirm { kind: ConfirmKind::MayEffect }),
+                        DecisionResponse::Bool(true),
+                    );
+                if pay {
+                    self.pay_cost(payer, src, cost);
+                    self.interpret(then, ctx, sid, wb, cursor)
+                } else {
+                    false
+                }
+            }
             // Conditional (CR 603.4 / intervening-if / "if …"): evaluated here (not only in
             // `materialize`) so an *interactive* branch (a conditional Discard/Surveil/Search — Muse
             // Seeker's "discard a card unless five or more mana …") actually runs. A **targeted**
@@ -1312,6 +1331,7 @@ impl EngineCore {
             | Effect::Discard { .. }
             | Effect::Counter { .. }
             | Effect::CounterUnlessPay { .. }
+            | Effect::MayPayCost { .. }
             | Effect::Sacrifice { .. }
             | Effect::Surveil { .. }
             | Effect::LookAndPick { .. }

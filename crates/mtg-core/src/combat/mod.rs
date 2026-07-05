@@ -418,6 +418,16 @@ impl EngineCore {
         if pending.is_empty() {
             return;
         }
+        // Controllers whose creatures dealt combat damage to a player this step (CR 510.1c) — for the
+        // batched `YouDealCombatDamageToPlayer` trigger, fired once per such controller (Killian's).
+        let mut dealt_to_player: std::collections::BTreeSet<PlayerId> = std::collections::BTreeSet::new();
+        for (target, amount, source) in &pending {
+            if *amount > 0 && matches!(target, Target::Player(_)) {
+                if let Some(o) = self.state.objects.get(source) {
+                    dealt_to_player.insert(o.controller);
+                }
+            }
+        }
         let mut wb = Whiteboard::new(WbReason::CombatDamage, ResolutionCtx::default());
         for (target, amount, source) in pending {
             wb.push(Action::Damage {
@@ -428,6 +438,9 @@ impl EngineCore {
             });
         }
         self.commit(wb);
+        for controller in dealt_to_player {
+            self.broadcast(crate::agent::GameEvent::CombatDamageToPlayerBy { controller });
+        }
     }
 
     /// Apply creature-death SBAs immediately (between the two combat-damage steps, CR 510.4):

@@ -286,6 +286,15 @@ pub enum Effect {
         cost: Box<Effect>,
         reward: Box<Effect>,
     },
+    /// "You may pay `cost`. If you do, [`then`]." (CR — the mana/cost analogue of [`IfYouDo`], whose
+    /// `cost` is an *effect*; this one pays a real [`Cost`], e.g. `{W/B}` mana.) The resolving
+    /// ability's controller is asked to pay iff the cost is payable; on payment `then` runs. Killian's
+    /// Confidence ("you may pay {W/B}; if you do, return this from your graveyard to your hand"). A
+    /// broadly-reusable leaf — "you may pay …, if you do …" is everywhere in modern sets.
+    MayPayCost {
+        cost: Cost,
+        then: Box<Effect>,
+    },
     /// Modal: choose `min..=max` of `modes` (CR 700.2).
     Modal {
         modes: Vec<Mode>,
