@@ -607,6 +607,40 @@ impl EngineCore {
                 }
                 true
             }
+            // "Reveal from the top until you reveal a `filter` card; put it into hand, rest on the bottom
+            // in random order" (Page, Loose Leaf's Grandeur). Reveal-until analogue of Cascade. Imperative
+            // (library scan + rng), so it lives here. Flush staged actions first.
+            Effect::RevealFromTopUntilToHand { filter } => {
+                self.flush_pending(wb);
+                let player = ctx.controller.unwrap_or(self.state.active_player);
+                // Snapshot the library top-first to avoid borrowing `self` twice under the filter check.
+                let top_first: Vec<ObjId> =
+                    self.state.player(player).library.iter().rev().copied().collect();
+                let mut revealed_nonmatch: Vec<ObjId> = Vec::new();
+                let mut hit: Option<ObjId> = None;
+                for card in top_first {
+                    if self.count_filter_matches(card, filter) {
+                        hit = Some(card);
+                        break;
+                    }
+                    revealed_nonmatch.push(card);
+                }
+                // The matching card goes to hand (CR 701.18 reveal, then move).
+                if let Some(h) = hit {
+                    let owner = self.state.object(h).owner;
+                    self.state.move_object(h, Zone::Hand, owner);
+                    self.broadcast(GameEvent::ObjectMoved { obj: h, to: Zone::Hand });
+                }
+                // The rest go on the bottom (front of the vec) in a random order.
+                let mut rest = revealed_nonmatch;
+                self.state.rng.shuffle(&mut rest);
+                let libv = &mut self.state.player_mut(player).library;
+                libv.retain(|o| !rest.contains(o));
+                for &c in rest.iter().rev() {
+                    libv.insert(0, c);
+                }
+                true
+            }
             // "Mill `count`, then put a creature card from among them onto the battlefield" (Bind to
             // Life). Mill from `who`'s own library, capturing the milled cards, then (mandatory, if any
             // creature was milled) let them choose one to put onto the battlefield — theirs (owner ==
@@ -2224,6 +2258,7 @@ impl EngineCore {
             | Effect::CastForFree { .. }
             | Effect::ExileTopUntilManaValueMayCastFree { .. }
             | Effect::MillThenPutCreatureOntoBattlefield { .. }
+            | Effect::RevealFromTopUntilToHand { .. }
             | Effect::ReanimateUnderControl { .. }
             | Effect::Blink { .. }
             | Effect::ExileReturnNextEndStep { .. }

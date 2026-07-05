@@ -4892,6 +4892,8 @@ impl Engine {
             CardFilter::All(fs) => fs.iter().all(|f| self.enter_filter_matches(obj, f, watcher_controller, source)),
             CardFilter::AnyOf(fs) => fs.iter().any(|f| self.enter_filter_matches(obj, f, watcher_controller, source)),
             CardFilter::Not(f) => !self.enter_filter_matches(obj, f, watcher_controller, source),
+            // "a card named X" (CR 201.2) — read the object's name (Page's Grandeur discard cost).
+            CardFilter::Named(n) => self.state.objects.get(&obj).is_some_and(|o| o.chars.name == *n),
             _ => false,
         }
     }

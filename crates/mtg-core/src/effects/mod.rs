@@ -359,6 +359,15 @@ pub enum Effect {
     /// [`ExileTopUntilManaValueMayCastFree`] (exile-until-total-MV) — here it's exile-until-one-cheaper
     /// + random-bottom.
     Cascade,
+    /// "Reveal cards from the top of your library until you reveal a `filter` card. Put that card into
+    /// your hand and the rest on the bottom of your library in a random order" (Page, Loose Leaf's
+    /// Grandeur — `filter` = instant/sorcery). Reveals from the top one at a time until a match (or the
+    /// library empties); the match goes to the controller's hand, every earlier revealed card is bottomed
+    /// in a random order (`state.rng`). Imperative (scans the library, uses rng), so it lives in
+    /// `interpret`. The reveal-until analogue of [`Effect::Cascade`] (which exiles-until + free-casts).
+    RevealFromTopUntilToHand {
+        filter: CardFilter,
+    },
     /// "This creature becomes prepared" (SoS "Prepare" DFCs). Sets the `prepared` status on the
     /// ability's source (`ctx.source`) — every "becomes prepared" clause (enters-prepared,
     /// at-the-beginning-of-your-first-main, whenever-this-attacks, landfall, an activated ability, …)
