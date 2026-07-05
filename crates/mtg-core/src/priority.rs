@@ -717,6 +717,10 @@ impl Engine {
             self.state.players[i].cards_drawn_this_turn = 0;
             self.state.players[i].instants_sorceries_cast_this_turn = 0;
         }
+        // Expire "this turn" floating replacements (CR 614 / 514 cleanup): a rider created on turn N
+        // (until_turn = N) is gone once a later turn begins.
+        let turn = self.state.turn_number;
+        self.state.floating_replacements.retain(|f| f.until_turn >= turn);
         // "you put a counter on this creature this turn" is per-turn and read on EACH end step, so
         // reset the flag on every permanent (not just the active player's).
         let all: Vec<ObjId> = self.state.objects.keys().copied().collect();
@@ -2854,13 +2858,16 @@ impl Engine {
                         Some(o) if o.zone == Zone::Battlefield => (o.owner, o.controller),
                         _ => continue,
                     };
-                    if self.state.move_object(*creature, Zone::Graveyard, owner) {
-                        self.state.player_mut(controller).creatures_died_this_turn += 1;
-                        self.broadcast(GameEvent::PermanentDied { obj: *creature });
-                        self.broadcast(GameEvent::ObjectMoved {
-                            obj: *creature,
-                            to: Zone::Graveyard,
-                        });
+                    // A "would die → exile instead" replacement (CR 614, Wilt in the Heat) redirects
+                    // this SBA death to exile — in which case the creature did NOT die (CR 700.4), so
+                    // no `PermanentDied` / dies-count.
+                    let dest = self.death_zone_for(*creature);
+                    if self.state.move_object(*creature, dest, owner) {
+                        if dest == Zone::Graveyard {
+                            self.state.player_mut(controller).creatures_died_this_turn += 1;
+                            self.broadcast(GameEvent::PermanentDied { obj: *creature });
+                        }
+                        self.broadcast(GameEvent::ObjectMoved { obj: *creature, to: dest });
                     }
                 }
                 StateBasedAction::AuraFallsOff { aura } => {
@@ -3938,6 +3945,7 @@ fn collect_specs_into(effect: &Effect, out: &mut Vec<TargetSpec>) {
         Effect::Earthbend { target: EffectTarget::Target(spec), .. } => out.push(spec.clone()),
         // Exile targets "target card from a graveyard" etc. (CR 601.2c).
         Effect::Exile { what: EffectTarget::Target(spec) } => out.push(spec.clone()),
+        Effect::ExileIfWouldDie { what: EffectTarget::Target(spec) } => out.push(spec.clone()),
         // Impulse-play exiles a targeted card (Practiced Scrollsmith's graveyard card).
         Effect::ExileForPlay { what: EffectTarget::Target(spec), .. } => out.push(spec.clone()),
         // "Return target card from a zone …" — a chosen target (Pull from the Grave's graveyard→hand,

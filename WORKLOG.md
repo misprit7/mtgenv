@@ -52,6 +52,15 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
   triggering amount onto `x` so the effect reads "that much" via `ValueExpr::X`. Untouchable (no SBA scans
   Command). Composed agent-9's FunctionsFrom + the token-def pattern (didn't reinvent). → **Dellian's −6 emblem**
   ("whenever you gain life, target opponent loses that much") → **Dellian is now FULLY FAITHFUL**.
+- **FLOATING DELAYED-REPLACEMENTS subsystem (CR 614) — lead-greenlit; the "known gap" is filled. 611→616 tests
+  green.** `GameState.floating_replacements` (general container: scope + `ActionPattern` + serde-safe
+  `FloatingRewrite` + until_turn + one_shot), consulted by the SAME rewrite pass as printed statics (CR 616.1f
+  ordering preserved). `Effect::ExileIfWouldDie` → "if it would die this turn, exile it instead". **"Dies" = ANY
+  battlefield→graveyard move** (`ActionPattern::WouldDie` covers destruction/sacrifice/legend-rule). Load-bearing
+  fixes: SBA creature-death AND `interpret_sacrifice` took a direct `move_object` that bypassed replacements —
+  both now route through a shared `death_zone_for`; also **revived the dead `WouldBeDestroyed`/`WouldDie` static
+  path** (`affected_object` never covered `Destroy`). Scope invalidates on zone change (CR 400.7) + expires at
+  turn start. → **Wilt in the Heat** (165→166 authored). Unblocks Wildgrowth Archaic + the Dawning Archaic rider.
 
 ## 2026-07-04 (sos-cards-9)
 

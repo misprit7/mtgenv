@@ -16,7 +16,7 @@ use std::sync::Arc;
 
 use crate::basics::{CardType, Color, CounterBag, CounterKind, ManaCost, ManaPool, Phase, Status, Zone};
 use crate::cards::{CardDb, CardDef};
-use crate::effects::ability::Keyword;
+use crate::effects::ability::{ActionPattern, FloatingRewrite, Keyword};
 use crate::effects::action::{Action, DelayedTriggerEvent};
 use crate::combat::CombatState;
 use crate::ids::{ObjId, PlayerId, StackId, Timestamp};
@@ -323,6 +323,27 @@ pub struct DelayedTrigger {
     pub actions: Vec<Action>,
 }
 
+/// A **floating replacement effect** (CR 614) created at resolution and scoped to a single object for
+/// a duration — the general container for "if [scope] would [pattern], [rewrite] instead" riders
+/// (Wilt in the Heat: "if that creature would die this turn, exile it instead"). Kept general
+/// (pattern + rewrite + scope + duration + one-shot) so future "would deal damage"-style floaters ride
+/// the same rails. Consulted by the same rewrite pass as printed statics (`GameState.floating_replacements`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FloatingReplacement {
+    /// The specific object this rider watches (CR 400.7: it is a *new* object if it changes zones, so
+    /// the rider is invalidated when `scope` leaves the battlefield — it never chases the object back).
+    pub scope: ObjId,
+    /// What action, on `scope`, this replaces (e.g. `WouldDie`).
+    pub pattern: ActionPattern,
+    /// How the matched action is rewritten (serde-safe subset of `Rewrite`).
+    pub rewrite: FloatingRewrite,
+    /// Last turn (inclusive) this rider is active — removed at the start of a later turn (CR 514
+    /// cleanup / "this turn" durations).
+    pub until_turn: u32,
+    /// Removed the first time it applies (CR 614.5-style single use) — a one-shot "exile it instead".
+    pub one_shot: bool,
+}
+
 /// The whole game (CR 100s). Cheaply cloneable & serializable for snapshots/replay.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GameState {
@@ -357,6 +378,14 @@ pub struct GameState {
     /// "until end of turn" pumps, animations (Earthbend), etc. Folded into the layer system
     /// (`chars::compute`) alongside printed statics. Real game state (serialized for snapshot/replay).
     pub continuous_effects: Vec<crate::chars::ContinuousEffect>,
+    /// **Floating replacement effects** (CR 614) created by resolution and scoped to a specific object
+    /// for a duration — e.g. "if that creature would die this turn, exile it instead" (Wilt in the
+    /// Heat). Consulted by the same rewrite pass as permanents' printed `Ability::Replacement`
+    /// statics, so CR 616.1 ordering keeps working. Real game state (serialized), so the rewrite is a
+    /// serde-safe [`FloatingRewrite`], not a [`crate::effects::ability::Rewrite`] (which carries an
+    /// `Effect`). Auto-invalidated when the scoped object changes zones (CR 400.7) and at turn expiry.
+    #[serde(default)]
+    pub floating_replacements: Vec<FloatingReplacement>,
     /// Armed delayed triggered abilities (CR 603.7): "when [watching] dies/is exiled, do …". The
     /// engine fires (and consumes) one when its watched object leaves the battlefield. Real state.
     pub delayed_triggers: Vec<DelayedTrigger>,
@@ -415,6 +444,7 @@ impl GameState {
             trigger_targeting_source: BTreeMap::new(),
             combat: None,
             continuous_effects: Vec::new(),
+            floating_replacements: Vec::new(),
             delayed_triggers: Vec::new(),
             last_known: BTreeMap::new(),
             game_over: false,
@@ -670,6 +700,11 @@ impl GameState {
             let chars = self.computed(id);
             let controller = self.objects.get(&id).map(|o| o.controller).unwrap_or(from_owner);
             self.last_known.insert(id, Lki { chars, controller });
+            // CR 400.7: an object leaving the battlefield becomes a *new* object; floating replacement
+            // riders scoped to it (e.g. "if that creature would die this turn, exile it instead") are
+            // invalidated so they never chase the object back if it returns. (A death that was itself
+            // redirected to exile already consumed its one-shot rider in the rewrite pass.)
+            self.floating_replacements.retain(|f| f.scope != id);
         }
         // Remove from the source zone vector.
         if let Some(v) = self.player_mut(from_owner).zone_vec_mut(from_zone) {

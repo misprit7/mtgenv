@@ -3,6 +3,7 @@
 //! replacement/prevention pass rewrites these (CR 614/615/616); commit executes the survivors
 //! and emits an `Event` per completed action.
 
+use super::ability::{ActionPattern, FloatingRewrite};
 use super::target::TokenSpec;
 use crate::basics::{CounterKind, DamageKind, Target, Zone, ZonePos};
 use crate::ids::{ObjId, PlayerId, StackId};
@@ -69,6 +70,16 @@ pub enum Action {
     CreateEmblem {
         emblem_grp: u32,
         controller: PlayerId,
+    },
+    /// Register a floating replacement effect (CR 614) scoped to `scope` until `until_turn` — e.g.
+    /// "if that creature would die this turn, exile it instead". Pushed into `GameState.floating_
+    /// replacements`; consulted by the rewrite pass on future actions.
+    AddFloatingReplacement {
+        scope: ObjId,
+        pattern: ActionPattern,
+        rewrite: FloatingRewrite,
+        until_turn: u32,
+        one_shot: bool,
     },
     AttachTo {
         attachment: ObjId,

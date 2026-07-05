@@ -20,7 +20,9 @@ use crate::agent::{
     ReplacementOption, SelectReason,
 };
 use crate::basics::{CardType, Color, CounterKind, DamageKind, Target, Zone, ZoneDest, ZonePos};
-use crate::effects::ability::{Ability, ActionPattern, Keyword, Rewrite, StaticContribution};
+use crate::effects::ability::{
+    Ability, ActionPattern, FloatingRewrite, Keyword, Rewrite, StaticContribution,
+};
 use crate::effects::condition::{Condition, Duration};
 use crate::effects::action::{
     Action, DelayedTriggerEvent, MoveCause, ResolutionCtx, Whiteboard, WbReason,
@@ -38,6 +40,9 @@ struct Applicable {
     idx: usize,
     rewrite: Rewrite,
     description: String,
+    /// `Some(i)` if this comes from `GameState.floating_replacements[i]` (a resolution-created
+    /// floating rider) rather than a printed static; the loop removes a one-shot floating on apply.
+    floating_idx: Option<usize>,
 }
 
 /// The object an action's outcome lands on (for finding applicable replacement effects).
@@ -46,6 +51,12 @@ fn affected_object(action: &Action) -> Option<ObjId> {
         Action::MoveZone { obj, to: Zone::Battlefield, .. } => Some(*obj),
         Action::Damage { target: Target::Object(o), .. } => Some(*o),
         Action::AddCounters { obj, .. } => Some(*obj),
+        // Death actions (CR 700.4 — battlefield→graveyard): destruction, sacrifice, and a direct
+        // "put into its owner's graveyard" move. The `WouldDie` pattern (which enforces that the
+        // object is on the battlefield) filters non-death graveyard moves like mill/discard.
+        Action::Destroy { obj, .. } => Some(*obj),
+        Action::Sacrifice { obj, .. } => Some(*obj),
+        Action::MoveZone { obj, to: Zone::Graveyard, .. } => Some(*obj),
         _ => None,
     }
 }
@@ -64,6 +75,7 @@ fn describe_rewrite(rw: &Rewrite) -> String {
         Rewrite::EntersTapped => "enters tapped".to_string(),
         Rewrite::EntersTappedUnless(_) => "enters tapped unless …".to_string(),
         Rewrite::EntersTappedUnlessPay { life } => format!("enters tapped unless you pay {life} life"),
+        Rewrite::ExileInstead => "exile instead of dying".to_string(),
     }
 }
 
@@ -742,8 +754,12 @@ impl EngineCore {
         let sacrificed = chosen.len();
         for obj in chosen {
             let owner = self.state.object(obj).owner;
-            self.state.move_object(obj, Zone::Graveyard, owner);
-            self.broadcast(GameEvent::ObjectMoved { obj, to: Zone::Graveyard });
+            // A "would die → exile instead" rider (CR 614) redirects a sacrifice — a battlefield→
+            // graveyard death (CR 700.4) — to exile too (constraint: "dies" is any such move, not
+            // just destruction). `death_zone_for` returns Graveyard for an unaffected creature.
+            let dest = self.death_zone_for(obj);
+            self.state.move_object(obj, dest, owner);
+            self.broadcast(GameEvent::ObjectMoved { obj, to: dest });
         }
         sacrificed
     }
@@ -1264,6 +1280,19 @@ impl EngineCore {
                 let controller = ctx.controller.unwrap_or(PlayerId(0));
                 wb.push(Action::CreateEmblem { emblem_grp: *emblem, controller });
             }
+            // "If [what] would die this turn, exile it instead" (CR 614) — register a one-shot floating
+            // replacement scoped to the object for the rest of this turn (Wilt in the Heat).
+            Effect::ExileIfWouldDie { what } => {
+                if let Some(Target::Object(obj)) = self.resolve_target(what, ctx, cursor) {
+                    wb.push(Action::AddFloatingReplacement {
+                        scope: obj,
+                        pattern: ActionPattern::WouldDie(CardFilter::Any),
+                        rewrite: FloatingRewrite::ExileInstead,
+                        until_turn: self.state.turn_number,
+                        one_shot: true,
+                    });
+                }
+            }
             // C6-copy: create a token that's a copy of a permanent (CR 707.9e / 111.3). Snapshot the
             // source's copiable characteristics (its base `chars` — NOT counters/damage/auras/other
             // continuous effects, CR 707.2) into a `TokenSpec` (abilities ride along via the copied
@@ -1396,9 +1425,22 @@ impl EngineCore {
                 self.choose_replacement(affected, &applicable)
             };
             let chosen = &applicable[pick];
-            applied.push((chosen.source, chosen.idx, affected));
+            let floating_idx = chosen.floating_idx;
             let rw = chosen.rewrite.clone();
+            // Printed statics dedup by (source, ability, affected) (CR 614.5). Floating riders don't
+            // (they dedup by removal below); a floating whose rewrite changes the action — e.g.
+            // ExileInstead turning a death into an Exile — also can't re-match, so it can't loop.
+            if floating_idx.is_none() {
+                applied.push((chosen.source, chosen.idx, affected));
+            }
             self.apply_rewrite(&rw, wb, ai, affected);
+            // A one-shot floating replacement (CR 614.5) is consumed on application. `floating_idx`
+            // stays valid: nothing between the scan above and here mutates `floating_replacements`.
+            if let Some(fi) = floating_idx {
+                if self.state.floating_replacements.get(fi).is_some_and(|f| f.one_shot) {
+                    self.state.floating_replacements.remove(fi);
+                }
+            }
         }
     }
 
@@ -1437,12 +1479,61 @@ impl EngineCore {
                             idx,
                             rewrite: rewrite.clone(),
                             description: describe_rewrite(rewrite),
+                            floating_idx: None,
                         });
                     }
                 }
             }
         }
+        // Floating replacements (CR 614) created at resolution (Wilt in the Heat), scoped to a single
+        // object. Consulted by the SAME pass so CR 616.1 ordering (ChooseReplacement) applies uniformly.
+        for (fi, fr) in self.state.floating_replacements.iter().enumerate() {
+            if fr.scope != affected {
+                continue;
+            }
+            // The scope IS the source for filter/`ItSelf` purposes.
+            if self.pattern_matches(&fr.pattern, action, affected, fr.scope) {
+                let rewrite = match fr.rewrite {
+                    FloatingRewrite::ExileInstead => Rewrite::ExileInstead,
+                };
+                out.push(Applicable {
+                    source: fr.scope,
+                    idx: usize::MAX, // synthetic; floating dedup is by removal, not the `applied` key
+                    rewrite: rewrite.clone(),
+                    description: describe_rewrite(&rewrite),
+                    floating_idx: Some(fi),
+                });
+            }
+        }
         out
+    }
+
+    /// The zone a dying permanent actually moves to, after replacement effects (CR 614): `Graveyard`
+    /// normally, or `Exile` if a "would die → exile instead" rider applies (Wilt in the Heat). Used by
+    /// the death paths that take a **direct `move_object`** rather than a whiteboard `Action` — the SBA
+    /// creature-death (CR 704.5f/g/h) and sacrifice (`interpret_sacrifice`) — so they reuse the SAME
+    /// replacement machinery ([`Self::applicable_replacements`]) as the rewrite pass, keeping floating
+    /// riders + printed statics on one pipeline. A one-shot floating rider is consumed here.
+    /// (Destroy-*effect* deaths already run `Action::Destroy` through the rewrite pass — its
+    /// `Rewrite::ExileInstead` arm does the same redirect.) Only handles the exile-redirect today; a
+    /// future death-*preventing* rewrite would add the CR 616.1f `choose_replacement` path here.
+    pub(crate) fn death_zone_for(&mut self, creature: ObjId) -> Zone {
+        // Query the replacement set with a canonical death action; `WouldDie` matches it.
+        let query = Action::Destroy { obj: creature, source: None };
+        let applicable = self.applicable_replacements(&query, creature, &[]);
+        let Some(chosen) = applicable
+            .iter()
+            .find(|a| matches!(a.rewrite, Rewrite::ExileInstead))
+        else {
+            return Zone::Graveyard;
+        };
+        // Consume a one-shot floating rider (CR 614.5) as it applies.
+        if let Some(fi) = chosen.floating_idx {
+            if self.state.floating_replacements.get(fi).is_some_and(|f| f.one_shot) {
+                self.state.floating_replacements.remove(fi);
+            }
+        }
+        Zone::Exile
     }
 
     /// Ask the affected object's controller which replacement to apply first (CR 616.1f).
@@ -1498,6 +1589,19 @@ impl EngineCore {
                 ActionPattern::WouldAddCounters { kind, to },
                 Action::AddCounters { obj: o, kind: k, .. },
             ) => *o == affected && k == kind && self.filter_matches(to, affected, source),
+            // "would die" = a battlefield→graveyard move of the affected object (CR 700.4). Matches
+            // any death action (Destroy / Sacrifice / MoveZone→graveyard); requires the object to be
+            // ON the battlefield, so mill (library→graveyard) / discard (hand→graveyard) don't count.
+            (ActionPattern::WouldDie(filter), Action::Destroy { obj: o, .. })
+            | (ActionPattern::WouldDie(filter), Action::Sacrifice { obj: o, .. })
+            | (
+                ActionPattern::WouldDie(filter),
+                Action::MoveZone { obj: o, to: Zone::Graveyard, .. },
+            ) => {
+                *o == affected
+                    && self.state.objects.get(o).is_some_and(|x| x.zone == Zone::Battlefield)
+                    && self.filter_matches(filter, affected, source)
+            }
             _ => false,
         }
     }
@@ -1582,6 +1686,16 @@ impl EngineCore {
                 } else {
                     wb.actions.insert(ai + 1, Action::TapUntap { obj, tap: true });
                 }
+            }
+            // "Exile it instead of dying" (CR 614): replace the death action (Destroy / Sacrifice /
+            // MoveZone→graveyard) with an Exile of the same object, in place, so it never reaches the
+            // graveyard. Preserves the exiling source when the death action carried one.
+            Rewrite::ExileInstead => {
+                let source = match &wb.actions[ai] {
+                    Action::Destroy { source, .. } => *source,
+                    _ => None,
+                };
+                wb.actions[ai] = Action::Exile { obj, source };
             }
             // ReplaceWith / Redirect: future work.
             _ => {}
@@ -1702,6 +1816,15 @@ impl EngineCore {
             Action::Mill { player, count } => self.mill(player, count),
             Action::CreateToken { spec, controller } => self.create_token(&spec, controller),
             Action::CreateEmblem { emblem_grp, controller } => self.create_emblem(emblem_grp, controller),
+            Action::AddFloatingReplacement { scope, pattern, rewrite, until_turn, one_shot } => {
+                self.state.floating_replacements.push(crate::state::FloatingReplacement {
+                    scope,
+                    pattern,
+                    rewrite,
+                    until_turn,
+                    one_shot,
+                });
+            }
             Action::AttachTo { attachment, target: Target::Object(host) } => {
                 // Move `attachment` (an Aura/Equipment) onto `host` (CR 701.3). Re-attaching
                 // simply overwrites the old host. Marks chars dirty so the "while attached"

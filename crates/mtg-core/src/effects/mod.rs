@@ -181,6 +181,14 @@ pub enum Effect {
     CreateEmblem {
         emblem: u32,
     },
+    /// "If [`what`] would die this turn, exile it instead" (CR 614) — registers a one-shot floating
+    /// replacement ([`crate::state::FloatingReplacement`]) scoped to the object for the rest of the
+    /// turn. Wilt in the Heat's rider on the creature it damages. General: the death (battlefield→
+    /// graveyard) zone-move is redirected to exile, catching destruction, sacrifice, and legend-rule
+    /// deaths alike.
+    ExileIfWouldDie {
+        what: EffectTarget,
+    },
     /// Counter a target spell or ability (CR 701.6).
     Counter {
         what: EffectTarget,

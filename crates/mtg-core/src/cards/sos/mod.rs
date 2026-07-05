@@ -154,6 +154,7 @@ pub mod visionarys_dance;
 pub mod wildgrowth_archaic;
 pub mod wander_off;
 pub mod wild_hypothesis;
+pub mod wilt_in_the_heat;
 pub mod witherbloom_charm;
 pub mod withering_curse;
 pub mod zealous_lorecaster;
@@ -311,6 +312,7 @@ pub fn register(db: &mut CardDb) {
     wander_off::register(db);
     wild_hypothesis::register(db);
     wildgrowth_archaic::register(db);
+    wilt_in_the_heat::register(db);
     witherbloom_charm::register(db);
     withering_curse::register(db);
     zealous_lorecaster::register(db);

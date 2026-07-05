@@ -7,11 +7,28 @@ per-card triage, modeled on `SELESNYA_LANDFALL_CARDS.md`.
 ## ▶ NEXT AGENT — start here (handoff from sos-cards-10, 2026-07-04)
 
 **▶▶ sos-cards-10 HANDOFF (2026-07-04) — READ FIRST. SCOPE = FULL SET; quality bar = general CR capability,
-not the minimal hack.** 163→165 authored / **611 mtg-core tests green, tree clean** (LEAD pushes).
-**PLANESWALKERS DONE** + **EMBLEMS (CR 114 / Zone::Command) DONE** (lead-greenlit subsystem) → **Professor
-Dellian Fel is now FULLY FAITHFUL** (only Ral stays tracked-partial: its −7 coin-flip+skip-turns is
-deferred indefinitely). Shipped **2 cards + 5 reusable primitives + the emblem/command-zone subsystem**,
-each with real-path tests, `git commit --only` on the shared tree (`experiments/` untouched):
+not the minimal hack.** 163→166 authored / **616 mtg-core tests green, tree clean** (LEAD pushes).
+**PLANESWALKERS DONE** + **EMBLEMS (CR 114 / Zone::Command) DONE** + **FLOATING DELAYED-REPLACEMENTS (CR 614)
+DONE** (all lead-greenlit) → **Professor Dellian Fel FULLY FAITHFUL** + **Wilt in the Heat** shipped (only Ral
+stays tracked-partial: its −7 coin-flip+skip-turns is deferred indefinitely). Shipped **3 cards + 5 reusable
+primitives + 2 subsystems**, each with real-path tests, `git commit --only` on the shared tree:
+
+**FLOATING DELAYED-REPLACEMENTS subsystem (CR 614, commit after dc5f5da) — the "known gap" (cards/mod.rs:156)
+is now FILLED.** `GameState.floating_replacements: Vec<FloatingReplacement>` (general container: `scope` +
+`pattern: ActionPattern` + `rewrite: FloatingRewrite` (serde-safe subset of `Rewrite`) + `until_turn` +
+`one_shot`), consulted by the SAME rewrite pass as printed statics (CR 616.1f ChooseReplacement ordering
+preserved — tested). `Effect::ExileIfWouldDie` registers "if [it] would die this turn, exile it instead".
+**"Dies" = ANY battlefield→graveyard move (CR 700.4)** — `ActionPattern::WouldDie` + `Rewrite::ExileInstead`
+cover destruction, sacrifice, and (future) legend-rule; `affected_object` extended to death actions.
+⚠️ **Load-bearing fix:** SBA creature-death AND `interpret_sacrifice` took a **direct `move_object`** that
+bypassed the replacement pass — both now route through a shared `death_zone_for` (reuses `applicable_
+replacements`). Also **revived the previously-dead `WouldBeDestroyed`/`WouldDie` static-replacement path**
+(`affected_object` never covered `Destroy`, so any "would be destroyed" static was unreachable). Scope
+invalidates on zone change (CR 400.7, in `move_object`) + expires at turn start. → **Wilt in the Heat**
+(5 dmg + exile-if-dies; real-path tests: lethal-damage-exiles, sacrifice-exiles, invalidation, 2-rider
+ChooseReplacement ordering). **Unblocks Wildgrowth Archaic + the Dawning Archaic rider too.**
+
+**PLANESWALKERS + EMBLEMS (earlier this session):**
 
 **EMBLEMS subsystem (CR 114, commit after d62e155):** the engine now has a **command zone**
 (`Zone::Command` = a per-player `Player.command` vec) and emblems. An emblem is a registered def in the
@@ -914,7 +931,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Visionary's Dance | S2 | `sos` | ✅ done | look-and-pick top two |
 | Wild Hypothesis | S1 | `sos` | ⏳ | Fractal token; surveil 2 |
 | Wildgrowth Archaic | S7,mono-hybrid | `sos` | ◑ partial | converge body done; creature-cast counter-injection trigger deferred |
-| Wilt in the Heat | S9,S12 | `sos` | ⏳ | graveyard-leave conditional cost reduction |
+| Wilt in the Heat | S9,S12 | `sos` | ✅ done | S12 reduction + 5 dmg + floating "would-die→exile" delayed-replacement cap (CR 614) (`this session`) |
 | Wisdom of Ages | NoMaxHand | `sos` | ⏳ | no maximum hand size static |
 | Withering Curse | S4 | `sos` | ⏳ | Infusion: gained-life-this-turn condition |
 | Zimone's Experiment | S2 | `sos` | ⏳ | look-and-pick top five |

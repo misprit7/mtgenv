@@ -69,8 +69,14 @@ MTGA client.
 - **✅ MOBILE WEB CLIENT (2026-07-03).** Game client + lobby fully playable from a phone: mobile
   reflow (sticky prompt sheet, opp-top/you-bottom strips, log toggle), touch previews long-press-only
   (hover gated to real mice), on-screen pass-turn button. Desktop unchanged.
-- **▶ SOS FULL-SET scope (2026-07-04, user directive — T4 deferral revoked): ~165 authored, 611 mtg-core
-  tests green.** **sos-cards-10: PLANESWALKERS + EMBLEMS DONE.** Planeswalkers = verify-and-finish (all 4
+- **▶ SOS FULL-SET scope (2026-07-04, user directive — T4 deferral revoked): ~166 authored, 616 mtg-core
+  tests green.** **sos-cards-10: PLANESWALKERS + EMBLEMS + FLOATING-REPLACEMENTS DONE.** The **floating
+  delayed-replacement cap** (CR 614, lead-greenlit): `GameState.floating_replacements` (general scope+pattern+
+  rewrite+duration+one_shot container) on the same rewrite pass as printed statics; `Effect::ExileIfWouldDie`
+  ("if it would die this turn, exile it instead", where "dies" = any battlefield→graveyard move). Load-bearing:
+  SBA-death + sacrifice bypassed the replacement pass (direct move_object) → now route through `death_zone_for`;
+  revived the dead `WouldBeDestroyed`/`WouldDie` static path. → **Wilt in the Heat** (unblocks Wildgrowth Archaic
+  + the Dawning Archaic rider). **sos-cards-10: PLANESWALKERS + EMBLEMS DONE.** Planeswalkers = verify-and-finish (all 4
   loyalty points already built+tested); shipped `planeswalker()`/`loyalty_ability()` builders, `PlayerRef::Each`
   (any-number-target-players-each-do-X), a `CardFilter::ManaValue` targeting arm (was fail-closed), + **Professor
   Dellian Fel** & **Ral Zarek, Guest Lecturer**. Then the **EMBLEMS/command-zone subsystem** (lead-greenlit, CR

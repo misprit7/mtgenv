@@ -151,6 +151,20 @@ pub enum ActionPattern {
     /// Scales / Doubling Season modify "+1/+1 counters on a creature you control" — the `to`
     /// filter is the affected-object scope, often `ControlledBy(Controller)` or `ItSelf`).
     WouldAddCounters { kind: CounterKind, to: CardFilter },
+    /// A permanent matching `filter` **would die** — i.e. move from the battlefield to the graveyard
+    /// (CR 700.4): destruction (lethal damage / destroy / toughness ≤ 0), sacrifice, or the legend
+    /// rule. Patterns on the *zone move*, not just destruction, so every death path is caught. Used
+    /// by "if that creature would die this turn, exile it instead" (Wilt in the Heat).
+    WouldDie(CardFilter),
+}
+
+/// A serde-safe rewrite for a **floating** replacement effect stored in game state
+/// ([`crate::state::FloatingReplacement`]). A subset of [`Rewrite`] excluding the `ReplaceWith(Effect)`
+/// case (which can't be snapshot). The rewrite pass maps each to the corresponding [`Rewrite`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum FloatingRewrite {
+    /// Exile the object instead of it dying (CR 614 — the death zone-move is redirected to exile).
+    ExileInstead,
 }
 
 /// How a matched action is rewritten (CR 614.1). Contains an `Effect` in the "instead" case, so
@@ -183,6 +197,10 @@ pub enum Rewrite {
     /// Enter tapped **unless** the controller pays `life` life — the "shock land" pattern ("you
     /// may pay 2 life; if you don't, it enters tapped"). The controller is asked as it enters.
     EntersTappedUnlessPay { life: u32 },
+    /// Exile the object **instead of it dying** (CR 614 — Wilt in the Heat's "if that creature would
+    /// die this turn, exile it instead"): the death action (Destroy / Sacrifice / MoveZone→graveyard)
+    /// is replaced with an Exile of the same object. The `FloatingRewrite` analogue for game state.
+    ExileInstead,
 }
 
 /// A continuous/static effect's contribution to the layer system (CR 613) and/or a
