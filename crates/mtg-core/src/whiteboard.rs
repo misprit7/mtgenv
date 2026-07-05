@@ -225,6 +225,24 @@ impl EngineCore {
                 }
                 true
             }
+            // Cast the ACTUAL targeted card for free (CR 601.2f) — a granted flashback-style recast
+            // (The Dawning Archaic). Resolve the (up-to-one) target; cast it for {0} through the real
+            // pipeline; if `exile_on_leave`, flag it (via the flashback exile-on-leave-stack path) so
+            // it exiles rather than hitting the graveyard as it leaves the stack. An unchosen up-to-one
+            // target (declined) resolves to `None` — no cast. Flush staged actions first.
+            Effect::CastForFree { what, exile_on_leave } => {
+                self.flush_pending(wb);
+                if let Some(Target::Object(card)) = self.resolve_target(what, ctx, cursor) {
+                    let caster = ctx.controller.unwrap_or_else(|| self.state.object(card).owner);
+                    self.cast_spell(caster, card, CastVariant::WithoutPayingManaCost);
+                    if *exile_on_leave && self.state.object(card).zone == Zone::Stack {
+                        if let Some(o) = self.state.objects.get_mut(&card) {
+                            o.flashback_cast = true;
+                        }
+                    }
+                }
+                true
+            }
             // Ward soft-counter (CR 702.21): counter `what` unless *its controller* (the targeting
             // player, not the Ward controller) pays `cost`. They're only offered the choice if they
             // can afford it; declining or being unable to pay counters the spell/ability. Imperative
@@ -1391,6 +1409,7 @@ impl EngineCore {
             | Effect::Counter { .. }
             | Effect::CounterUnlessPay { .. }
             | Effect::CastCopy { .. }
+            | Effect::CastForFree { .. }
             | Effect::MayPayCost { .. }
             | Effect::Sacrifice { .. }
             | Effect::Surveil { .. }

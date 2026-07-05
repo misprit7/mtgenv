@@ -186,6 +186,19 @@ pub enum Effect {
         source: EffectTarget,
         controller: PlayerRef,
     },
+    /// "Cast `what` without paying its mana cost" — casts the **actual card** (not a copy), moving it
+    /// from wherever it is onto the stack and running the real cast pipeline for {0} (CR 601.2f).
+    /// Unlike [`CastCopy`] (which mints a copy that ceases to exist), this is the card itself — a
+    /// granted flashback-style recast (The Dawning Archaic: "cast target instant or sorcery card from
+    /// your graveyard without paying its mana cost"). When `exile_on_leave` is set, the freshly-cast
+    /// card is flagged to be **exiled as it leaves the stack** instead of going to the graveyard
+    /// (reusing the flashback exile-on-leave-stack path) — the Archaic's "if that spell would be put
+    /// into your graveyard, exile it instead" rider. `what` is typically an **up-to-one** target
+    /// (`min: 0`) so declining to cast = choosing no target.
+    CastForFree {
+        what: EffectTarget,
+        exile_on_leave: bool,
+    },
     /// "You get an emblem with '…'" (CR 114). Puts an emblem — an object with no characteristics
     /// other than the abilities of the registered def `emblem` (in the reserved 9000+ block) — into
     /// the controller's command zone. The emblem's ability functions from `Zone::Command` (its def
