@@ -69,13 +69,15 @@ MTGA client.
 - **✅ MOBILE WEB CLIENT (2026-07-03).** Game client + lobby fully playable from a phone: mobile
   reflow (sticky prompt sheet, opp-top/you-bottom strips, log toggle), touch previews long-press-only
   (hover gated to real mice), on-screen pass-turn button. Desktop unchanged.
-- **▶ SOS FULL-SET scope: 252/271 authored (93%, 249 faithful · 3 tracked-partial), 818 mtg-core tests green (2026-07-05,
-  sos-cards-18).** 4 fully-faithful cards + 3 reusable caps; the **clean cap-blocked tail is now EXHAUSTED**. **Burrog Barrage**
+- **▶ SOS FULL-SET scope: 254/271 authored (94%, 251 faithful · 3 tracked-partial), 823 mtg-core tests green (2026-07-05,
+  sos-cards-18).** 6 fully-faithful cards + 5 reusable caps; the **clean cap-blocked tail is now EXHAUSTED**. **Burrog Barrage**
   (new `Effect::SourcedDamage` creature-as-source "bite" primitive, flushes the +1/+0 pump before reading `PowerOfTarget` +
   `ValueExpr::InstantsSorceriesCastThisTurn`); **mill-then-play cap** (`Effect::MillThenPlay` + `Object.playable_from_graveyard` +
   graveyard offer scans) → **Ark of Hunger** + **Tablet of Discovery**; **Slumbering Trudge** (enters-with-(3−X)-stun via
-  `EntersWithCountersValue` + `EntersTappedUnless` now X-threaded). 19 unauthored, all subsystem-scale or parked (see SOS_CARDS.md
-  census + the NEXT-AGENT block). Tracked-partials still 3 (Ral, Wildgrowth, Hydro-Channeler). 0 Native hatches.
+  `EntersWithCountersValue` + `EntersTappedUnless` now X-threaded); **Divergent Equation** (dynamic {X} target count via the
+  `TARGET_COUNT_X` sentinel); **Skycoach Waypoint** (new `Effect::SetPrepared` — target creature becomes prepared/unprepared).
+  17 unauthored, all subsystem-scale or parked (see SOS_CARDS.md census + the NEXT-AGENT block). Tracked-partials still 3 (Ral,
+  Wildgrowth, Hydro-Channeler). 0 Native hatches.
 - **▶ SOS (prior — sos-cards-17 SECOND WAVE): 248/271, 803 green.** target-path dynamic-filter fix + Moseo + Sundering Archaic +
   Ennis (cards-exiled-this-turn tracker) + Snooping Page (`SelfDealsCombatDamageToPlayer`).
 - **▶ SOS (prior — sos-cards-17 FIRST WAVE): 244/271, 794 green.** **THE SPELL-COPY CONSUMERS + THE LKI-COUNTER,

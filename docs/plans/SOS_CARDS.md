@@ -6,10 +6,21 @@ per-card triage, modeled on `SELESNYA_LANDFALL_CARDS.md`.
 
 ## ▶ NEXT AGENT — start here (handoff from sos-cards-18, 2026-07-05)
 
-**▶▶ sos-cards-18 SHIPPED — 4 fully-faithful cards + 3 reusable caps. 818 mtg-core green, whole workspace builds, tree clean,
-LEAD pushes.** Census **248→252/271 authored (93%, 249 faithful · 3 tracked-partial)**, 0 Native hatches. **The clean
+**▶▶ sos-cards-18 SHIPPED — 6 fully-faithful cards + 5 reusable caps. 823 mtg-core green, whole workspace builds, tree clean,
+LEAD pushes.** Census **248→254/271 authored (94%, 251 faithful · 3 tracked-partial)**, 0 Native hatches. **The clean
 cap-blocked tail is now EXHAUSTED** — every remaining unauthored card needs a subsystem-scale cap or a lead sketch (bucketed
 below). Own-commits (`git log -S` before re-scoping — header PROCESS RULES apply):
+- **`0036255` — Divergent Equation** (dynamic **{X} target COUNT**). Instead of the 203-literal `TargetSpec` refactor: a
+  documented sentinel **`TARGET_COUNT_X` (= u32::MAX)** on `TargetSpec.max`, resolved to the chosen `{X}` at the 2 cast
+  slot-build sites (X is in scope there; `spec.max` is read at only 4 slot-build sites, never at resolution re-validation).
+  Preserves TRUE targeting (cast-locked, respondable). Effect = plain multi-target `MoveZone` (I/S from your gy → hand, like
+  Pull from the Grave) + `Ability::ExileOnResolve`. `{X}{X}{U}` = `mc.x = 2`.
+- **`aec9852` — Skycoach Waypoint** (Land: `{T}: Add {C}` + `{3},{T}: target creature becomes prepared`). New tiny
+  **`Effect::SetPrepared{what,prepared}`** — the targeted analogue of `BecomePrepared` (lowers to the existing
+  `Action::SetPrepared`); `prepared:false` is the "becomes unprepared" arm. NB this cap ALSO covers Biblioplex Tomekeeper's two
+  modes — Biblioplex is now blocked ONLY by **modal *triggered*-ability support** (its "choose up to one" is inside an ETB
+  trigger; the trigger-placement path at priority.rs:3509 doesn't `choose_modes`/collect modal targets like the modal-SPELL
+  cast path at 2493-2508 does — replicating that there is the remaining cap → unlocks Biblioplex).
 - **`2e20d09` — Burrog Barrage** — the ledger's "no new cap" was WRONG (agent-17's recheck missed two wrinkles): the
   conditional +1/+0 target sits inside a `Conditional` that `collect_specs_into` deliberately does NOT walk, AND the damage
   must read the *post-pump* power (a materialized `DealDamage` freezes its amount pre-pump). Fixed with one clean cap: new
@@ -32,11 +43,11 @@ below). Own-commits (`git log -S` before re-scoping — header PROCESS RULES app
   still route controller-relative). `{X}{G}` cost = `mc.x = 1`.
 
 **▶ RECOMMENDED NEXT — the remaining buildables are all subsystem-scale (no clean wins left); pick by appetite:**
-- **Divergent Equation** (`{X}{X}{U}` — return up to X target I/S from gy + `ExileOnResolve`). Blocker: **dynamic {X} target
-  COUNT**. `TargetSpec.max` is a fixed `u32` read at 4 slot-build sites; making it dynamic wants an `Option<ValueExpr>` field —
-  but there are **203 `TargetSpec` literals**, so it's a dedicated mechanical refactor (or model as a resolution-time `Select`
-  with `max: ValueExpr::X`, a minor "target"→"select" deviation for a self-graveyard return — cleanest quick approximation if
-  the refactor is too big).
+- **Biblioplex Tomekeeper** (`{4}` Artifact Creature — ETB "choose up to one: target creature becomes prepared / becomes
+  unprepared"). The `SetPrepared` cap is DONE; the ONLY remaining blocker is **modal *triggered*-ability support** — at
+  trigger-placement (`place_trigger`, priority.rs:3509) the effect's modes aren't chosen and modal targets aren't collected
+  (`collect_target_specs` doesn't walk `Modal`). Replicate the modal-SPELL cast path (2493-2508: `choose_modes` → store on the
+  stack object's `modes` → collect the chosen modes' target specs) at the trigger-placement site. Small, and unlocks this card.
 - **Mana Sculpt** (Counter + delayed "add {C} = mana spent to cast that spell, at your next main phase, if you control a
   Wizard"). Needs: a new time-based `DelayedTriggerEvent::AtBeginningOfYourNextMainPhase` + firing hook (mirror
   `fire_end_step_delayed_triggers`) wired into `run_step` + a way to express **delayed mana** (`DelayedAbility` only runs

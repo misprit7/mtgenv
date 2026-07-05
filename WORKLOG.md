@@ -3,7 +3,14 @@
 Short, dated entries for future-agent consumption. Newest first. One line or a few bullets
 per unit of meaningful progress. Keep it terse — detail lives in `docs/` and git history.
 
-## 2026-07-05 (SOS relay sos-cards-18 — 4 fully-faithful cards + 3 reusable caps; census 248→252/271, 803→818 green)
+## 2026-07-05 (SOS relay sos-cards-18 — 6 fully-faithful cards + 5 reusable caps; census 248→254/271, 803→823 green)
+
+- **`0036255` — Divergent Equation** (dynamic **{X} target COUNT** — "return up to X target I/S from your gy"). Sentinel
+  **`TARGET_COUNT_X` on `TargetSpec.max`** resolved to chosen `{X}` at the 2 cast slot-builds (avoids the 203-literal
+  `TargetSpec` refactor; keeps true targeting) + plain multi-target `MoveZone` + `ExileOnResolve`.
+- **`aec9852` — Skycoach Waypoint** (Land: `{T}: Add {C}` + `{3},{T}: target creature becomes prepared`). New
+  **`Effect::SetPrepared{what,prepared}`** (targeted analogue of `BecomePrepared`; also covers Biblioplex's modes — Biblioplex now
+  blocked only by modal-triggered-ability support).
 
 - **`2e20d09` — Burrog Barrage** (the flagged "no new cap" was wrong — the conditional-pump target sits in a `Conditional` the
   targeting walk skips, AND the damage must read the *post-pump* power). Fixed cleanly with a small cap: new
