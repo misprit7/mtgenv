@@ -3,7 +3,20 @@
 Short, dated entries for future-agent consumption. Newest first. One line or a few bullets
 per unit of meaningful progress. Keep it terse — detail lives in `docs/` and git history.
 
-## 2026-07-05 (SOS relay sos-cards-17 — spell-copy consumers + LKI-counter & discard subsystems; census 234→244/271, 764→794 green)
+## 2026-07-05 (SOS relay sos-cards-17 SECOND WAVE — target-path dynamic-filter fix + 4 cards; census 244→248/271, 794→803 green)
+
+- **`priority.rs` — target-path dynamic-filter fix**: `target_matches_filter` now resolves a dynamic `CardFilter::ManaValueExpr`
+  TARGET bound against a source-derived ctx (its `cast_x`/`colors_spent`). Was fail-closed `_ => false` = a dynamic-MV target
+  SILENTLY never matched (silent-inert class). Real-path tests prove enumeration (offered/not-offered by the bound).
+- **Moseo, Vein's New Dean** — Flying + ETB Pest + Infusion reanimate creature MV≤(life gained this turn) from your gy.
+- **Sundering Archaic** — Converge ETB exile opp nonland permanent MV≤(colors spent) + {2}:gy→bottom-library.
+- **Ennis, Debate Moderator** — new `cards_exiled_this_turn` tracker (+ `ValueExpr::CardsExiledThisTurn`) → end-step +1/+1;
+  ETB = `ExileReturnNextEndStep` timed-blink.
+- **Snooping Page** — new `EventPattern::SelfDealsCombatDamageToPlayer` (per-creature, queued from the source in `combat_damage`)
+  → draw+lose-1; Repartee grants CantBeBlocked.
+- NB: found `Player.instants_sorceries_cast_this_turn` ALREADY exists → **Burrog Barrage** buildable with no new cap (nearest win).
+
+## 2026-07-05 (SOS relay sos-cards-17 FIRST WAVE — spell-copy consumers + LKI-counter & discard subsystems; census 234→244/271, 764→794 green)
 
 - **9 fully-faithful cards + 1 tracked-partial + cleared Colossus + 7 reusable caps.** The clean-compose tail is now EXHAUSTED.
 - **`898b23b` — Mica, Reader of Ruins** (sac-artifact spell-copy, pure Silverquill re-skin + Ward). 0 new cap.

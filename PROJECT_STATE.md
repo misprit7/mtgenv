@@ -69,8 +69,14 @@ MTGA client.
 - **✅ MOBILE WEB CLIENT (2026-07-03).** Game client + lobby fully playable from a phone: mobile
   reflow (sticky prompt sheet, opp-top/you-bottom strips, log toggle), touch previews long-press-only
   (hover gated to real mice), on-screen pass-turn button. Desktop unchanged.
-- **▶ SOS FULL-SET scope: 244/271 authored (90%, 241 faithful · 3 tracked-partial), 794 mtg-core tests green (2026-07-05,
-  sos-cards-17).** **THE SPELL-COPY CONSUMERS + THE LKI-COUNTER, DISCARDED-THIS-RESOLUTION & MOVE-COUNTERS SUBSYSTEMS.** 10
+- **▶ SOS FULL-SET scope: 248/271 authored (91.5%, 245 faithful · 3 tracked-partial), 803 mtg-core tests green (2026-07-05,
+  sos-cards-17).** Second wave on top of the first: the **target-path dynamic-filter fix** (`target_matches_filter` resolves a
+  dynamic `ManaValueExpr` TARGET bound against a source-derived ctx — was fail-closed silent-inert) → **Moseo Vein's New Dean**
+  + **Sundering Archaic**; the **cards-exiled-this-turn tracker** → **Ennis, Debate Moderator**; **`SelfDealsCombatDamageToPlayer`**
+  per-creature combat event → **Snooping Page**. Tracked-partials now 3 (Ral, Wildgrowth, Hydro-Channeler). 23 unauthored;
+  nearest clean win = Burrog Barrage (no new cap — `instants_sorceries_cast_this_turn` exists). See SOS_CARDS.md census.
+- **▶ SOS (prior — sos-cards-17 FIRST WAVE): 244/271, 794 green.** **THE SPELL-COPY CONSUMERS + THE LKI-COUNTER,
+  DISCARDED-THIS-RESOLUTION & MOVE-COUNTERS SUBSYSTEMS.** 10
   fully-faithful cards (Mica, Borrowed Knowledge, Aziza, Wisdom of Ages, Mind into Matter, Practiced Offense, Ambitious
   Augmenter, Scolding Administrator, Mind Roots, **Tester of the Tangential**) + **cleared Colossus AND Tester from tracked-
   partial**. 9 reusable caps: **`Effect::DiscardChosen` + `ValueExpr::DiscardedThisResolution`** (per-resolution discard

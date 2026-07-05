@@ -6,9 +6,11 @@ per-card triage, modeled on `SELESNYA_LANDFALL_CARDS.md`.
 
 ## ▶ NEXT AGENT — start here (handoff from sos-cards-17, 2026-07-05)
 
-**▶▶ sos-cards-17 SHIPPED — 10 fully-faithful cards + cleared 2 tracked-partials (Colossus, Tester) + 9 reusable caps. 794
-mtg-core green, whole workspace builds, tree clean, LEAD pushes.** Census **234→244/271 authored (90%, 241 faithful · 3
-tracked-partial)**, 0 Native hatches. Own-commits (`git log -S` before re-scoping — header PROCESS RULES apply):
+**▶▶ sos-cards-17 SHIPPED — 14 fully-faithful cards + cleared 2 tracked-partials (Colossus, Tester) + 12 reusable caps. 803
+mtg-core green, whole workspace builds, tree clean, LEAD pushes.** Census **234→248/271 authored (91.5%, 245 faithful · 3
+tracked-partial)**, 0 Native hatches. First wave = 10 cards (Mica … Mind Roots, below); SECOND WAVE = the target-path
+dynamic-filter fix + Moseo + Sundering Archaic + Ennis + Snooping Page (see the census section). Own-commits (`git log -S`
+before re-scoping — header PROCESS RULES apply):
 - **`898b23b` — Mica, Reader of Ruins** — sac-artifact spell-copy; a pure Silverquill re-skin (`SpellCast(I/S) → Optional{
   IfYouDo{ Sacrifice(artifact) → CopySpellOnStack{Triggering, new targets} } }`) + `ward_pay_life(3)`. 0 new cap.
 - **`a4eb133` — discarded-this-resolution cap → Borrowed Knowledge + Colossus cleared.** New `Effect::DiscardChosen` ("discard
@@ -42,9 +44,17 @@ tracked-partial)**, 0 Native hatches. Own-commits (`git log -S` before re-scopin
 - **Mind Roots** — new `Effect::PutDiscardedOntoBattlefield{ filter, max }` (select among the discard scratch → bf tapped under
   YOUR control, owner unchanged) over `TargetPlayer` + `Discard{ChosenTarget(0), 2}`.
 
-### ★ FULL-SET CENSUS (sos-cards-17, 2026-07-05, Scryfall-diff verified) — 244/271 authored (90%)
+### ★ FULL-SET CENSUS (sos-cards-17, 2026-07-05, Scryfall-diff verified) — 248/271 authored (91.5%)
 Method: `comm -23` of the 271 sos front-face names vs every card-name string literal in `crates/mtg-core/src/cards/**`.
-**244 authored (241 fully-faithful · 3 tracked-partial) · 27 unauthored. 0 Native hatches. 794 mtg-core green.**
+**248 authored (245 fully-faithful · 3 tracked-partial) · 23 unauthored. 0 Native hatches. 803 mtg-core green.**
+
+**▶ sos-cards-17 SECOND WAVE (after the census above, all committed):** the **target-path dynamic-filter fix**
+(`target_matches_filter` resolves a `ManaValueExpr` TARGET bound against a source-derived ctx — was fail-closed silent-inert) →
+**Moseo Vein's New Dean** (reanimate MV≤life-gained) + **Sundering Archaic** (Converge exile MV≤colors-spent); the
+**cards-exiled-this-turn tracker** (`Player.cards_exiled_this_turn` + `ValueExpr::CardsExiledThisTurn`) → **Ennis, Debate
+Moderator**; the **`SelfDealsCombatDamageToPlayer`** per-creature combat event → **Snooping Page**. NB discovered
+`Player.instants_sorceries_cast_this_turn` ALREADY EXISTS → **Burrog Barrage** is now buildable faithfully (was flagged as an
+over-count risk; it isn't).
 
 **The 3 TRACKED-PARTIAL** (`grep -rln '.incomplete()' cards/sos`): Ral Zarek Guest Lecturer (−7 coin-flip+skip-turns),
 Wildgrowth Archaic (enters-with-extra-counters-keyed-to-another-spell), Hydro-Channeler (mana-ability-with-mana-cost).
@@ -62,31 +72,29 @@ ability target].)*
   Tomekeeper (make-target-prepared/unprepared), Great Hall of the Biblioplex (mana land + becomes-a-creature layer),
   Choreographed Sparks (mode1 copy-target-I/S = the CopySpellOnStack Target arm, BUILDABLE; mode2 copy-creature-spell→token +
   grant haste/sac = a creature-spell-copy-to-token cap).
-- **Cap-blocked buildable (14, each ONE new cap):**
-  - **▶▶ HIGHEST-YIELD NEXT CAP — target-path dynamic-filter resolution** (`target_candidates` is `&self`/ctx-free, so a
-    `ManaValueExpr`/`ColorsSpent`-keyed TARGET filter never matches — same class as the `interpret_search` bug I fixed). Fixing
-    it (build a source-derived ctx and `resolve_dynamic_filter` before enumerating) unlocks **Moseo Vein's New Dean** (reanimate
-    target MV≤life-gained — a legend) AND **Sundering Archaic** (Converge exile target MV≤colors-spent; its {2}:gy→bottom-library
-    is a plain targeted `MoveZone{Bottom}`). Two cards, one legend.
-  - **Snooping Page** — needs a **self**-combat-damage-to-player event (`YouDealCombatDamageToPlayer` is a per-controller batch,
-    over-triggers; `DamageDealt` is per-instance but unused/unwired). + Repartee (exists) + CantBeBlocked-until-EOT (exists).
-  - **Ennis, Debate Moderator** — cards-put-into-exile-this-turn tracker (the end-step +1/+1 condition); ETB half =
-    `ExileReturnNextEndStep` (exists).
-  - **Burrog Barrage** — `PowerOfTarget` one-sided damage (exists); "if you've cast another **I/S** this turn" needs a
-    type-filtered spell counter (`SpellsCastThisTurn` is untyped → minor over-count, or a small typed-count cap).
-  - **Divergent Equation** — dynamic **{X} target COUNT** ("up to X target I/S"); `TargetSpec.max` is a fixed `u32`. + ExileOnResolve (exists).
-  - **Ark of Hunger** / **Tablet of Discovery** — **mill-then-play-that-card** cap (Tablet is NOT authored — the ledger was
-    stale; Tablet also has a restricted mana ability). Ark's CardsLeaveYourGraveyard half = damage+gain (exists).
+- **Cap-blocked buildable (10 left; the 4 easiest were shipped this session — Moseo, Sundering Archaic, Ennis, Snooping Page):**
+  - **▶▶ Burrog Barrage — NOW BUILDABLE, NO NEW CAP** (recheck confirmed `Player.instants_sorceries_cast_this_turn` exists +
+    `ValueExpr::PowerOfTarget` for the one-sided "deals damage equal to its power"). Two targets (creature you control + up-to-one
+    opp creature) + a conditional +1/+0 gated on `instants_sorceries_cast_this_turn ≥ 2`. Nearest clean win.
+  - **Divergent Equation** — dynamic **{X} target COUNT** ("up to X target I/S"); `TargetSpec.max` is a fixed `u32` (needs a
+    dynamic max). + `ExileOnResolve` (exists, from Wisdom of Ages).
+  - **Ark of Hunger** / **Tablet of Discovery** — **mill-then-play-that-card** cap (Tablet is NOT authored — ledger was stale;
+    Tablet also has a restricted mana ability). Ark's CardsLeaveYourGraveyard half = damage+gain (exists).
   - **Rubble Rouser** — loot ETB (exists) + `{T}, Exile-from-gy: Add {R}` + reflexive damage = mana-ability-with-cost-and-rider
     (same class as Hydro-Channeler / Treasure).
   - **Slumbering Trudge** — stun counters (enters-with-stun-keyed-to-X + untap-replacement).
   - **Mana Sculpt** — Counter (exists) + delayed "add {C} at your next main phase" (delayed mana).
   - **Archaic's Agony** — Converge damage + excess-damage impulse-exile (excess-damage tracking + multi-card impulse).
+  - **Great Hall of the Biblioplex** — mana land ({T}:{C}; {T},pay-1-life:any-color restricted-to-I/S) + a `{5}: becomes a 2/4
+    Wizard` layer-4/7 animation. The mana halves are near-free; the animation is the cap.
+  - **Choreographed Sparks** — mode1 (copy target I/S spell you control) = the `CopySpellOnStack` `Target` arm (wired); mode2
+    (copy a creature spell → token + grant haste/sac) = a creature-spell-copy-to-token cap.
 
-*(sos-cards-17 done at a clean boundary. The clean-compose tail is EXHAUSTED — every remaining card needs a genuinely new cap
-or a lead design sketch. Recommended next: the **target-path dynamic-filter fix** (2 cards incl. a legend), then Ennis's
-exile-this-turn tracker, then the Snooping-Page self-combat-damage event. `git log -S` + READ THE CODE before believing any
-claim.)*
+*(sos-cards-17 done at a clean boundary after a long session — 14 cards + 12 caps + census. **Recommended next: Burrog Barrage
+(NO new cap — nearest clean win), then the remaining cap-blocked (Divergent Equation dynamic-X-target, mill-then-play for
+Ark/Tablet).** The 9 special one-offs each want a lead 3-line sketch as you reach them; the 3 Natives + Fractalize stay parked.
+`git log -S` + READ THE CODE before believing any claim — the ledger drifts, and I found `instants_sorceries_cast_this_turn`
+already existed after it was flagged missing.)*
 
 
 **▶▶ sos-cards-16 SHIPPED — ALL 5 college Elder Dragons + Lumaret's Favor + Social Snub + 6 reusable caps. 764 mtg-core
