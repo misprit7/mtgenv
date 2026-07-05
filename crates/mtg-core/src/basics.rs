@@ -148,6 +148,23 @@ pub struct ManaCost {
     pub mono_hybrid: Vec<(u32, Color)>,
 }
 
+impl ManaCost {
+    /// Sum two mana costs (CR 601.2f — total cost = mana cost + additional mana costs). Merges
+    /// generic/colored and concatenates hybrid/mono-hybrid pips; `x` counts add. Used to check a
+    /// mana-bearing additional cast cost's affordability *jointly* with the base cost.
+    pub fn plus(&self, other: &ManaCost) -> ManaCost {
+        let mut out = self.clone();
+        out.generic += other.generic;
+        out.x += other.x;
+        for (&c, &n) in &other.colored {
+            *out.colored.entry(c).or_insert(0) += n;
+        }
+        out.hybrid.extend_from_slice(&other.hybrid);
+        out.mono_hybrid.extend_from_slice(&other.mono_hybrid);
+        out
+    }
+}
+
 impl Color {
     /// The single-letter mana symbol (CR 107.4): W/U/B/R/G, and C for colorless.
     pub fn symbol(self) -> char {

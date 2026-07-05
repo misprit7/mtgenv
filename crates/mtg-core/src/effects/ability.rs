@@ -80,6 +80,23 @@ pub enum CostComponent {
     ActivateFromGraveyard,
 }
 
+/// A spell-level **additional cost** to cast (CR 601.2b/f: "As an additional cost to cast this
+/// spell, ..."). Each `AdditionalCost` is one clause the caster must pay while casting;
+/// `options.len() > 1` is a **modal** clause ("... exile two cards from your graveyard OR pay
+/// {1}{W}") from which the caster picks one **payable** option (CR 601.2b). A card may carry
+/// several clauses (all required) via multiple [`Ability::AdditionalCost`] markers.
+///
+/// Paid through the real [`Cost`] machinery at CR 601.2f–h (the same point as the mana cost, with
+/// any mana in an option folded into the mana payment), and required by the legality mask so a
+/// spell whose additional cost can't be paid isn't offered — there is no post-payment rewind
+/// (WHITEBOARD_MODEL §2.6). A [`CostComponent::PayLife`] (or other) component referencing
+/// [`ValueExpr::X`] shares the spell's single chosen X (CR 107.3 — announced at cast even when the
+/// printed mana cost has no `{X}`, e.g. Fix What's Broken's "pay X life").
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AdditionalCost {
+    pub options: Vec<Cost>,
+}
+
 /// Timing restriction for casting/activating (CR 117.1a, 602.5d/e).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Timing {
@@ -381,6 +398,11 @@ pub enum Ability {
         duration: Duration,
         condition: Condition,
     },
+    /// A spell-level **additional cast cost** (CR 601.2b/f) — "As an additional cost to cast this
+    /// spell, …". A marker read at cast time (like [`CostReduction`], it lives in the card's
+    /// ability list rather than adding a `CardDef` field, so no `CardDef` literal needs touching).
+    /// Multiple markers = multiple required clauses. See [`AdditionalCost`].
+    AdditionalCost(AdditionalCost),
     /// A marker that this card's **triggered abilities function from the listed zone(s)** in
     /// addition to the battlefield default (CR 113.6 — "an ability functions only while its source
     /// is on the battlefield unless the ability states otherwise"). The default zone-of-function is

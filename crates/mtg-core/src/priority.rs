@@ -18,8 +18,8 @@ use crate::agent::{
 use crate::basics::{CardType, CounterKind, ManaCost, Phase, Target, Zone, ZonePos};
 use crate::subtypes::{EnchantmentType, Subtype};
 use crate::effects::ability::{
-    Ability, Cost, CostComponent, CostReductionAmount, CostReductionCondition, CostReductionScope,
-    EventPattern, Keyword, Restriction, StaticContribution, Timing,
+    Ability, AdditionalCost, Cost, CostComponent, CostReductionAmount, CostReductionCondition,
+    CostReductionScope, EventPattern, Keyword, Restriction, StaticContribution, Timing,
 };
 use crate::effects::action::{
     Action, DelayedTriggerEvent, MoveCause, ResolutionCtx, Whiteboard, WbReason,
@@ -1066,12 +1066,16 @@ impl Engine {
             }
             // Restricted (I/S-only) mana (CR 106.6) counts toward affordability iff casting an I/S.
             let is_is = chars.has_type(CardType::Instant) || chars.has_type(CardType::Sorcery);
-            // Normal cast for the mana cost, after cost-reduction statics (CR 601.2f / 118).
+            // Normal cast for the mana cost, after cost-reduction statics (CR 601.2f / 118), plus
+            // any spell-level additional cast cost (CR 601.2b/f) must be payable — no post-payment
+            // rewind exists, so an unaffordable additional cost means we don't offer the cast.
             if chars
                 .mana_cost
                 .as_ref()
                 .map(|c| self.effective_cast_cost(p, card, c, TargetCtx::Optimistic))
-                .is_some_and(|c| mana::can_pay_ex(s, p, &c, is_is))
+                .is_some_and(|c| {
+                    mana::can_pay_ex(s, p, &c, is_is) && self.additional_costs_payable(p, card, &c, is_is)
+                })
             {
                 actions.push(PlayableAction::Cast { spell: card, variant: CastVariant::Normal });
             }
@@ -1409,6 +1413,138 @@ impl Engine {
             }
         }
         true
+    }
+
+    /// Whether every spell-level **additional cast cost** clause of `card` (CR 601.2b/f) is payable
+    /// by `p`, treated as if `card` is already on the stack (601.2a — so it can't pay its own
+    /// discard/exile). `base` is the card's *effective* mana cost; a mana-bearing additional option
+    /// must be jointly affordable with it. There is **no post-payment rewind** (WHITEBOARD_MODEL
+    /// §2.6), so this gates the offer — an unaffordable additional cost means the spell isn't offered.
+    /// (Multiple mana-bearing clauses aren't checked jointly against each other — no such card exists;
+    /// each is checked against `base` alone.)
+    pub(crate) fn additional_costs_payable(
+        &self,
+        p: PlayerId,
+        card: ObjId,
+        base: &ManaCost,
+        is_is: bool,
+    ) -> bool {
+        self.state
+            .def_of(card)
+            .map(|d| d.additional_costs())
+            .unwrap_or_default()
+            .iter()
+            .all(|clause| {
+                clause.options.iter().any(|opt| self.additional_option_payable(p, card, opt, base, is_is))
+            })
+    }
+
+    /// Whether one option of an additional-cost clause is payable (CR 601.2b) — its non-mana
+    /// components (excluding the spell `card` itself, which is on the stack) and its mana folded
+    /// onto `base`.
+    fn additional_option_payable(
+        &self,
+        p: PlayerId,
+        card: ObjId,
+        opt: &Cost,
+        base: &ManaCost,
+        is_is: bool,
+    ) -> bool {
+        for c in &opt.components {
+            let ok = match c {
+                // The spell is already on the stack, so it can't discard itself — exclude `card`.
+                CostComponent::Discard(spec) => {
+                    self.discard_candidates(p, spec).iter().filter(|&&o| o != card).count() as u32
+                        >= cost_count(&spec.min)
+                }
+                // `exile_cost_candidates`/`sacrifice_candidates` already exclude the source.
+                CostComponent::Exile(spec) => {
+                    self.exile_cost_candidates(p, card, spec).len() as u32 >= cost_count(&spec.min)
+                }
+                CostComponent::Sacrifice(spec) => {
+                    self.sacrifice_candidates(p, card, spec).len() as u32 >= cost_count(&spec.min)
+                }
+                // "Pay X life": X ≥ 0 is always payable (X can be chosen as 0); a *fixed* amount
+                // needs that much life (CR 119.4 — you can't pay life you don't have).
+                CostComponent::PayLife(ValueExpr::Fixed(n)) => self.state.player(p).life as i64 >= *n,
+                _ => true,
+            };
+            if !ok {
+                return false;
+            }
+        }
+        match &opt.mana {
+            Some(m) => mana::can_pay_ex(&self.state, p, &base.plus(m), is_is),
+            None => true,
+        }
+    }
+
+    /// For each spell-level additional-cost clause (CR 601.2b/f), pick which option the caster pays
+    /// (a modal "exile two cards OR pay {1}{W}" is a caster choice; a single-option clause is
+    /// forced). Only **payable** options are offered — the offer gate guaranteed each clause has at
+    /// least one. Returns the chosen `Cost` per clause (mana folded into the cast payment by the
+    /// caller; non-mana components paid via [`pay_additional_nonmana`]).
+    fn choose_additional_options(
+        &mut self,
+        p: PlayerId,
+        card: ObjId,
+        clauses: &[AdditionalCost],
+        base: &ManaCost,
+        is_is: bool,
+    ) -> Vec<Cost> {
+        let mut chosen = Vec::new();
+        for clause in clauses {
+            let payable: Vec<&Cost> = clause
+                .options
+                .iter()
+                .filter(|o| self.additional_option_payable(p, card, o, base, is_is))
+                .collect();
+            let pick = if payable.len() <= 1 {
+                0
+            } else {
+                // Modal additional cost (CR 601.2b): the caster chooses which option to pay.
+                match self.ask(
+                    p,
+                    &DecisionRequest::ChooseNumber {
+                        reason: NumberReason::Generic,
+                        min: 0,
+                        max: (payable.len() - 1) as i64,
+                        step: 1,
+                        forbidden: Vec::new(),
+                        disallow_even: false,
+                        disallow_odd: false,
+                    },
+                ) {
+                    DecisionResponse::Number(n) => n.clamp(0, (payable.len() - 1) as i64) as usize,
+                    _ => 0,
+                }
+            };
+            if let Some(opt) = payable.get(pick).or_else(|| payable.first()) {
+                chosen.push((*opt).clone());
+            }
+        }
+        chosen
+    }
+
+    /// Pay the **non-mana** components of a chosen additional-cost option (CR 601.2f–h) — discard /
+    /// exile / sacrifice reuse the shared cost payers; "pay X life" reads `ctx.x` (the settled X) so
+    /// it matches the spell's X. The option's mana is folded into the cast's mana payment separately.
+    fn pay_additional_nonmana(&mut self, p: PlayerId, card: ObjId, opt: &Cost, ctx: &ResolutionCtx) {
+        for c in &opt.components {
+            match c {
+                CostComponent::PayLife(v) => {
+                    let amt = self.eval_value(v, ctx).max(0) as i32;
+                    self.change_life(p, -amt);
+                }
+                CostComponent::Discard(spec) => self.pay_discard(p, spec),
+                CostComponent::Exile(spec) => self.pay_exile_cost(p, card, spec),
+                CostComponent::Sacrifice(spec) => self.pay_sacrifice(p, card, spec),
+                CostComponent::TapCreatures(n) => self.pay_tap_creatures(p, card, *n),
+                // Mana is folded into the cast's mana payment; no other component appears as a
+                // spell-level additional cast cost.
+                _ => {}
+            }
+        }
     }
 
     /// Extra land plays `p` is granted by `StaticContribution::ExtraLandPlays` permissions on the
@@ -2183,6 +2319,22 @@ impl Engine {
         let cost_varies_by_target = variant == CastVariant::Normal;
         let effect = self.state.def_of(card).and_then(|d| d.spell_effect().cloned());
 
+        // Spell-level additional cast costs (CR 601.2b/f) — cloned now so they survive the mutable
+        // borrows during payment below. An additional cost that pays `X` (e.g. "pay X life") gives
+        // the spell an X to announce even when the printed mana cost has none (CR 107.3): the single
+        // chosen X is shared by the mana cost and the additional cost.
+        let additional_clauses: Vec<AdditionalCost> = self
+            .state
+            .def_of(card)
+            .map(|d| d.additional_costs().into_iter().cloned().collect())
+            .unwrap_or_default();
+        let additional_uses_x = additional_clauses
+            .iter()
+            .flat_map(|c| &c.options)
+            .flat_map(|o| &o.components)
+            .any(component_uses_x);
+        let needs_x = cost.x > 0 || additional_uses_x;
+
         // 601.2a: the card becomes a spell on top of the stack.
         let sid = self.state.mint_stack();
         self.move_to_stack(card, p);
@@ -2230,11 +2382,24 @@ impl Engine {
             specs.push(spec);
         }
 
-        // C10 / 601.2b: choose X if the cost has `{X}` (bounded by affordable mana).
-        let chosen_x = if cost.x > 0 {
-            let avail = mana::available_mana(&self.state, p);
-            let fixed = cost.generic + cost.colored.values().sum::<u32>();
-            let max_x = avail.saturating_sub(fixed) / cost.x;
+        // C10 / 601.2b: choose X if the spell has one — `{X}` in the mana cost (bounded by
+        // affordable mana) and/or an additional cost that pays X ("pay X life", bounded by life).
+        // The single chosen X (CR 107.3) is shared by both.
+        let chosen_x = if needs_x {
+            let mana_bound = if cost.x > 0 {
+                let avail = mana::available_mana(&self.state, p);
+                let fixed = cost.generic + cost.colored.values().sum::<u32>();
+                avail.saturating_sub(fixed) / cost.x
+            } else {
+                u32::MAX
+            };
+            // "Pay X life" can't exceed your life total (CR 119.4 — you can't pay life you don't have).
+            let life_bound = if additional_uses_x {
+                self.state.player(p).life.max(0) as u32
+            } else {
+                u32::MAX
+            };
+            let max_x = mana_bound.min(life_bound);
             let resp = self.ask(
                 p,
                 &DecisionRequest::ChooseNumber {
@@ -2260,7 +2425,7 @@ impl Engine {
             source: Some(card),
             kind: StackObjectKind::Spell(card),
             targets: Vec::new(),
-            x: if cost.x > 0 { Some(chosen_x) } else { None },
+            x: if needs_x { Some(chosen_x) } else { None },
             modes: chosen_modes,
         });
 
@@ -2331,27 +2496,52 @@ impl Engine {
             cost
         };
 
-        // 601.2f–h: pay the total cost (auto-tap lands), with {X} settled to `chosen_x`. Hybrid and
-        // monocolour-hybrid pips are carried through so they're actually paid (and their spent colours
-        // feed Converge, CR 702.75) — the offer gate already required the full cost to be payable.
-        let pay = ManaCost {
+        // 601.2b: for each additional-cost clause, pick which option to pay (CR 601.2b modal "or").
+        // The offer gate guaranteed at least one payable option; `choose_additional_options` returns
+        // the chosen `Cost` per clause. Its mana folds into the mana payment below; its non-mana
+        // components (discard / exile / pay X life) are paid after.
+        let chosen_additional = self.choose_additional_options(p, card, &additional_clauses, &cost, is_is);
+
+        // 601.2f–h: pay the total cost (auto-tap lands), with {X} settled to `chosen_x`, plus any
+        // mana from the chosen additional-cost options. Hybrid and monocolour-hybrid pips are carried
+        // through so they're actually paid (and their spent colours feed Converge, CR 702.75) — the
+        // offer gate already required the full cost to be payable.
+        let mut pay = ManaCost {
             generic: cost.generic + chosen_x * cost.x,
             colored: cost.colored.clone(),
             hybrid: cost.hybrid.clone(),
             mono_hybrid: cost.mono_hybrid.clone(),
             x: 0,
         };
+        for opt in &chosen_additional {
+            if let Some(m) = &opt.mana {
+                pay = pay.plus(m);
+            }
+        }
         let colors_spent = mana::auto_pay_ex(&mut self.state, p, &pay, is_is).unwrap_or_default();
-        // Record the total mana spent (incl. {X}) on the spell, for an enters-with-counters-equal-
-        // to-mana-spent replacement to read when it resolves (CR 601.2f–h; Dyadrine), plus the number
-        // of distinct colours spent (CR 702.75 Converge).
+        // Pay the non-mana additional-cost components (CR 601.2f–h) — with `chosen_x` in a resolution
+        // ctx so a "pay X life" reads the same X. The mana was folded into `pay` above.
+        if !chosen_additional.is_empty() {
+            let ctx = ResolutionCtx {
+                controller: Some(p),
+                source: Some(card),
+                x: if needs_x { Some(chosen_x) } else { None },
+                ..Default::default()
+            };
+            for opt in &chosen_additional {
+                self.pay_additional_nonmana(p, card, opt, &ctx);
+            }
+        }
+        // Record the total mana spent (incl. {X} and additional mana) on the spell, for an enters-
+        // with-counters-equal-to-mana-spent replacement to read when it resolves (CR 601.2f–h;
+        // Dyadrine), plus the number of distinct colours spent (CR 702.75 Converge).
         let spent = pay.generic + pay.colored.values().copied().sum::<u32>();
         if let Some(o) = self.state.objects.get_mut(&card) {
             o.mana_spent = spent;
             o.colors_spent = colors_spent.len() as u32;
             // The chosen {X} (CR 107.3) — read by a cast-with-{X} trigger's "top X cards" (Geometer's
-            // Arthropod's `ValueExpr::XOfTriggeringSpell`).
-            o.cast_x = if cost.x > 0 { Some(chosen_x) } else { None };
+            // Arthropod's `ValueExpr::XOfTriggeringSpell`) and by an additional "pay X life" cost.
+            o.cast_x = if needs_x { Some(chosen_x) } else { None };
         }
         // "you've cast an instant or sorcery spell this turn" (Potioner's Trove) — count at cast.
         if is_is {
@@ -4292,6 +4482,20 @@ fn cost_count(v: &ValueExpr) -> u32 {
         ValueExpr::Fixed(n) => (*n).max(0) as u32,
         _ => 1,
     }
+}
+
+/// Whether a value expression is (or scales with) the spell's chosen `X` (CR 107.3).
+fn value_uses_x(v: &ValueExpr) -> bool {
+    matches!(v, ValueExpr::X | ValueExpr::XTimes(_))
+}
+
+/// Whether an additional-cost component pays an amount tied to the spell's `X` — so casting the
+/// spell must announce X even when its printed mana cost has none (e.g. "pay X life").
+fn component_uses_x(c: &CostComponent) -> bool {
+    matches!(
+        c,
+        CostComponent::PayLife(v) | CostComponent::RemoveCounters { n: v, .. } if value_uses_x(v)
+    )
 }
 
 /// Collect the `TargetSpec`s an `Effect` requires, in declaration order (CR 601.2c). The

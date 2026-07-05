@@ -18,7 +18,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use crate::basics::{CardType, Color, DamageKind, ManaCost, Zone};
-use crate::effects::ability::{Ability, Cost, CostComponent, Keyword, Restriction, Timing};
+use crate::effects::ability::{AdditionalCost, Ability, Cost, CostComponent, Keyword, Restriction, Timing};
 use crate::effects::target::{ManaSpec, TargetKind, TargetSpec};
 use crate::effects::value::{PlayerRef, ValueExpr};
 use crate::effects::{Effect, EffectTarget};
@@ -187,6 +187,19 @@ impl CardDef {
             _ => None,
         })
     }
+    /// The spell-level additional cast costs (CR 601.2b/f) this card declares via
+    /// [`Ability::AdditionalCost`] markers — all required (each a possibly-modal "or" clause).
+    /// Read at cast time by the offer gate (must be payable) and the payment step.
+    pub fn additional_costs(&self) -> Vec<&AdditionalCost> {
+        self.abilities
+            .iter()
+            .filter_map(|a| match a {
+                Ability::AdditionalCost(ac) => Some(ac),
+                _ => None,
+            })
+            .collect()
+    }
+
     /// Whether this card has an explicit IR mana ability (`{T}: Add …`). Note: basic-land-type
     /// mana is intrinsic (CR 305.6, derived from the computed subtype) and is NOT reflected here —
     /// this only sees authored `Activated{is_mana}` abilities (Llanowar, filter/conditional lands).
@@ -740,7 +753,7 @@ mod tests {
     #[test]
     fn starter_db_has_expected_cards() {
         let db = starter_db();
-        assert_eq!(db.len(), 300);
+        assert_eq!(db.len(), 301);
         // Forest is "type line only": a Basic Land with subtype Forest. Mana is intrinsic
         // (CR 305.6) — the engine derives {T}: Add {G} from the subtype, so the CardDef carries
         // no explicit mana ability (and `is_mana_source` only sees authored abilities).

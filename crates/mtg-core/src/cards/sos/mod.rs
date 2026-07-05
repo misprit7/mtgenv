@@ -18,6 +18,7 @@ pub mod emeritus_of_ideation;
 pub mod emeritus_of_truce;
 pub mod emeritus_of_woe;
 pub mod scheming_silvertongue;
+pub mod seize_the_spoils;
 pub mod skycoach_conductor;
 pub mod abigale_poet_laureate;
 pub mod kirol_history_buff;
@@ -220,6 +221,7 @@ pub fn register(db: &mut CardDb) {
     emeritus_of_truce::register(db);
     emeritus_of_woe::register(db);
     scheming_silvertongue::register(db);
+    seize_the_spoils::register(db);
     skycoach_conductor::register(db);
     abigale_poet_laureate::register(db);
     kirol_history_buff::register(db);
