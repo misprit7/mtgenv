@@ -752,7 +752,7 @@ const withId = (e, id) => { e.id = id; return e; };
 // Open the builder. `name`/`update` = target custom deck (update=true) or a fresh/duplicated one
 // (update=false, name blank so the user names it); `cards` = grp_id→count Map to start from.
 function openBuilder(name, update, cards) {
-  builder = { name, update, cards, q: "", colors: new Set(), types: new Set(), set: "", showHelp: false };
+  builder = { name, update, cards, q: "", colors: new Set(), types: new Set(), set: "", basics: false, showHelp: false };
   loadCatalog().then(renderBuilder);
 }
 
@@ -807,6 +807,12 @@ function filterBar() {
   };
   ["W", "U", "B", "R", "G", "C"].forEach((code) => bar.appendChild(chip(code, builder.colors, code)));
   ["Creature", "Land", "Instant", "Sorcery", "Artifact", "Enchantment"].forEach((t) => bar.appendChild(chip(t, builder.types, t)));
+  {
+    // Basics chip — supertype filter (Plains/Island/Swamp/Mountain/Forest), for quick land-adding.
+    const b = el("span", "fchip" + (builder.basics ? " on" : ""), "Basics");
+    b.onclick = () => { builder.basics = !builder.basics; b.classList.toggle("on"); updateCatalog(); };
+    bar.appendChild(b);
+  }
   bar.appendChild(searchHelpEl());
   return bar;
 }
@@ -977,6 +983,7 @@ function updateCatalog() {
   const pred = parseSearch(builder.q);
   const list = CATALOG.filter((c) => {
     if (!pred(c)) return false;
+    if (builder.basics && !(c.supertypes || []).includes("Basic")) return false;
     if (builder.types.size && !c.card_types.some((t) => builder.types.has(t))) return false;
     if (builder.colors.size) {
       const codes = c.colors.length ? c.colors.map((x) => CODE[x]) : ["C"];
