@@ -360,6 +360,19 @@ pub enum Ability {
     /// `cost` is a full [`Cost`] so a flashback cost can be non-mana (Group Project — "Flashback—Tap
     /// three untapped creatures you control"), paid through the real cost machinery alongside any mana.
     Flashback { cost: Cost },
+    /// Miracle (CR 702.94): "You may cast this card for its miracle `cost` when you draw it if it's
+    /// the first card you drew this turn." A static ability that functions from the HAND: when the
+    /// owner draws their first card of the turn and it's this card, a reveal trigger
+    /// ([`crate::stack::StackObjectKind::MiracleWindow`]) goes on the stack; on resolution its
+    /// controller may cast the card for `cost` (a fixed alternative cast cost, `CastVariant::Miracle`).
+    /// Printed on some cards; also GRANTED to a filtered set by [`GrantMiracle`] (Lorehold).
+    Miracle { cost: ManaCost },
+    /// A static that GRANTS miracle to the controller's cards in hand matching `filter` (CR 702.94 /
+    /// 118) — "Each instant and sorcery card in your hand has miracle {2}" (Lorehold, the Historian).
+    /// Mirrors [`GrantCostReduction`]: the miracle-cost lookup (`miracle_cost`) checks a card's own
+    /// printed [`Miracle`] AND any `GrantMiracle` on a permanent the drawer controls whose `filter`
+    /// matches the drawn card, using this `cost`.
+    GrantMiracle { cost: ManaCost, filter: CardFilter },
     /// Paradigm (SoS Lessons): "Then exile this spell. After you first resolve a spell with this name,
     /// you may cast a copy of it from exile without paying its mana cost at the beginning of each of
     /// your first main phases." This marker carries only the **"then exile this spell"** half — a

@@ -137,6 +137,7 @@ pub mod oracles_restoration;
 pub mod orysa_tide_choreographer;
 pub mod paradox_gardens;
 pub mod pest_mascot;
+pub mod lorehold_the_historian;
 pub mod lumarets_favor;
 pub mod social_snub;
 pub mod pigment_wrangler;
@@ -356,6 +357,7 @@ pub fn register(db: &mut CardDb) {
     orysa_tide_choreographer::register(db);
     paradox_gardens::register(db);
     pest_mascot::register(db);
+    lorehold_the_historian::register(db);
     lumarets_favor::register(db);
     social_snub::register(db);
     pigment_wrangler::register(db);

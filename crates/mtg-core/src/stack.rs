@@ -45,6 +45,13 @@ pub enum StackObjectKind {
     /// Self-contained + serializable (no live source object needed — the creating spell has left the
     /// stack), so it survives its source ceasing to exist, exactly like [`Self::DelayedAbility`].
     SpellCopyTrigger { spell: ObjId, choose_new_targets: bool },
+    /// A miracle reveal window (CR 702.94e) — "When you draw this card, you may cast it for its miracle
+    /// cost." Queued from `draw()` when the controller draws their first card of the turn and it has
+    /// miracle (printed or granted). On resolution, if `card` is still in the controller's hand and
+    /// still has a miracle cost, its controller may cast it via `CastVariant::Miracle`. Self-contained
+    /// + serializable (the cost is re-derived from `card` + state at resolution), like
+    /// [`Self::SpellCopyTrigger`].
+    MiracleWindow { card: ObjId },
 }
 
 /// One object on the stack (CR 405.1).

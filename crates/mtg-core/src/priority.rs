@@ -12,8 +12,9 @@
 //! slot in without reshaping it.
 
 use crate::agent::{
-    AbilityRef, ActionRef, Agent, CastVariant, DecisionRequest, DecisionResponse, GameEvent,
-    NumberReason, ObjView, PlayableAction, PlayerView, SelectReason, StopStateView, TargetSlot,
+    AbilityRef, ActionRef, Agent, CastVariant, ConfirmKind, DecisionRequest, DecisionResponse,
+    GameEvent, NumberReason, ObjView, PlayableAction, PlayerView, SelectReason, StopStateView,
+    TargetSlot,
 };
 use crate::basics::{CardType, CounterKind, ManaCost, Phase, Target, Zone, ZonePos};
 use crate::subtypes::{EnchantmentType, Subtype};
@@ -2122,6 +2123,35 @@ impl Engine {
         })
     }
 
+    /// The miracle cost of `card` for caster `p` (CR 702.94) — the two-origin check: the card's OWN
+    /// printed [`Ability::Miracle`], OR a miracle GRANTED by a permanent `p` controls
+    /// ([`Ability::GrantMiracle`]) whose `filter` matches the card. `None` if the card has no miracle
+    /// from either origin (so it's never offered a reveal window / can't be `CastVariant::Miracle`).
+    /// The printed cost wins if both are present (a printed miracle is intrinsic).
+    pub(crate) fn miracle_cost(&self, card: ObjId, p: PlayerId) -> Option<ManaCost> {
+        // Printed miracle.
+        if let Some(cost) = self.state.def_of(card).and_then(|d| {
+            d.abilities.iter().find_map(|a| match a {
+                Ability::Miracle { cost } => Some(cost.clone()),
+                _ => None,
+            })
+        }) {
+            return Some(cost);
+        }
+        // Granted miracle: any permanent `p` controls whose `GrantMiracle.filter` matches the card.
+        for perm in self.state.player(p).battlefield.clone() {
+            let Some(def) = self.state.def_of(perm) else { continue };
+            for a in &def.abilities {
+                if let Ability::GrantMiracle { cost, filter } = a {
+                    if self.enter_filter_matches(card, filter, p, None) {
+                        return Some(cost.clone());
+                    }
+                }
+            }
+        }
+        None
+    }
+
     /// The flashback cost a card declares via `Ability::Flashback`, if any (CR 702.34) — a full
     /// [`Cost`] (mana + any non-mana components, e.g. Group Project's "tap three creatures").
     fn flashback_cost(&self, card: ObjId) -> Option<Cost> {
@@ -2338,6 +2368,8 @@ impl Engine {
         let cost = match variant {
             CastVariant::Warp => self.warp_cost(card),
             CastVariant::Flashback => self.flashback_cost(card).map(|c| c.mana.unwrap_or_default()),
+            // Miracle (CR 702.94): a fixed alternative cast cost — printed or granted (`miracle_cost`).
+            CastVariant::Miracle => self.miracle_cost(card, p),
             // "Cast without paying its mana cost" (CR 601.2f / 707.12a): the total cost is {0}, and
             // any `{X}` in the printed cost is 0 (CR 107.3b — there's no other way to choose it).
             // Granted alternative-cast permissions use this (The Dawning Archaic's free gy-cast, a
@@ -3193,6 +3225,21 @@ impl Engine {
             StackObjectKind::SpellCopyTrigger { spell, choose_new_targets } => {
                 self.copy_spell_on_stack(spell, obj.controller, choose_new_targets);
             }
+            // A miracle reveal window resolving (CR 702.94e): if the card is still in the controller's
+            // hand and still has a miracle cost, they MAY cast it for that cost (`CastVariant::Miracle`).
+            StackObjectKind::MiracleWindow { card } => {
+                let controller = obj.controller;
+                let in_hand = self.state.player(controller).hand.contains(&card);
+                if in_hand && self.miracle_cost(card, controller).is_some() {
+                    let cast = matches!(
+                        self.ask(controller, &DecisionRequest::Confirm { kind: ConfirmKind::MayEffect }),
+                        DecisionResponse::Bool(true)
+                    );
+                    if cast {
+                        self.cast_spell(controller, card, CastVariant::Miracle);
+                    }
+                }
+            }
         }
     }
 
@@ -3488,6 +3535,11 @@ impl Engine {
     /// empty library sets the decking flag; the player loses on the next SBA check
     /// (CR 704.5b) — drawing-from-empty itself is not the loss.
     pub(crate) fn draw(&mut self, p: PlayerId, count: u32) {
+        // Miracle (CR 702.94e): only the FIRST card drawn this turn qualifies — i.e. the first card of
+        // the draw event that finds `cards_drawn_this_turn == 0`. Capture it (the 1st card popped here,
+        // when the counter was 0) to open a reveal window after the draws land.
+        let was_zero = self.state.player(p).cards_drawn_this_turn == 0;
+        let mut first_card: Option<ObjId> = None;
         let mut drawn = 0;
         for _ in 0..count {
             let top = self.state.player_mut(p).library.pop();
@@ -3497,6 +3549,9 @@ impl Engine {
                         o.zone = Zone::Hand;
                     }
                     self.state.player_mut(p).hand.push(card);
+                    if first_card.is_none() {
+                        first_card = Some(card);
+                    }
                     drawn += 1;
                 }
                 None => {
@@ -3511,6 +3566,25 @@ impl Engine {
                 player: p,
                 count: drawn,
             });
+        }
+        // Miracle reveal window: if this draw event was the turn's first and its first card has a
+        // miracle cost (printed or granted), queue a `MiracleWindow` — it lands on the stack via the
+        // agenda and its controller gets to respond to the reveal before deciding to cast (CR 702.94e).
+        if was_zero {
+            if let Some(card) = first_card {
+                if self.miracle_cost(card, p).is_some() {
+                    let id = self.state.mint_stack();
+                    self.state.pending_triggers.push(StackObject {
+                        id,
+                        controller: p,
+                        source: Some(card),
+                        kind: StackObjectKind::MiracleWindow { card },
+                        targets: Vec::new(),
+                        x: None,
+                        modes: Vec::new(),
+                    });
+                }
+            }
         }
     }
 

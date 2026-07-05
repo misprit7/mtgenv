@@ -434,6 +434,11 @@ pub enum CastVariant {
     /// Cast from the **graveyard** for the card's flashback cost (CR 702.34); the card is exiled as it
     /// resolves (or otherwise leaves the stack) instead of going anywhere else.
     Flashback,
+    /// Cast from hand for the card's **miracle cost** (CR 702.94) — a fixed alternative cast cost read
+    /// by `miracle_cost(card, caster)` (printed [`crate::effects::ability::Ability::Miracle`] or a
+    /// granted [`crate::effects::ability::Ability::GrantMiracle`]). Offered only during the miracle
+    /// reveal window ([`crate::stack::StackObjectKind::MiracleWindow`]).
+    Miracle,
 }
 
 /// A special action (CR 116) — no stack, no response.

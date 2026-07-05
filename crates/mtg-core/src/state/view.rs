@@ -119,6 +119,10 @@ fn stack_view(state: &GameState, s: &StackObject) -> StackObjView {
             name: "Copy spell".to_string(),
             ..Default::default()
         },
+        StackObjectKind::MiracleWindow { .. } => CharacteristicsView {
+            name: "Miracle".to_string(),
+            ..Default::default()
+        },
     };
     StackObjView {
         id: s.id,
