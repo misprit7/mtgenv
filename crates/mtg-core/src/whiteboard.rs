@@ -205,6 +205,40 @@ impl EngineCore {
                 }
                 true
             }
+            // "`what` gains your choice of [one of `options`] until [duration]" (Practiced Offense).
+            // Interactive (asks the controller which keyword); lowers to the same `GrantContinuous`
+            // path as `GrantKeyword`. Resolve the (cast-locked) target FIRST so the cursor advances.
+            Effect::GrantChosenKeyword { what, options, duration } => {
+                let target = self.resolve_target(what, ctx, cursor);
+                if let (Some(Target::Object(obj)), false) = (target, options.is_empty()) {
+                    let controller = ctx.controller.unwrap_or(self.state.active_player);
+                    let mode_opts: Vec<ModeOption> =
+                        options.iter().map(|k| ModeOption { label: format!("{k:?}") }).collect();
+                    let idx = match self.ask(
+                        controller,
+                        &DecisionRequest::ChooseModes {
+                            for_action: ActionRef(sid),
+                            modes: mode_opts,
+                            min: 1,
+                            max: 1,
+                            allow_repeat: false,
+                        },
+                    ) {
+                        DecisionResponse::Indices(v) => v.first().copied().unwrap_or(0) as usize,
+                        DecisionResponse::Index(i) => i as usize,
+                        _ => 0,
+                    };
+                    let keyword = *options.get(idx).unwrap_or(&options[0]);
+                    wb.push(Action::GrantContinuous {
+                        source: ctx.source,
+                        controller,
+                        affected: vec![obj],
+                        contributions: vec![StaticContribution::GrantKeyword(keyword)],
+                        duration: *duration,
+                    });
+                }
+                true
+            }
             // Directed discard (CR 701.8): `who` reveals their hand, `chooser` picks up to `count`
             // cards matching `filter`, and `who` discards them (Render Speechless's "you choose").
             // Imperative + asks two different players, so it lives here. Flush staged first.
@@ -1907,6 +1941,7 @@ impl EngineCore {
             | Effect::Discard { .. }
             | Effect::DiscardChosen { .. }
             | Effect::SetNoMaxHandSize { .. }
+            | Effect::GrantChosenKeyword { .. }
             | Effect::Counter { .. }
             | Effect::CounterUnlessPay { .. }
             | Effect::CastCopy { .. }

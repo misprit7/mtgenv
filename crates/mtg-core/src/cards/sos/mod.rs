@@ -145,6 +145,7 @@ pub mod borrowed_knowledge;
 pub mod aziza_mage_tower_captain;
 pub mod wisdom_of_ages;
 pub mod mind_into_matter;
+pub mod practiced_offense;
 pub mod pigment_wrangler;
 pub mod planar_engineering;
 pub mod prismari_the_inspiration;
@@ -370,6 +371,7 @@ pub fn register(db: &mut CardDb) {
     aziza_mage_tower_captain::register(db);
     wisdom_of_ages::register(db);
     mind_into_matter::register(db);
+    practiced_offense::register(db);
     pigment_wrangler::register(db);
     prismari_the_inspiration::register(db);
     quandrix_the_proof::register(db);

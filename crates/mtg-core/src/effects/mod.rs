@@ -130,6 +130,17 @@ pub enum Effect {
         keyword: Keyword,
         duration: Duration,
     },
+    /// "`what` gains your choice of [one of `options`] until [duration]" (CR 700-series modal-ish choice
+    /// baked into a single non-modal effect) — Practiced Offense's "gains your choice of double strike or
+    /// lifelink until end of turn." The controller picks one keyword from `options` at resolution; it
+    /// lowers to the same `GrantContinuous{ GrantKeyword }` path as [`Effect::GrantKeyword`]. Unlike a
+    /// nested `Modal`, the target `what` is a normal target (collected at cast), so it composes inside a
+    /// `Sequence` alongside other targets.
+    GrantChosenKeyword {
+        what: EffectTarget,
+        options: Vec<Keyword>,
+        duration: Duration,
+    },
     /// Grant a **triggered ability** to the target for a duration (CR 613.1f) — "gains 'When this
     /// creature dies, draw a card' until end of turn" (Rabid Attack) / "'Whenever this creature
     /// attacks, you gain 1 life'" (Root Manipulation). `template_grp` names a one-ability def in the

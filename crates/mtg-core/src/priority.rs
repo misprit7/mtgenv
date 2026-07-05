@@ -4836,6 +4836,7 @@ fn collect_specs_into(effect: &Effect, out: &mut Vec<TargetSpec>) {
         // reward effects (collected when walking a reflexive branch, not from a Conditional.then).
         Effect::PutCounters { what: EffectTarget::Target(spec), .. }
         | Effect::GrantKeyword { what: EffectTarget::Target(spec), .. }
+        | Effect::GrantChosenKeyword { what: EffectTarget::Target(spec), .. }
         | Effect::GrantQualification { what: EffectTarget::Target(spec), .. }
         | Effect::Tap { what: EffectTarget::Target(spec), .. }
         | Effect::SetBasePT { what: EffectTarget::Target(spec), .. }
