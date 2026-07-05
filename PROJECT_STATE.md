@@ -69,12 +69,15 @@ MTGA client.
 - **✅ MOBILE WEB CLIENT (2026-07-03).** Game client + lobby fully playable from a phone: mobile
   reflow (sticky prompt sheet, opp-top/you-bottom strips, log toggle), touch previews long-press-only
   (hover gated to real mice), on-screen pass-turn button. Desktop unchanged.
-- **▶ SOS FULL-SET scope: 248/271 authored (91.5%, 245 faithful · 3 tracked-partial), 803 mtg-core tests green (2026-07-05,
-  sos-cards-17).** Second wave on top of the first: the **target-path dynamic-filter fix** (`target_matches_filter` resolves a
-  dynamic `ManaValueExpr` TARGET bound against a source-derived ctx — was fail-closed silent-inert) → **Moseo Vein's New Dean**
-  + **Sundering Archaic**; the **cards-exiled-this-turn tracker** → **Ennis, Debate Moderator**; **`SelfDealsCombatDamageToPlayer`**
-  per-creature combat event → **Snooping Page**. Tracked-partials now 3 (Ral, Wildgrowth, Hydro-Channeler). 23 unauthored;
-  nearest clean win = Burrog Barrage (no new cap — `instants_sorceries_cast_this_turn` exists). See SOS_CARDS.md census.
+- **▶ SOS FULL-SET scope: 252/271 authored (93%, 249 faithful · 3 tracked-partial), 818 mtg-core tests green (2026-07-05,
+  sos-cards-18).** 4 fully-faithful cards + 3 reusable caps; the **clean cap-blocked tail is now EXHAUSTED**. **Burrog Barrage**
+  (new `Effect::SourcedDamage` creature-as-source "bite" primitive, flushes the +1/+0 pump before reading `PowerOfTarget` +
+  `ValueExpr::InstantsSorceriesCastThisTurn`); **mill-then-play cap** (`Effect::MillThenPlay` + `Object.playable_from_graveyard` +
+  graveyard offer scans) → **Ark of Hunger** + **Tablet of Discovery**; **Slumbering Trudge** (enters-with-(3−X)-stun via
+  `EntersWithCountersValue` + `EntersTappedUnless` now X-threaded). 19 unauthored, all subsystem-scale or parked (see SOS_CARDS.md
+  census + the NEXT-AGENT block). Tracked-partials still 3 (Ral, Wildgrowth, Hydro-Channeler). 0 Native hatches.
+- **▶ SOS (prior — sos-cards-17 SECOND WAVE): 248/271, 803 green.** target-path dynamic-filter fix + Moseo + Sundering Archaic +
+  Ennis (cards-exiled-this-turn tracker) + Snooping Page (`SelfDealsCombatDamageToPlayer`).
 - **▶ SOS (prior — sos-cards-17 FIRST WAVE): 244/271, 794 green.** **THE SPELL-COPY CONSUMERS + THE LKI-COUNTER,
   DISCARDED-THIS-RESOLUTION & MOVE-COUNTERS SUBSYSTEMS.** 10
   fully-faithful cards (Mica, Borrowed Knowledge, Aziza, Wisdom of Ages, Mind into Matter, Practiced Offense, Ambitious

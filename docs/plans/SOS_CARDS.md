@@ -4,7 +4,58 @@ Standing workstream: implement the Secrets of Strixhaven set for **limited (40-c
 `mtg-core`, easiest-first, correctness over count. This ledger is the capability index + full
 per-card triage, modeled on `SELESNYA_LANDFALL_CARDS.md`.
 
-## ▶ NEXT AGENT — start here (handoff from sos-cards-17, 2026-07-05)
+## ▶ NEXT AGENT — start here (handoff from sos-cards-18, 2026-07-05)
+
+**▶▶ sos-cards-18 SHIPPED — 4 fully-faithful cards + 3 reusable caps. 818 mtg-core green, whole workspace builds, tree clean,
+LEAD pushes.** Census **248→252/271 authored (93%, 249 faithful · 3 tracked-partial)**, 0 Native hatches. **The clean
+cap-blocked tail is now EXHAUSTED** — every remaining unauthored card needs a subsystem-scale cap or a lead sketch (bucketed
+below). Own-commits (`git log -S` before re-scoping — header PROCESS RULES apply):
+- **`2e20d09` — Burrog Barrage** — the ledger's "no new cap" was WRONG (agent-17's recheck missed two wrinkles): the
+  conditional +1/+0 target sits inside a `Conditional` that `collect_specs_into` deliberately does NOT walk, AND the damage
+  must read the *post-pump* power (a materialized `DealDamage` freezes its amount pre-pump). Fixed with one clean cap: new
+  **`Effect::SourcedDamage{source,to,amount,kind}`** — "creature deals damage" (CR 119.2, a reusable **bite** primitive; source
+  ≠ the spell, so deathtouch/lifelink key off it). Its *flushing* interpret arm (mirrors `PutCounters`) commits the pump BEFORE
+  reading `PowerOfTarget(0)`. The pump targets slot-0 by `EffectTarget::ChosenIndex(0)` (no fresh `Target` → stays out of the
+  non-walked `Conditional`); `SourcedDamage` declares BOTH targets (`collect_specs_into` pushes source→to). Plus
+  **`ValueExpr::InstantsSorceriesCastThisTurn{who}`** (counter increments at cast so Burrog counts itself → "another" I/S = ≥2;
+  added to BOTH `whiteboard::eval_value` and `conditions::eval_value`).
+- **`b85b613` — mill-then-play cap → Ark of Hunger + Tablet of Discovery** (2 cards, 1 cap). New **`Effect::MillThenPlay{who,
+  window}`** + **`Action::MillForPlay`** + **`Object.playable_from_graveyard`** (graveyard analogue of impulse
+  `castable_from_exile` — purely additive, exile paths untouched) + graveyard land-play/cast offer scans in
+  `legal_priority_actions`. `move_to_stack` already pops the graveyard, so a milled spell casts Normal (→ gy on leave, NOT
+  exiled — distinct from flashback). Ark's `CardsLeaveYourGraveyard` trigger + Tablet's restricted I/S mana (`SpendRestriction::
+  InstantSorceryOnly`) reused existing machinery.
+- **`cb6922e` — Slumbering Trudge** — reused `Rewrite::EntersWithCountersValue{Stun, 3−X}` (`Sum(3, XTimes(-1))`, clamped ≥0) +
+  the existing CR 702.171 stun untap-skip (priority.rs:801). Small shared fix: **`EntersTappedUnless` now threads the entering
+  object's cast X** — its condition eval was `conditions::holds` (no X → 0); now routes through `cond_holds` with `{source:obj,
+  x:wb.ctx.x}`, so "enters tapped if X ≤ 2" = `EntersTappedUnless(ValueAtLeast(X, 3))`. Check-lands unaffected (non-value conds
+  still route controller-relative). `{X}{G}` cost = `mc.x = 1`.
+
+**▶ RECOMMENDED NEXT — the remaining buildables are all subsystem-scale (no clean wins left); pick by appetite:**
+- **Divergent Equation** (`{X}{X}{U}` — return up to X target I/S from gy + `ExileOnResolve`). Blocker: **dynamic {X} target
+  COUNT**. `TargetSpec.max` is a fixed `u32` read at 4 slot-build sites; making it dynamic wants an `Option<ValueExpr>` field —
+  but there are **203 `TargetSpec` literals**, so it's a dedicated mechanical refactor (or model as a resolution-time `Select`
+  with `max: ValueExpr::X`, a minor "target"→"select" deviation for a self-graveyard return — cleanest quick approximation if
+  the refactor is too big).
+- **Mana Sculpt** (Counter + delayed "add {C} = mana spent to cast that spell, at your next main phase, if you control a
+  Wizard"). Needs: a new time-based `DelayedTriggerEvent::AtBeginningOfYourNextMainPhase` + firing hook (mirror
+  `fire_end_step_delayed_triggers`) wired into `run_step` + a way to express **delayed mana** (`DelayedAbility` only runs
+  `Vec<Action>`; mana-add is imperative → new `Action::AddMana`) + a "mana spent by the TARGET spell" value read. ~6 touch pts.
+- **Archaic's Agony** (Converge damage + exile-equal-to-**excess damage** + impulse-play). Needs excess-damage tracking.
+- **Great Hall of the Biblioplex** (mana land — near-free — + `{5}: becomes a 2/4 Wizard` **layer-4/7 animation** = the cap).
+- **Rubble Rouser** (loot ETB + `{T},Exile-from-gy: Add {R}` + reflexive damage) — mana-ability-with-cost-and-rider, the same
+  class as the **Hydro-Channeler** tracked-partial; do that roadmap item first.
+- **Choreographed Sparks** — mode1 (copy target I/S you control) = the `CopySpellOnStack` `Target` arm (wired, only `Triggering`
+  tested); mode2 (copy a creature spell → token + grant haste/sac) = a creature-spell-copy-to-token cap. Modal → both needed.
+- **The 9 special one-offs** (Nita, Page/Grandeur, Petrified Hamlet, Resonating Lute, Zaffai, Skycoach Waypoint, Biblioplex
+  Tomekeeper, Great Hall, Choreographed Sparks): send the lead a 3-line design sketch as you reach EACH, proceed on approval.
+- **PARKED** (do not build): 3 Natives (Mathemagics, Pox Plague, Steal the Show), Fractalize (milestone-5 layers). Tracked-
+  partials: Wildgrowth Archaic (`EntersWithCounters` extension — scoped/buildable), Ral (−7 coin-flip) + Hydro-Channeler
+  (mana-ability-with-mana-cost) tied to roadmap items.
+
+---
+
+## ▶ (superseded — history) sos-cards-17 handoff, 2026-07-05
 
 **▶▶ sos-cards-17 SHIPPED — 14 fully-faithful cards + cleared 2 tracked-partials (Colossus, Tester) + 12 reusable caps. 803
 mtg-core green, whole workspace builds, tree clean, LEAD pushes.** Census **234→248/271 authored (91.5%, 245 faithful · 3

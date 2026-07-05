@@ -3,6 +3,29 @@
 Short, dated entries for future-agent consumption. Newest first. One line or a few bullets
 per unit of meaningful progress. Keep it terse — detail lives in `docs/` and git history.
 
+## 2026-07-05 (SOS relay sos-cards-18 — 4 fully-faithful cards + 3 reusable caps; census 248→252/271, 803→818 green)
+
+- **`2e20d09` — Burrog Barrage** (the flagged "no new cap" was wrong — the conditional-pump target sits in a `Conditional` the
+  targeting walk skips, AND the damage must read the *post-pump* power). Fixed cleanly with a small cap: new
+  **`Effect::SourcedDamage{source,to,amount,kind}`** — creature-as-source damage (CR 119.2, a reusable "bite" primitive) whose
+  *flushing* interpret arm commits the +1/+0 pump before reading `PowerOfTarget`. Pump targets slot-0 via `ChosenIndex` (kept
+  out of the non-walked `Conditional`); damage declares both targets. Plus **`ValueExpr::InstantsSorceriesCastThisTurn`** (Burrog
+  counts itself at cast → "another" I/S = ≥2).
+- **`b85b613` — mill-then-play cap → Ark of Hunger + Tablet of Discovery** (2 cards, 1 cap). New **`Effect::MillThenPlay{who,
+  window}`** + **`Object.playable_from_graveyard`** (graveyard analogue of impulse `castable_from_exile`; purely additive,
+  exile paths untouched) + graveyard land-play/cast offer scans. `move_to_stack` already pops the graveyard so a milled spell
+  casts normally (goes to gy, not exiled). Ark's leave-gy trigger + Tablet's restricted I/S mana reused existing machinery.
+- **`cb6922e` — Slumbering Trudge** (stun counters + enters-tapped keyed to X). Reused `Rewrite::EntersWithCountersValue`
+  (`3 − X` via `Sum(3, XTimes(-1))`) + the existing CR 702.171 stun untap-skip. Small shared fix: **`EntersTappedUnless` now
+  threads the entering object's cast X** (routes through `cond_holds` w/ `{source, x}`) so "enters tapped if X ≤ 2" =
+  `EntersTappedUnless(ValueAtLeast(X, 3))` reads the creature's own X — check-lands unaffected (non-value conds still route
+  controller-relative).
+- **The clean cap-blocked tail is now EXHAUSTED.** Remaining buildables are all subsystem-scale: Divergent Equation (dynamic
+  {X} target COUNT — needs a `TargetSpec` dynamic-max, 203 literals, a dedicated refactor), Mana Sculpt (delayed mana — new
+  time-based delayed trigger + `Action::AddMana` + a target-spell mana-spent value), Archaic's Agony (excess-damage tracking),
+  Great Hall (becomes-a-creature layer animation), Rubble Rouser (mana-ability-with-cost — Hydro-Channeler class), Choreographed
+  Sparks (creature-spell-copy-to-token). Plus the 9 special one-offs (lead sketch) + 3 Natives + Fractalize (parked).
+
 ## 2026-07-05 (SOS relay sos-cards-17 SECOND WAVE — target-path dynamic-filter fix + 4 cards; census 244→248/271, 794→803 green)
 
 - **`priority.rs` — target-path dynamic-filter fix**: `target_matches_filter` now resolves a dynamic `CardFilter::ManaValueExpr`
