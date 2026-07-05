@@ -158,6 +158,7 @@ pub mod rabid_attack;
 pub mod rapturous_moment;
 pub mod rancorous_archaic;
 pub mod ral_zarek_guest_lecturer;
+pub mod root_manipulation;
 pub mod restoration_seminar;
 pub mod run_behind;
 pub mod rearing_embermare;
@@ -370,6 +371,7 @@ pub fn register(db: &mut CardDb) {
     rapturous_moment::register(db);
     rancorous_archaic::register(db);
     ral_zarek_guest_lecturer::register(db);
+    root_manipulation::register(db);
     restoration_seminar::register(db);
     run_behind::register(db);
     rearing_embermare::register(db);
