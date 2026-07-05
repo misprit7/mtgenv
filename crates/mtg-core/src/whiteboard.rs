@@ -997,6 +997,20 @@ impl EngineCore {
                 }
                 performed
             }
+            // "For each player …" (CR 101.4 APNAP) — run `body` once per player, binding that player to
+            // `Each` so the body reads their own state (Pox Plague). Starts from the active player and
+            // wraps, so choices happen in turn order.
+            Effect::ForEachPlayer { body } => {
+                let n = self.state.players.len() as u32;
+                let ap = self.state.active_player.0;
+                for i in 0..n {
+                    let pl = PlayerId((ap + i) % n);
+                    let prev = self.foreach_current.replace(Target::Player(pl));
+                    self.interpret(body, ctx, sid, wb, cursor);
+                    self.foreach_current = prev;
+                }
+                true
+            }
             // "for each of the up-to-N target creatures, run `body`" (Homesickness). Bind each chosen
             // target of the multi-target slot to `EffectTarget::Each` in turn; the loop consumes the
             // slot's cursor positions (an "up to N" slot may have fewer picks, so stop when they run
@@ -2330,6 +2344,7 @@ impl EngineCore {
             | Effect::Optional { .. }
             | Effect::IfYouDo { .. }
             | Effect::ForEach { .. }
+            | Effect::ForEachPlayer { .. }
             | Effect::ForEachTarget { .. }
             | Effect::DealDamageExcessImpulse { .. }
             | Effect::Search { .. }
@@ -3135,6 +3150,13 @@ impl EngineCore {
             ValueExpr::Sum(a, b) => self.eval_value(a, ctx) + self.eval_value(b, ctx),
             // 2ˣ (Mathemagics) — `1 << exp`, exponent clamped to [0, 62] so it never overflows i64.
             ValueExpr::Pow2(exp) => 1i64 << self.eval_value(exp, ctx).clamp(0, 62),
+            // Half, rounded down (Pox Plague, "round down each time").
+            ValueExpr::Half(v) => self.eval_value(v, ctx).max(0) / 2,
+            // The current life total of `who` (Pox Plague's "half their life").
+            ValueExpr::LifeTotal { who } => {
+                let p = self.eval_player(*who, ctx);
+                self.state.players.get(p.0 as usize).map(|pl| pl.life as i64).unwrap_or(0)
+            }
             // C9: count objects in a zone matching the filter, optionally restricted to a
             // player's permanents (e.g. "the number of lands you control").
             ValueExpr::Count { zone, filter, controller } => {

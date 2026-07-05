@@ -245,6 +245,7 @@ pub mod mathemagics;
 pub mod steal_the_show;
 pub mod page_loose_leaf;
 pub mod flashback;
+pub mod pox_plague;
 pub mod zimones_experiment;
 pub mod zaffai_and_the_tempests;
 pub mod wilt_in_the_heat;
@@ -258,6 +259,7 @@ pub fn register(db: &mut CardDb) {
     steal_the_show::register(db);
     page_loose_leaf::register(db);
     flashback::register(db);
+    pox_plague::register(db);
     zimones_experiment::register(db);
     zaffai_and_the_tempests::register(db);
     aberrant_manawurm::register(db);

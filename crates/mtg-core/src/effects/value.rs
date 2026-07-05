@@ -65,6 +65,14 @@ pub enum ValueExpr {
     /// 2⁰=1, 2¹=2, 2²=4, …). The exponent is clamped to `[0, 62]` before shifting (an exponent beyond a
     /// real deck size decks the player out regardless), so it never overflows `i64`.
     Pow2(Box<ValueExpr>),
+    /// Half the inner value, **rounded down** (`inner / 2`, integer division) — "half their life / half
+    /// the cards in their hand / half the permanents they control" (Pox Plague, "round down each time").
+    /// A generic halving node (evergreen in MTG); pairs with [`LifeTotal`] / [`HandSize`] / [`Count`] under
+    /// a [`super::Effect::ForEachPlayer`] loop that binds [`PlayerRef::Each`] to the iterated player.
+    Half(Box<ValueExpr>),
+    /// The current life total of `who` (CR 119) — reads `Player.life`. "Loses half their life" (Pox
+    /// Plague) = `Half(LifeTotal { who: Each })` under a per-player loop. The life analogue of [`HandSize`].
+    LifeTotal { who: PlayerRef },
     /// Total **toughness** of the battlefield permanents matching `filter`, optionally restricted by
     /// controller — "creatures you control have total toughness 10 or greater" (Orysa's cost
     /// reduction, via `Condition::ValueAtLeast`). Sums computed toughness; `None`-toughness = 0.

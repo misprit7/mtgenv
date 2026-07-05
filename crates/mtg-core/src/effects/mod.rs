@@ -614,6 +614,15 @@ pub enum Effect {
         selector: SelectSpec,
         body: Box<Effect>,
     },
+    /// Apply `body` once per **player**, in APNAP order (CR 101.4), binding [`PlayerRef::Each`] /
+    /// [`EffectTarget::Each`] to the current player while `body` runs — the player analogue of [`ForEach`].
+    /// Lets a per-player body read that player's own state ("each player loses half **their** life, then
+    /// discards half **their** hand, then sacrifices half **their** permanents" — Pox Plague, each step a
+    /// separate `ForEachPlayer` so all players finish a step before the next, CR 608.2). `body` names the
+    /// current player via `Each` (e.g. `LoseLife{ who: Each, Half(LifeTotal{ who: Each }) }`).
+    ForEachPlayer {
+        body: Box<Effect>,
+    },
     /// Apply `body` once per **chosen target** in a variable multi-target `slot` — "tap up to two
     /// target creatures. Put a stun counter on each of them" (Homesickness). The slot is declared as
     /// a targeting spec at cast (CR 601.2c) exactly like any `Target(...)`; at resolution each chosen
