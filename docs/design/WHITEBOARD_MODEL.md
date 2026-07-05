@@ -196,6 +196,22 @@ target selectors, conditions, durations, etc. Cards compose these. **Escape hatc
 equivalent of "I gave up and wrote the CLIPS by hand." We want ≥1 such hatch so no card
 is ever *impossible*, only *not-yet-done*.
 
+> **Status (2026-07-05): the hatch is still unexercised — 0 Native cards across the ~265-card SOS
+> pool.** Every card the SOS relay's ledger tagged "genuinely inexpressible → Native" (Mathemagics
+> 2ˣ, Pox Plague halving, Steal the Show — the last of which was simply *mis-triaged*, no theft) turned
+> out IR-expressible with small **generic, reusable** additions (`ValueExpr::Pow2`/`Half`/`LifeTotal`,
+> `Effect::ForEachPlayer` binding a per-player cursor). This is a stronger statement about the IR than a
+> forced first usage would be — so we deliberately did **not** manufacture a Native.
+>
+> **Known hatch limitation (recorded for the first genuinely-inexpressible card, not yet built):** the
+> `NativeFn`'s `EffectCtx` (see `effects/native.rs`) is intentionally minimal — it can `push_action`,
+> read `controller`/`source`/`x`, and nothing else. A real Native will almost certainly need to (a)
+> **read arbitrary game state** and (b) **ask the active agent for decisions** through the same
+> `DecisionRequest`/`DecisionResponse` boundary. Pox Plague would have needed **both** (per-player life/
+> hand/permanent counts + sacrifice/discard choices) had we built it native — that's the concrete signal
+> that the *first* Native card's job is to extend `EffectCtx` with a state-read view + a decision-ask
+> method, not to smuggle engine access around the boundary.
+
 ### 2.4 Continuous effects, layers, qualifications
 
 Characteristics of every object are computed as `base ⊕ layered transformations`
