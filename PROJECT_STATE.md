@@ -69,7 +69,17 @@ MTGA client.
 - **✅ MOBILE WEB CLIENT (2026-07-03).** Game client + lobby fully playable from a phone: mobile
   reflow (sticky prompt sheet, opp-top/you-bottom strips, log toggle), touch previews long-press-only
   (hover gated to real mice), on-screen pass-turn button. Desktop unchanged.
-- **▶ SOS FULL-SET scope: ~199 authored, 662 mtg-core tests green (2026-07-05, sos-cards-12).** **PREPARE-DFC
+- **▶ SOS FULL-SET scope: ~202 authored, 674 mtg-core tests green (2026-07-05, sos-cards-13).** **THE STACKOBJECT
+  CLUSTER DONE** — 3 cards + 2 reusable subsystems: (1) **StackObject counterspell real-cast targeting** (the gap
+  was `collect_specs_into` dropping `Effect::Counter`'s spec + no `target_candidates` StackObject arm) → **Brush
+  Off**; (2) **CR 707.10 copy-a-spell-ON-the-stack** (`copy_spell_on_stack` mints an is_copy copy over the original,
+  NOT cast — distinct from 707.12 CastCopy — delivered via a one-shot `DelayedTriggerEvent::YouCastSpell` →
+  `StackObjectKind::SpellCopyTrigger`) → **Pigment Wrangler // Striking Palette**; (3) **exile-top-until-total-MV
+  then may-cast-free** (`Effect::ExileTopUntilManaValueMayCastFree`) → **Improvisation Capstone** (⇒ Paradigm 5/5
+  Lessons). The 8 remaining prepare stragglers are each blocked on a distinct back-face cap (blink, {X}{X} tokens,
+  LKI-power, mill-to-bf, Treasure sac-mana, reanimate-controller-override, gain-life-first-time [queue-time
+  condition check], Brainstorm-order+tap-two) — precise per-card list in the ledger.
+- **▶ SOS (prior — sos-cards-12): ~199 authored, 662 mtg-core tests green (2026-07-05).** **PREPARE-DFC
   SUBSYSTEM DONE + 27/36 prepare cards shipped.** Prepare is a spell-copy CONSUMER (CR 707.12), not a CR 711
   transform: `Object.prepared` + `Effect::BecomePrepared` (→ `Action::SetPrepared`) + `Ability::Prepare{spell}`
   + back-face defs in a reserved 9700+ grp block (excluded from `/api/cards`) + `PlayableAction::CastPrepared`

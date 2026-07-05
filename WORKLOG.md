@@ -3,6 +3,29 @@
 Short, dated entries for future-agent consumption. Newest first. One line or a few bullets
 per unit of meaningful progress. Keep it terse — detail lives in `docs/` and git history.
 
+## 2026-07-05 (SOS relay sos-cards-13 — the StackObject cluster: counterspell + 707.10 copy + Lessons)
+
+- **Filled the long-latent counterspell real-cast gap + Brush Off** (commit d6349eb; 662→668 green). Root
+  cause was deeper than flagged: `collect_specs_into` never matched `Effect::Counter`/`CounterUnlessPay`, so the
+  counter's target spec was silently dropped at cast (specs empty → no target chosen → nothing countered) — that's
+  why counterspells only ever worked via `resolve_effect`. Fixed that + wired `target_candidates` StackObject
+  enumeration (spells only, excludes the caster's own spell-in-progress) + `target_matches_filter` stack→spell-card
+  resolution. → **Brush Off** ({2}{U}{U} Counter target spell + the S12 `Cost({1}{U})` target-dependent reduction's
+  first card; real-path tests: counters an opposing spell, won't target itself, can't-counter Surrak, masks to
+  affordable targets).
+- **CR 707.10 copy-a-spell-ON-the-stack + Pigment Wrangler // Striking Palette** (commit dedb749; →671 green).
+  The copy that ISN'T cast (distinct from 707.12 CastCopy's mint+cast): `copy_spell_on_stack` mints an `is_copy`
+  copy OVER the original carrying its targets/X/modes (707.10b), optional new-target reselection (707.10c), NO
+  SpellCast (707.10a). Delivered via a one-shot delayed trigger: `Effect::CopyNextSpellCast` arms
+  `DelayedTriggerEvent::YouCastSpell` (expires unfired at next turn's start), fired from the `SpellCast` broadcast
+  → mints a new `StackObjectKind::SpellCopyTrigger`. Reusable for Lumaret's Favor / Twincast-class.
+- **Improvisation Capstone — 5th Lesson (⇒ Paradigm 5/5)** (commit a30b648; →674 green).
+  `Effect::ExileTopUntilManaValueMayCastFree`: exile from the top until total MV ≥ threshold, then loop offering to
+  cast any number of the exiled NONLAND cards for free during resolution (CR 601.3e; uncast cards + lands stay
+  exiled). + Paradigm.
+- Net: 3 cards + 2 reusable subsystems (StackObject counterspell targeting, 707.10 copy-on-stack) + the
+  exile-free-cast leaf. 199→~202 authored, 662→674 mtg-core green, whole workspace builds, tree clean (lead pushes).
+
 ## 2026-07-05 (SOS relay sos-cards-12 — PREPARE DFCs: rails + 24 cards)
 
 - **Built the PREPARE-DFC subsystem as a spell-copy CONSUMER (CR 707.12), not a CR 711 transform.**
