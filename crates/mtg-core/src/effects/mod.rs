@@ -630,6 +630,16 @@ pub enum Effect {
     /// into `rest_to`" (CR 120-ish library manipulation) — the SoS Strixhaven "look-and-pick" pattern
     /// (Flow State / Stress Dream / Stirring Honormancer). The controller chooses which cards are taken;
     /// `take_to`/`rest_to` are `Hand`/`Graveyard`/`Library` (Library = the bottom, in any order).
+    /// "Look at the top `count` cards. You may reveal up to `take` creature and/or land cards from among
+    /// them, then put the rest on the bottom in a random order. Put all land cards revealed this way onto
+    /// the battlefield tapped and all creature cards revealed this way into your hand" (Zimone's
+    /// Experiment). Like [`LookAndPick`] but the taken cards route **by type** (land → battlefield tapped,
+    /// creature → hand) instead of to one zone; the rest are bottomed in random order (`state.rng`).
+    /// Imperative (library scan + choice + rng), so it lives in `interpret`.
+    LookPickCreaturesLands {
+        count: ValueExpr,
+        take: ValueExpr,
+    },
     LookAndPick {
         count: ValueExpr,
         take: ValueExpr,

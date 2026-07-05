@@ -817,6 +817,16 @@ impl EngineCore {
                 self.interpret_look_and_pick(player, n, take, *take_to, *rest_to, take_filter);
                 true
             }
+            // Zimone's Experiment: look at the top `count`, pick up to `take` creature/land cards, route
+            // lands → battlefield tapped and creatures → hand, rest to the bottom in random order.
+            Effect::LookPickCreaturesLands { count, take } => {
+                self.flush_pending(wb);
+                let player = ctx.controller.unwrap_or(self.state.active_player);
+                let n = self.eval_value(count, ctx).max(0) as usize;
+                let take = self.eval_value(take, ctx).max(0) as usize;
+                self.interpret_look_pick_creatures_lands(player, n, take);
+                true
+            }
             Effect::Sacrifice { who, what } => {
                 self.flush_pending(wb);
                 let controller = ctx.controller.unwrap_or(PlayerId(0));
@@ -1440,6 +1450,70 @@ impl EngineCore {
                 self.state.move_object(*card, rest_to, owner);
                 self.broadcast(GameEvent::ObjectMoved { obj: *card, to: rest_to });
             }
+        }
+    }
+
+    /// Zimone's Experiment: look at the top `n`, choose up to `take` creature/land cards, route lands to
+    /// the battlefield tapped and creatures to hand, and bottom the rest in a random order.
+    fn interpret_look_pick_creatures_lands(&mut self, pl: PlayerId, n: usize, take: usize) {
+        let lib = &self.state.player(pl).library;
+        let count = n.min(lib.len());
+        if count == 0 {
+            return;
+        }
+        // Top-first (the library's top is the vec's tail).
+        let top: Vec<ObjId> = lib.iter().rev().take(count).copied().collect();
+        // Takeable = creature and/or land cards among them.
+        let is_cl = |st: &Self, o: ObjId| {
+            let cc = st.state.computed(o);
+            cc.is_creature() || cc.card_types.contains(&CardType::Land)
+        };
+        let takeable: Vec<ObjId> = top.iter().copied().filter(|&o| is_cl(self, o)).collect();
+        let take_n = take.min(takeable.len());
+        // "You may reveal up to `take`" — optional (min 0).
+        let mut seen = std::collections::BTreeSet::new();
+        let taken: Vec<ObjId> = if take_n == 0 {
+            Vec::new()
+        } else {
+            let req = DecisionRequest::SelectCards {
+                reason: SelectReason::ScryStage,
+                from: takeable.clone(),
+                min: 0,
+                max: take_n as u32,
+                description: "Reveal up to two creature and/or land cards".into(),
+            };
+            match self.ask(pl, &req) {
+                DecisionResponse::Indices(idxs) => idxs
+                    .iter()
+                    .filter_map(|&i| takeable.get(i as usize).copied())
+                    .filter(|o| seen.insert(*o))
+                    .take(take_n)
+                    .collect(),
+                _ => Vec::new(),
+            }
+        };
+        // Route each taken card by type: lands → battlefield tapped, creatures → hand.
+        for &card in &taken {
+            let owner = self.state.object(card).owner;
+            if self.state.computed(card).card_types.contains(&CardType::Land) {
+                self.state.move_object(card, Zone::Battlefield, owner);
+                if let Some(o) = self.state.objects.get_mut(&card) {
+                    o.status.tapped = true;
+                }
+                self.broadcast(GameEvent::ObjectMoved { obj: card, to: Zone::Battlefield });
+            } else {
+                self.state.move_object(card, Zone::Hand, owner);
+                self.broadcast(GameEvent::ObjectMoved { obj: card, to: Zone::Hand });
+            }
+        }
+        self.state.mark_chars_dirty();
+        // The rest — the looked-at cards not taken — go to the bottom in a random order.
+        let mut rest: Vec<ObjId> = top.iter().filter(|o| !taken.contains(o)).copied().collect();
+        self.state.rng.shuffle(&mut rest);
+        let libv = &mut self.state.player_mut(pl).library;
+        libv.retain(|o| !rest.contains(o));
+        for card in rest.iter().rev() {
+            libv.insert(0, *card);
         }
     }
 
@@ -2273,6 +2347,7 @@ impl EngineCore {
             | Effect::Sacrifice { .. }
             | Effect::Surveil { .. }
             | Effect::LookAndPick { .. }
+            | Effect::LookPickCreaturesLands { .. }
             | Effect::DirectedDiscard { .. }
             | Effect::Nothing => {}
         }
