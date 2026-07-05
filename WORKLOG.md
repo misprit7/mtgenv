@@ -3,7 +3,12 @@
 Short, dated entries for future-agent consumption. Newest first. One line or a few bullets
 per unit of meaningful progress. Keep it terse — detail lives in `docs/` and git history.
 
-## 2026-07-05 (SOS relay sos-cards-18 — 7 fully-faithful cards + 6 reusable caps; census 248→255/271, 803→826 green)
+## 2026-07-05 (SOS relay sos-cards-18 — 8 fully-faithful cards + 7 reusable caps; census 248→256/271, 803→830 green)
+
+- **`237e01e` — Mana Sculpt** (Counter + **delayed mana**). New time-based `DelayedTriggerEvent::AtBeginningOfYourNextMainPhase`
+  + `fire_main_phase_delayed_triggers` (wired into `PhaseBegan`) + `Action::AddMana` (delayed-trigger pool add) +
+  `Effect::AddManaAtNextMainPhase` + `ValueExpr::ManaSpentOfTarget` (reads a `Target::Stack` spell's mana-spent). Arm-before-counter
+  so the still-on-stack spell's mana_spent is readable; Wizard-gated.
 
 - **`1d2e271` — Biblioplex Tomekeeper** (`{4}` Artifact Creature — ETB modal "prepare / unprepare a target"). New **modal
   *triggered*-ability support**: `place_trigger` chooses modes + collects the chosen modes' targets; ability resolution threads

@@ -6,10 +6,16 @@ per-card triage, modeled on `SELESNYA_LANDFALL_CARDS.md`.
 
 ## ▶ NEXT AGENT — start here (handoff from sos-cards-18, 2026-07-05)
 
-**▶▶ sos-cards-18 SHIPPED — 7 fully-faithful cards + 6 reusable caps. 826 mtg-core green, whole workspace builds, tree clean,
-LEAD pushes.** Census **248→255/271 authored (94%, 252 faithful · 3 tracked-partial)**, 0 Native hatches. **The clean
+**▶▶ sos-cards-18 SHIPPED — 8 fully-faithful cards + 7 reusable caps. 830 mtg-core green, whole workspace builds, tree clean,
+LEAD pushes.** Census **248→256/271 authored (94%, 253 faithful · 3 tracked-partial)**, 0 Native hatches. **The clean
 cap-blocked tail is now EXHAUSTED** — every remaining unauthored card needs a subsystem-scale cap or a lead sketch (bucketed
 below). Own-commits (`git log -S` before re-scoping — header PROCESS RULES apply):
+- **`237e01e` — Mana Sculpt** (Counter + **delayed mana**). New time-based **`DelayedTriggerEvent::AtBeginningOfYourNextMainPhase`**
+  (+ firing hook `fire_main_phase_delayed_triggers` wired into the `PhaseBegan` handler, gated on `active == controller`) +
+  **`Action::AddMana`** (concrete pool add usable as a delayed-trigger action; `DelayedAbility` runs `Vec<Action>`) +
+  **`Effect::AddManaAtNextMainPhase`** (arms it) + **`ValueExpr::ManaSpentOfTarget`** (reads a `Target::Stack` spell's
+  `mana_spent`). Sequence arms the delay BEFORE the counter so it reads the still-on-stack spell's mana-spent; gated on a
+  `CountAtLeast(HasSubtype(Wizard))` conditional.
 - **`1d2e271` — Biblioplex Tomekeeper** (`{4}` Artifact Creature — ETB "choose up to one: prepare / unprepare a target"). New
   **modal *triggered*-ability support**: `place_trigger` (priority.rs:3509) now `choose_modes` + collects the chosen modes'
   targets (mirroring the modal-SPELL cast path), and the ability resolution threads `obj.modes` into `ctx.chosen_modes` (was
@@ -47,11 +53,9 @@ below). Own-commits (`git log -S` before re-scoping — header PROCESS RULES app
   still route controller-relative). `{X}{G}` cost = `mc.x = 1`.
 
 **▶ RECOMMENDED NEXT — the remaining buildables are all subsystem-scale (no clean wins left); pick by appetite:**
-- **Mana Sculpt** (Counter + delayed "add {C} = mana spent to cast that spell, at your next main phase, if you control a
-  Wizard"). Needs: a new time-based `DelayedTriggerEvent::AtBeginningOfYourNextMainPhase` + firing hook (mirror
-  `fire_end_step_delayed_triggers`) wired into `run_step` + a way to express **delayed mana** (`DelayedAbility` only runs
-  `Vec<Action>`; mana-add is imperative → new `Action::AddMana`) + a "mana spent by the TARGET spell" value read. ~6 touch pts.
-- **Archaic's Agony** (Converge damage + exile-equal-to-**excess damage** + impulse-play). Needs excess-damage tracking.
+- **Archaic's Agony** (Converge damage + exile-equal-to-**excess damage** + impulse-play). Needs excess-damage tracking — at the
+  moment the damage is dealt, `excess = max(0, dealt − remaining_toughness)`; then exile that many from the top of library with
+  a `YourNextTurn` play window (like `ExileForPlay` but N-from-top-of-library). The damage-path excess capture is the cap.
 - **Great Hall of the Biblioplex** (mana land — near-free — + `{5}: becomes a 2/4 Wizard` **layer-4/7 animation** = the cap).
 - **Rubble Rouser** (loot ETB + `{T},Exile-from-gy: Add {R}` + reflexive damage) — mana-ability-with-cost-and-rider, the same
   class as the **Hydro-Channeler** tracked-partial; do that roadmap item first.
