@@ -4325,7 +4325,7 @@ impl Engine {
         }
     }
 
-    fn queue_self_triggers(&mut self, subject: ObjId, want: EventPattern) {
+    pub(crate) fn queue_self_triggers(&mut self, subject: ObjId, want: EventPattern) {
         // (index, source_grp, condition, intervening_if) for each matching trigger — so a
         // non-intervening-if condition (CR 603.2c) can be checked at queue time (mirrors begin-of-step).
         // `source_grp` is `None` for the object's own printed abilities, `Some(template_grp)` for a

@@ -158,6 +158,11 @@ pub enum EventPattern {
     /// many creatures dealt or how much (the "one or more" batch), for each watcher whose controller
     /// dealt such damage. Distinct from per-instance `DamageDealt`. Killian's Confidence.
     YouDealCombatDamageToPlayer,
+    /// **This** creature deals combat damage to a player (CR 510.1c / 603.2) — fires once per
+    /// combat-damage step per creature that dealt >0 combat damage to any player (Snooping Page's
+    /// "whenever this creature deals combat damage to a player, draw a card and lose 1 life"). The
+    /// per-creature analogue of the batched, per-controller `YouDealCombatDamageToPlayer`.
+    SelfDealsCombatDamageToPlayer,
     /// This creature blocks or becomes blocked (CR 509.1i).
     SelfBlocks,
     /// You tap a creature for mana (CR 605.1b) — drives "whenever you tap a creature for mana, add

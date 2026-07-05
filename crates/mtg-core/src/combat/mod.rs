@@ -420,11 +420,17 @@ impl EngineCore {
         }
         // Controllers whose creatures dealt combat damage to a player this step (CR 510.1c) — for the
         // batched `YouDealCombatDamageToPlayer` trigger, fired once per such controller (Killian's).
+        // Also the individual SOURCE creatures that dealt to a player — for the per-creature
+        // `SelfDealsCombatDamageToPlayer` trigger (Snooping Page), fired once each.
         let mut dealt_to_player: std::collections::BTreeSet<PlayerId> = std::collections::BTreeSet::new();
+        let mut sources_to_player: Vec<ObjId> = Vec::new();
         for (target, amount, source) in &pending {
             if *amount > 0 && matches!(target, Target::Player(_)) {
                 if let Some(o) = self.state.objects.get(source) {
                     dealt_to_player.insert(o.controller);
+                }
+                if !sources_to_player.contains(source) {
+                    sources_to_player.push(*source);
                 }
             }
         }
@@ -438,6 +444,12 @@ impl EngineCore {
             });
         }
         self.commit(wb);
+        // Per-creature "this creature deals combat damage to a player" (CR 603.2) — queued from the
+        // battlefield source directly (before the batched controller event), so a creature still on
+        // the battlefield fires its own draw/lose trigger.
+        for source in sources_to_player {
+            self.queue_self_triggers(source, crate::effects::ability::EventPattern::SelfDealsCombatDamageToPlayer);
+        }
         for controller in dealt_to_player {
             self.broadcast(crate::agent::GameEvent::CombatDamageToPlayerBy { controller });
         }

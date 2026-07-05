@@ -153,6 +153,7 @@ pub mod mind_roots;
 pub mod moseo_veins_new_dean;
 pub mod sundering_archaic;
 pub mod ennis_debate_moderator;
+pub mod snooping_page;
 pub mod pigment_wrangler;
 pub mod planar_engineering;
 pub mod prismari_the_inspiration;
@@ -386,6 +387,7 @@ pub fn register(db: &mut CardDb) {
     moseo_veins_new_dean::register(db);
     sundering_archaic::register(db);
     ennis_debate_moderator::register(db);
+    snooping_page::register(db);
     pigment_wrangler::register(db);
     prismari_the_inspiration::register(db);
     quandrix_the_proof::register(db);
