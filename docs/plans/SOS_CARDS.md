@@ -36,30 +36,64 @@ reusable subsystems.**
 - **`Effect::MillThenPutCreatureOntoBattlefield`** (mill from your OWN library, reanimate a creature from among the
   milled set; owner==controller so no control override) → **Vastlands Scavenger // Bind to Life**.
 
-### ▶ REMAINING for sos-cards-14: 5 prepare stragglers (each 1 distinct cap; back ids continue from 9731) + the StackObject cluster's honest deferrals
-Precise per-card blockers are in the **"REMAINING PREPARE"** list below (now down to 5). By yield:
-1. **Grave Researcher // Reanimate** — front is BUILDABLE NOW (`Sequence[Surveil 1, Conditional{Count{gy creatures≥3}
-   → BecomePrepared}]`, upkeep trigger). Back needs (a) a `ValueExpr::ManaValueOfTarget(n)` (lose life = the card's
-   MV — a copiable value, readable anytime, NO LKI), and (b) **reanimate-controller-override** — "put target creature
-   from A graveyard onto the battlefield UNDER YOUR CONTROL". ⚠️ For your-OWN-graveyard (the common case, owner==you)
-   plain `Effect::MoveZone{→Battlefield}` already works; only cross-graveyard steal needs a controller override →
-   **verify the engine's control-vs-ownership model first** (does the battlefield vec key on owner or controller? how
-   does "creatures you control" count it? return-to-owner on death?) before adding a `controller: Option<PlayerRef>`
-   to MoveZone or a dedicated `Effect::ReanimateUnderControl`. Design-sketch to the lead.
-2. **Goblin Glasswright // Craft with Pride** — back "Create a Treasure token": needs a **Treasure token def whose
-   ability is a sacrifice-cost mana ability** ("{T}, Sacrifice: Add one mana of any color"). ⚠️ The mana payment path
-   only taps (no sac-for-mana) — flagged since sos-cards-7. This touches mana AFFORDABILITY during casting (available
-   mana is no longer just untapped lands) → mind the no-rewind invariant; design-sketch first.
-3. **Harmonized Trio // Brainstorm** — front cost "{T}, Tap two untapped creatures you control" (a convoke-like
-   tap-N-OTHERS cost, unbuilt) + back Brainstorm "draw 3, put 2 back on top in any order" (a library-top-order
-   primitive).
-4. **Leech Collector // Bloodletting** — front "gain life for the FIRST time each turn → prepared": needs a
-   `Player.life_gain_events_this_turn` counter + **queue-time condition-checking in `queue_self_triggers`** (mirroring
-   `queue_begin_of_step_triggers`) so a `GainLife` trigger gates on "events==1" AT event time (an intervening-if
-   resolution check fails when two gains batch first). ⚠️ The queue-time change touches ALL self-triggers → **own
-   commit + regression across every self-trigger card**. Back = each opponent loses 2 (`LoseLife` EachOpponent, built).
-5. **Jadzi, Steward of Fate // Oracle's Gift** — back `{X}{X}` create X Fractals then X counters on each Fractal you
-   control: dynamic-X token count + a for-each-Fractal counter pass. **Heaviest back.**
+### ▶ sos-cards-14 PROGRESS — 2 of the final 5 SHIPPED (688 mtg-core green), 3 flagged remain
+- ✅ **Jadzi, Steward of Fate // Oracle's Gift** (commit `7a45fbf`, back id 9731) — **NO new cap.** {X}{X} = `ManaCost.x=2`
+  (charges 2X; `cast_x`→`ValueExpr::X`). Back = `Sequence[CreateToken{fractal(0), count:X}, ForEach{Fractals you control →
+  PutCounters{Each, +1/+1, X}}]` (the shipped Blech `ForEach{…max:999…}` selects ALL matching, so new + pre-existing
+  Fractals both get counters). Front = enters-prepared + a 2nd `SelfEnters` trigger (draw 2, discard 2).
+- ✅ **Harmonized Trio // Brainstorm** (commit `5345c20`, back id 9732) — **2 contained caps, NOT flagged.**
+  `CostComponent::TapCreatures(u32)` (count-based sibling of Crew; reuses `crew_candidates`/select-N-and-tap) drives the
+  front's "{T}, Tap two untapped creatures you control:" activated prepare. `Effect::PutFromHandOnTop{who,count}` (select
+  N hand cards ordered → library top, first-chosen on top; `move_object` pushes to the tail=top) drives Brainstorm =
+  `Sequence[Draw 3, PutFromHandOnTop 2]`.
+
+### ▶ REMAINING for sos-cards-14: the **3 flagged** stragglers — DESIGN SKETCHES below (each own-commit), pinged to lead
+
+**SKETCH 1 — Grave Researcher // Reanimate (reanimate-controller-override + `ManaValueOfTarget`; LOW regression risk).**
+Control model VERIFIED (Explore): battlefield is a per-player `Vec` keyed such that an on-bf object sits in its
+**controller**'s vec (move_object pushes to `to_owner` and sets `controller=to_owner`); `Object` has distinct
+`owner`/`controller`; "creatures you control" counts `o.controller==p`. The gap: `move_object`'s **source removal**
+(state/mod.rs:745) removes from `o.owner`'s vec — fine today (owner==controller everywhere) but wrong once control≠owner.
+Plan: (a) add `ValueExpr::ManaValueOfTarget(u32)` (whiteboard Path A arm next to `PowerOfTarget`; conditions.rs Path B
+falls through to 0, add for parity). (b) `Effect::MoveZone` gains `controller: Option<PlayerRef>` (None→owner); lowered to
+`Action::MoveZone{new_controller: Option<PlayerId>}`; commit handler passes `new_controller.unwrap_or(owner)` as `to_owner`.
+(c) fix `move_object` source removal: for a **battlefield** source remove from `o.controller`'s vec, else `o.owner`'s — a
+**no-op for all existing behavior** (owner==controller), correct once a reanimated opp creature later leaves play. Card:
+back Reanimate = `Sequence[MoveZone{Target(CardInZone{Graveyard,Creature}), Battlefield, controller:Some(Controller)},
+LoseLife{Controller, ManaValueOfTarget(0)}]`; front = `BeginningOfStep(Upkeep)`+`YourTurn` → `Sequence[Surveil 1,
+Conditional{ValueAtLeast(Count{gy creatures, Controller}, 3) → BecomePrepared}]` + Prepare. Guard = full suite (move_object
+change is inert for every current card).
+
+**SKETCH 2 — Leech Collector // Bloodletting (queue-time trigger-condition check; ZERO regression, own commit).**
+Regression survey (Explore, exhaustive): **Bucket B is EMPTY** — no non-begin-of-step `Triggered` in the pool sets
+`condition:Some + intervening_if:false`. The only 3 conditioned non-begin-of-step triggers (Emeritus of Abundance
+SelfAttacks, Emeritus of Conflict SpellCast, Living History YouAttack) are all `intervening_if:true`. Plan mirrors
+`queue_begin_of_step_triggers` EXACTLY — gate the condition at queue time **only when `!intervening_if`** — so those 3 are
+untouched (they still defer to `trigger_intervening_if_holds` at resolution). Purely enabling. Apply to `queue_self_triggers`
+(covers Leech's GainLife) + for generality the siblings `queue_watching_spellcast_triggers` / `queue_watching_enters_triggers`
+/ **`queue_you_attack_triggers`** (the 4th sibling the survey flagged). Plus: `Player.life_gain_events_this_turn: u32`
+(reset each turn beside `life_gained_this_turn`; **increment by 1 in the `LifeChanged{delta>0}` handler BEFORE the
+GainLife queue loop** so the 1st gain reads ==1) + `ValueExpr::LifeGainEventsThisTurn{who}` (both eval paths). Card: front =
+`prepared_abilities(BLOODLETTING, GainLife, Some(exactly-1), intervening_if:false)` where exactly-1 =
+`All(ValueAtLeast(LGEtt,1), Not(ValueAtLeast(LGEtt,2)))`; back Bloodletting = `LoseLife{EachOpponent, 2}`.
+
+**SKETCH 3 — Goblin Glasswright // Craft with Pride (Treasure sac-for-mana; HARDEST — needs a SCOPE decision).**
+Explore confirms the real wall: `is_mana:true` abilities **bypass `pay_cost`** — affordability (`payment_units`/
+`mana_sources_kind`) counts any untapped `AddMana` source **ignoring its cost.components**, and payment (`mana.rs::auto_pay`)
+only flips `status.tapped` (no Engine access → can't `move_object`/broadcast a sacrifice). So a naively-registered Treasure
+would tap for mana but **never sacrifice** = a reusable mana rock (a real gameplay bug, not cosmetic). The token DEF itself
+is trivial (Potioner's Trove + `CostComponent::Sacrifice(sacrifice_self())`, "any color" = `ManaSpec{any_color:Some(1)}`).
+Options (lead's call):
+  - **(A) FULL** — carry each mana-source's non-tap cost through an Engine-level payment (route `is_mana` abilities with
+    extra components through `pay_cost`/`pay_sacrifice`). Correct + general, but re-architects the core mana affordability/
+    payment path that EVERY cast exercises → biggest/riskiest change of the three.
+  - **(B) EXCLUDE-FROM-AUTOPAY (my recommendation)** — exclude sac-cost mana sources from `auto_pay`/affordability
+    enumeration; the Treasure is usable only via MANUAL mana-ability activation (`activate_mana_ability`), which I route
+    through `pay_cost` so it sacrifices correctly and floats the mana (then the cast spends floating mana). CR-correct
+    (mana abilities may be activated in the priority window), localized to the source enumeration, no auto_pay rewrite —
+    but the auto-payer won't spend Treasures (the AI must manually pop them, a legal action).
+  - **(C) DEFER** — ship "Create a Treasure token" but track sac-for-mana as a known engine gap (Treasure taps, never
+    sacs). Honest, smallest, but leaves a genuine gameplay bug (infinite mana over turns).
 
 ---
 
