@@ -1821,6 +1821,12 @@ impl Engine {
                     self.state.move_object(source, Zone::Graveyard, owner);
                     self.broadcast(GameEvent::ObjectMoved { obj: source, to: Zone::Graveyard });
                 }
+                // "Pay N life" — a Ward—Pay-N-life soft-counter cost (CR 702.21 / 118.4). No `{X}` in
+                // this context (Ward costs are fixed), so a default ctx suffices for the eval.
+                CostComponent::PayLife(v) => {
+                    let amt = self.eval_value(v, &ResolutionCtx::default()).max(0) as i32;
+                    self.change_life(p, -amt);
+                }
                 _ => {}
             }
         }
@@ -3987,7 +3993,7 @@ impl Engine {
     /// for the copy (707.10c) — reusing the cast-time target machinery; if a slot can't be re-filled the
     /// copied targets are kept. The copy is NOT cast (707.10a — no `SpellCast`, so no cast triggers), and
     /// ceases to exist when it leaves the stack (`is_copy`). No-op if the original already left the stack.
-    fn copy_spell_on_stack(&mut self, spell: ObjId, by: PlayerId, choose_new_targets: bool) {
+    pub(crate) fn copy_spell_on_stack(&mut self, spell: ObjId, by: PlayerId, choose_new_targets: bool) {
         // The original's current stack object (its chosen targets/X/modes to copy). Gone → no-op.
         let Some(orig) = self
             .state

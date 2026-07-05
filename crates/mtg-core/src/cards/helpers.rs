@@ -98,6 +98,15 @@ pub(crate) fn ward_discard() -> Ability {
     })
 }
 
+/// "Ward—Pay N life." — the targeting player pays N life (Prismari, the Inspiration's Ward—Pay 5
+/// life). Non-mana Ward cost; the life is deducted by `pay_cost`'s `CostComponent::PayLife` arm.
+pub(crate) fn ward_pay_life(n: i64) -> Ability {
+    ward(Cost {
+        mana: None,
+        components: vec![CostComponent::PayLife(ValueExpr::Fixed(n))],
+    })
+}
+
 /// **Paradigm** (SoS Lessons keyword) — the recurring-recast half, shared by all 5 Lesson cards.
 /// "Then exile this spell. After you first resolve a spell with this name, you may cast a copy of it
 /// from exile without paying its mana cost at the beginning of each of your first main phases."

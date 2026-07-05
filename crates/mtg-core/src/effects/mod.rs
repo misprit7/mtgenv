@@ -279,6 +279,23 @@ pub enum Effect {
         filter: CardFilter,
         choose_new_targets: bool,
     },
+    /// "Copy a spell that's on the stack `count` times" (CR 707.10) — the storm / casualty / infusion
+    /// engine over the built [`crate::priority::EngineCore::copy_spell_on_stack`]. `what` names which
+    /// stack spell to copy: [`EffectTarget::Triggering`] = the spell that fired this "whenever you cast
+    /// …" ability (read from `ctx.triggering_spell`), the Storm/Casualty/Infusion case; a
+    /// `Target`/`Select` naming a spell on the stack covers "copy target instant or sorcery spell"
+    /// (Choreographed Sparks). Each of the `count` copies is minted **over** the original (so they
+    /// resolve first), is **not cast** (707.10a — no `SpellCast`, no cast triggers), carries the
+    /// original's chosen targets/X/modes (707.10b), and ceases to exist when it leaves the stack.
+    /// `choose_new_targets` offers the 707.10c "you may choose new targets" reselection **per copy**.
+    /// `count` ≤ 0 (or the source spell already gone) → no copies. Imperative (mints objects, may ask
+    /// for new targets), so it lives in `interpret`. Distinct from [`CopyNextSpellCast`] (which arms a
+    /// delayed trigger to copy the *next* cast) and [`CastCopy`] (707.12 — mints **and casts** a copy).
+    CopySpellOnStack {
+        what: EffectTarget,
+        count: ValueExpr,
+        choose_new_targets: bool,
+    },
     /// "This creature becomes prepared" (SoS "Prepare" DFCs). Sets the `prepared` status on the
     /// ability's source (`ctx.source`) — every "becomes prepared" clause (enters-prepared,
     /// at-the-beginning-of-your-first-main, whenever-this-attacks, landfall, an activated ability, …)

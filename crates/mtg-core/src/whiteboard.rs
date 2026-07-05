@@ -225,6 +225,50 @@ impl EngineCore {
                 }
                 true
             }
+            // Copy a spell that's on the stack `count` times (CR 707.10) — the storm / casualty /
+            // infusion engine over `copy_spell_on_stack`. `what` names the stack spell: `Triggering` =
+            // the spell that fired this "whenever you cast …" trigger (`ctx.triggering_spell`); a
+            // resolved `Target`/`Select` that names a spell on the stack covers "copy target instant or
+            // sorcery spell." Each copy is minted OVER the original (so copies resolve first), is NOT
+            // cast, and ceases to exist off the stack; `choose_new_targets` offers the 707.10c "you may
+            // choose new targets" reselection per copy. count ≤ 0 / source gone → no copies. Interactive
+            // (may ask for new targets), so it lives here. Flush staged actions first.
+            Effect::CopySpellOnStack { what, count, choose_new_targets } => {
+                self.flush_pending(wb);
+                let by = ctx.controller.unwrap_or(self.state.active_player);
+                let is_spell = |st: &Self, o: ObjId| {
+                    st.state
+                        .stack
+                        .items
+                        .iter()
+                        .any(|it| matches!(it.kind, crate::stack::StackObjectKind::Spell(x) if x == o))
+                };
+                // The spell's card object (what `copy_spell_on_stack` wants), verified still on the stack.
+                let source = match what {
+                    EffectTarget::Triggering => ctx.triggering_spell.filter(|s| is_spell(self, *s)),
+                    _ => self.resolve_target(what, ctx, cursor).and_then(|t| match t {
+                        Target::Stack(sid) => self
+                            .state
+                            .stack
+                            .items
+                            .iter()
+                            .find(|it| it.id == sid)
+                            .and_then(|it| match it.kind {
+                                crate::stack::StackObjectKind::Spell(o) => Some(o),
+                                _ => None,
+                            }),
+                        Target::Object(o) => is_spell(self, o).then_some(o),
+                        _ => None,
+                    }),
+                };
+                if let Some(spell) = source {
+                    let n = self.eval_value(count, ctx).max(0);
+                    for _ in 0..n {
+                        self.copy_spell_on_stack(spell, by, *choose_new_targets);
+                    }
+                }
+                true
+            }
             // "Target creature's owner puts it on their choice of the top or bottom of their library"
             // (Run Behind). The OWNER (not the caster) chooses; then the object moves to their library
             // at that end. Interactive (asks the owner), so it lives here. Flush staged actions first.
@@ -1749,6 +1793,7 @@ impl EngineCore {
             | Effect::Blink { .. }
             | Effect::ExileReturnNextEndStep { .. }
             | Effect::CopyNextSpellCast { .. }
+            | Effect::CopySpellOnStack { .. }
             | Effect::MayTapOrUntap { .. }
             | Effect::PutOnTopOrBottom { .. }
             | Effect::PutFromHandOnTop { .. }
