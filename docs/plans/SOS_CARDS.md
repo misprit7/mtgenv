@@ -4,9 +4,67 @@ Standing workstream: implement the Secrets of Strixhaven set for **limited (40-c
 `mtg-core`, easiest-first, correctness over count. This ledger is the capability index + full
 per-card triage, modeled on `SELESNYA_LANDFALL_CARDS.md`.
 
-## ▶ NEXT AGENT — start here (handoff from sos-cards-8, 2026-07-04)
+## ▶ NEXT AGENT — start here (handoff from sos-cards-9, 2026-07-04)
 
-**▶▶ sos-cards-8 HANDOFF (2026-07-04) — READ FIRST. SCOPE IS NOW THE FULL SET** (T4 deferral REVOKED —
+**▶▶ sos-cards-9 HANDOFF (2026-07-04) — READ FIRST. SCOPE = FULL SET; quality bar = general CR capability,
+not the minimal hack.** 158→161 authored / all fully-faithful, **595 mtg-core tests green, tree clean, 3 clean
+commits** (LEAD pushes). Shipped **4 caps + 3 cards** (each a real-path test, `git commit --only` on the shared
+tree; MuZero's `experiments/` untouched):
+1. **S12 target-dependent cost reduction** (`583f30f`) — the risky sub-cap agent-8 deferred. `CostReduction`'s
+   condition is now `CostReductionCondition::{State(Condition) | TargetMatches(CardFilter)}`; `effective_cast_cost`
+   takes a `TargetCtx::{Optimistic | Chosen(&targets)}`. Offer gate applies a target-dependent discount
+   optimistically (a legal matching target exists); `cast_spell` recomputes the final cost from the CHOSEN
+   targets AND constrains each target slot's candidates to what the caster can pay (reductions only lower cost →
+   base affordable keeps all, else only discount-granting targets) — auto_pay never underpays, **no rewind**.
+   + `CardFilter::Tapped`/`Untapped`. → **Ajani's Response** (real-cast test proves the untapped creature is not
+   offered when only the reduced cost is affordable). Orysa migrated to `State(...)`.
+2. **enters-tapped MoveZone** (`9bd7fa1`) — `tapped: bool` on `Effect::MoveZone` + `Action::MoveZone` (set after
+   `move_object` re-untaps, CR 110.5; mirrors `Effect::Search{tapped}`). → **Teacher's Pest** (gy→battlefield
+   tapped). **Also registered the missing Swamp basic land** (`grp::SWAMP=5` — no black basic existed!).
+3. **Exile-as-cost** (`eadceae`) — wired `CostComponent::Exile(SelectSpec)` (was defined-but-unpaid;
+   `exile_cost_candidates`/`pay_exile_cost` mirror the Discard pair, exclude the source). → **Postmortem Professor**.
+   Reusable for escape/delve. **The graveyard-recursion trio (Summoned Dromedary/Teacher's Pest/Postmortem) is
+   now COMPLETE.**
+
+**▶ RECOMMENDED NEXT ORDER (all remaining need a genuine subsystem — none is a quick win):**
+- **Killian's Confidence — DESIGN-SKETCHED, sketch to the lead before building.** {W}{B} Sorcery (spell =
+  PumpPT+Draw, trivial) + a **graveyard-triggered ability** (NEW CLASS): "whenever one or more creatures you
+  control deal combat damage to a player, you may pay {W/B}; if you do, return this from your gy to hand." THREE
+  new mechanisms: **(1) graveyard-triggered abilities** — `collect_triggers` only scans the battlefield today.
+  Two designs: *(A)* a `from_zone` field on `Ability::Triggered` (general but churns EVERY Triggered literal —
+  dozens, risky); *(B, RECOMMENDED)* a per-card marker `Ability::FunctionsFromGraveyard` (mirrors
+  `CostComponent::ActivateFromGraveyard` exactly — low churn, `collect_triggers` gains a graveyard scan gated on
+  the marker). **(2) batched combat-damage-to-a-player event** — fires ONCE per combat-damage step if ≥1 of your
+  creatures dealt combat damage to a player (a new `EventPattern`; `DamageDealt{Combat}` is per-instance, wrong
+  granularity). **(3) "you may pay {cost}; if you do, {effect}"** in resolution ({W/B} hybrid, hybrid mana done)
+  — check whether `Effect::Optional`/`IfYouDo` can gate on paying a mana cost, else add a `MayPayCost` effect.
+- **Remaining S12 cards** (target-dependent MECHANISM done; each blocked on a DIFFERENT secondary): **Run Behind**
+  (uses the new cap w/ `Attacking` filter; needs "put target on top OR bottom of owner's library, owner chooses"
+  — an owner-side binary decision, no clean existing primitive — a small decision-plumbing effect); **Brush Off**
+  (uses the cap w/ the `Cost({1}{U})` arm + an I/S-spell filter; ALSO needs `TargetKind::StackObject` candidate
+  enumeration in the real cast path — `target_candidates` returns empty for StackObject, so counterspells are only
+  tested via `resolve_effect` — a separate cap + stack-target filter matching); **Diary of Dreams** (activated-
+  ability cost reduction — a per-ability variant of my cast-time work applied at `activate_ability`; + a Page
+  `CounterKind` + a SpellCast-I/S→add-page-counter trigger); **The Dawning Archaic** (`GenericValue(Count{I/S in
+  gy})` arm already built — the reduction is DONE; needs a free-cast-an-I/S-from-gy-on-attack trigger);
+  **Wilt in the Heat** (reduction is FREE via `State(CardLeftGraveyardThisTurn)` — existing pipeline; needs a
+  "if that creature would die this turn, exile it instead" delayed replacement rider).
+- **The big three (DESIGN-SKETCH TO THE LEAD BEFORE EACH):** Lessons/Learn (CR 715 outside-the-game/sideboard),
+  Planeswalkers (CR 306/606 — `CostComponent::Loyalty` + a PW-dies test already exist), Prepare-DFCs (~36, the
+  card-faces model — the biggest piece).
+
+**PROCESS (unchanged, hard-won):** shared tree → `git commit --only <paths>` (stage a NEW file with `git add`
+first), never `-a`/`add -A`/stash; DON'T touch `experiments/` (MuZero + GPU runs live there); `cargo test -p
+mtg-core` green at every commit; flip a cap's ledger Status cell in the SAME commit; **`git log -S "<mechanism>"`
++ READ THE CODE before scoping any ⏳ row as new** (beliefs have drifted in both directions). Real-path integration
+test (cast/activate→pay→target→resolve) for every mechanism; expect-test snapshots (`UPDATE_EXPECT=1` to regen).
+Ping the lead at subsystem boundaries + design sketches for new classes / the big three. On fatigue: declare,
+rewrite THIS block, hand off clean.
+
+---
+### Prior handoff — sos-cards-8 (superseded by the block above, kept for provenance)
+
+**▶▶ sos-cards-8 HANDOFF (2026-07-04) — SCOPE IS NOW THE FULL SET** (T4 deferral REVOKED —
 prepare-DFCs, Lessons, planeswalkers, spell-copy, Fractalize, all subsystems in scope). Quality bar:
 each subsystem built as the GENERAL CR capability, not the minimal hack. **153→158 authored / 155 fully-
 faithful / 3 tracked-partial, 586 mtg-core tests green, tree clean (commits local, not yet pushed — ask lead).**
