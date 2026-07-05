@@ -4,7 +4,73 @@ Standing workstream: implement the Secrets of Strixhaven set for **limited (40-c
 `mtg-core`, easiest-first, correctness over count. This ledger is the capability index + full
 per-card triage, modeled on `SELESNYA_LANDFALL_CARDS.md`.
 
-## ▶ NEXT AGENT — start here (handoff from sos-cards-10, 2026-07-04)
+## ▶ NEXT AGENT — start here (handoff from sos-cards-11, 2026-07-04)
+
+**▶▶ sos-cards-11 HANDOFF — READ FIRST. SCOPE = FULL SET; bar = general CR capability ("nicest way that
+extends for any future card").** 168→172 authored, **630 mtg-core tests green, tree clean, LEAD pushes** (6
+commits: a1dbc3e, 5e1754a, b3efee6, 99fc712, 526b372, 3779976). sos-cards-11 built **the long-deferred
+SPELL-COPY subsystem** and its consumers.
+
+### ✅ SHIPPED (all real-path tested; `git log -S` before re-scoping — beliefs drift)
+- **SPELL-COPY (CR 707.10/12) — the reusable foundation.** `CastVariant::WithoutPayingManaCost`→{0}
+  (free-cast primitive); **`Effect::CastCopy{source, controller}`** mints a copy `Object` from the source's
+  copiable base chars (707.2 via grp_id) into `Zone::Stack`, casts it through the EXISTING `cast_spell`
+  (new targets, X=0, SpellCast fires); **`Object.is_copy`** → the copy **ceases to exist** off the stack
+  (707.10a, `state.cease_to_exist`, in `resolve_top` + `interpret_counter`, checked BEFORE the flashback/
+  paradigm exile branch). Key realization: *a spell on the stack is just an Object → a copy needs almost no
+  new machinery.* WHITEBOARD_MODEL §2.5 updated.
+- **`Effect::CastForFree{what, exile_on_leave}`** — casts the ACTUAL targeted card free (vs CastCopy's copy);
+  `exile_on_leave` reuses the flashback exile-on-leave-stack flag. → **The Dawning Archaic** ({1}-less-per-I/S
+  reduction arm now exercised; SelfAttacks → free-cast up-to-one gy I/S + exile rider).
+- **Paradigm (SoS Lessons keyword — NOT Learn/sideboard).** `Ability::Paradigm` (self-exile-on-resolve marker;
+  `resolve_top` routes the original to exile) + **`queue_exile_functioning_triggers`** (mirrors the emblem/
+  graveyard `FunctionsFrom` scans, fired from `PhaseBegan` gated to the active player) + a recurring
+  `BeginningOfStep(PrecombatMain)` optional `CastCopy{SourceSelf}`. `helpers::paradigm_abilities()` bundles
+  all three for the 5 Lessons. **4/5 Lessons DONE:** Decorum Dissertation (carries the full lifecycle test),
+  Germination Practicum, Restoration Seminar (reanimate), Echocasting Symposium (token-copy).
+- **`Effect::PutOnTopOrBottom`** (owner chooses top/bottom of library, `ConfirmKind::PutOnTop`) → **Run Behind**
+  (+ S12 target-dependent reduction, `TargetMatches(Attacking)`).
+
+### ▶ REMAINING for YOU (sos-cards-12)
+1. **Improvisation Capstone** (5th Lesson, {5}{R}{R}, ⏳ heaviest): "Exile cards from the top of your library
+   until you exile cards with total mana value 4 or greater. You may cast any number of spells from among them
+   without paying their mana costs." + Paradigm. Two new bits: (a) an **exile-top-until-total-MV≥N** loop leaf,
+   (b) **cast-any-number-of-the-exiled-for-free** — a repeated optional `CastForFree` over the exiled set (the
+   free-cast primitive + impulse machinery already exist; the loop is the new part). Then append
+   `helpers::paradigm_abilities()`.
+2. **Brush Off** ({2}{U}{U} counter, ⏳): needs the **`TargetKind::StackObject` real-cast enumeration gap**
+   (Systemic notes below — `target_candidates` returns empty for StackObject, so counterspells are only tested
+   via `resolve_effect`). Own commit with real counterspell cast-path tests. Then Brush Off = Counter +
+   `{1}{U}`-less-if-it-targets-an-I/S-spell (the `Cost` reduction arm + `TargetMatches` on a stack target).
+3. **PREPARE-DFCs (~36 cards) — the last big-three item. DESIGN PLAN BELOW (lead-pinged 2026-07-04, awaiting
+   OK).** ⚠️ **Major finding: prepare is a SPELL-COPY CONSUMER, not a CR 712 transform model.** Every prepare
+   card is `Creature (front) // Instant-or-Sorcery (back)`; the reminder is *"While it's prepared, you may cast
+   a copy of its spell. Doing so unprepares it."* The back face is **copy-only** (never cast from hand, no face
+   flip). Build = **spell-copy (done)** + `Object.prepared: bool` + **`Effect::BecomePrepared`** (sets the flag;
+   the "becomes prepared" diversity — enters/first-main/on-attack/landfall/cast-a-creature/activated — is then
+   FREE, each an ordinary trigger/ability) + **back-face spell defs in a reserved grp block (e.g. 9700+)** the
+   front creature links via `Ability::Prepare{spell_grp}` + a **while-prepared cast offer** in
+   `legal_priority_actions` (cast a copy of the linked spell at its timing → unprepare) + **one CastCopy
+   extension:** prepare copies are **PAID** (not free — extend `CastCopy` with a pay/free flag; Paradigm=free,
+   prepare=paid) and the copy source is a **CardDef/grp_id** (not an object — add a "copy from def" source).
+   Build the shared rails + 3-4 representative cards first (enters-prepared / at-first-main / on-attack /
+   activated), then fan out the 36.
+
+**PROCESS (unchanged, hard-won):** shared tree → `git commit --only <paths>` (`git add` a NEW file first),
+never `-a`/`add -A`/stash; DON'T touch `experiments/` (MuZero + GPU); `cargo test -p mtg-core` green at every
+commit; flip a cap's ledger Status cell in the SAME commit; **`git log -S "<mechanism>"` + READ THE CODE before
+scoping any ⏳ row as new**. Real-path integration test for every mechanism; expect-test snapshots. Ping the lead
+at subsystem boundaries + design-sketch new subsystems (prepare-DFCs sketched — build once the lead OKs) before
+building. On fatigue: declare, rewrite THIS block, hand off clean. Read the **Systemic notes** (no-rewind economy
++ the counterspell/StackObject gap) below before scoping cost/targeting/counterspell work.
+
+*(sos-cards-11 retiring at a clean boundary — spell-copy subsystem + Paradigm + 6 cards shipped, all green,
+prepare-DFC design delivered, this block rewritten for the successor.)*
+
+---
+## ▶ Prior handoff — sos-cards-10 (superseded by the block above)
+
+## ▶ NEXT AGENT — (handoff from sos-cards-10, 2026-07-04)
 
 **▶▶ sos-cards-10 HANDOFF (2026-07-04) — READ FIRST. SCOPE = FULL SET; quality bar = general CR capability
 ("nicest way that extends for any future card"), not the minimal hack.** **166 authored / 616 mtg-core tests
@@ -638,7 +704,7 @@ each cap unlocks the bracketed count. `⏳` = not yet built.
 | **S9** Graveyard-leave | "cards leave your graveyard" trigger + "a card left your graveyard this turn" cond | 8 | ✅ **DONE** (flag `f9b5584` + trigger: LeftGraveyard event snapshot in resolve_effect → Spirit Mascot, Owlin Historian, Garrison Excavator) |
 | **S2** Look-and-pick | look at top N, put one/some in hand, rest on bottom (impulse selection) | 8 | ✅ **DONE** (`Effect::LookAndPick{ count, take, take_to, rest_to, take_filter }` — implemented; consumers Flow State, Stress Dream, Stirring Honormancer, Paradox Surveyor, Follow the Lumarets, Visionary's Dance). The ledger previously mis-listed this as ⏳. Geometer's Arthropod still needs "top-X" = reading the *triggering spell's* X (a separate need). |
 | **S12** Cost-reduction cond. | "costs {N} less if it targets X / you control Y / a card left your gy" (cast-time) | 7 | ◑ **PIPELINE + STATE + TARGET-DEPENDENT DONE** (sos-cards-8 `9621fef` pipeline; sos-cards-9 target-dependent) — `Ability::CostReduction{amount:CostReductionAmount::{Generic\|GenericValue\|Cost}, condition:CostReductionCondition::{State(Condition)\|TargetMatches(CardFilter)}}` + `effective_cast_cost(p,card,base,TargetCtx::{Optimistic\|Chosen(&targets)})`. **State** cond → **Orysa**. **Target-dependent** (CR 601.2f, sos-cards-9): the offer gate applies the discount optimistically (a legal matching target exists → best-case cost), `cast_spell` recomputes the FINAL cost from the CHOSEN targets *and* constrains each target slot's candidates to what the caster can pay (reductions only lower cost → base affordable keeps all; else only discount-granting targets), so auto_pay never underpays — **no rewind** (the load-bearing invariant agent-8 flagged). + `CardFilter::Tapped`/`Untapped` arms. → **Ajani's Response** (Destroy + {3}-off-if-targets-tapped; real-cast test proves the untapped creature is NOT offered when only {1}{W} is affordable). **Remaining:** **Brush Off** (Counter + {1}{U} coloured + targets-an-I/S-*spell*) — *also* needs `TargetKind::StackObject` candidate enumeration in the real cast path (`target_candidates` returns empty for StackObject; counterspells are only tested via `resolve_effect`) + stack-target filter matching; **Run Behind** (uses this cap; needs a "put on top/bottom of library, owner's choice" effect); ~~**Diary of Dreams**~~ **DONE** (sos-cards-9) — activated-ability cost reduction via `CostReductionScope::{Cast\|ActivatedAbilities}` + `effective_activation_cost` (applied at the activated-ability offer gate + `activate_ability`); page counter = `CounterKind::Named("page")` (zero enum churn); **The Dawning Archaic** = `GenericValue(Count{I/S in gy})` [arm built, untested] + free-cast-on-attack trigger; **Wilt in the Heat** = `State(CardLeftGraveyardThisTurn)` (free via the existing pipeline) + 5 dmg + exile-if-dies replacement rider. |
-| **S14** Copy spell/perm | "copy target spell", "create a token that's a copy of" (heavier small-cap) | 7 | ◑ **token-copy DONE** (`Effect::CreateTokenCopy`+`TokenCopyMods`, `a8c8a2d` → Applied Geometry); **spell-copy** portion ⏳ — a real subsystem (copy a stack spell per CR 707.10: mint a new StackObject copy above the original + a "you may choose new targets" reselection). **Low practical yield (scoped 2026-07-03):** of the 7 spell-copy cards, most are ALSO blocked elsewhere — Aziza (tap-3-creatures cost), Choreographed Sparks (modal + creature-spell-copy-with-grants + "can't be copied"), Mica (Ward—Pay-life), Prismari (Storm + Elder Dragon). Spell-copy ALONE unblocks essentially only **Lumaret's Favor** (Infusion "copy it if you gained life this turn" + a +2/+4 pump). So build it for the subsystem, not the count. |
+| **S14** Copy spell/perm | "copy target spell", "create a token that's a copy of", "cast a copy of" | 7 | ◑ **token-copy DONE** (`Effect::CreateTokenCopy`+`TokenCopyMods`, `a8c8a2d` → Applied Geometry). **CAST-A-COPY (CR 707.12) DONE (sos-cards-11, `5e1754a`)** — `Effect::CastCopy{source, controller}` mints a copy `Object` from the source's copiable base chars (707.2 via grp_id) into `Zone::Stack` and casts it via the real `cast_spell(WithoutPayingManaCost)`; `Object.is_copy` → ceases to exist off the stack (707.10a, `state.cease_to_exist`). Powers **Paradigm** (5 Lessons) and is the foundation for **prepare-DFCs** (36 cards — see the NEXT-AGENT design plan). **Still ⏳: 707.10 "copy target spell on the stack"** (a copy that ISN'T cast — mint a StackObject copy above the original + new-target reselection) — unblocks **Lumaret's Favor** (Infusion "copy it if you gained life this turn"). Other 707.10 cards double-blocked (Aziza tap-3-cost, Choreographed Sparks modal+grants, Mica Ward—Pay-life, Prismari Storm). |
 | **S17** Ward {cost} | Ward N / Ward—Pay life / Ward—Discard (counter-unless-pay on becoming targeted) | 7 | ◑ **mana DONE** `96dbc35` — `Effect::CounterUnlessPay{ what, cost:Cost }` soft-counter + `EffectTarget::Triggering` (the targeting spell/ability, threaded via `GameEvent::Targeted.source` → `state.trigger_targeting_source` → `ResolutionCtx.triggering_stack`); `CardFilter::ItSelf` now matches in `enter_filter_matches` (source-threaded, opt-in from the targeted path). Reuses `Cost`+`can_pay_cost`/`pay_cost`. Ward constructors live in `cards/helpers.rs` (`ward`/`ward_mana`/`ward_discard`). → **Colorstorm Stallion** (Ward {1}, mana) + **Forum Necroscribe** (Ward—Discard, the non-mana path — reuses the `Discard` cost arms). **Ward—Pay life** (Mica/Prismari): `pay_cost` has NO `PayLife` arm yet (falls to `_ => {}`, so life isn't deducted) — add it first; their *secondaries* are also blocked (spell-copy/storm). Side-fix landed here: `Effect::MoveZone`'s target was missing from `collect_specs_into` (never collected through the REAL cast/trigger path — prior MoveZone tests bypassed casting), now fixed. |
 | **S15** Impulse play | exile/mill → "you may play it until end of turn / your next turn" | 6 | ◑ **DONE for exile cases** (`d079eb0` base + `0e17d3e` top-of-library source + land-play) → Practiced Scrollsmith, Elemental Mascot, Suspend Aggression (3). Only **graveyard-play** (milled card played from gy — Ark of Hunger, Tablet) still ⏳; the other 2 S15 cards are cap-blocked (Archaic's Agony=S7, Tablet=S13) |
 | **S3** Stun counters | `CounterKind::Stun` + "would untap → remove a stun counter instead" replacement | 6 | ✅ **DONE** `f8ab8ea` (untap-step replacement, CR 702.171) → Procrastinate, Deluge Virtuoso, Fractal Mascot, Rapier Wit. (Was mis-listed ⏳.) |

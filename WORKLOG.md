@@ -3,6 +3,32 @@
 Short, dated entries for future-agent consumption. Newest first. One line or a few bullets
 per unit of meaningful progress. Keep it terse — detail lives in `docs/` and git history.
 
+## 2026-07-04 (SOS relay sos-cards-11 — the SPELL-COPY subsystem + Paradigm Lessons)
+
+- **Built the spell-copy foundation (CR 707.10/12) — the long-deferred, now load-bearing piece.**
+  `CastVariant::WithoutPayingManaCost` wired to a {0} cost (the free-cast primitive); `Effect::CastCopy`
+  mints a copy `Object` from a source's copiable base chars (707.2 via grp_id) into `Zone::Stack` and
+  casts it through the **existing** `cast_spell` (new targets, X=0); `Object.is_copy` → the copy **ceases
+  to exist** off the stack (707.10a, `state.cease_to_exist`, wired into `resolve_top` + `interpret_counter`).
+  WHITEBOARD_MODEL §2.5 updated ("a spell on the stack is just an Object → a copy needs almost no new
+  machinery"). Commits a1dbc3e, 5e1754a.
+- **Paradigm (SoS Lessons mechanic — NOT Learn/sideboard).** `Ability::Paradigm` (self-exile-on-resolve
+  marker) + `queue_exile_functioning_triggers` (mirrors the emblem/graveyard `FunctionsFrom` scans) +
+  a recurring `BeginningOfStep(PrecombatMain)` optional `CastCopy{SourceSelf}` — dormant until the card
+  reaches exile. `helpers::paradigm_abilities` bundles it for all 5 Lessons. **4/5 Lessons authored:**
+  Decorum Dissertation (full lifecycle test: cast→self-exile→free copy each turn→copy vanishes),
+  Germination Practicum, Restoration Seminar (reanimate), Echocasting Symposium (token-copy). Commit b3efee6, 526b372.
+- **The Dawning Archaic** — `Effect::CastForFree{what, exile_on_leave}` (casts the ACTUAL gy card free +
+  flashback-style exile rider; distinct from CastCopy). {1}-less-per-I/S cost-reduction arm now exercised. 99fc712.
+- **Run Behind** — `Effect::PutOnTopOrBottom` (owner chooses top/bottom of library) + S12 target-dependent
+  reduction. 3779976.
+- **Prepare-DFC design finding (36 cards):** prepare = `Creature // Spell` where the back face is
+  **copy-only** ("cast a copy of its spell") → a **spell-copy consumer**, NOT a CR 712 transform model.
+  Design plan sketched to the lead (build = spell-copy + `prepared` bool + `BecomePrepared` leaf +
+  back-face defs in a reserved grp block + a prepared-cast offer + a small CastCopy pay/from-def extension).
+- 168→172 authored, **630 mtg-core tests green**, 6 commits, tree clean (lead pushes). **Remaining:**
+  Improvisation Capstone (heaviest Lesson), Brush Off (StackObject counterspell gap), prepare-DFCs (pending lead OK).
+
 ## 2026-07-04/05 (the MuZero re-litigation — user-driven, verdict reversed then completed)
 
 - **User challenged the MuZero negative ("probably a bug") → full re-investigation** (experiments/

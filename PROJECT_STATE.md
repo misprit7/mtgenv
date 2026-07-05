@@ -69,8 +69,18 @@ MTGA client.
 - **✅ MOBILE WEB CLIENT (2026-07-03).** Game client + lobby fully playable from a phone: mobile
   reflow (sticky prompt sheet, opp-top/you-bottom strips, log toggle), touch previews long-press-only
   (hover gated to real mice), on-screen pass-turn button. Desktop unchanged.
-- **▶ SOS FULL-SET scope (2026-07-04, user directive — T4 deferral revoked): ~166 authored, 616 mtg-core
-  tests green.** **sos-cards-10: PLANESWALKERS + EMBLEMS + FLOATING-REPLACEMENTS DONE.** The **floating
+- **▶ SOS FULL-SET scope: ~172 authored, 630 mtg-core tests green (2026-07-04, sos-cards-11).** **SPELL-COPY
+  SUBSYSTEM (CR 707.10/12) DONE** — the long-deferred, now load-bearing foundation. `Effect::CastCopy` mints a
+  copy `Object` from a source's copiable chars and casts it through the EXISTING `cast_spell` for {0}
+  (`CastVariant::WithoutPayingManaCost`); `Object.is_copy` → the copy ceases to exist off the stack (707.10a).
+  Powers **Paradigm** (SoS Lessons: `Ability::Paradigm` self-exile + `queue_exile_functioning_triggers` +
+  recurring `CastCopy` — 4/5 Lessons shipped: Decorum/Germination/Restoration/Echocasting) and is the foundation
+  for **prepare-DFCs** (36 cards — a spell-copy consumer, NOT a CR 712 transform model; design plan in the ledger).
+  Also `Effect::CastForFree` (cast the actual gy card free + exile rider) → **The Dawning Archaic**;
+  `Effect::PutOnTopOrBottom` → **Run Behind**. Remaining SOS: Improvisation Capstone, Brush Off (StackObject
+  counterspell gap), prepare-DFCs (pending lead OK).
+- **▶ SOS (prior — sos-cards-10): ~166 authored, 616 mtg-core
+  tests green.** **PLANESWALKERS + EMBLEMS + FLOATING-REPLACEMENTS DONE.** The **floating
   delayed-replacement cap** (CR 614, lead-greenlit): `GameState.floating_replacements` (general scope+pattern+
   rewrite+duration+one_shot container) on the same rewrite pass as printed statics; `Effect::ExileIfWouldDie`
   ("if it would die this turn, exile it instead", where "dies" = any battlefield→graveyard move). Load-bearing:
