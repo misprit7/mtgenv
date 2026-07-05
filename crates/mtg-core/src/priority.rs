@@ -18,7 +18,8 @@ use crate::agent::{
 use crate::basics::{CardType, CounterKind, ManaCost, Phase, Target, Zone, ZonePos};
 use crate::subtypes::{EnchantmentType, Subtype};
 use crate::effects::ability::{
-    Ability, Cost, CostComponent, EventPattern, Keyword, Restriction, StaticContribution, Timing,
+    Ability, Cost, CostComponent, CostReductionAmount, EventPattern, Keyword, Restriction,
+    StaticContribution, Timing,
 };
 use crate::effects::action::{Action, MoveCause, ResolutionCtx, Whiteboard, WbReason};
 use crate::effects::target::{CardFilter, PlayerFilter, SelectSpec, TargetKind, TargetSpec};
@@ -1037,8 +1038,13 @@ impl Engine {
             }
             // Restricted (I/S-only) mana (CR 106.6) counts toward affordability iff casting an I/S.
             let is_is = chars.has_type(CardType::Instant) || chars.has_type(CardType::Sorcery);
-            // Normal cast for the mana cost.
-            if chars.mana_cost.as_ref().is_some_and(|c| mana::can_pay_ex(s, p, c, is_is)) {
+            // Normal cast for the mana cost, after cost-reduction statics (CR 601.2f / 118).
+            if chars
+                .mana_cost
+                .as_ref()
+                .map(|c| self.effective_cast_cost(p, card, c))
+                .is_some_and(|c| mana::can_pay_ex(s, p, &c, is_is))
+            {
                 actions.push(PlayableAction::Cast { spell: card, variant: CastVariant::Normal });
             }
             // Warp (CR 702.x): an alternative cast cost from hand at sorcery speed — offered even
@@ -1764,6 +1770,61 @@ impl Engine {
         })
     }
 
+    /// The effective mana cost to cast `card` (base cost `base`) after applying the card's
+    /// `Ability::CostReduction` statics (CR 601.2f / 118) whose condition holds for caster `p`.
+    /// Generic reductions floor at {0}; a coloured reduction removes matching coloured pips (CR
+    /// 118.6/.7) then generic. `{X}`/hybrid pips are preserved. Evaluated identically at the offer
+    /// gate and at cast, so (for state/count conditions) affordability and payment agree.
+    pub(crate) fn effective_cast_cost(&self, p: PlayerId, card: ObjId, base: &ManaCost) -> ManaCost {
+        let reductions: Vec<(CostReductionAmount, crate::effects::condition::Condition)> =
+            match self.state.def_of(card) {
+                Some(def) => def
+                    .abilities
+                    .iter()
+                    .filter_map(|a| match a {
+                        Ability::CostReduction { amount, condition } => {
+                            Some((amount.clone(), condition.clone()))
+                        }
+                        _ => None,
+                    })
+                    .collect(),
+                None => return base.clone(),
+            };
+        let mut cost = base.clone();
+        for (amount, condition) in reductions {
+            if !crate::conditions::holds_for_source(&self.state, &condition, p, Some(card)) {
+                continue;
+            }
+            match amount {
+                CostReductionAmount::Generic(n) => {
+                    cost.generic = cost.generic.saturating_sub(n);
+                }
+                CostReductionAmount::GenericValue(v) => {
+                    // Evaluate relative to the caster (computed-aware) — "{1} less for each …".
+                    let ctx = ResolutionCtx {
+                        controller: Some(p),
+                        source: Some(card),
+                        ..Default::default()
+                    };
+                    let n = self.eval_value(&v, &ctx).max(0) as u32;
+                    cost.generic = cost.generic.saturating_sub(n);
+                }
+                CostReductionAmount::Cost(c) => {
+                    // Remove matching coloured pips (CR 118.6), then generic. Unmatched coloured
+                    // reduction does nothing (it can't reduce a pip that isn't there).
+                    for (col, amt) in &c.colored {
+                        if let Some(have) = cost.colored.get_mut(col) {
+                            *have = have.saturating_sub(*amt);
+                        }
+                    }
+                    cost.colored.retain(|_, v| *v > 0);
+                    cost.generic = cost.generic.saturating_sub(c.generic);
+                }
+            }
+        }
+        cost
+    }
+
     /// Cast a spell from `p`'s hand (CR 601, minimal): put it on the stack (601.2a), choose
     /// targets (601.2c), auto-pay its cost (601.2f–h), and announce it cast (601.2i). `variant`
     /// selects the cost paid — the mana cost for `Normal`, the warp cost for `Warp` (CR 702.x),
@@ -1779,6 +1840,13 @@ impl Engine {
         let cost = match cost {
             Some(c) => c,
             None => return,
+        };
+        // Apply cost-reduction statics to a normal cast (CR 601.2f / 118) — the same reduction the
+        // offer gate used, so affordability and payment agree for state/count conditions.
+        let cost = if variant == CastVariant::Normal {
+            self.effective_cast_cost(p, card, &cost)
+        } else {
+            cost
         };
         let effect = self.state.def_of(card).and_then(|d| d.spell_effect().cloned());
 

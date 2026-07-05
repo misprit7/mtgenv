@@ -54,6 +54,13 @@ pub enum ValueExpr {
     },
     /// Sum of `a` and `b` (composition so simple arithmetic is expressible without new nodes).
     Sum(Box<ValueExpr>, Box<ValueExpr>),
+    /// Total **toughness** of the battlefield permanents matching `filter`, optionally restricted by
+    /// controller — "creatures you control have total toughness 10 or greater" (Orysa's cost
+    /// reduction, via `Condition::ValueAtLeast`). Sums computed toughness; `None`-toughness = 0.
+    TotalToughness {
+        filter: CardFilter,
+        controller: Option<PlayerRef>,
+    },
     /// The **computed power** of the effect's source object at resolution (CR 613) — used by the SoS
     /// "Increment" check ("mana spent > this creature's power or toughness"). `0` if no source.
     PowerOfSelf,

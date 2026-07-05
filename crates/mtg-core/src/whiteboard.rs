@@ -2016,6 +2016,20 @@ impl EngineCore {
                 .and_then(|o| o.cast_x)
                 .map(|x| x as i64)
                 .unwrap_or(0),
+            // Total computed toughness of matching battlefield permanents — Orysa's cost-reduction gate.
+            ValueExpr::TotalToughness { filter, controller } => {
+                let want = controller
+                    .map(|r| self.eval_player(r, ctx));
+                self.state
+                    .objects
+                    .values()
+                    .filter(|o| o.zone == Zone::Battlefield)
+                    .filter(|o| want.is_none_or(|p| o.controller == p))
+                    .map(|o| o.id)
+                    .filter(|&id| self.count_filter_matches(id, filter))
+                    .map(|id| self.state.computed(id).toughness.unwrap_or(0) as i64)
+                    .sum()
+            }
         }
     }
 

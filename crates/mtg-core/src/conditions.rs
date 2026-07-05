@@ -150,6 +150,19 @@ fn eval_value(
             .and_then(|s| state.objects.get(&s))
             .map(|o| o.counters.get(kind) as i64)
             .unwrap_or(0),
+        // Total toughness of matching battlefield permanents (base chars, per this module's model) —
+        // Orysa's "creatures you control have total toughness 10 or greater" cost-reduction gate.
+        ValueExpr::TotalToughness { filter, controller } => {
+            let want = controller.map(|r| resolve_player(state, r, source_controller));
+            state
+                .objects
+                .values()
+                .filter(|o| o.zone == Zone::Battlefield)
+                .filter(|o| want.is_none_or(|p| o.controller == p))
+                .filter(|o| filter_matches(&o.chars, filter))
+                .map(|o| o.chars.toughness.unwrap_or(0) as i64)
+                .sum()
+        }
         _ => 0,
     }
 }

@@ -84,6 +84,7 @@ pub mod muses_encouragement;
 pub mod noxious_newt;
 pub mod old_growth_educator;
 pub mod oracles_restoration;
+pub mod orysa_tide_choreographer;
 pub mod paradox_gardens;
 pub mod pest_mascot;
 pub mod planar_engineering;
@@ -233,6 +234,7 @@ pub fn register(db: &mut CardDb) {
     noxious_newt::register(db);
     old_growth_educator::register(db);
     oracles_restoration::register(db);
+    orysa_tide_choreographer::register(db);
     paradox_gardens::register(db);
     pest_mascot::register(db);
     planar_engineering::register(db);
