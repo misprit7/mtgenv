@@ -32,6 +32,7 @@ pub mod cheerful_osteomancer;
 pub mod honorbound_page;
 pub mod landscape_painter;
 pub mod maelstrom_artisan;
+pub mod quandrix_charm;
 pub mod quill_blade_laureate;
 pub mod spellbook_seeker;
 pub mod strife_scholar;
@@ -350,6 +351,7 @@ pub fn register(db: &mut CardDb) {
     practiced_scrollsmith::register(db);
     primary_research::register(db);
     prismari_charm::register(db);
+    quandrix_charm::register(db);
     procrastinate::register(db);
     proctors_gaze::register(db);
     pterafractyl::register(db);

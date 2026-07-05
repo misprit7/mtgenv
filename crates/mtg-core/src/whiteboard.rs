@@ -1535,6 +1535,23 @@ impl EngineCore {
                     });
                 }
             }
+            // Set the target's base P/T for a duration (CR 613 layer 7b) — "base power and toughness
+            // 5/5 until end of turn" (Quandrix Charm).
+            Effect::SetBasePT { what, power, toughness, duration } => {
+                if let Some(Target::Object(obj)) = self.resolve_target(what, ctx, cursor) {
+                    let controller = ctx.controller.unwrap_or(PlayerId(0));
+                    wb.push(Action::GrantContinuous {
+                        source: ctx.source,
+                        controller,
+                        affected: vec![obj],
+                        contributions: vec![StaticContribution::SetBasePT {
+                            power: *power,
+                            toughness: *toughness,
+                        }],
+                        duration: *duration,
+                    });
+                }
+            }
             // Paint a qualification for a duration — "can't be blocked this turn" (Escape Tunnel).
             Effect::GrantQualification { what, qualification, duration } => {
                 if let Some(Target::Object(obj)) = self.resolve_target(what, ctx, cursor) {

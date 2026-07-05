@@ -144,6 +144,15 @@ pub enum Effect {
         what: EffectTarget,
         duration: Duration,
     },
+    /// The target's **base** power/toughness become the given values for a duration (CR 613 layer
+    /// 7b) — "target creature has base power and toughness 5/5 until end of turn" (Quandrix Charm).
+    /// Lowers to `GrantContinuous{ SetBasePT, duration }`; later +N/+N (layer 7c) still stacks on top.
+    SetBasePT {
+        what: EffectTarget,
+        power: i32,
+        toughness: i32,
+        duration: Duration,
+    },
     AddMana {
         who: PlayerRef,
         mana: ManaSpec,
