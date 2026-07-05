@@ -111,11 +111,19 @@ sos-cards-15 cleared the easy-to-medium caps. The **remaining tail needs either 
   since `Exile{SourceSelf}` gets overwritten by resolve_top's graveyard move); **Moseo** (targeted MV≤life-gained reanimate —
   needs `resolve_dynamic_filter` wired into the TARGET-candidate path too, not just `select_for_each`); **LKI-counter-count**
   (Scolding Administrator); **discarded-this-resolution** (Mind Roots, Borrowed Knowledge, Colossus dies-clause).
-- **Design-deferred (need lead sketches):** the 5 Elder Dragons (Storm/Cascade/Miracle/Casualty/Affinity), 3 Natives, Fractalize,
-  the special one-offs (Grandeur / theft-cast / name-choice / free-cast / grant-mana / non-DFC prepare markers). See census buckets.
+- **Elder Dragons — RE-ASSESSED (see the ★ ELDER-DRAGON COMPOSITION ASSESSMENT above):** 4 of 5 are compose-now/small-cap, NOT
+  subsystems. **▶▶ HIGHEST-YIELD NEXT BUILD: the thin `Effect::CopySpellOnStack{ what, count, choose_new_targets }` (loops the
+  built `copy_spell_on_stack`, priority.rs:3990) → unlocks BOTH Prismari (Storm) AND Silverquill (Casualty) as compositions, PLUS
+  the spell-copy consumers (Choreographed Sparks, Lumaret's Favor, Aziza, Mica).** Then Witherbloom (own affinity composes now via
+  `CostReduction{GenericValue(Count creatures)}`; the granted-to-your-I/S clause = a bounded `effective_cast_cost` extension to
+  gather other-permanents' cost-reductions scoped by a spell filter), then Quandrix (`Effect::Cascade`). Only **Lorehold/Miracle**
+  is a real subsystem (first-draw reveal window + alternate cast) → design-sketch first.
+- **Still design-deferred (need lead sketches):** 3 Natives, Fractalize, the special one-offs (Grandeur / theft-cast / name-choice
+  / free-cast / grant-mana / non-DFC prepare markers). See census buckets.
 
-*(sos-cards-15 still active/holding for the lead's grant-ability call; if picked up fresh, start from the ⚠️ block above. Ledger,
-WORKLOG, PROJECT_STATE all current at 224/271, 725 green, tree clean.)*
+*(sos-cards-15 winding down at a clean boundary — 12 cards + 10 caps + census re-verify + the Elder-Dragon composition audit. If
+picked up fresh, the immediate move is `Effect::CopySpellOnStack` → Prismari + Silverquill (the lead pre-approves compose-now
+dragons). Ledger, WORKLOG, PROJECT_STATE all current at 227/271, 732 green, tree clean.)*
 
 ## ▶ Prior — handoff from sos-cards-14, 2026-07-05
 
