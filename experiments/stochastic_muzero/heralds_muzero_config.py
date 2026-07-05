@@ -35,7 +35,7 @@ n_episode = 2 if SMOKE else 8
 evaluator_env_num = 2 if SMOKE else 5
 num_simulations = _argval("--sims", int, 8 if SMOKE else 50)
 batch_size = 32 if SMOKE else 256
-latent_state_dim = 64 if SMOKE else 256
+latent_state_dim = _argval("--latent", int, 64 if SMOKE else 256)
 max_env_step = _argval("--max-steps", int, int(2e3) if SMOKE else int(200e3))
 exp_name = _argval("--exp", str, "tb/3.2-muzero-heralds-plain")
 
