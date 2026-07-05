@@ -26,7 +26,11 @@ re-scoping):
 - **`eed8a13` — Soaring Stoneglider** (modal: exile two from gy OR pay {1}{W}) — exercises the modal option choice + the
   mana-option fold on a **creature** cast (additional costs apply to any card, not just I/S).
 
-**Census now 219/271 authored (81%). 0 Native escape hatches. The additional-cast-cost row below is DONE — strike it.**
+- **`4b41def` — Quandrix Charm** (base-P/T-set cap) — modal instant reusing CounterUnlessPay + Destroy-enchantment + the new
+  **`Effect::SetBasePT{power,toughness,duration}`** (CR 613 layer 7b), which lowers to the existing `GrantContinuous{SetBasePT}`
+  path (a later +1/+1 counter still stacks on top → tested 6/6). No architecture; the base-P/T-set triage row is DONE.
+
+**Census now 220/271 authored (81%). 0 Native escape hatches. The additional-cast-cost + base-P/T-set rows below are DONE.**
 
 ### ▶ Where sos-cards-15 points you (unchanged tail, minus the additional-cast-cost row)
 Work the by-cap triage below (grouped by yield). Highest-yield remaining caps: **Grant-a-triggered-ability-until-EOT** (Rabid
@@ -67,7 +71,8 @@ the bracketed cards fall out. Grouped by yield (verify oracle from sqlite; real-
   menace + attack-trigger). A continuous grant of a full `Ability::Triggered`.
 - **Exile-and-return-at-next-end-step (timed blink, reuse `Effect::Blink` + a delayed return trigger)** → **Ennis, Debate
   Moderator**, **Conciliator's Duelist** (Repartee returns).
-- **Base-P/T-set until EOT (layer 7b)** → **Quandrix Charm** (mode 3: base 5/5; modes 1–2 = CounterUnlessPay/Destroy, exist).
+- ~~**Base-P/T-set until EOT (layer 7b)** → **Quandrix Charm**.~~ ✅ **DONE (sos-cards-15, `4b41def`)** — `Effect::SetBasePT`
+  lowering to `GrantContinuous{SetBasePT}`. Reusable for any "has base P/T X/Y until EOT".
 - **Flashback with a NON-mana cost** (widen `Ability::Flashback{cost: ManaCost}` → a full `Cost`, or add a component) →
   **Group Project** (Flashback = Tap three creatures = the shipped `TapCreatures(3)`; +`spirit_token`, both exist).
 - **GreatestMV** (highest-mana-value among a set) → **End of the Hunt**. **NoMaxHandSize** (player static) → **Wisdom of Ages**.
