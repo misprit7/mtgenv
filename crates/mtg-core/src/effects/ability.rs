@@ -390,6 +390,19 @@ pub enum Ability {
         /// mechanism serving both the spell-cast and ability-activation cost paths.
         scope: CostReductionScope,
     },
+    /// A cost-modification static (CR 118) that reduces the cost of **other spells its controller
+    /// casts**, scoped by a filter on the cast spell — "Instant and sorcery spells you cast have
+    /// affinity for creatures" (Witherbloom, the Balancer grants affinity to your I/S spells).
+    /// Distinct from [`CostReduction`], which is self-referential (reduces THIS card's own cost):
+    /// this lives on a *granting* permanent and reduces a *different* card's cost. Gathered by
+    /// `effective_cast_cost` from every permanent the caster controls; each grant whose `spell_filter`
+    /// matches the cast card applies its `amount` (evaluated relative to the caster/granting permanent,
+    /// so `GenericValue(Count{ creatures you control })` = affinity for creatures). Generic-only, like
+    /// affinity (CR 702.40) — never removes a coloured pip.
+    GrantCostReduction {
+        amount: CostReductionAmount,
+        spell_filter: CardFilter,
+    },
     /// A continuous/static effect (CR 604/611/613): contributes to a layer and/or paints a
     /// qualification, for the given duration over the given affected set.
     Static {

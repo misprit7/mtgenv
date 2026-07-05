@@ -1170,10 +1170,12 @@ impl Engine {
             if !(instant_speed || sorcery_speed) {
                 continue;
             }
-            // Affordability: the back-face printed cost. Cost reductions are card-def-local
-            // (`effective_cast_cost` reads only the cast card's OWN `CostReduction` statics), and a
-            // back-face spell carries none — so the printed cost equals what `cast_spell` will charge,
-            // with no offer/cast drift. Restricted (I/S-only) mana counts iff casting an I/S.
+            // Affordability: the back-face printed cost. A back-face spell carries no OWN
+            // `CostReduction`, so its printed cost matches `cast_spell`'s charge in the common case.
+            // (A granted cross-permanent reduction — Witherbloom's affinity to your I/S spells, via
+            // `Ability::GrantCostReduction` in `effective_cast_cost` — could shave a prepared I/S
+            // copy; this shortcut then under-offers conservatively, never over-charges.) Restricted
+            // (I/S-only) mana counts iff casting an I/S.
             let is_is = chars.has_type(CardType::Instant) || chars.has_type(CardType::Sorcery);
             let affordable =
                 chars.mana_cost.as_ref().is_some_and(|c| mana::can_pay_ex(s, p, c, is_is));
@@ -2172,6 +2174,30 @@ impl Engine {
                 continue;
             }
             self.apply_cost_reduction(&mut cost, &amount, p, card);
+        }
+        // CR 118: cost reductions GRANTED to this spell by other permanents the caster controls —
+        // Witherbloom's "instant and sorcery spells you cast have affinity for creatures." Gather each
+        // `GrantCostReduction` on a permanent `p` controls whose `spell_filter` matches the cast card,
+        // and apply it (evaluated with the granting permanent as source, the caster as controller).
+        let grants: Vec<(CostReductionAmount, ObjId)> = self
+            .state
+            .player(p)
+            .battlefield
+            .iter()
+            .flat_map(|&perm| {
+                let abilities = self.state.def_of(perm).map(|d| d.abilities.clone()).unwrap_or_default();
+                abilities.into_iter().filter_map(move |a| match a {
+                    Ability::GrantCostReduction { amount, spell_filter }
+                        if self.enter_filter_matches(card, &spell_filter, p, None) =>
+                    {
+                        Some((amount, perm))
+                    }
+                    _ => None,
+                })
+            })
+            .collect();
+        for (amount, source) in grants {
+            self.apply_cost_reduction(&mut cost, &amount, p, source);
         }
         cost
     }
