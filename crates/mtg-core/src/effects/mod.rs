@@ -258,6 +258,15 @@ pub enum Effect {
     Blink {
         what: EffectTarget,
     },
+    /// **Timed blink** — exile `what` now, then return that card to the battlefield under its owner's
+    /// control at the beginning of the next end step (CR 603.7 delayed trigger). The SoS "Repartee"
+    /// cycle (Conciliator's Duelist) and Ennis's ETB. Distinct from [`Blink`] (which returns during the
+    /// same resolution): the return is a delayed [`crate::effects::action::DelayedTriggerEvent::
+    /// AtBeginningOfNextEndStep`] carrying a `MoveZone{ →Battlefield }`. Imperative (exile + arm the
+    /// delayed trigger), so it lives in `interpret`. A token exiled this way simply ceases to exist.
+    ExileReturnNextEndStep {
+        what: EffectTarget,
+    },
     /// "When you next cast a `filter` spell this turn, copy that spell" (CR 707.10) — Striking Palette
     /// ("… an instant or sorcery spell this turn, copy that spell. You may choose new targets for the
     /// copy."). Arms a one-shot delayed triggered ability (CR 603.7,

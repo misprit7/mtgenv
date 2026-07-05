@@ -3809,7 +3809,7 @@ impl Engine {
 
     /// Fire (and consume, CR 603.7b) every armed `AtBeginningOfNextEndStep` delayed trigger — the
     /// warp exile-at-end-step clause. Queued onto the stack like any trigger.
-    fn fire_end_step_delayed_triggers(&mut self) {
+    pub(crate) fn fire_end_step_delayed_triggers(&mut self) {
         use crate::effects::action::DelayedTriggerEvent;
         let mut fired = Vec::new();
         self.state.delayed_triggers.retain(|dt| {
@@ -4667,6 +4667,7 @@ fn collect_specs_into(effect: &Effect, out: &mut Vec<TargetSpec>) {
         Effect::PutOnTopOrBottom { what: EffectTarget::Target(spec) } => out.push(spec.clone()),
         // "Exile target … creature you control, then return it" (blink — All Aboard).
         Effect::Blink { what: EffectTarget::Target(spec) } => out.push(spec.clone()),
+        Effect::ExileReturnNextEndStep { what: EffectTarget::Target(spec) } => out.push(spec.clone()),
         // "Put target creature card from a graveyard onto the battlefield under your control" (Reanimate).
         Effect::ReanimateUnderControl { what: EffectTarget::Target(spec) } => out.push(spec.clone()),
         // "Put a +1/+1 counter on target creature" / "target creature gains trample" — the targeted

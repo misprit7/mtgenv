@@ -425,6 +425,31 @@ impl EngineCore {
                 }
                 true
             }
+            // Timed blink (CR 603.7): exile now, arm a delayed "return at the beginning of the next
+            // end step" trigger carrying the return `MoveZone` (to the owner's battlefield).
+            Effect::ExileReturnNextEndStep { what } => {
+                self.flush_pending(wb);
+                if let Some(Target::Object(obj)) = self.resolve_target(what, ctx, cursor) {
+                    let owner = self.state.object(obj).owner;
+                    self.state.move_object(obj, Zone::Exile, owner);
+                    self.broadcast(GameEvent::ObjectMoved { obj, to: Zone::Exile });
+                    let controller = ctx.controller.unwrap_or(PlayerId(0));
+                    self.state.register_delayed_trigger(
+                        obj,
+                        DelayedTriggerEvent::AtBeginningOfNextEndStep,
+                        controller,
+                        Some(obj),
+                        vec![Action::MoveZone {
+                            obj,
+                            to: Zone::Battlefield,
+                            pos: crate::basics::ZonePos::Any,
+                            cause: MoveCause::Resolved,
+                            tapped: false,
+                        }],
+                    );
+                }
+                true
+            }
             // "When you next cast a [filter] spell this turn, copy that spell" (CR 707.10 / 603.7) —
             // arm a one-shot delayed trigger on the controller (Striking Palette). Non-interactive
             // (just registers the trigger); when it later fires the engine mints a `SpellCopyTrigger`
@@ -1722,6 +1747,7 @@ impl EngineCore {
             | Effect::MillThenPutCreatureOntoBattlefield { .. }
             | Effect::ReanimateUnderControl { .. }
             | Effect::Blink { .. }
+            | Effect::ExileReturnNextEndStep { .. }
             | Effect::CopyNextSpellCast { .. }
             | Effect::MayTapOrUntap { .. }
             | Effect::PutOnTopOrBottom { .. }
