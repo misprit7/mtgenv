@@ -6,9 +6,9 @@ per-card triage, modeled on `SELESNYA_LANDFALL_CARDS.md`.
 
 ## ▶ NEXT AGENT — start here (handoff from sos-cards-17, 2026-07-05)
 
-**▶▶ sos-cards-17 SHIPPED — 9 fully-faithful cards + 1 tracked-partial + cleared 1 tracked-partial + 7 reusable caps. 791
-mtg-core green, whole workspace builds, tree clean, LEAD pushes.** Census **234→244/271 authored (90%)**, 0 Native hatches.
-Own-commits (`git log -S` before re-scoping — header PROCESS RULES apply):
+**▶▶ sos-cards-17 SHIPPED — 10 fully-faithful cards + cleared 2 tracked-partials (Colossus, Tester) + 9 reusable caps. 794
+mtg-core green, whole workspace builds, tree clean, LEAD pushes.** Census **234→244/271 authored (90%, 241 faithful · 3
+tracked-partial)**, 0 Native hatches. Own-commits (`git log -S` before re-scoping — header PROCESS RULES apply):
 - **`898b23b` — Mica, Reader of Ruins** — sac-artifact spell-copy; a pure Silverquill re-skin (`SpellCast(I/S) → Optional{
   IfYouDo{ Sacrifice(artifact) → CopySpellOnStack{Triggering, new targets} } }`) + `ward_pay_life(3)`. 0 new cap.
 - **`a4eb133` — discarded-this-resolution cap → Borrowed Knowledge + Colossus cleared.** New `Effect::DiscardChosen` ("discard
@@ -33,18 +33,24 @@ Own-commits (`git log -S` before re-scoping — header PROCESS RULES apply):
   `whiteboard::eval_value` AND `conditions::eval_value`; the second was the bug). Both cards reuse the EXISTING
   `helpers::increment_ability()` (Increment was already a shared helper). Augmenter = dies→Fractal via CreateToken
   `dynamic_counters`; Scolding = Menace + Repartee + dies→PutCounters{target, +1/+1, CountersOnSelf(LKI)}.
-- **Tester of the Tangential** — Increment faithful; combat "pay {X}, move X +1/+1 counters onto target" **deferred (tracked-
-  partial)**: needs `MayPayCost`-with-`{X}` (announce+thread X) + a **reflexive** target (CR 603.7c) + `Effect::MoveCounters`.
+- **`f48a776` — Tester of the Tangential (COMPLETE, fully faithful)** — Increment + begin-combat `MayPayCost{ {X}, then:
+  MoveCounters{ SourceSelf → another target creature, count: X } }`. Two new caps: **`MayPayCost`-with-`{X}`** (announces/pays
+  X, X=0 declines, threads X to the reward as `ValueExpr::X`; a targeted reward is now collected as a NORMAL ability target via
+  `collect_specs_into` walking `then` — safe, no existing MayPayCost card has a targeted `then`) + **`Effect::MoveCounters{
+  from,to,kind,count }`** (moves N counters capped at what's present; atomic paired ±AddCounters). ⚠️ caveat: the target is
+  chosen at trigger-placement, not reflexively after paying (observably equivalent — a declined X=0 moves nothing).
 - **Mind Roots** — new `Effect::PutDiscardedOntoBattlefield{ filter, max }` (select among the discard scratch → bf tapped under
   YOUR control, owner unchanged) over `TargetPlayer` + `Discard{ChosenTarget(0), 2}`.
 
 ### ★ FULL-SET CENSUS (sos-cards-17, 2026-07-05, Scryfall-diff verified) — 244/271 authored (90%)
 Method: `comm -23` of the 271 sos front-face names vs every card-name string literal in `crates/mtg-core/src/cards/**`.
-**244 authored (240 fully-faithful · 4 tracked-partial) · 27 unauthored. 0 Native hatches. 791 mtg-core green.**
+**244 authored (241 fully-faithful · 3 tracked-partial) · 27 unauthored. 0 Native hatches. 794 mtg-core green.**
 
-**The 4 TRACKED-PARTIAL** (`grep -rln '.incomplete()' cards/sos`): Ral Zarek Guest Lecturer (−7 coin-flip+skip-turns),
-Wildgrowth Archaic (enters-with-extra-counters-keyed-to-another-spell), Hydro-Channeler (mana-ability-with-mana-cost),
-**Tester of the Tangential** (combat move-counters — new this session). *(Colossus was cleared this session.)*
+**The 3 TRACKED-PARTIAL** (`grep -rln '.incomplete()' cards/sos`): Ral Zarek Guest Lecturer (−7 coin-flip+skip-turns),
+Wildgrowth Archaic (enters-with-extra-counters-keyed-to-another-spell), Hydro-Channeler (mana-ability-with-mana-cost).
+*(Colossus AND Tester of the Tangential were both cleared this session — Tester via the new `Effect::MoveCounters` +
+`MayPayCost`-with-`{X}` [announces/pays X, threads it to the reward as `ValueExpr::X`, targeted reward collected as a normal
+ability target].)*
 
 **The 27 UNAUTHORED — bucketed:**
 - **Natives (3, genuinely inexpressible — lead sketch):** Mathemagics (2^X exponential), Pox Plague (halving), Steal the Show

@@ -3,7 +3,7 @@
 Short, dated entries for future-agent consumption. Newest first. One line or a few bullets
 per unit of meaningful progress. Keep it terse — detail lives in `docs/` and git history.
 
-## 2026-07-05 (SOS relay sos-cards-17 — spell-copy consumers + LKI-counter & discard subsystems; census 234→244/271, 764→791 green)
+## 2026-07-05 (SOS relay sos-cards-17 — spell-copy consumers + LKI-counter & discard subsystems; census 234→244/271, 764→794 green)
 
 - **9 fully-faithful cards + 1 tracked-partial + cleared Colossus + 7 reusable caps.** The clean-compose tail is now EXHAUSTED.
 - **`898b23b` — Mica, Reader of Ruins** (sac-artifact spell-copy, pure Silverquill re-skin + Ward). 0 new cap.
@@ -16,7 +16,9 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 - **Practiced Offense** — `Effect::GrantChosenKeyword` ("your choice of X or Y", composes in a Sequence) + TargetPlayer/ForEach counters + flashback.
 - **Ambitious Augmenter + Scolding Administrator** — **LKI counter-count**: `Lki` snapshots the counter bag at death; `CountersOnSelf`
   falls back to it off-battlefield (fixed whiteboard AND conditions.rs eval). Reuse the existing `increment_ability()` helper.
-- **Tester of the Tangential** — Increment done; combat move-counters deferred (tracked-partial: needs MayPayCost-{X}+reflexive-target+MoveCounters).
+- **`f48a776` — Tester of the Tangential (COMPLETE)** — Increment + begin-combat `MayPayCost{ {X} → MoveCounters }`. New caps:
+  **`Effect::MoveCounters`** (capped at counters present) + **`MayPayCost`-with-`{X}`** (announce/pay X, thread to reward as X,
+  targeted reward = normal ability target). Caveat: target chosen at placement, not reflexively. Cleared from tracked-partial.
 - **Mind Roots** — `Effect::PutDiscardedOntoBattlefield` (put a discarded land under your control) over TargetPlayer+Discard-2.
 - Census: **244/271 authored (240 faithful · 4 tracked-partial [Ral, Wildgrowth, Hydro-Channeler, Tester]) · 27 unauthored · 0 Natives.**
   Next high-yield cap = **target-path dynamic-filter resolution** (unlocks Moseo + Sundering Archaic). See SOS_CARDS.md census.
