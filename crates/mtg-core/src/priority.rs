@@ -4894,6 +4894,8 @@ fn collect_specs_into(effect: &Effect, out: &mut Vec<TargetSpec>) {
         // cast; both are collected here so a real cast picks a target and re-checks it at resolution.
         Effect::Counter { what: EffectTarget::Target(spec) }
         | Effect::CounterUnlessPay { what: EffectTarget::Target(spec), .. } => out.push(spec.clone()),
+        // "Target creature becomes prepared / unprepared" (Skycoach Waypoint, Biblioplex Tomekeeper).
+        Effect::SetPrepared { what: EffectTarget::Target(spec), .. } => out.push(spec.clone()),
         // "Target creature's owner puts it on top or bottom of their library" (Run Behind).
         Effect::PutOnTopOrBottom { what: EffectTarget::Target(spec) } => out.push(spec.clone()),
         // "Exile target … creature you control, then return it" (blink — All Aboard).

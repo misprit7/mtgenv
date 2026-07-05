@@ -1669,6 +1669,12 @@ impl EngineCore {
                     wb.push(Action::SetPrepared { obj, prepared: true });
                 }
             }
+            // "Target creature becomes prepared / unprepared" — set the status on a chosen target.
+            Effect::SetPrepared { what, prepared } => {
+                if let Some(Target::Object(obj)) = self.resolve_target(what, ctx, cursor) {
+                    wb.push(Action::SetPrepared { obj, prepared: *prepared });
+                }
+            }
             // C17: exile a target (e.g. "{1}: Exile target card from a graveyard"). `source` is
             // carried so the exile can later be associated with its source (linked-exile sets).
             Effect::Exile { what } => {

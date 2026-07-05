@@ -156,6 +156,7 @@ pub mod mind_roots;
 pub mod moseo_veins_new_dean;
 pub mod sundering_archaic;
 pub mod ennis_debate_moderator;
+pub mod skycoach_waypoint;
 pub mod slumbering_trudge;
 pub mod snooping_page;
 pub mod pigment_wrangler;
@@ -299,6 +300,7 @@ pub fn register(db: &mut CardDb) {
     tablet_of_discovery::register(db);
     slumbering_trudge::register(db);
     divergent_equation::register(db);
+    skycoach_waypoint::register(db);
     cauldron_of_essence::register(db);
     charging_strifeknight::register(db);
     chase_inspiration::register(db);

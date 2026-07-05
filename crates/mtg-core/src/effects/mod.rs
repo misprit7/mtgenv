@@ -352,6 +352,16 @@ pub enum Effect {
     /// [`crate::agent::PlayableAction::CastPrepared`]), which unprepares it — the spell-copy subsystem
     /// (CR 707) is the substrate; the back face is copy-only and never cast from hand.
     BecomePrepared,
+    /// "Target creature becomes prepared / unprepared" (SoS — Skycoach Waypoint, Biblioplex Tomekeeper):
+    /// set the prepared status on a **chosen target** (not `ctx.source`). `prepared: false` is the
+    /// "becomes unprepared" arm. `what` is collected by `collect_specs_into`; lowers to
+    /// [`crate::effects::action::Action::SetPrepared`]. Setting it on a creature with no prepare spell is
+    /// inert (nothing to cast), matching the reminder text "only creatures with prepare spells can become
+    /// prepared."
+    SetPrepared {
+        what: EffectTarget,
+        prepared: bool,
+    },
     /// "You get an emblem with '…'" (CR 114). Puts an emblem — an object with no characteristics
     /// other than the abilities of the registered def `emblem` (in the reserved 9000+ block) — into
     /// the controller's command zone. The emblem's ability functions from `Zone::Command` (its def
