@@ -241,6 +241,7 @@ pub mod wildgrowth_archaic;
 pub mod wander_off;
 pub mod wild_hypothesis;
 pub mod choreographed_sparks;
+pub mod steal_the_show;
 pub mod wilt_in_the_heat;
 pub mod witherbloom_charm;
 pub mod withering_curse;
@@ -248,6 +249,7 @@ pub mod zealous_lorecaster;
 
 pub fn register(db: &mut CardDb) {
     choreographed_sparks::register(db);
+    steal_the_show::register(db);
     aberrant_manawurm::register(db);
     emeritus_of_conflict::register(db);
     joined_researchers::register(db);
