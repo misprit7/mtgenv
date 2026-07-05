@@ -20,7 +20,7 @@ use crate::basics::{CardType, CounterKind, ManaCost, Phase, Target, Zone, ZonePo
 use crate::subtypes::{EnchantmentType, Subtype};
 use crate::effects::ability::{
     Ability, AdditionalCost, Cost, CostComponent, CostReductionAmount, CostReductionCondition,
-    CostReductionScope, EventPattern, Keyword, Restriction, StaticContribution, Timing,
+    CostReductionScope, EventPattern, Keyword, Qualification, Restriction, StaticContribution, Timing,
 };
 use crate::effects::action::{
     Action, DelayedTriggerEvent, MoveCause, ResolutionCtx, Whiteboard, WbReason,
@@ -4223,7 +4223,18 @@ impl Engine {
     /// for the copy (707.10c) — reusing the cast-time target machinery; if a slot can't be re-filled the
     /// copied targets are kept. The copy is NOT cast (707.10a — no `SpellCast`, so no cast triggers), and
     /// ceases to exist when it leaves the stack (`is_copy`). No-op if the original already left the stack.
-    pub(crate) fn copy_spell_on_stack(&mut self, spell: ObjId, by: PlayerId, choose_new_targets: bool) {
+    pub(crate) fn copy_spell_on_stack(
+        &mut self,
+        spell: ObjId,
+        by: PlayerId,
+        choose_new_targets: bool,
+    ) -> Option<ObjId> {
+        // CR 707 — a spell painted "can't be copied" (Choreographed Sparks) is never copied. Checked
+        // at the single choke point every copy path (storm / casualty / target-copy / SpellCopyTrigger)
+        // routes through, so the marker is honored uniformly.
+        if self.state.computed(spell).has_qualification(Qualification::CantBeCopied) {
+            return None;
+        }
         // The original's current stack object (its chosen targets/X/modes to copy). Gone → no-op.
         let Some(orig) = self
             .state
@@ -4233,7 +4244,7 @@ impl Engine {
             .find(|s| matches!(s.kind, StackObjectKind::Spell(o) if o == spell))
             .cloned()
         else {
-            return;
+            return None;
         };
         // 707.2: build the copy from the spell's copiable characteristics; carry its chosen X.
         let chars = self.state.object(spell).chars.clone();
@@ -4263,6 +4274,7 @@ impl Engine {
         // Ward). No `SpellCast` — a copy isn't cast (707.10a).
         let targeted = self.targeted_object_ids(&targets);
         self.fire_targeted(&targeted, by, sid);
+        Some(copy)
     }
 
     /// Offer the "you may choose new targets for the copy" reselection (CR 707.10c): rebuild each of the
@@ -4944,6 +4956,12 @@ fn collect_specs_into(effect: &Effect, out: &mut Vec<TargetSpec>) {
         Effect::MoveZone { what: EffectTarget::Target(spec), .. } => out.push(spec.clone()),
         // "Create a token that's a copy of target permanent" — its source is a chosen target.
         Effect::CreateTokenCopy { source: EffectTarget::Target(spec), .. } => out.push(spec.clone()),
+        // "Copy target instant or sorcery spell you control" (CR 707.10, Choreographed Sparks mode 1) —
+        // the stack spell to copy is a chosen target. `Triggering` (storm/casualty/infusion) has no outer
+        // target and falls through. `CopySpellAsToken` (mode 2, "copy target creature spell you control")
+        // likewise declares its copied spell as a chosen target.
+        Effect::CopySpellOnStack { what: EffectTarget::Target(spec), .. }
+        | Effect::CopySpellAsToken { what: EffectTarget::Target(spec), .. } => out.push(spec.clone()),
         // "Cast a copy of target [spell/card]" (CR 707.12) — the copy SOURCE is a chosen target (the
         // copy's own targets are chosen inside the free cast, not here). `SourceSelf` (Paradigm) has
         // no outer target and falls through.

@@ -368,6 +368,58 @@ impl EngineCore {
                 }
                 true
             }
+            // Copy a creature (permanent) spell you control → a token (CR 707.10/707.10f), granting the
+            // copy haste and arming its "sacrifice at the next end step" clause (Choreographed Sparks mode
+            // 2). Mint over the original via `copy_spell_on_stack`, then decorate the returned copy while
+            // it's still on the stack so both riders carry onto the token. Interactive (mints an object),
+            // so it lives here. Flush staged actions first.
+            Effect::CopySpellAsToken { what, haste, sacrifice_at_next_end_step } => {
+                self.flush_pending(wb);
+                let by = ctx.controller.unwrap_or(self.state.active_player);
+                let source = self.resolve_target(what, ctx, cursor).and_then(|t| match t {
+                    Target::Stack(sid) => self
+                        .state
+                        .stack
+                        .items
+                        .iter()
+                        .find(|it| it.id == sid)
+                        .and_then(|it| match it.kind {
+                            crate::stack::StackObjectKind::Spell(o) => Some(o),
+                            _ => None,
+                        }),
+                    Target::Object(o) => self
+                        .state
+                        .stack
+                        .items
+                        .iter()
+                        .any(|it| matches!(it.kind, crate::stack::StackObjectKind::Spell(x) if x == o))
+                        .then_some(o),
+                    _ => None,
+                });
+                if let Some(spell) = source {
+                    if let Some(copy) = self.copy_spell_on_stack(spell, by, false) {
+                        if *haste {
+                            if let Some(o) = self.state.objects.get_mut(&copy) {
+                                let hk = crate::effects::ability::Keyword::Haste;
+                                if !o.chars.keywords.contains(&hk) {
+                                    o.chars.keywords.push(hk);
+                                }
+                            }
+                            self.state.mark_chars_dirty();
+                        }
+                        if *sacrifice_at_next_end_step {
+                            self.state.register_delayed_trigger(
+                                copy,
+                                crate::effects::action::DelayedTriggerEvent::AtBeginningOfNextEndStep,
+                                by,
+                                Some(copy),
+                                vec![Action::Sacrifice { obj: copy, by }],
+                            );
+                        }
+                    }
+                }
+                true
+            }
             // "Target creature's owner puts it on their choice of the top or bottom of their library"
             // (Run Behind). The OWNER (not the caster) chooses; then the object moves to their library
             // at that end. Interactive (asks the owner), so it lives here. Flush staged actions first.
@@ -2177,6 +2229,7 @@ impl EngineCore {
             | Effect::ExileReturnNextEndStep { .. }
             | Effect::CopyNextSpellCast { .. }
             | Effect::CopySpellOnStack { .. }
+            | Effect::CopySpellAsToken { .. }
             | Effect::Cascade
             | Effect::MayTapOrUntap { .. }
             | Effect::PutOnTopOrBottom { .. }
@@ -2635,6 +2688,22 @@ impl EngineCore {
                         obj,
                         to: Zone::Graveyard,
                     });
+                }
+            }
+            // Sacrifice a permanent as an applied action (CR 701.16) — the effect-side analogue of
+            // the sacrifice *cost*, so a delayed/reflexive trigger can sacrifice a permanent ("at the
+            // beginning of the end step, sacrifice this token" — Choreographed Sparks). Mirrors
+            // `interpret_sacrifice`'s per-object body: route through `death_zone_for` so a "would die →
+            // exile instead" rider (CR 614) redirects it, then broadcast the death move (drives
+            // dies-triggers). No indestructible check — sacrifice ignores indestructible (CR 701.16b).
+            Action::Sacrifice { obj, .. } => {
+                if let Some(o) = self.state.objects.get(&obj) {
+                    if o.zone == Zone::Battlefield {
+                        let owner = o.owner;
+                        let dest = self.death_zone_for(obj);
+                        self.state.move_object(obj, dest, owner);
+                        self.broadcast(GameEvent::ObjectMoved { obj, to: dest });
+                    }
                 }
             }
             Action::Mill { player, count } => self.mill(player, count),

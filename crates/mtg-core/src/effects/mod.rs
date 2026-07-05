@@ -332,6 +332,22 @@ pub enum Effect {
         count: ValueExpr,
         choose_new_targets: bool,
     },
+    /// "Copy target **creature** (permanent) spell you control. The copy gains haste and 'At the
+    /// beginning of the end step, sacrifice this token.'" (Choreographed Sparks mode 2). Mints one copy
+    /// over the original via [`crate::priority::EngineCore::copy_spell_on_stack`] (CR 707.10) — a copy of
+    /// a permanent spell resolves into a **token** permanent (CR 707.10f), since a copy isn't a card — then
+    /// decorates that copy while it's still on the stack: `haste` adds [`Keyword::Haste`] to its copiable
+    /// characteristics (carries onto the battlefield), and `sacrifice_at_next_end_step` arms an
+    /// [`crate::effects::action::DelayedTriggerEvent::AtBeginningOfNextEndStep`] delayed trigger
+    /// ([`crate::effects::action::Action::Sacrifice`]) watching the copy — the same "exile/sacrifice at the
+    /// next end step" rail warp uses. `what` is a chosen target (collected at cast). Imperative (mints an
+    /// object, arms a trigger), so it lives in `interpret`. Distinct from [`CopySpellOnStack`], whose copies
+    /// are the storm/target-I/S kind that resolve their spell effect rather than becoming a token.
+    CopySpellAsToken {
+        what: EffectTarget,
+        haste: bool,
+        sacrifice_at_next_end_step: bool,
+    },
     /// **Cascade** (CR 702.83) — "exile cards from the top of your library until you exile a nonland
     /// card that costs less [than the cascading spell's mana value]. You may cast it without paying its
     /// mana cost. Put the exiled cards on the bottom of your library in a random order." Fires as a

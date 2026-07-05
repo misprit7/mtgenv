@@ -324,6 +324,10 @@ pub enum Qualification {
     /// This creature can't be blocked (CR 509.1b) — combat reads it on the attacker. Escape Tunnel.
     CantBeBlocked,
     CantBeCountered,
+    /// This spell can't be copied (CR 707) — painted on a spell while it's on the stack (a self-static
+    /// like [`CantBeCountered`]). Read at the single copy choke point [`crate::priority::EngineCore::
+    /// copy_spell_on_stack`], which skips minting a copy of a spell carrying this. Choreographed Sparks.
+    CantBeCopied,
     PhasedOut,
 }
 
