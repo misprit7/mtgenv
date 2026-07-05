@@ -62,6 +62,25 @@ reusable subsystems.**
 
 ---
 
+## ⚠️ TREASURE / SAC-FOR-MANA — OPTION (B) SHIPPED, with a load-bearing agent-seat limit (lead-approved)
+
+**Goblin Glasswright // Craft with Pride SHIPPED (commit `c7d067c`)** via the lead-approved **option (B) exclude-from-
+autopay** Treasure model — `grp::TREASURE_TOKEN` (colourless artifact, `{T}, Sacrifice this: Add one mana of any color`),
+`helpers::treasure_token()`, back = `CreateToken{treasure}`. Engine: `Cost::is_simple_tap_mana()`; the auto-pay source
+enumeration (`mana::mana_sources_kind`, `include_cost_bearing:false`) **excludes cost-bearing mana abilities**, while the
+manual path (`usable_mana_sources`, `true`) includes them; `Engine::activate_mana_ability` now pays a cost-bearing mana
+ability through `pay_cost` (taps + **sacrifices**) then floats the mana; `create_token` gives non-creature tokens no P/T.
+
+**🚩 AGENT/GYM-SEAT FLAG (must carry forward):** under (B), agent/replay seats run `manual_mana = false`, so they are
+**never offered `ActivateMana`** — a Treasure is **inert in training** (a sacrificeable artifact that can never be spent for
+mana by an auto-pay seat), and any spell affordable ONLY via a Treasure is **uncastable for the RL agent**. Accepted as a
+first-pass limit. **Option (A)** (auto-spending non-tap mana sources — sac-for-mana, convoke-class, Phyrexian — as decisions
+in one payment flow) is **recorded as part of the future transactional-pending-cast re-architecture (WHITEBOARD_MODEL §2.6,
+the no-rewind→GRE-style evolution), NOT a standalone TODO.** The same lever also completes **Hydro-Channeler's 2nd ability**
+(a `{1},{T}` mana-ability-with-mana-cost — same class) if/when (A) lands.
+
+---
+
 ## ★ FINAL FULL-SET CENSUS (sos-cards-14, 2026-07-05) — Scryfall-diff verified, corrects the stale ⏳ triage
 
 **Method:** diffed the real 271-card `sos` set (`data/scryfall/cards.sqlite`, `set_code='sos'`) against every authored card
@@ -69,8 +88,10 @@ name across `crates/mtg-core/src/cards/**` (DFC fronts matched on the pre-`//` n
 per-card ⏳ triage table below is STALE** (dozens of ⏳ rows are actually shipped: Pull from the Grave, Aberrant Manawurm,
 Brush Off, Antiquities on the Loose, Stun/Look-and-pick/Graveyard-activated subsystems, …). Trust code + this diff, not the table.
 
-**Headline: 214 / 271 authored (79%). 210 fully faithful · 4 tracked-partial · 57 unauthored. 0 Native escape hatches used.
-695 mtg-core tests green.** (214 counts sos-set cards covered by a def in ANY set folder — 199 are sos-first-printed modules;
+**Headline (post-③): 215 / 271 authored (79%). 211 fully faithful · 4 tracked-partial · 56 unauthored. 0 Native escape
+hatches used. 698 mtg-core tests green.** (Goblin Glasswright shipped since the first census; Seize the Spoils remains — it
+needs an ADDITIONAL-CAST-COST cap "as an additional cost, discard a card", NOT just the Treasure.) (215 counts sos-set cards
+covered by a def in ANY set folder — 200 are sos-first-printed modules;
 ~15 are reprints whose defs live in their first-printing folders.)
 
 ### The 4 TRACKED-PARTIAL cards (authored, one documented clause each deferred)
@@ -85,8 +106,10 @@ Brush Off, Antiquities on the Loose, Stun/Look-and-pick/Graveyard-activated subs
 4. **Colossus of the Blood Age** (`colossus_of_the_blood_age.rs`, id 314) — ETB (3 dmg each opp + gain 3) done; **dies clause
    "discard any number, then draw that many PLUS ONE" deferred** (needs a "cards discarded this resolution" value — unbuilt).
 
-### The 57 UNAUTHORED cards (bucketed honestly — not all are "deferred by design")
-- **③ pending (1):** Goblin Glasswright // Craft with Pride — the Treasure card, awaiting the lead's scope pick below.
+### The (now 56) UNAUTHORED cards (bucketed honestly — not all are "deferred by design")
+- ✅ **Goblin Glasswright — SHIPPED** (was ③; commit `c7d067c`). **Seize the Spoils** now the nearest Treasure-adjacent card,
+  but it needs an **additional-cast-cost cap** ("as an additional cost, discard a card") — a new spell-level cast-cost
+  subsystem (CR 601.2f), NOT just the Treasure. Deferred until that cap is built (no card uses additional cast costs yet).
 - **Design-deferred major subsystems (~16):** the **5 college Elder Dragons** — Lorehold the Historian (Miracle), Prismari
   the Inspiration (Storm), Quandrix the Proof (Cascade), Silverquill the Disputant (Casualty), Witherbloom the Balancer
   (Affinity); **3 Natives** (never authored, no Native hack used) — Mathemagics (2^X), Pox Plague (halving), Steal the Show
