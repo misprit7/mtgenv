@@ -1081,6 +1081,26 @@ impl EngineCore {
     /// Select the objects a `ForEach`/`Select` ranges over: the `chooser`'s objects in `selector.zone`
     /// matching its filter, narrowed to `[min, max]` (asking which when there are more than `max`).
     /// Returns empty if fewer than `min` candidates exist (the "for each of two …" can't be met).
+    /// Resolve a [`CardFilter`]'s dynamic parts (`ManaValueExpr`) into concrete predicates against
+    /// the resolution context, so a ctx-free matcher (`count_filter_matches`) only ever sees static
+    /// filters. Recurses through the boolean combinators; every other variant is returned unchanged.
+    fn resolve_dynamic_filter(&self, filter: &CardFilter, ctx: &ResolutionCtx) -> CardFilter {
+        match filter {
+            CardFilter::ManaValueExpr { min, max } => CardFilter::ManaValue {
+                min: min.as_ref().map(|e| self.eval_value(e, ctx).max(0) as u32),
+                max: max.as_ref().map(|e| self.eval_value(e, ctx).max(0) as u32),
+            },
+            CardFilter::All(fs) => {
+                CardFilter::All(fs.iter().map(|f| self.resolve_dynamic_filter(f, ctx)).collect())
+            }
+            CardFilter::AnyOf(fs) => {
+                CardFilter::AnyOf(fs.iter().map(|f| self.resolve_dynamic_filter(f, ctx)).collect())
+            }
+            CardFilter::Not(f) => CardFilter::Not(Box::new(self.resolve_dynamic_filter(f, ctx))),
+            other => other.clone(),
+        }
+    }
+
     fn select_for_each(&mut self, selector: &SelectSpec, ctx: &ResolutionCtx) -> Vec<ObjId> {
         let min = self.eval_value(&selector.min, ctx).max(0) as usize;
         let max = self.eval_value(&selector.max, ctx).max(0) as usize;
@@ -1097,10 +1117,12 @@ impl EngineCore {
                 (vec![p], p)
             }
         };
+        // Resolve any dynamic (X-keyed) filter to a concrete one against this resolution's ctx.
+        let filter = self.resolve_dynamic_filter(&selector.filter, ctx);
         let candidates: Vec<ObjId> = source_players
             .iter()
             .flat_map(|&p| self.state.player(p).zone_ids(selector.zone).to_vec())
-            .filter(|&id| self.count_filter_matches(id, &selector.filter))
+            .filter(|&id| self.count_filter_matches(id, &filter))
             .collect();
         if candidates.len() < min {
             return Vec::new();
@@ -2589,6 +2611,24 @@ impl EngineCore {
             CardFilter::ManaValue { min, max } => {
                 let mv = self.state.objects.get(&id).map_or(0, |o| o.chars.mana_value());
                 min.is_none_or(|lo| mv >= lo) && max.is_none_or(|hi| mv <= hi)
+            }
+            // `ManaValueExpr` is dynamic (X-keyed) and must be resolved to `ManaValue` against a
+            // resolution ctx before reaching this ctx-free matcher (`resolve_dynamic_filter`). A
+            // *constant* bound is honored; a non-constant bound needs ctx we don't have here, so
+            // fail closed (never over-match) — the real card paths always pre-resolve.
+            CardFilter::ManaValueExpr { min, max } => {
+                let bound = |e: &Option<Box<ValueExpr>>| match e.as_deref() {
+                    None => Some(None),
+                    Some(ValueExpr::Fixed(n)) => Some(Some((*n).max(0) as u32)),
+                    Some(_) => None,
+                };
+                match (bound(min), bound(max)) {
+                    (Some(lo), Some(hi)) => {
+                        let mv = self.state.objects.get(&id).map_or(0, |o| o.chars.mana_value());
+                        lo.is_none_or(|l| mv >= l) && hi.is_none_or(|h| mv <= h)
+                    }
+                    _ => false,
+                }
             }
             CardFilter::Tapped => self.state.objects.get(&id).is_some_and(|o| o.status.tapped),
             CardFilter::Untapped => self.state.objects.get(&id).is_some_and(|o| !o.status.tapped),

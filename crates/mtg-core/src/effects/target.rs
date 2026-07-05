@@ -92,6 +92,13 @@ pub enum CardFilter {
     Multicolored,
     /// Mana value within `[min, max]` (inclusive); `None` = unbounded.
     ManaValue { min: Option<u32>, max: Option<u32> },
+    /// Mana value within a **dynamic** `[min, max]` (inclusive), each bound an evaluated
+    /// [`ValueExpr`] (`None` = unbounded) — for filters keyed to a resolution value, e.g. "mana
+    /// value X" (Fix What's Broken: `{min: Some(X), max: Some(X)}`) or "mana value X or less"
+    /// (Vicious Rivalry: `{max: Some(X)}`). Resolved to a concrete [`ManaValue`] against the
+    /// resolution context (`resolve_dynamic_filter`) before matching, so ctx-free matchers only
+    /// ever see the concrete form.
+    ManaValueExpr { min: Option<Box<ValueExpr>>, max: Option<Box<ValueExpr>> },
     /// Computed power at most `n` (CR — "creature with power 2 or less"). Escape Tunnel.
     PowerAtMost(i32),
     /// Computed toughness at most `n` (CR — "with toughness 1 or less"). Pairs with `PowerAtMost`
