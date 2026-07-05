@@ -69,8 +69,8 @@ MTGA client.
 - **✅ MOBILE WEB CLIENT (2026-07-03).** Game client + lobby fully playable from a phone: mobile
   reflow (sticky prompt sheet, opp-top/you-bottom strips, log toggle), touch previews long-press-only
   (hover gated to real mice), on-screen pass-turn button. Desktop unchanged.
-- **▶ SOS FULL-SET scope: ~196 authored, 658 mtg-core tests green (2026-07-05, sos-cards-12).** **PREPARE-DFC
-  SUBSYSTEM DONE + 24/36 prepare cards shipped.** Prepare is a spell-copy CONSUMER (CR 707.12), not a CR 711
+- **▶ SOS FULL-SET scope: ~199 authored, 662 mtg-core tests green (2026-07-05, sos-cards-12).** **PREPARE-DFC
+  SUBSYSTEM DONE + 27/36 prepare cards shipped.** Prepare is a spell-copy CONSUMER (CR 707.12), not a CR 711
   transform: `Object.prepared` + `Effect::BecomePrepared` (→ `Action::SetPrepared`) + `Ability::Prepare{spell}`
   + back-face defs in a reserved 9700+ grp block (excluded from `/api/cards`) + `PlayableAction::CastPrepared`
   (offered in `legal_priority_actions`, executed by `Engine::cast_prepared` — mints an `is_copy` copy, pays the

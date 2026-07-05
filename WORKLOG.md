@@ -15,12 +15,16 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
   ability — zero new trigger machinery** (enters / at-first-main / on-attack / landfall / cast-a-creature /
   cards-leave-gy / tokens-enter / end-step-conditional / an activated source all fell out for free). Did NOT
   widen `Effect::CastCopy` (Paradigm's free path untouched + still green). Commit bfd3d51.
-- **24 of ~36 prepare cards shipped** (batches after bfd3d51; 630→658 mtg-core green). Helper
-  `helpers::enters_prepared`/`prepared_abilities`. Added `ValueExpr::LifeGainedThisTurn{who}` +
-  `CreaturesDiedThisTurn` (both eval paths) for "gained N life" / "N creatures died" gates. The 12 remaining
-  are each blocked on a distinct BACK-FACE cap (blink, tap-or-untap, {X}{X} tokens, LKI-power, mill-to-bf,
-  Treasure sac-mana, exact-Nth-spell, gain-life-first-time, hand-compare, spell-copy-on-stack) — precise
-  per-card blocker list in `docs/plans/SOS_CARDS.md`.
+- **27 of ~36 prepare cards shipped** (batches after bfd3d51; 630→662 mtg-core green). Helper
+  `helpers::enters_prepared`/`prepared_abilities`. General caps added along the way (both eval paths where
+  relevant): `ValueExpr::{LifeGainedThisTurn, CreaturesDiedThisTurn, HandSize, SpellsCastThisTurn}` (+
+  `Player.spells_cast_this_turn`) and `Effect::MayTapOrUntap`. **⚠️ Trigger-condition gotcha (found + fixed):**
+  `queue_self_triggers`/`queue_watching_*` do NOT check a trigger's `condition` at queue — only
+  `queue_begin_of_step_triggers` does. So a condition on a Self*/SpellCast/PermanentEnters trigger MUST use
+  `intervening_if: true` (else silently ignored). The 9 remaining prepare cards are each blocked on a distinct
+  BACK-FACE cap (blink, {X}{X} tokens, LKI-power, mill-to-bf, Treasure sac-mana, reanimate-controller-override,
+  gain-life-first-time [needs queue-time self-trigger condition check], Brainstorm-order, spell-copy-on-stack) —
+  precise per-card blocker list in `docs/plans/SOS_CARDS.md`.
 
 ## 2026-07-04 (SOS relay sos-cards-11 — the SPELL-COPY subsystem + Paradigm Lessons)
 
