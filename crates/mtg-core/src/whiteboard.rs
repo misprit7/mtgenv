@@ -831,10 +831,14 @@ impl EngineCore {
         tapped: bool,
     ) {
         let searcher = self.eval_player(who, ctx);
+        // Resolve any dynamic (X-keyed) filter to a concrete one against this resolution's ctx, so a
+        // "permanent card with mana value X or less" search (Mind into Matter) actually matches (the
+        // ctx-free `count_filter_matches` only understands the static `ManaValue` form).
+        let filter = self.resolve_dynamic_filter(filter, ctx);
         let from: Vec<ObjId> = self
             .zone_cards(searcher, zone)
             .into_iter()
-            .filter(|&id| self.count_filter_matches(id, filter))
+            .filter(|&id| self.count_filter_matches(id, &filter))
             .collect();
         let picks: Vec<ObjId> = if from.is_empty() {
             Vec::new()
