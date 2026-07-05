@@ -114,6 +114,7 @@ pub mod rapturous_moment;
 pub mod rancorous_archaic;
 pub mod ral_zarek_guest_lecturer;
 pub mod restoration_seminar;
+pub mod run_behind;
 pub mod rearing_embermare;
 pub mod rapier_wit;
 pub mod rehearsed_debater;
@@ -277,6 +278,7 @@ pub fn register(db: &mut CardDb) {
     rancorous_archaic::register(db);
     ral_zarek_guest_lecturer::register(db);
     restoration_seminar::register(db);
+    run_behind::register(db);
     rearing_embermare::register(db);
     rapier_wit::register(db);
     rehearsed_debater::register(db);

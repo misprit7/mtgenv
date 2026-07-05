@@ -225,6 +225,28 @@ impl EngineCore {
                 }
                 true
             }
+            // "Target creature's owner puts it on their choice of the top or bottom of their library"
+            // (Run Behind). The OWNER (not the caster) chooses; then the object moves to their library
+            // at that end. Interactive (asks the owner), so it lives here. Flush staged actions first.
+            Effect::PutOnTopOrBottom { what } => {
+                self.flush_pending(wb);
+                if let Some(Target::Object(obj)) = self.resolve_target(what, ctx, cursor) {
+                    let owner = self.state.object(obj).owner;
+                    let on_top = matches!(
+                        self.ask(owner, &DecisionRequest::Confirm { kind: ConfirmKind::PutOnTop(obj) }),
+                        DecisionResponse::Bool(true)
+                    );
+                    let pos = if on_top { ZonePos::Top } else { ZonePos::Bottom };
+                    wb.push(Action::MoveZone {
+                        obj,
+                        to: Zone::Library,
+                        pos,
+                        cause: MoveCause::Returned,
+                        tapped: false,
+                    });
+                }
+                true
+            }
             // Cast the ACTUAL targeted card for free (CR 601.2f) — a granted flashback-style recast
             // (The Dawning Archaic). Resolve the (up-to-one) target; cast it for {0} through the real
             // pipeline; if `exile_on_leave`, flag it (via the flashback exile-on-leave-stack path) so
@@ -1410,6 +1432,7 @@ impl EngineCore {
             | Effect::CounterUnlessPay { .. }
             | Effect::CastCopy { .. }
             | Effect::CastForFree { .. }
+            | Effect::PutOnTopOrBottom { .. }
             | Effect::MayPayCost { .. }
             | Effect::Sacrifice { .. }
             | Effect::Surveil { .. }

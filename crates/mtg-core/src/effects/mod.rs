@@ -400,6 +400,13 @@ pub enum Effect {
     /// `PlayerFilter` restricts the candidates ("target opponent" = `PlayerFilter::Opponent`).
     TargetPlayer(PlayerFilter),
 
+    /// "Target [creature]'s owner puts it on their choice of the top or bottom of their library"
+    /// (Run Behind). The **owner** of `what` (not the caster) chooses top vs bottom, then the object
+    /// moves to their library. Interactive (asks the owner), so it lives in `interpret`.
+    PutOnTopOrBottom {
+        what: EffectTarget,
+    },
+
     /// No-op (e.g. an unchosen optional, or a placeholder mode).
     Nothing,
 

@@ -4001,6 +4001,8 @@ fn collect_specs_into(effect: &Effect, out: &mut Vec<TargetSpec>) {
         // "Cast target [card] for free" (The Dawning Archaic) — the card to cast is a chosen target
         // (up-to-one; the cast card's own targets are chosen inside the free cast, not here).
         Effect::CastForFree { what: EffectTarget::Target(spec), .. } => out.push(spec.clone()),
+        // "Target creature's owner puts it on top or bottom of their library" (Run Behind).
+        Effect::PutOnTopOrBottom { what: EffectTarget::Target(spec) } => out.push(spec.clone()),
         // "Put a +1/+1 counter on target creature" / "target creature gains trample" — the targeted
         // reward effects (collected when walking a reflexive branch, not from a Conditional.then).
         Effect::PutCounters { what: EffectTarget::Target(spec), .. }
