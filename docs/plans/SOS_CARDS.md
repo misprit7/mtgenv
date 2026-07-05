@@ -4,7 +4,77 @@ Standing workstream: implement the Secrets of Strixhaven set for **limited (40-c
 `mtg-core`, easiest-first, correctness over count. This ledger is the capability index + full
 per-card triage, modeled on `SELESNYA_LANDFALL_CARDS.md`.
 
-## ▶ NEXT AGENT — start here (handoff from sos-cards-18, 2026-07-05)
+## ▶ NEXT AGENT — start here (handoff from sos-cards-19, 2026-07-05)
+
+**▶▶ sos-cards-19 SHIPPED — 7 fully-faithful cards + reusable caps, 850 mtg-core green, whole workspace builds, tree clean,
+LEAD pushes.** Census **257→264/271 authored (97%, 261 faithful · 3 tracked-partial)**, **still 0 Native hatches**. **Headline
+finding: the ledger's "3 Natives" were all IR-expressible — the tag was stale.** Steal the Show was fully misdescribed ("control-
+theft + wheel" → actually a plain modal wheel + I/S-graveyard burn, ZERO new cap); Mathemagics = one generic `ValueExpr::Pow2`;
+only Pox Plague has a real IR-vs-Native tradeoff (pending a lead decision — see below). **The census diff also surfaced two
+buildable cards the ledger never bucketed: Flashback + Zimone's Experiment (both shipped).**
+
+Own-commits (`git log -S` before re-scoping — header PROCESS RULES apply):
+- **`cd5a6c0` — Choreographed Sparks** (modal spell-copy). (a) **Wired `CopySpellOnStack`'s `Target` arm into
+  `collect_specs_into`** — mode-1 was *uncastable* for a real cast (the ledger's "wired, only Triggering tested" meant the target
+  was never collected → `resolve_target` found nothing). (b) New **`Effect::CopySpellAsToken{ what, haste, sacrifice_at_next_end_
+  step }`** — copies a creature spell → the copy resolves into a token (CR 707.10f), granted haste + a warp-style
+  `AtBeginningOfNextEndStep` sac delayed trigger. Refactored **`copy_spell_on_stack` → returns `Option<ObjId>`** so the caller
+  decorates the minted copy. (c) New **`Qualification::CantBeCopied`** (self-static, guarded at the single `copy_spell_on_stack`
+  choke point — mirrors Surrak's `CantBeCountered`). (d) **Made `Action::Sacrifice` a first-class applied action** — it was a
+  silent no-op in `apply_action` (only worked as a *cost*); now routes through `death_zone_for` like `interpret_sacrifice`, so any
+  "sacrifice at end step" rider works.
+- **`2e40f25` — Steal the Show** — pure composition, ZERO new cap. Modal: mode-a = `TargetPlayer` + `DiscardChosen{ChosenTarget}` +
+  `Draw(DiscardedThisResolution)`; mode-b = `DealDamage{ Count{gy, I/S, Controller} }` to a creature/pw. The "Native" tag was wrong.
+- **`ee72ebb` — Mathemagics** — new generic **`ValueExpr::Pow2(exp)`** (`1 << exp`, clamped [0,62]) → `Draw{ target, Pow2(X) }`.
+  `{X}{X}{U}{U}` = `mc.x = 2`. Not Native.
+- **`7c6f148` — Zaffai and the Tempests** — "once each of your turns, cast an I/S from hand for free." New player-permission
+  **`StaticContribution::FreeCastFromHandOncePerTurn{ filter }`** (read by the priority-action builder, NOT painted — like
+  `ExtraLandPlays`) + new **`PlayableAction::CastFreeFromHand{ source, spell }`** (+ `cast_free_from_hand` — casts
+  `WithoutPayingManaCost`, spends `used_once_per_turn`). Offer gated on your turn + source-unused. ⚠️ **new `PlayableAction`
+  variant → I fixed the exhaustive matches in `mtg-gre-server/options.rs` (2) + `mtg-py/{codec,decision_stats}.rs`.**
+- **`c98a3c0` — Page, Loose Leaf** — `{T}:{C}` dork + **Grandeur** (`CostComponent::Discard` of a hand card named "Page, Loose
+  Leaf" — Page is on the bf so a hand copy is always "another") → new **`Effect::RevealFromTopUntilToHand{ filter }`** (reveal-until
+  an I/S → hand, rest random-bottom, the Cascade random-bottom idiom). Small shared fix: **`enter_filter_matches` now handles
+  `CardFilter::Named`** (was fail-closed `_ => false` → the discard cost was unpayable).
+- **`7310fdd` — Zimone's Experiment** — new **`Effect::LookPickCreaturesLands{ count, take }`** (look top 5, take ≤2 creature/land
+  routed BY TYPE — lands → bf tapped, creatures → hand — rest random-bottom; the type-routed sibling of `LookAndPick`).
+- **`65b176a` — Flashback** — grant flashback to a target I/S in your gy until EOT (cost = its mana cost). New Object field
+  **`flashback_until_turn: Option<u32>`** (reset on zone change) + **`flashback_cost` honors it** (returns the card's own mana cost)
+  + new **`Effect::GrantFlashbackUntilEndOfTurn{ what }`**. Reuses the existing flashback cast/exile path.
+
+**▶ THE UNAUTHORED TAIL IS NOW 7 — and the buildable-clean-win tail is EXHAUSTED. Every remaining card is either a
+roadmap/layer item (NOT a card agent's job) or blocked on a LEAD DECISION:**
+- **Roadmap / layer (3 — lead is putting these to the user, do NOT build):** **Fractalize** (SET creature-type + base-P/T, CR 613
+  layers 4/7b), **Great Hall of the Biblioplex** (mana land + `{5}: becomes a 2/4 Wizard` layer-4/7 animation), **Rubble Rouser**
+  (loot ETB + `{T},Exile-from-gy:{R}` + reflexive damage — mana-ability-with-cost-and-rider, same class as the **Hydro-Channeler**
+  tracked-partial → do that roadmap item first).
+- **Blocked on a lead decision (4):**
+  - **Pox Plague** — each-player halving-of-choice. **Recommended: make this THE Native exercise** (it's the one genuinely-bespoke
+    case; IR needs `Half` + `LifeTotal{who}` + an EachPlayer loop binding a per-player cursor — real subsystem work for one card).
+    Doing it Native stretches `EffectCtx` (currently can't read arbitrary state or ask decisions), which is the hatch-design
+    friction the architecture doc wants. **Awaiting lead's IR-vs-Native call.**
+  - **Nita, Forum Conciliator** — "cast a spell you don't own"→counter-each (owner-based cast trigger — no owner-filter exists) +
+    `{2},Sac another creature: exile target opp-gy I/S, cast it this turn with any-color mana, if it would hit a gy exile instead`
+    (impulse-with-spend-any-mana + spell-would-die→exile replacement). 3 interlocking bespoke mechs — the heaviest card. **Sketched
+    to lead; awaiting ack (may want roadmap coordination on the any-mana / opp-gy-impulse mechanics).**
+  - **Petrified Hamlet** — "choose a land card NAME on ETB; that name's non-mana activated abilities are off; that name's lands get
+    `{T}:{C}`." Name-choice + two name-keyed statics; near-irrelevant in limited. The **other Native-exercise candidate**. Deferred.
+  - **Resonating Lute** — "Lands you control have '`{T}`: Add two of any one color, I/S-only'." **grant-an-activated-mana-ability-to-
+    a-group** — the SAME class as Hydro-Channeler / Great Hall the lead is putting to the user. **DEFER** (don't build a one-off
+    grant-mana path the roadmap should generalize).
+
+**→ Net: pending the two engine-roadmap decisions (layer-4/5 completion + the mana-ability-grant class), the set is effectively
+card-complete except Pox/Nita/Petrified, each of which wants a lead call FIRST. If you're the next agent and those calls have been
+made, Pox (Native) and Nita (heavy) are the builds; otherwise there are no clean IR wins left to pick up.**
+
+**⚠️ hatch-design feedback (the architecture doc wants this):** across 7 cards + the whole session, **0 cards needed the `Native`
+hatch** — every "genuinely inexpressible" ledger tag dissolved on reading the oracle + the code. The IR is expressive enough that
+Native remains unexercised; Pox Plague is the first card where Native is even *arguable*, and only because the alternative (a
+per-player-keyed halving subsystem) is heavy for a single card — not because it's inexpressible.
+
+---
+
+## ▶ (superseded — history) sos-cards-18 handoff, 2026-07-05
 
 **▶▶ sos-cards-18 SHIPPED — 9 fully-faithful cards + 8 reusable caps. 833 mtg-core green, whole workspace builds, tree clean,
 LEAD pushes.** Census **248→257/271 authored (95%, 254 faithful · 3 tracked-partial)**, 0 Native hatches. **The clean

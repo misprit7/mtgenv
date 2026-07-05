@@ -69,18 +69,22 @@ MTGA client.
 - **✅ MOBILE WEB CLIENT (2026-07-03).** Game client + lobby fully playable from a phone: mobile
   reflow (sticky prompt sheet, opp-top/you-bottom strips, log toggle), touch previews long-press-only
   (hover gated to real mice), on-screen pass-turn button. Desktop unchanged.
-- **▶ SOS FULL-SET scope: 257/271 authored (95%, 254 faithful · 3 tracked-partial), 833 mtg-core tests green (2026-07-05,
-  sos-cards-18).** 9 fully-faithful cards + 8 reusable caps; the **clean cap-blocked tail is now EXHAUSTED** (14 unauthored: 10
-  subsystem-scale caps/one-offs + 4 parked). Also shipped **Skycoach Waypoint** (`Effect::SetPrepared`), **Biblioplex
-  Tomekeeper** (modal triggered-ability support), **Mana Sculpt** (delayed-mana cap), **Archaic's Agony** (excess-damage impulse).
-  **Burrog Barrage**
-  (new `Effect::SourcedDamage` creature-as-source "bite" primitive, flushes the +1/+0 pump before reading `PowerOfTarget` +
-  `ValueExpr::InstantsSorceriesCastThisTurn`); **mill-then-play cap** (`Effect::MillThenPlay` + `Object.playable_from_graveyard` +
-  graveyard offer scans) → **Ark of Hunger** + **Tablet of Discovery**; **Slumbering Trudge** (enters-with-(3−X)-stun via
-  `EntersWithCountersValue` + `EntersTappedUnless` now X-threaded); **Divergent Equation** (dynamic {X} target count via the
-  `TARGET_COUNT_X` sentinel); **Skycoach Waypoint** (new `Effect::SetPrepared` — target creature becomes prepared/unprepared).
-  17 unauthored, all subsystem-scale or parked (see SOS_CARDS.md census + the NEXT-AGENT block). Tracked-partials still 3 (Ral,
-  Wildgrowth, Hydro-Channeler). 0 Native hatches.
+- **▶ SOS FULL-SET scope: 264/271 authored (97%, 261 faithful · 3 tracked-partial), 850 mtg-core tests green (2026-07-05,
+  sos-cards-19).** 7 fully-faithful cards, still **0 Native hatches**. **Key finding: the ledger's "3 Natives" were all
+  IR-expressible** — Steal the Show (modal wheel + I/S-gy burn, ZERO cap; the "control-theft" tag was wrong), Mathemagics
+  (generic `ValueExpr::Pow2`), and Pox Plague (only a real IR-vs-Native tradeoff). Also: **Choreographed Sparks** (wired the
+  `CopySpellOnStack` Target arm into `collect_specs_into` + `Effect::CopySpellAsToken` + `Qualification::CantBeCopied` + made
+  `Action::Sacrifice` a first-class applied action), **Zaffai** (once/turn free-cast permission — `FreeCastFromHandOncePerTurn` +
+  `PlayableAction::CastFreeFromHand`), **Page, Loose Leaf** (Grandeur discard-by-name cost + `Effect::RevealFromTopUntilToHand` +
+  `enter_filter_matches` now handles `CardFilter::Named`), **Zimone's Experiment** (`Effect::LookPickCreaturesLands` — look-top-5
+  routed by type), **Flashback** (`Effect::GrantFlashbackUntilEndOfTurn` + `Object.flashback_until_turn`; census-diff surfaced it +
+  Zimone, both un-bucketed by the ledger). **The 7 unauthored remaining = 3 roadmap/layer items (Fractalize, Great Hall, Rubble
+  Rouser) + 4 decision-blocked (Pox Native-vs-IR, Nita heavy, Petrified Hamlet name-choice, Resonating Lute grant-mana-class) —
+  no clean IR wins left.** Tracked-partials still 3 (Ral, Wildgrowth, Hydro-Channeler).
+- **▶ SOS (prior — sos-cards-18): 257/271, 833 green.** 9 cards + 8 caps (Skycoach Waypoint `Effect::SetPrepared`, Biblioplex
+  Tomekeeper modal triggered-ability support, Mana Sculpt delayed-mana, Archaic's Agony excess-damage impulse, Burrog Barrage
+  `Effect::SourcedDamage` "bite" primitive, mill-then-play → Ark of Hunger + Tablet of Discovery, Slumbering Trudge (3−X)-stun,
+  Divergent Equation `TARGET_COUNT_X` dynamic {X} target count).
 - **▶ SOS (prior — sos-cards-17 SECOND WAVE): 248/271, 803 green.** target-path dynamic-filter fix + Moseo + Sundering Archaic +
   Ennis (cards-exiled-this-turn tracker) + Snooping Page (`SelfDealsCombatDamageToPlayer`).
 - **▶ SOS (prior — sos-cards-17 FIRST WAVE): 244/271, 794 green.** **THE SPELL-COPY CONSUMERS + THE LKI-COUNTER,

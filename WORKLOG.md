@@ -3,6 +3,26 @@
 Short, dated entries for future-agent consumption. Newest first. One line or a few bullets
 per unit of meaningful progress. Keep it terse — detail lives in `docs/` and git history.
 
+## 2026-07-05 (SOS relay sos-cards-19 — 7 fully-faithful cards + reusable caps; census 257→264/271, 833→850 green; still 0 Natives)
+
+- **Headline: the ledger's "3 Natives" were all IR-expressible** — the tag was stale. **Steal the Show** (`2e40f25`) was fully
+  misdescribed ("control-theft + wheel" → actually a plain modal wheel + I/S-graveyard burn, ZERO new cap). **Mathemagics**
+  (`ee72ebb`) = one generic `ValueExpr::Pow2`. Only **Pox Plague** has a real IR-vs-Native tradeoff (flagged to lead).
+- **`cd5a6c0` — Choreographed Sparks** (modal spell-copy): wired `CopySpellOnStack`'s Target arm into `collect_specs_into`
+  (mode-1 was uncastable for real casts) + new `Effect::CopySpellAsToken` (creature-spell copy → haste token, sac at next end
+  step) + new `Qualification::CantBeCopied` (guarded at the `copy_spell_on_stack` choke point) + **made `Action::Sacrifice` a
+  first-class applied action** (was a silent no-op in `apply_action`, only worked as a cost).
+- **`7c6f148` — Zaffai**: once/turn free-cast I/S from hand — `StaticContribution::FreeCastFromHandOncePerTurn` +
+  `PlayableAction::CastFreeFromHand` (new PlayableAction → fixed exhaustive matches in mtg-gre-server + mtg-py).
+- **`c98a3c0` — Page, Loose Leaf**: `{T}:{C}` dork + Grandeur (`CostComponent::Discard` by name) → new
+  `Effect::RevealFromTopUntilToHand`; `enter_filter_matches` now handles `CardFilter::Named` (was fail-closed).
+- **`7310fdd` — Zimone's Experiment**: new `Effect::LookPickCreaturesLands` (look top 5, route creatures→hand / lands→bf tapped).
+- **`65b176a` — Flashback**: grant flashback to a graveyard I/S until EOT — new `Object.flashback_until_turn` +
+  `Effect::GrantFlashbackUntilEndOfTurn` + `flashback_cost` honors it. (Census diff surfaced Flashback + Zimone — both
+  un-bucketed by the ledger.)
+- **7 unauthored remain** = 3 roadmap/layer (Fractalize, Great Hall, Rubble Rouser) + 4 decision-blocked (Pox Native-vs-IR, Nita
+  heavy, Petrified Hamlet name-choice, Resonating Lute grant-mana-class). No clean IR wins left. See SOS_CARDS.md NEXT-AGENT block.
+
 ## 2026-07-05 (SOS relay sos-cards-18 — 9 fully-faithful cards + 8 reusable caps; census 248→257/271, 803→833 green)
 
 - **`58e1cca` — Archaic's Agony** (Converge damage + **excess-damage → impulse-exile**). New `Effect::DealDamageExcessImpulse` —
