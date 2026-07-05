@@ -129,6 +129,23 @@ Lifecycle of every batch of game actions (the "nap"):
    guard preventing infinite loops).
 3. **Commit.** Execute the surviving actions, emitting an `Event` for each completed one.
 
+> **Replacements come from two sources, one pass.** Printed `Ability::Replacement` statics
+> (on the affected object + every battlefield permanent) *and* **floating replacements** —
+> resolution-created, object-scoped, duration-bounded riders stored in
+> `GameState.floating_replacements` (e.g. Wilt in the Heat's "if that creature would die this
+> turn, exile it instead"). Both feed the same `applicable_replacements` set, so CR 616.1f
+> ordering (the controller chooses which applies first) works uniformly. Floating riders use a
+> serde-safe `FloatingRewrite` (a subset of `Rewrite` with no embedded `Effect`), invalidate
+> when their object changes zones (CR 400.7), and expire at turn cleanup.
+>
+> **A death is a replaceable event.** "Dies" = any battlefield→graveyard move (CR 700.4:
+> destruction, sacrifice, legend rule, lethal-damage/0-toughness SBA), matched by
+> `ActionPattern::WouldDie`. Destroy-*effects* run their `Action::Destroy` through the rewrite
+> pass directly; the two death paths that take a *direct* `move_object` (the SBA creature-death
+> and `interpret_sacrifice`) funnel their destination through the shared `death_zone_for`, which
+> consults the same replacement set — so "would die → exile instead" catches every death path,
+> not just destruction.
+
 > The Zurgo "Destroy all / but not the indestructible one" and "Sacrifice Serra Angel /
 > Sacrifice token, but one can't be sacrificed" examples are *exactly* step 2 erasing a
 > whiteboard entry because the target carries an indestructible/can't-be-sacrificed
