@@ -10,7 +10,7 @@
 
 use crate::basics::{CardType, Color};
 use crate::cards::{creature, mana_cost, CardDb};
-use crate::effects::ability::{Ability, CostReductionAmount, EventPattern};
+use crate::effects::ability::{Ability, CostReductionAmount, CostReductionCondition, EventPattern};
 use crate::effects::condition::Condition;
 use crate::effects::target::CardFilter;
 use crate::effects::value::{PlayerRef, ValueExpr};
@@ -33,13 +33,13 @@ pub fn register(db: &mut CardDb) {
             // "This spell costs {3} less to cast if creatures you control have total toughness 10+."
             Ability::CostReduction {
                 amount: CostReductionAmount::Generic(3),
-                condition: Condition::ValueAtLeast(
+                condition: CostReductionCondition::State(Condition::ValueAtLeast(
                     ValueExpr::TotalToughness {
                         filter: CardFilter::HasCardType(CardType::Creature),
                         controller: Some(PlayerRef::Controller),
                     },
                     ValueExpr::Fixed(10),
-                ),
+                )),
             },
             // "When Orysa enters, draw two cards."
             Ability::Triggered {
@@ -89,7 +89,7 @@ mod tests {
         let base = state.object(orysa).chars.mana_cost.clone().unwrap();
         let e0 = {
             let e = Engine::new(state, vec![Box::new(RandomAgent::new(0)), Box::new(RandomAgent::new(1))]);
-            e.effective_cast_cost(PlayerId(0), orysa, &base)
+            e.effective_cast_cost(PlayerId(0), orysa, &base, crate::priority::TargetCtx::Optimistic)
         };
         assert_eq!(e0.generic, 4, "no reduction with an empty board");
 
@@ -105,7 +105,7 @@ mod tests {
             state.add_card(PlayerId(0), bears, Zone::Battlefield);
         }
         let e = Engine::new(state, vec![Box::new(RandomAgent::new(0)), Box::new(RandomAgent::new(1))]);
-        let reduced = e.effective_cast_cost(PlayerId(0), orysa, &base);
+        let reduced = e.effective_cast_cost(PlayerId(0), orysa, &base, crate::priority::TargetCtx::Optimistic);
         assert_eq!(reduced.generic, 1, "toughness 10 → {{3}} off → {{1}}{{U}}");
         assert_eq!(reduced.colored.get(&Color::Blue), Some(&1), "coloured pip untouched");
     }

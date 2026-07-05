@@ -18,8 +18,8 @@ use crate::agent::{
 use crate::basics::{CardType, CounterKind, ManaCost, Phase, Target, Zone, ZonePos};
 use crate::subtypes::{EnchantmentType, Subtype};
 use crate::effects::ability::{
-    Ability, Cost, CostComponent, CostReductionAmount, EventPattern, Keyword, Restriction,
-    StaticContribution, Timing,
+    Ability, Cost, CostComponent, CostReductionAmount, CostReductionCondition, EventPattern,
+    Keyword, Restriction, StaticContribution, Timing,
 };
 use crate::effects::action::{Action, MoveCause, ResolutionCtx, Whiteboard, WbReason};
 use crate::effects::target::{CardFilter, PlayerFilter, SelectSpec, TargetKind, TargetSpec};
@@ -66,6 +66,18 @@ pub enum EndReason {
     Poison,
     /// No winner: a draw, or the turn-cap was reached.
     DrawOrCapped,
+}
+
+/// How a **target-dependent** cost reduction (CR 601.2f "if it targets a …") is evaluated during
+/// cost determination — see [`Engine::effective_cast_cost`]. `Optimistic` is the offer-gate view
+/// (best-case: applies iff a legal matching target exists); `Chosen` is the cast-time view
+/// (applies iff a target actually chosen matches). Cheap to pass by value (`Copy`).
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum TargetCtx<'a> {
+    /// Offer gate: no targets chosen yet.
+    Optimistic,
+    /// Cast time: the targets chosen for the spell.
+    Chosen(&'a [Target]),
 }
 
 /// The result of a finished game (a convenience read of the final state).
@@ -1042,7 +1054,7 @@ impl Engine {
             if chars
                 .mana_cost
                 .as_ref()
-                .map(|c| self.effective_cast_cost(p, card, c))
+                .map(|c| self.effective_cast_cost(p, card, c, TargetCtx::Optimistic))
                 .is_some_and(|c| mana::can_pay_ex(s, p, &c, is_is))
             {
                 actions.push(PlayableAction::Cast { spell: card, variant: CastVariant::Normal });
@@ -1773,10 +1785,23 @@ impl Engine {
     /// The effective mana cost to cast `card` (base cost `base`) after applying the card's
     /// `Ability::CostReduction` statics (CR 601.2f / 118) whose condition holds for caster `p`.
     /// Generic reductions floor at {0}; a coloured reduction removes matching coloured pips (CR
-    /// 118.6/.7) then generic. `{X}`/hybrid pips are preserved. Evaluated identically at the offer
-    /// gate and at cast, so (for state/count conditions) affordability and payment agree.
-    pub(crate) fn effective_cast_cost(&self, p: PlayerId, card: ObjId, base: &ManaCost) -> ManaCost {
-        let reductions: Vec<(CostReductionAmount, crate::effects::condition::Condition)> =
+    /// 118.6/.7) then generic. `{X}`/hybrid pips are preserved.
+    ///
+    /// `targets` selects how a **target-dependent** reduction (CR 601.2f "if it targets a …") is
+    /// evaluated: [`TargetCtx::Optimistic`] at the offer gate (applies iff a legal matching target
+    /// *exists* — the best-case cost), [`TargetCtx::Chosen`] at cast (applies iff a *chosen* target
+    /// matches). `State` reductions ignore `targets` (Optimistic and Chosen agree), so state/count
+    /// cards see identical costs at the gate and at cast. Because a target-dependent discount can
+    /// lower the cast cost, `cast_spell` recomputes with the chosen targets and constrains the
+    /// target choices so the caster can always pay (no rewind — see [`Engine::cast_spell`]).
+    pub(crate) fn effective_cast_cost(
+        &self,
+        p: PlayerId,
+        card: ObjId,
+        base: &ManaCost,
+        targets: TargetCtx,
+    ) -> ManaCost {
+        let reductions: Vec<(CostReductionAmount, CostReductionCondition)> =
             match self.state.def_of(card) {
                 Some(def) => def
                     .abilities
@@ -1792,7 +1817,7 @@ impl Engine {
             };
         let mut cost = base.clone();
         for (amount, condition) in reductions {
-            if !crate::conditions::holds_for_source(&self.state, &condition, p, Some(card)) {
+            if !self.cost_reduction_applies(p, card, &condition, targets) {
                 continue;
             }
             match amount {
@@ -1825,6 +1850,47 @@ impl Engine {
         cost
     }
 
+    /// Whether one [`Ability::CostReduction`] condition holds for caster `p` casting `card`, given
+    /// the target context. A `State` condition is a caster-relative game-state check; a
+    /// `TargetMatches(filter)` condition reads the spell's targets — optimistically (does a legal
+    /// matching target exist?) at the offer gate, or against the chosen targets at cast.
+    fn cost_reduction_applies(
+        &self,
+        p: PlayerId,
+        card: ObjId,
+        condition: &CostReductionCondition,
+        targets: TargetCtx,
+    ) -> bool {
+        match condition {
+            CostReductionCondition::State(cond) => {
+                crate::conditions::holds_for_source(&self.state, cond, p, Some(card))
+            }
+            CostReductionCondition::TargetMatches(filter) => match targets {
+                // Cast time: the discount applies iff a *chosen* target matches (CR 601.2f). With
+                // multiple targets, any one match suffices.
+                TargetCtx::Chosen(chosen) => chosen
+                    .iter()
+                    .any(|t| self.target_matches_filter(t, filter, p, Some(card))),
+                // Offer gate: apply the discount optimistically — iff some legal target of this
+                // spell matches the filter (the caster *could* choose it), so the best-case cost
+                // is offered. `cast_spell` then constrains the actual target choice to what the
+                // caster can pay, so this optimism never leads to an underpayment.
+                TargetCtx::Optimistic => self
+                    .state
+                    .def_of(card)
+                    .and_then(|d| d.spell_effect().cloned())
+                    .map(|eff| collect_target_specs(&eff))
+                    .into_iter()
+                    .flatten()
+                    .any(|spec| {
+                        self.target_candidates(&spec, p, Some(card))
+                            .iter()
+                            .any(|t| self.target_matches_filter(t, filter, p, Some(card)))
+                    }),
+            },
+        }
+    }
+
     /// Cast a spell from `p`'s hand (CR 601, minimal): put it on the stack (601.2a), choose
     /// targets (601.2c), auto-pay its cost (601.2f–h), and announce it cast (601.2i). `variant`
     /// selects the cost paid — the mana cost for `Normal`, the warp cost for `Warp` (CR 702.x),
@@ -1841,13 +1907,38 @@ impl Engine {
             Some(c) => c,
             None => return,
         };
-        // Apply cost-reduction statics to a normal cast (CR 601.2f / 118) — the same reduction the
-        // offer gate used, so affordability and payment agree for state/count conditions.
+        // Apply cost-reduction statics (CR 601.2f / 118). Compute the OPTIMISTIC reduction now —
+        // matching the offer gate — to size the {X} bound and the stack object; the FINAL cost is
+        // recomputed from the chosen targets below, since a target-dependent discount ("if it
+        // targets a …") isn't settled until 601.2c. `base_cost` keeps the printed cost for that
+        // recompute (and for constraining which targets the caster can afford, below).
+        let base_cost = cost.clone();
         let cost = if variant == CastVariant::Normal {
-            self.effective_cast_cost(p, card, &cost)
+            self.effective_cast_cost(p, card, &base_cost, TargetCtx::Optimistic)
         } else {
             cost
         };
+        // Is this an instant/sorcery cast? Restricted (I/S-only) mana pays only such casts (CR
+        // 106.6); also read by the target-affordability constraint below.
+        let is_is = {
+            let ch = &self.state.object(card).chars;
+            ch.has_type(CardType::Instant) || ch.has_type(CardType::Sorcery)
+        };
+        // Does this spell carry a *target-dependent* cost reduction (CR 601.2f)? If so a target
+        // choice changes the cost, so cast-time target candidates must be constrained to what the
+        // caster can pay (below) and the final cost recomputed from the chosen targets.
+        let target_dependent_reduction = variant == CastVariant::Normal
+            && self.state.def_of(card).is_some_and(|d| {
+                d.abilities.iter().any(|a| {
+                    matches!(
+                        a,
+                        Ability::CostReduction {
+                            condition: CostReductionCondition::TargetMatches(_),
+                            ..
+                        }
+                    )
+                })
+            });
         let effect = self.state.def_of(card).and_then(|d| d.spell_effect().cloned());
 
         // 601.2a: the card becomes a spell on top of the stack.
@@ -1932,14 +2023,33 @@ impl Engine {
         });
 
         // 601.2c: choose targets (locked now).
+        let single_slot = specs.len() == 1;
+        let mut chosen_targets: Vec<Target> = Vec::new();
         if !specs.is_empty() {
             let slots: Vec<TargetSlot> = specs
                 .iter()
-                .map(|spec| TargetSlot {
-                    description: String::new(),
-                    legal: self.target_candidates(spec, p, Some(card)),
-                    min: spec.min,
-                    max: spec.max,
+                .map(|spec| {
+                    let mut legal = self.target_candidates(spec, p, Some(card));
+                    // No-rewind guard (CR 601.2f): with a target-dependent discount in play, keep
+                    // only candidates whose choice leaves the spell affordable. Reductions only
+                    // lower cost, so when the un-reduced cost is affordable this keeps every
+                    // candidate; when only the discounted cost is affordable it keeps just the
+                    // discount-granting ones. Single-slot only — every such SoS card has one target;
+                    // a multi-target discount would need a joint check, which no card requires yet.
+                    if target_dependent_reduction && single_slot {
+                        legal.retain(|c| {
+                            let sel = [*c];
+                            let cost =
+                                self.effective_cast_cost(p, card, &base_cost, TargetCtx::Chosen(&sel));
+                            mana::can_pay_ex(&self.state, p, &cost, is_is)
+                        });
+                    }
+                    TargetSlot {
+                        description: String::new(),
+                        legal,
+                        min: spec.min,
+                        max: spec.max,
+                    }
                 })
                 .collect();
             // Defensive unhang (CR 601.2c / 728): never emit a `ChooseTargets` a seat can't answer
@@ -1960,12 +2070,23 @@ impl Engine {
             let resp = self.ask(p, &req);
             let chosen = parse_targets(&slots, &resp);
             let targeted = self.targeted_object_ids(&chosen);
+            chosen_targets = chosen.clone();
             if let Some(obj) = self.state.stack.items.iter_mut().find(|s| s.id == sid) {
                 obj.targets = chosen;
             }
             // CR 603.2: each targeted object "becomes the target" of this spell, controlled by `p`.
             self.fire_targeted(&targeted, p, sid);
         }
+
+        // 601.2f: finalize the cost against the CHOSEN targets — a target-dependent reduction
+        // ("if it targets a …", CR 601.2f) is settled here. For state/count reductions and spells
+        // with no target-dependent reduction this equals the optimistic `cost` already computed
+        // (the candidate constraint above guaranteed the chosen line is affordable).
+        let cost = if variant == CastVariant::Normal {
+            self.effective_cast_cost(p, card, &base_cost, TargetCtx::Chosen(&chosen_targets))
+        } else {
+            cost
+        };
 
         // 601.2f–h: pay the total cost (auto-tap lands), with {X} settled to `chosen_x`. Hybrid and
         // monocolour-hybrid pips are carried through so they're actually paid (and their spent colours
@@ -1976,11 +2097,6 @@ impl Engine {
             hybrid: cost.hybrid.clone(),
             mono_hybrid: cost.mono_hybrid.clone(),
             x: 0,
-        };
-        // Restricted (I/S-only) mana (CR 106.6) may pay this cost iff it's an instant/sorcery cast.
-        let is_is = {
-            let ch = &self.state.object(card).chars;
-            ch.has_type(CardType::Instant) || ch.has_type(CardType::Sorcery)
         };
         let colors_spent = mana::auto_pay_ex(&mut self.state, p, &pay, is_is).unwrap_or_default();
         // Record the total mana spent (incl. {X}) on the spell, for an enters-with-counters-equal-
@@ -2221,6 +2337,9 @@ impl Engine {
             CardFilter::Attacking => {
                 self.state.combat.as_ref().is_some_and(|c| c.is_attacking(*id))
             }
+            // Tap status (CR 110.5) — "a tapped creature" (Ajani's Response's cost-reduction filter).
+            CardFilter::Tapped => o.status.tapped,
+            CardFilter::Untapped => !o.status.tapped,
             CardFilter::All(fs) => fs.iter().all(|f| self.target_matches_filter(t, f, caster, source)),
             CardFilter::AnyOf(fs) => fs.iter().any(|f| self.target_matches_filter(t, f, caster, source)),
             CardFilter::Not(f) => !self.target_matches_filter(t, f, caster, source),

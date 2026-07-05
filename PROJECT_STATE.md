@@ -3,7 +3,7 @@
 Single source of truth for goals + where things stand. Update this (without being asked)
 whenever meaningful progress changes the picture. Companion: `WORKLOG.md` (chronological).
 
-_Last updated: 2026-07-03_
+_Last updated: 2026-07-04_
 
 ## Vision (one sentence)
 
@@ -69,6 +69,12 @@ MTGA client.
 - **✅ MOBILE WEB CLIENT (2026-07-03).** Game client + lobby fully playable from a phone: mobile
   reflow (sticky prompt sheet, opp-top/you-bottom strips, log toggle), touch previews long-press-only
   (hover gated to real mice), on-screen pass-turn button. Desktop unchanged.
+- **▶ SOS FULL-SET scope (2026-07-04, user directive — T4 deferral revoked): ~159 authored, 590 mtg-core
+  tests green.** Each subsystem built as the general CR capability, not the minimal hack (the big three still
+  ahead: Lessons/Learn, Planeswalkers, prepare-DFCs). **sos-cards-9 finished the S12 target-dependent
+  cost-reduction sub-cap** (the piece agent-8 deferred as risky): `CostReductionCondition::{State|TargetMatches}`
+  + `effective_cast_cost(TargetCtx::{Optimistic|Chosen})`; `cast_spell` recomputes cost from chosen targets and
+  constrains target candidates to what the caster can pay — no rewind. → Ajani's Response.
 - **🎯 SOS FIRST-PASS MILESTONE (2026-07-03 night): 153 authored / 150 fully-faithful / 3 tracked-partial, 575 tests.** (Declared at 147/144/558; +2 cheap-vein sweep — Pensive Professor, Potioner's Trove; +4 moderate-cap cards sos-cards-7 — Berta, Growth Curve, Living History, Emil.) Of 271 distinct SOS cards: 153 done, 36 prepare-DFCs deferred (first-pass scope), 7 deferred-by-type (planeswalkers/Lessons); the cheap vein is SWEPT and the moderate-cap tier is being worked (each remaining unauthored card needs a genuinely-new cap), with ~60 behind bigger subsystems (spell-copy deferred: ~1 net card ROI; Fractalize = milestone-5 layers). Seven-agent relay chain, one continuous ledger (docs/plans/SOS_CARDS.md), 53+ engine caps built, real-path bugs found+fixed along the way. **sos-cards-7 shipped 5 caps + 4 cards**: {X}-in-activated-cost → Berta; CountersOnTarget+flush-before-PutCounters → Growth Curve; CardFilter::Attacking → Living History; DistinctNames value + HasCounter-in-static-scope → Emil.
 - **▶ SOS card push (long-term, active):** Secrets of Strixhaven 271 cards triaged in
   `docs/plans/SOS_CARDS.md` — 74 authorable now, 142 behind ~small caps (7 caps unlock ~79),

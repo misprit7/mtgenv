@@ -3,6 +3,21 @@
 Short, dated entries for future-agent consumption. Newest first. One line or a few bullets
 per unit of meaningful progress. Keep it terse — detail lives in `docs/` and git history.
 
+## 2026-07-04 (sos-cards-9)
+
+- **S12 target-dependent cost reduction — the sub-cap agent-8 deferred as risky. 586→590 mtg-core
+  tests green** (158→159 authored). `Ability::CostReduction`'s condition became
+  `CostReductionCondition::{State(Condition) | TargetMatches(CardFilter)}`;
+  `effective_cast_cost` gained a `TargetCtx::{Optimistic | Chosen(&targets)}` context. The offer
+  gate applies a target-dependent discount optimistically (a legal matching target exists), and
+  `cast_spell` recomputes the final cost from the chosen targets *and* constrains each target
+  slot's candidates to what the caster can pay — reductions only lower cost, so the engine never
+  offers a target it can't pay for → auto_pay never underpays → **no rewind** (the invariant
+  agent-8 flagged). + `CardFilter::Tapped`/`Untapped` arms in `target_matches_filter`. →
+  **Ajani's Response** ({4}{W} Destroy, {3} off if it targets a tapped creature); a real-cast-path
+  test proves the untapped creature is excluded from the offered targets when only {1}{W} is
+  affordable. Orysa migrated to `State(...)` (unchanged behaviour).
+
 ## 2026-07-03 (sos-cards-7)
 
 - **SOS: 5 caps + 4 cards, 562→575 mtg-core tests green** (153 authored / 150 fully-faithful).

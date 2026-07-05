@@ -293,11 +293,11 @@ pub enum Ability {
     /// — read during cost determination (`effective_cast_cost`), evaluated relative to the caster.
     /// The reduction never takes the cost below {0}, and a generic-only reduction can't remove a
     /// coloured pip (CR 118.7). Multiple `CostReduction`s on one card each apply. e.g. Orysa "costs
-    /// {3} less if creatures you control have total toughness 10 or greater"; The Dawning Archaic
-    /// "{1} less for each instant and sorcery card in your graveyard".
+    /// {3} less if creatures you control have total toughness 10 or greater" (a `State` condition);
+    /// Ajani's Response "{3} less if it targets a tapped creature" (a `TargetMatches` condition).
     CostReduction {
         amount: CostReductionAmount,
-        condition: Condition,
+        condition: CostReductionCondition,
     },
     /// A continuous/static effect (CR 604/611/613): contributes to a layer and/or paints a
     /// qualification, for the given duration over the given affected set.
@@ -329,4 +329,22 @@ pub enum CostReductionAmount {
     /// Reduce by a coloured/generic cost (CR 118.6) — removes matching coloured pips too, then
     /// generic. e.g. Brush Off's "{1}{U} less". (Deferred consumer; the leaf is here for generality.)
     Cost(ManaCost),
+}
+
+/// When an [`Ability::CostReduction`] applies (CR 601.2f). Two flavours — a caster-relative
+/// **state/count** condition, and a **target-dependent** one that reads the spell's chosen targets.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CostReductionCondition {
+    /// The reduction applies iff `Condition` holds relative to the caster — a property of the
+    /// game state, independent of the spell's targets (e.g. Orysa's "total toughness ≥ 10", Wilt
+    /// in the Heat's "a card left your graveyard this turn"). Evaluated identically at the offer
+    /// gate and at cast, so affordability and payment always agree.
+    State(Condition),
+    /// The reduction applies iff **the spell targets** an object matching this filter (CR 601.2f
+    /// "if it targets a …"). Because the discount depends on the chosen targets — not known until
+    /// 601.2c — cost is finalized *after* targets are chosen, and the offer gate applies the
+    /// reduction optimistically (iff a legal matching target exists). e.g. Ajani's Response "if it
+    /// targets a tapped creature", Run Behind "an attacking creature". With multiple targets the
+    /// reduction applies if **any** chosen target matches.
+    TargetMatches(CardFilter),
 }
