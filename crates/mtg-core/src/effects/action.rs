@@ -118,6 +118,15 @@ pub enum Action {
         player: PlayerId,
         until: u32,
     },
+    /// Add `amount` mana of `color` to `player`'s pool (CR 106). Unlike the interpret-level `AddMana`
+    /// effect (which resolves a `ManaSpec` and may ask for any-colour choices), this is a concrete
+    /// pool add usable as a **delayed-trigger action** — Mana Sculpt's "add {C} at your next main
+    /// phase." Colour `Color::Colorless` = `{C}`.
+    AddMana {
+        player: PlayerId,
+        color: crate::basics::Color,
+        amount: u32,
+    },
     /// Grant a continuous effect created by resolution (CR 611) over a fixed set of objects —
     /// "until end of turn" pumps, animations (Earthbend's land→creature), etc. Applied by pushing
     /// a [`crate::chars::ContinuousEffect`] into game state, where the layer system folds it in
@@ -159,6 +168,10 @@ pub enum DelayedTriggerEvent {
     /// The beginning of the next end step after this trigger was armed (CR 513 / warp's "exile this
     /// at the beginning of the next end step"). Fires once, then is consumed.
     AtBeginningOfNextEndStep,
+    /// The beginning of the controller's next main phase (pre- or post-combat) after this trigger was
+    /// armed (CR 505 — Mana Sculpt's "add … at the beginning of your next main phase"). Fires once at a
+    /// main-phase begin where the active player is the trigger's controller, then is consumed.
+    AtBeginningOfYourNextMainPhase,
     /// The controller's **next** cast of a spell matching `filter`, this turn (CR 603.7 / "when you
     /// next cast a … spell this turn") — Striking Palette's "when you next cast an instant or sorcery
     /// spell this turn, copy that spell." One-shot; expires unfired at the next turn's start. When it

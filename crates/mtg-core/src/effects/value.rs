@@ -90,6 +90,11 @@ pub enum ValueExpr {
     /// adds the target's current power to itself. `0` if the target isn't an object on the
     /// battlefield.
     PowerOfTarget(u32),
+    /// The total **mana spent to cast** the Nth chosen target (a spell on the stack), read at
+    /// resolution — `Object.mana_spent` (incl. any `{X}`). For "add {C} equal to the amount of mana
+    /// spent to cast that spell" (Mana Sculpt), read while the countered spell is still on the stack.
+    /// `0` if the target isn't an object.
+    ManaSpentOfTarget(u32),
     /// The **mana value** (CR 202.3) of the Nth chosen target, read at resolution. Mana value is a
     /// printed/copiable characteristic (from the card's mana cost), so it's stable across a zone move
     /// in the same resolution — used by "you lose life equal to that card's mana value" (Reanimate),

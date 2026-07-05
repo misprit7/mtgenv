@@ -126,6 +126,7 @@ pub mod lluwen_exchange_student;
 pub mod lorehold_charm;
 pub mod mage_tower_referee;
 pub mod magmablood_archaic;
+pub mod mana_sculpt;
 pub mod masterful_flourish;
 pub mod matterbending_mage;
 pub mod melancholic_poet;
@@ -303,6 +304,7 @@ pub fn register(db: &mut CardDb) {
     divergent_equation::register(db);
     skycoach_waypoint::register(db);
     biblioplex_tomekeeper::register(db);
+    mana_sculpt::register(db);
     cauldron_of_essence::register(db);
     charging_strifeknight::register(db);
     chase_inspiration::register(db);

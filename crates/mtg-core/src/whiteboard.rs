@@ -1717,6 +1717,21 @@ impl EngineCore {
                 };
                 wb.push(Action::MillForPlay { player, until });
             }
+            // "Add … mana at the beginning of your next main phase" (Mana Sculpt) — evaluate the amount
+            // NOW (e.g. the still-on-stack countered spell's mana_spent) and arm a delayed trigger.
+            Effect::AddManaAtNextMainPhase { who, color, amount } => {
+                let player = self.eval_player(*who, ctx);
+                let amt = self.eval_value(amount, ctx).max(0) as u32;
+                if amt > 0 {
+                    wb.push(Action::RegisterDelayedTrigger {
+                        watching: ctx.source.unwrap_or(ObjId(0)),
+                        event: crate::effects::action::DelayedTriggerEvent::AtBeginningOfYourNextMainPhase,
+                        controller: player,
+                        source: ctx.source,
+                        actions: vec![Action::AddMana { player, color: *color, amount: amt }],
+                    });
+                }
+            }
             // Move targeted object(s) to another zone (CR 400.7 / 608.2) — "return target permanent
             // to its owner's hand" (bounce), "return target creature card from your graveyard to the
             // battlefield" (reanimate), "return up to two target creature cards … to your hand"
@@ -2589,6 +2604,13 @@ impl EngineCore {
                     }
                 }
             }
+            // Add concrete mana to a pool (a delayed-trigger action — Mana Sculpt's delayed {C}).
+            Action::AddMana { player, color, amount } => {
+                if amount > 0 {
+                    *self.state.player_mut(player).mana_pool.amounts.entry(color).or_insert(0) += amount;
+                    self.broadcast(GameEvent::ManaPoolChanged { player });
+                }
+            }
             Action::CreateToken { spec, controller } => self.create_token(&spec, controller),
             Action::CreateEmblem { emblem_grp, controller } => self.create_emblem(emblem_grp, controller),
             Action::SetPrepared { obj, prepared } => {
@@ -2934,6 +2956,23 @@ impl EngineCore {
                 }
                 _ => 0,
             },
+            // The total mana spent to cast the Nth chosen target (Mana Sculpt's "mana spent to cast that
+            // spell"). A "counter target spell" target is a `Target::Stack(sid)` — map it to the spell's
+            // card and read `Object.mana_spent` while the spell is still on the stack (before it's
+            // countered). Also accepts a plain object target. `0` otherwise.
+            ValueExpr::ManaSpentOfTarget(n) => {
+                let card = match ctx.chosen_targets.get(*n as usize) {
+                    Some(Target::Object(id)) => Some(*id),
+                    Some(Target::Stack(sid)) => self.state.stack.items.iter().find(|so| so.id == *sid).and_then(
+                        |so| match so.kind {
+                            crate::stack::StackObjectKind::Spell(c) => Some(c),
+                            _ => None,
+                        },
+                    ),
+                    _ => None,
+                };
+                card.and_then(|c| self.state.objects.get(&c)).map(|o| o.mana_spent as i64).unwrap_or(0)
+            }
             // The `kind` counters on the Nth chosen target — live state (the `PutCounters` interpret
             // arm flushes prior counter-adds first, so Growth Curve's "then double" reads the fresh
             // count). `0` if the target isn't an object.

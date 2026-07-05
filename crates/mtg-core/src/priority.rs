@@ -3860,6 +3860,11 @@ impl Engine {
                 if *phase == Phase::End {
                     self.fire_end_step_delayed_triggers();
                 }
+                // Beginning of a main phase (CR 505): fire armed "at your next main phase" delayed
+                // triggers whose controller is the active player (Mana Sculpt's delayed mana).
+                if matches!(phase, Phase::PrecombatMain | Phase::PostcombatMain) {
+                    self.fire_main_phase_delayed_triggers(*active);
+                }
             }
             // "Whenever you cast a [filter] spell" (CR 603.2 / 601.2i) — SoS Opus / Repartee /
             // Increment. Queue each matching `SpellCast` trigger on a permanent the *caster*
@@ -4021,6 +4026,34 @@ impl Engine {
                 fired.push(dt.clone());
             }
             !is_step
+        });
+        for dt in fired {
+            let id = self.state.mint_stack();
+            self.state.pending_triggers.push(StackObject {
+                id,
+                controller: dt.controller,
+                source: dt.source,
+                kind: StackObjectKind::DelayedAbility { actions: dt.actions },
+                targets: Vec::new(),
+                x: None,
+                modes: Vec::new(),
+            });
+        }
+    }
+
+    /// Fire (and consume, CR 603.7b) every armed `AtBeginningOfYourNextMainPhase` delayed trigger whose
+    /// controller is `active` — the beginning of the controller's next main phase (Mana Sculpt's delayed
+    /// mana). Queued onto the stack like any trigger.
+    pub(crate) fn fire_main_phase_delayed_triggers(&mut self, active: PlayerId) {
+        use crate::effects::action::DelayedTriggerEvent;
+        let mut fired = Vec::new();
+        self.state.delayed_triggers.retain(|dt| {
+            let mine = matches!(dt.event, DelayedTriggerEvent::AtBeginningOfYourNextMainPhase)
+                && dt.controller == active;
+            if mine {
+                fired.push(dt.clone());
+            }
+            !mine
         });
         for dt in fired {
             let id = self.state.mint_stack();

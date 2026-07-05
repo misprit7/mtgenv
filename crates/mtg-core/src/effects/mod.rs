@@ -26,7 +26,7 @@ use self::target::{
     CardFilter, ManaSpec, PlayerFilter, SelectSpec, TargetSpec, TokenCopyMods, TokenSpec,
 };
 use self::value::{PlayerRef, ValueExpr};
-use crate::basics::{CounterKind, DamageKind, Zone, ZoneDest};
+use crate::basics::{Color, CounterKind, DamageKind, Zone, ZoneDest};
 
 /// How an effect leaf refers to the thing(s) it acts on. A leaf either acts on a target locked
 /// at cast (`Target`, CR 601.2c), a set selected at resolution (`Select`), a named player, the
@@ -490,6 +490,16 @@ pub enum Effect {
     MillThenPlay {
         who: PlayerRef,
         window: PlayWindow,
+    },
+    /// "Add `amount` mana of `color` to `who`'s pool at the beginning of your next main phase" (CR 505 —
+    /// Mana Sculpt's delayed mana). `amount` is evaluated NOW (as this resolves — e.g.
+    /// `ManaSpentOfTarget` reads the still-on-stack countered spell) and baked into a delayed
+    /// [`crate::effects::action::DelayedTriggerEvent::AtBeginningOfYourNextMainPhase`] trigger carrying
+    /// an [`crate::effects::action::Action::AddMana`]. Imperative-ish (registers a delayed trigger).
+    AddManaAtNextMainPhase {
+        who: PlayerRef,
+        color: Color,
+        amount: ValueExpr,
     },
     /// Attach `what` onto `to` (sets `what`'s `attached_to`). `what` is usually `SourceSelf` (the
     /// Equipment equip ability, `{cost}: attach this to target creature you control`, sorcery-
