@@ -46,16 +46,26 @@ re-scoping):
 
 **Census now 224/271 authored (83%). 0 Native escape hatches. Rows DONE: additional-cast-cost · base-P/T-set · GreatestMV · Flashback-non-mana · repeatable-modal · (Daydream = pure composition).**
 
-### ▶ Where sos-cards-15 points you (unchanged tail, minus the additional-cast-cost row)
-Work the by-cap triage below (grouped by yield). Highest-yield remaining caps: **Grant-a-triggered-ability-until-EOT** (Rabid
-Attack, Root Manipulation), **timed-blink** (Ennis, Conciliator's Duelist — reuse `Effect::Blink` + a delayed end-step return),
-**base-P/T-set** (Quandrix Charm mode 3), **Flashback-with-a-non-mana-cost** (Group Project — reuse `TapCreatures(3)`), and the
-small one-off value caps (GreatestMV, NoMaxHandSize, Increment, LKI-counter-count, discarded-this-resolution). **Moseo is now
-cheap** (dynamic-MV reanimate filter shipped — `ManaValueExpr` with a life-gained bound expr). The 5 Elder Dragons + 3 Natives
-+ Fractalize + special one-offs still need lead-approved design sketches. Read the by-cap list + census buckets below.
+### ▶ Where sos-cards-15 points you (tail after 9 cards + 8 caps; the clean non-architecture caps are cleared)
+sos-cards-15 cleared the easy-to-medium caps. The **remaining tail needs either a lead sketch or a genuine new cap** (grouped):
+- **⚠️ Awaiting the lead (sketch sent):** **Grant-a-triggered-ability-until-EOT** (Rabid Attack, Root Manipulation) — the
+  highest-yield remaining cap. Proposed `StaticContribution::GrantAbility{source_grp, ability_index}` (serde-safe reference-by-grp)
+  + a granted-ability scan in `queue_self_triggers` + `#[serde(default)] source_grp: Option<u32>` on `StackObjectKind::Ability`.
+  Touches the continuous-effect layer + trigger collection → don't build without lead OK on the representation.
+- **Medium caps still open (each a real new piece):** **timed-blink** (Ennis, Conciliator's Duelist — reuse `Effect::Blink` +
+  a delayed end-step-return trigger; both cards also have a 2nd ability — exiled-this-turn counter / Repartee); **Increment**
+  keyword (Tester, Ambitious Augmenter — SpellCast-trigger comparing `ManaSpentOnTrigger` vs `Power/ToughnessOfSelf`; both cards
+  ALSO have a hard 2nd ability — move-X-counters / dies-with-counters→token); **spell-copy consumers** (Choreographed Sparks,
+  Lumaret's Favor, Social Snub, Aziza, Mica — need a thin `Effect::CopySpellOnStack{what}` / copy-on-cast-self trigger over the
+  S14 `copy_spell_on_stack`); **NoMaxHandSize** (Wisdom of Ages — player flag + mass-return-I/S + a self-exile-on-resolve marker,
+  since `Exile{SourceSelf}` gets overwritten by resolve_top's graveyard move); **Moseo** (targeted MV≤life-gained reanimate —
+  needs `resolve_dynamic_filter` wired into the TARGET-candidate path too, not just `select_for_each`); **LKI-counter-count**
+  (Scolding Administrator); **discarded-this-resolution** (Mind Roots, Borrowed Knowledge, Colossus dies-clause).
+- **Design-deferred (need lead sketches):** the 5 Elder Dragons (Storm/Cascade/Miracle/Casualty/Affinity), 3 Natives, Fractalize,
+  the special one-offs (Grandeur / theft-cast / name-choice / free-cast / grant-mana / non-DFC prepare markers). See census buckets.
 
-*(sos-cards-15 still active — will rewrite this block fully on retirement. For now: additional-cast-cost cap done, ledger + census
-current, pointing the tail at the next-highest-yield caps.)*
+*(sos-cards-15 still active/holding for the lead's grant-ability call; if picked up fresh, start from the ⚠️ block above. Ledger,
+WORKLOG, PROJECT_STATE all current at 224/271, 725 green, tree clean.)*
 
 ## ▶ Prior — handoff from sos-cards-14, 2026-07-05
 
