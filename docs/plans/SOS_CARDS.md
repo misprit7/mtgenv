@@ -6,8 +6,9 @@ per-card triage, modeled on `SELESNYA_LANDFALL_CARDS.md`.
 
 ## ▶ NEXT AGENT — start here (handoff from sos-cards-16, 2026-07-05)
 
-**▶▶ sos-cards-16 SHIPPED — 4 of the 5 college Elder Dragons + 5 reusable caps. 756 mtg-core green, whole workspace builds,
-tree clean, LEAD pushes.** Census **227→232/271 (86%)**, 0 Native hatches. Five own-commits (`git log -S` before re-scoping):
+**▶▶ sos-cards-16 SHIPPED — 4 of the 5 college Elder Dragons + Lumaret's Favor + Social Snub + 5 reusable caps. 759 mtg-core
+green, whole workspace builds, tree clean, LEAD pushes.** Census **227→233/271 (86%)**, 0 Native hatches. Six own-commits
+(`git log -S` before re-scoping):
 - **`4dd31ef` — `Effect::CopySpellOnStack{what,count,choose_new_targets}`** (a thin loop over the built `copy_spell_on_stack`,
   707.10, priority.rs:3990) **+ Prismari, the Inspiration (Storm)** + **wired `CostComponent::PayLife` into `pay_cost`**
   (Ward—Pay 5 life — the dead `_ => {}` no-op is killed; CounterUnlessPay routes Ward costs through `pay_cost`). `what` is an
@@ -30,6 +31,9 @@ tree clean, LEAD pushes.** Census **227→232/271 (86%)**, 0 Native hatches. Fiv
   cascade to your I/S (SpellCast watcher). ⚠️ "from your hand" NOT enforced (cast-zone isn't threaded) — rare over-trigger.
 - **`42f4b74` — Lumaret's Favor (Infusion copy-self)** — first consumer combining SelfCast + CopySpellOnStack: `PumpPT{target
   creature,+2/+4}` + `Triggered{SelfCast, if GainedLifeThisTurn → CopySpellOnStack{Triggering,1,new targets}}`.
+- **`aad6478` — Social Snub (copy-self edict)** — `Triggered{SelfCast, if CountAtLeast(creatures you control,1),
+  Optional{CopySpellOnStack{Triggering,1}}}` + edict/drain main effect (each player sacs a creature · `LoseLife{EachOpponent,1}`
+  · `GainLife{Controller,1}`). Copy doubles the edict+drain (tested); the copy has no targets so `choose_new_targets:false`.
 
 ### ▶ Where sos-cards-16 points you (the tail after 4 dragons + 5 caps)
 - **Lorehold, the Historian (Miracle) — the ONLY remaining Elder Dragon; a REAL subsystem.** Design sketch is WITH THE LEAD
@@ -40,9 +44,7 @@ tree clean, LEAD pushes.** Census **227→232/271 (86%)**, 0 Native hatches. Fiv
   OR a `GrantMiracle{cost,filter}` static, mirroring GrantCostReduction/GrantAbility); a cast window (a `MiracleWindow`
   StackObjectKind or immediate offer); a `CastVariant::Miracle(cost)` alt-cost cast (reuse warp/flashback fixed-alt plumbing).
 - **Newly UNBLOCKED, compose-now (no new cap):**
-  - **Social Snub** ({1}{W}{B} sorcery) — `Triggered{SelfCast, condition: Some(CountAtLeast{creatures,Controller,1}), Optional{
-    CopySpellOnStack{Triggering,1}}}` (the "while you control a creature, you may copy" clause) + main effect (each player
-    sacrifices a creature + drain 1). Reuses SelfCast + CopySpellOnStack + Sacrifice/drain.
+  - ~~**Social Snub**~~ ✅ **DONE (`aad6478`).**
   - **Choreographed Sparks / other target-spell copies** — via CopySpellOnStack's `what: Target(...)` arm (needs the card to
     target a spell on the stack; the arm resolves `Target::Stack`/`Object` → spell obj, already wired, untested).
   - **Aziza, Mica** (per the S15 tail) — spell-copy consumers; check their oracle for the exact trigger + copy shape.
@@ -54,9 +56,10 @@ tree clean, LEAD pushes.** Census **227→232/271 (86%)**, 0 Native hatches. Fiv
 - **Still design-deferred (need lead sketches):** 3 Natives, Fractalize, the special one-offs (Grandeur / theft-cast / name-choice
   / free-cast / grant-mana / non-DFC prepare markers). See census buckets.
 
-*(sos-cards-16 winding down at a clean boundary — 4 Elder Dragons + Lumaret's Favor + 5 reusable caps, trackers current at
-232/271, 756 green, tree clean. The Elder-Dragon assessment below is now mostly EXECUTED — 4/5 done; only Lorehold/Miracle open,
-pending the lead's A/B on the sketch. `git log -S` + read the code before believing any claim — header PROCESS RULES apply.)*
+*(sos-cards-16 winding down at a clean boundary — 4 Elder Dragons + Lumaret's Favor + Social Snub + 5 reusable caps, trackers
+current at 233/271, 759 green, tree clean. The Elder-Dragon assessment below is now mostly EXECUTED — 4/5 done; only
+Lorehold/Miracle open, pending the lead's A/B on the sketch. `git log -S` + read the code before believing any claim — header
+PROCESS RULES apply.)*
 
 ## ▶ Prior — handoff from sos-cards-15, 2026-07-05
 

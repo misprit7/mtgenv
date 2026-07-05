@@ -22,6 +22,8 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
   (SelfCast) + granted cascade to your I/S (SpellCast watcher). "from hand" not enforced (rare over-trigger) — ledgered.
 - **`42f4b74` — Lumaret's Favor (Infusion copy-self)** — first consumer combining SelfCast + CopySpellOnStack +
   `GainedLifeThisTurn` condition. Gained-life → +4/+8 (copied); no-life → +2/+4.
+- **`aad6478` — Social Snub (copy-self edict)** — `Triggered{SelfCast, if CountAtLeast(creatures you control,1),
+  Optional{CopySpellOnStack{Triggering,1}}}` + edict/drain (each player sacs a creature, drain 1). Copy doubles it. Census **233/271**.
 - **Elder Dragons: 4/5 DONE.** Only **Lorehold (Miracle)** remains — a real subsystem; design sketch sent to the lead (A: stack-
   trigger reveal window / B: immediate-at-draw shortcut), awaiting the A/B call before building. Also newly unblocked:
   **Social Snub** (SelfCast + Optional-copy) and target-spell copy consumers (Choreographed Sparks via CopySpellOnStack's Target arm).
