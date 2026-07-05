@@ -387,6 +387,14 @@ pub enum Effect {
         who: PlayerRef,
         count: ValueExpr,
     },
+    /// "Discard any number of cards" (CR 701.8) — `who` chooses **how many** (0 up to their whole
+    /// hand) and which. Distinct from [`Effect::Discard`], where the count is fixed. The number
+    /// actually discarded is recorded in the per-resolution scratch, so a following effect can read
+    /// [`ValueExpr::DiscardedThisResolution`] ("then draw that many cards plus one" — Colossus of the
+    /// Blood Age). Performs (returns `true`) even when the player discards zero.
+    DiscardChosen {
+        who: PlayerRef,
+    },
     /// "Target player reveals their hand. You choose N `filter` card(s) from it. That player
     /// discards them" (CR 701.8 discard driven by *another* player's choice — Render Speechless,
     /// Coercion, Thoughtseize-likes). Unlike `Discard` (the discarding player chooses which),

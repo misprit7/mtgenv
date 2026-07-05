@@ -201,6 +201,10 @@ pub struct EngineCore {
     /// effect can reference "that land/creature" (Fabled Passage's "untap that land"). Cleared at
     /// the start of each `resolve_effect`; read by `EffectTarget::Searched`.
     pub(crate) searched_this_resolution: Vec<ObjId>,
+    /// The cards discarded during the **current** effect resolution — so a follow-up effect can read
+    /// how many were discarded (`ValueExpr::DiscardedThisResolution`) for "draw that many cards"
+    /// (Borrowed Knowledge / Colossus of the Blood Age). Cleared at the start of each `resolve_effect`.
+    pub(crate) discarded_this_resolution: Vec<ObjId>,
     /// The target currently being iterated by an `Effect::ForEach` (always an object) or
     /// `Effect::ForEachTarget` (an object OR a player) — bound while its body interprets, read by
     /// `EffectTarget::Each` (Dyadrine's "remove a counter from each of …"; Prismari Charm's "1 damage
@@ -259,6 +263,7 @@ impl Engine {
             event_log: Vec::new(),
             record_events: false,
             searched_this_resolution: Vec::new(),
+            discarded_this_resolution: Vec::new(),
             foreach_current: None,
             record_replay: false,
             replay_frames: Vec::new(),

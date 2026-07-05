@@ -128,6 +128,11 @@ pub enum ValueExpr {
     /// "X = the number of cards you've drawn this turn" (Fractal Anomaly). Reads
     /// `Player.cards_drawn_this_turn` for `ctx.controller`.
     CardsDrawnThisTurn,
+    /// The number of cards discarded **so far during the current resolution** (CR 608) — reads the
+    /// engine's per-resolution discard scratch. For "then draw cards equal to the number of cards
+    /// discarded this way" (Borrowed Knowledge) / "draw that many cards plus one" (Colossus of the
+    /// Blood Age, via `Sum(_, 1)`). `0` outside a discard resolution.
+    DiscardedThisResolution,
     /// The value chosen for `{X}` (CR 107.3) of the **triggering spell** of a "whenever you cast a
     /// spell with {X} in its mana cost" ability — read from `ResolutionCtx::triggering_spell`'s
     /// `Object.cast_x`. "Look at the top X cards" (Geometer's Arthropod). `0` outside such a trigger

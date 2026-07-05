@@ -90,6 +90,7 @@ impl EngineCore {
             _ => StackId(0),
         };
         self.searched_this_resolution.clear();
+        self.discarded_this_resolution.clear();
         // Snapshot each player's graveyard size so we can fire the "cards leave your graveyard"
         // trigger (CR — SoS Lorehold) once per resolution in which a graveyard shrank (batched).
         let gy_before: Vec<usize> = self.state.players.iter().map(|p| p.graveyard.len()).collect();
@@ -184,6 +185,15 @@ impl EngineCore {
                 let player = self.eval_player(*who, ctx);
                 let count = self.eval_value(count, ctx).max(0) as u32;
                 self.interpret_discard(player, count) > 0
+            }
+            // "Discard any number of cards" (CR 701.8) — the player picks how many + which. Imperative +
+            // asks the agent, so it lives here. Flush staged actions first (mirrors `Discard`). Always
+            // "performs" (returns true) even for zero, so a following "draw that many + 1" still runs.
+            Effect::DiscardChosen { who } => {
+                self.flush_pending(wb);
+                let player = self.eval_player(*who, ctx);
+                self.interpret_discard_chosen(player);
+                true
             }
             // Directed discard (CR 701.8): `who` reveals their hand, `chooser` picks up to `count`
             // cards matching `filter`, and `who` discards them (Render Speechless's "you choose").
@@ -898,10 +908,46 @@ impl EngineCore {
                 chosen.push(o);
             }
         }
-        let discarded = chosen.len();
-        for card in chosen {
+        self.discard_cards(chosen)
+    }
+
+    /// "Discard any number of cards" (CR 701.8) — `player` chooses how many (0..hand) and which. The
+    /// discarded cards are recorded in `discarded_this_resolution` so a following effect can read the
+    /// count (Colossus of the Blood Age / Borrowed Knowledge). Returns the number discarded.
+    fn interpret_discard_chosen(&mut self, player: PlayerId) -> usize {
+        let hand = self.state.player(player).hand.clone();
+        if hand.is_empty() {
+            return 0;
+        }
+        let req = DecisionRequest::SelectCards {
+            reason: SelectReason::Discard,
+            from: hand.clone(),
+            min: 0,
+            max: hand.len() as u32,
+            description: "Discard any number".into(),
+        };
+        let mut seen = std::collections::BTreeSet::new();
+        let chosen: Vec<ObjId> = match self.ask(player, &req) {
+            DecisionResponse::Indices(idxs) => {
+                idxs.iter().filter_map(|&i| hand.get(i as usize).copied()).filter(|o| seen.insert(*o)).collect()
+            }
+            DecisionResponse::Index(i) => {
+                hand.get(i as usize).copied().filter(|o| seen.insert(*o)).into_iter().collect()
+            }
+            _ => Vec::new(),
+        };
+        self.discard_cards(chosen)
+    }
+
+    /// Move `cards` from hand to their owners' graveyards, record them in the per-resolution discard
+    /// scratch (`ValueExpr::DiscardedThisResolution`), and broadcast one move event each. Returns the
+    /// number discarded. Shared by the fixed-count and "any number" discard paths.
+    fn discard_cards(&mut self, cards: Vec<ObjId>) -> usize {
+        let discarded = cards.len();
+        for card in cards {
             let owner = self.state.object(card).owner;
             self.state.move_object(card, Zone::Graveyard, owner);
+            self.discarded_this_resolution.push(card);
             self.broadcast(GameEvent::ObjectMoved { obj: card, to: Zone::Graveyard });
         }
         discarded
@@ -1845,6 +1891,7 @@ impl EngineCore {
             | Effect::Search { .. }
             | Effect::AddMana { .. }
             | Effect::Discard { .. }
+            | Effect::DiscardChosen { .. }
             | Effect::Counter { .. }
             | Effect::CounterUnlessPay { .. }
             | Effect::CastCopy { .. }
@@ -2685,6 +2732,8 @@ impl EngineCore {
             ValueExpr::DistinctCardTypesAmongExiledWith => {
                 crate::conditions::distinct_card_types_among_exiled_with(&self.state, ctx.source)
             }
+            // Cards discarded so far during this resolution — Borrowed Knowledge / Colossus.
+            ValueExpr::DiscardedThisResolution => self.discarded_this_resolution.len() as i64,
             // Cards the controller has drawn this turn (CR 120) — Fractal Anomaly.
             ValueExpr::CardsDrawnThisTurn => ctx
                 .controller
