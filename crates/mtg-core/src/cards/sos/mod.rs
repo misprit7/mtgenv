@@ -27,6 +27,7 @@ pub mod comforting_counsel;
 pub mod cost_of_brilliance;
 pub mod cuboid_colony;
 pub mod deluge_virtuoso;
+pub mod diary_of_dreams;
 pub mod dig_site_inventory;
 pub mod dinas_guidance;
 pub mod dissection_practice;
@@ -181,6 +182,7 @@ pub fn register(db: &mut CardDb) {
     cost_of_brilliance::register(db);
     cuboid_colony::register(db);
     deluge_virtuoso::register(db);
+    diary_of_dreams::register(db);
     dig_site_inventory::register(db);
     dinas_guidance::register(db);
     dissection_practice::register(db);

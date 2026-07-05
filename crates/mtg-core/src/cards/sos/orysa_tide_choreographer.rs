@@ -10,7 +10,9 @@
 
 use crate::basics::{CardType, Color};
 use crate::cards::{creature, mana_cost, CardDb};
-use crate::effects::ability::{Ability, CostReductionAmount, CostReductionCondition, EventPattern};
+use crate::effects::ability::{
+    Ability, CostReductionAmount, CostReductionCondition, CostReductionScope, EventPattern,
+};
 use crate::effects::condition::Condition;
 use crate::effects::target::CardFilter;
 use crate::effects::value::{PlayerRef, ValueExpr};
@@ -40,6 +42,7 @@ pub fn register(db: &mut CardDb) {
                     },
                     ValueExpr::Fixed(10),
                 )),
+                scope: CostReductionScope::Cast,
             },
             // "When Orysa enters, draw two cards."
             Ability::Triggered {

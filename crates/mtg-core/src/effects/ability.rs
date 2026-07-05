@@ -303,6 +303,12 @@ pub enum Ability {
     CostReduction {
         amount: CostReductionAmount,
         condition: CostReductionCondition,
+        /// Whether this reduction applies to **casting this card** (`Cast`, read by
+        /// `effective_cast_cost`) or to **activating this card's activated abilities** (CR 602 —
+        /// `ActivatedAbilities`, read by `effective_activation_cost`, e.g. Diary of Dreams "this
+        /// ability costs {1} less to activate for each page counter"). Keeps one cost-reduction
+        /// mechanism serving both the spell-cast and ability-activation cost paths.
+        scope: CostReductionScope,
     },
     /// A continuous/static effect (CR 604/611/613): contributes to a layer and/or paints a
     /// qualification, for the given duration over the given affected set.
@@ -342,6 +348,18 @@ pub enum CostReductionAmount {
     /// Reduce by a coloured/generic cost (CR 118.6) — removes matching coloured pips too, then
     /// generic. e.g. Brush Off's "{1}{U} less". (Deferred consumer; the leaf is here for generality.)
     Cost(ManaCost),
+}
+
+/// Which cost an [`Ability::CostReduction`] modifies — casting this card, or activating this card's
+/// activated abilities (CR 601.2f vs 602). One mechanism, two application paths.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CostReductionScope {
+    /// Reduces the cost to **cast this card** (`effective_cast_cost`). Orysa, Ajani's Response.
+    Cast,
+    /// Reduces the cost to **activate this card's activated abilities** (`effective_activation_cost`).
+    /// Applies to all of the source's `Activated` abilities (no card yet distinguishes per-ability).
+    /// Diary of Dreams.
+    ActivatedAbilities,
 }
 
 /// When an [`Ability::CostReduction`] applies (CR 601.2f). Two flavours — a caster-relative

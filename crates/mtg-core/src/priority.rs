@@ -18,8 +18,8 @@ use crate::agent::{
 use crate::basics::{CardType, CounterKind, ManaCost, Phase, Target, Zone, ZonePos};
 use crate::subtypes::{EnchantmentType, Subtype};
 use crate::effects::ability::{
-    Ability, Cost, CostComponent, CostReductionAmount, CostReductionCondition, EventPattern,
-    Keyword, Restriction, StaticContribution, Timing,
+    Ability, Cost, CostComponent, CostReductionAmount, CostReductionCondition, CostReductionScope,
+    EventPattern, Keyword, Restriction, StaticContribution, Timing,
 };
 use crate::effects::action::{Action, MoveCause, ResolutionCtx, Whiteboard, WbReason};
 use crate::effects::target::{CardFilter, PlayerFilter, SelectSpec, TargetKind, TargetSpec};
@@ -1164,7 +1164,10 @@ impl Engine {
                         continue;
                     }
                 }
-                if !self.can_pay_cost(p, perm, cost) {
+                // Apply activated-ability cost reduction (CR 602 — Diary of Dreams) before the
+                // affordability gate, so a reduced ability is offered when payable-after-reduction.
+                let eff_cost = self.effective_activation_cost(perm, cost);
+                if !self.can_pay_cost(p, perm, &eff_cost) {
                     continue;
                 }
                 let has_targets = collect_target_specs(effect)
@@ -1450,6 +1453,9 @@ impl Engine {
                 }
                 _ => return,
             };
+        // Apply activated-ability cost reduction (CR 602 — Diary of Dreams) so the {X} bound and the
+        // payment both use the reduced cost, matching the offer gate.
+        let cost = self.effective_activation_cost(source, &cost);
         // CR 602.2b: if the activation cost has `{X}`, choose X now (bounded by affordable mana),
         // mirroring the spell path in `cast_spell`. The chosen value rides on the stack object's
         // `x` and is read at resolution by `ValueExpr::X` (Berta's `{X},{T}: … X +1/+1 counters`).
@@ -1862,9 +1868,11 @@ impl Engine {
                     .abilities
                     .iter()
                     .filter_map(|a| match a {
-                        Ability::CostReduction { amount, condition } => {
-                            Some((amount.clone(), condition.clone()))
-                        }
+                        Ability::CostReduction {
+                            amount,
+                            condition,
+                            scope: CostReductionScope::Cast,
+                        } => Some((amount.clone(), condition.clone())),
                         _ => None,
                     })
                     .collect(),
@@ -1875,34 +1883,87 @@ impl Engine {
             if !self.cost_reduction_applies(p, card, &condition, targets) {
                 continue;
             }
-            match amount {
-                CostReductionAmount::Generic(n) => {
-                    cost.generic = cost.generic.saturating_sub(n);
-                }
-                CostReductionAmount::GenericValue(v) => {
-                    // Evaluate relative to the caster (computed-aware) — "{1} less for each …".
-                    let ctx = ResolutionCtx {
-                        controller: Some(p),
-                        source: Some(card),
-                        ..Default::default()
-                    };
-                    let n = self.eval_value(&v, &ctx).max(0) as u32;
-                    cost.generic = cost.generic.saturating_sub(n);
-                }
-                CostReductionAmount::Cost(c) => {
-                    // Remove matching coloured pips (CR 118.6), then generic. Unmatched coloured
-                    // reduction does nothing (it can't reduce a pip that isn't there).
-                    for (col, amt) in &c.colored {
-                        if let Some(have) = cost.colored.get_mut(col) {
-                            *have = have.saturating_sub(*amt);
-                        }
-                    }
-                    cost.colored.retain(|_, v| *v > 0);
-                    cost.generic = cost.generic.saturating_sub(c.generic);
-                }
-            }
+            self.apply_cost_reduction(&mut cost, &amount, p, card);
         }
         cost
+    }
+
+    /// Apply one [`CostReductionAmount`] to a [`ManaCost`] in place (CR 118.6/.7): generic floors
+    /// at {0}; a coloured `Cost` removes matching coloured pips then generic; `GenericValue` is
+    /// evaluated relative to `controller`/`source`. Shared by the cast (`effective_cast_cost`) and
+    /// ability-activation (`effective_activation_cost`) cost paths.
+    fn apply_cost_reduction(
+        &self,
+        mana: &mut ManaCost,
+        amount: &CostReductionAmount,
+        controller: PlayerId,
+        source: ObjId,
+    ) {
+        match amount {
+            CostReductionAmount::Generic(n) => {
+                mana.generic = mana.generic.saturating_sub(*n);
+            }
+            CostReductionAmount::GenericValue(v) => {
+                let ctx = ResolutionCtx {
+                    controller: Some(controller),
+                    source: Some(source),
+                    ..Default::default()
+                };
+                let n = self.eval_value(v, &ctx).max(0) as u32;
+                mana.generic = mana.generic.saturating_sub(n);
+            }
+            CostReductionAmount::Cost(c) => {
+                for (col, amt) in &c.colored {
+                    if let Some(have) = mana.colored.get_mut(col) {
+                        *have = have.saturating_sub(*amt);
+                    }
+                }
+                mana.colored.retain(|_, v| *v > 0);
+                mana.generic = mana.generic.saturating_sub(c.generic);
+            }
+        }
+    }
+
+    /// The effective cost to **activate** one of `source`'s activated abilities (CR 602), after its
+    /// `Ability::CostReduction` statics scoped to `ActivatedAbilities` (Diary of Dreams "costs {1}
+    /// less to activate for each page counter"). Only the mana component is reduced; non-mana
+    /// components are untouched. Applied at BOTH the activated-ability offer gate and in
+    /// `activate_ability` before payment, so affordability and payment agree. Reductions are
+    /// evaluated with their `State` condition (an ability's mana cost is determined before targets).
+    fn effective_activation_cost(&self, source: ObjId, base: &Cost) -> Cost {
+        let Some(base_mana) = base.mana.as_ref() else {
+            return base.clone();
+        };
+        let reductions: Vec<(CostReductionAmount, CostReductionCondition)> =
+            match self.state.def_of(source) {
+                Some(def) => def
+                    .abilities
+                    .iter()
+                    .filter_map(|a| match a {
+                        Ability::CostReduction {
+                            amount,
+                            condition,
+                            scope: CostReductionScope::ActivatedAbilities,
+                        } => Some((amount.clone(), condition.clone())),
+                        _ => None,
+                    })
+                    .collect(),
+                None => return base.clone(),
+            };
+        if reductions.is_empty() {
+            return base.clone();
+        }
+        let controller = self.state.objects.get(&source).map_or(PlayerId(0), |o| o.controller);
+        let mut mana = base_mana.clone();
+        for (amount, condition) in reductions {
+            // Activation reductions are state/count-scoped; a `TargetMatches` here never applies
+            // (no card uses one). `Optimistic` makes a `State` condition evaluate exactly.
+            if !self.cost_reduction_applies(controller, source, &condition, TargetCtx::Optimistic) {
+                continue;
+            }
+            self.apply_cost_reduction(&mut mana, &amount, controller, source);
+        }
+        Cost { mana: Some(mana), components: base.components.clone() }
     }
 
     /// Whether one [`Ability::CostReduction`] condition holds for caster `p` casting `card`, given

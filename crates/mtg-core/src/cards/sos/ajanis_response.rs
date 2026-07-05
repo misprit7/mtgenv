@@ -13,7 +13,9 @@
 
 use crate::basics::{CardType, Color};
 use crate::cards::{mana_cost, spell, CardDb};
-use crate::effects::ability::{Ability, CostReductionAmount, CostReductionCondition};
+use crate::effects::ability::{
+    Ability, CostReductionAmount, CostReductionCondition, CostReductionScope,
+};
 use crate::effects::target::{CardFilter, TargetKind, TargetSpec};
 use crate::effects::{Effect, EffectTarget};
 
@@ -43,6 +45,7 @@ pub fn register(db: &mut CardDb) {
     def.abilities.push(Ability::CostReduction {
         amount: CostReductionAmount::Generic(3),
         condition: CostReductionCondition::TargetMatches(CardFilter::Tapped),
+        scope: CostReductionScope::Cast,
     });
     db.insert(def);
 }

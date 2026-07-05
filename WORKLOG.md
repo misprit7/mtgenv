@@ -41,6 +41,13 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
   combat-damage step, broadcast from `deal_combat_substep`) and `Effect::MayPayCost{cost,then}` ("you may pay …;
   if you do, …" — the mana analogue of `IfYouDo`, broadly reusable). → **Killian's Confidence** (pump+draw spell +
   the graveyard trigger; real-path test drives combat→trigger→pay {W/B}→return-self, plus the unpaid-stays path).
+- **Activated-ability cost reduction + Diary of Dreams. 598→602 tests.** Extended the S12 cost-reduction
+  mechanism to CR 602: `Ability::CostReduction` gained `scope: CostReductionScope::{Cast|ActivatedAbilities}`;
+  `effective_activation_cost(source,&Cost)` applies `ActivatedAbilities`-scoped reductions to an activated
+  ability's mana at BOTH the offer gate and `activate_ability` (factored a shared `apply_cost_reduction`).
+  → **Diary of Dreams** (SpellCast-I/S→page-counter trigger + `{5},{T}:Draw` costing {1} less per page counter;
+  page counter = `CounterKind::Named("page")`, zero enum churn). Real-path tests: offered only once enough
+  counters accrue, activating draws, and casting an I/S adds a counter.
 
 ## 2026-07-03 (sos-cards-7)
 
