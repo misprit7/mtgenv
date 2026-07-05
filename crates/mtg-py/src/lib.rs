@@ -235,7 +235,9 @@ impl PyGame {
                 p.deck = deck;
             }
         }
-        serde_json::to_string(&replay)
+        // Emit the v2 compact delta form (~40-70× smaller on disk than full frames). Readers
+        // handle both via `AnyReplay`, so this only changes what training exports write.
+        serde_json::to_string(&replay.to_compact())
             .map(Some)
             .map_err(|e| PyRuntimeError::new_err(format!("replay serialize: {e}")))
     }
