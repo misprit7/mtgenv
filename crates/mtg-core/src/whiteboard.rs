@@ -247,6 +247,28 @@ impl EngineCore {
                 }
                 true
             }
+            // "You may tap or untap target creature" (Rejoinder). The target was chosen at cast; its
+            // controller may decline, else choose the direction. Interactive, so it lives here.
+            Effect::MayTapOrUntap { what } => {
+                self.flush_pending(wb);
+                if let Some(Target::Object(obj)) = self.resolve_target(what, ctx, cursor) {
+                    let decider = ctx.controller.unwrap_or_else(|| self.state.object(obj).controller);
+                    // "you may" — decline is allowed (CR 701.20a).
+                    let opt_in = matches!(
+                        self.ask(decider, &DecisionRequest::Confirm { kind: ConfirmKind::MayEffect }),
+                        DecisionResponse::Bool(true)
+                    );
+                    if opt_in {
+                        // Direction: tap (true) or untap (false).
+                        let tap = matches!(
+                            self.ask(decider, &DecisionRequest::Confirm { kind: ConfirmKind::Generic }),
+                            DecisionResponse::Bool(true)
+                        );
+                        wb.push(Action::TapUntap { obj, tap });
+                    }
+                }
+                true
+            }
             // Cast the ACTUAL targeted card for free (CR 601.2f) — a granted flashback-style recast
             // (The Dawning Archaic). Resolve the (up-to-one) target; cast it for {0} through the real
             // pipeline; if `exile_on_leave`, flag it (via the flashback exile-on-leave-stack path) so
@@ -1440,6 +1462,7 @@ impl EngineCore {
             | Effect::CounterUnlessPay { .. }
             | Effect::CastCopy { .. }
             | Effect::CastForFree { .. }
+            | Effect::MayTapOrUntap { .. }
             | Effect::PutOnTopOrBottom { .. }
             | Effect::MayPayCost { .. }
             | Effect::Sacrifice { .. }

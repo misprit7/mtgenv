@@ -238,6 +238,13 @@ pub enum Effect {
         what: EffectTarget,
         cost: Cost,
     },
+    /// "You may tap or untap `what`" (CR 701 — Rejoinder). The target is chosen at cast (so `what` is
+    /// a `Target`, collected by `collect_specs_into`); at resolution its controller may decline, or
+    /// choose to **tap** or **untap** it. Interactive (two `Confirm`s: opt-in, then direction), so it
+    /// lives in `interpret`. Distinct from the fixed-direction [`Effect::Tap`].
+    MayTapOrUntap {
+        what: EffectTarget,
+    },
     /// Two creatures fight (CR 701.12): each deals damage equal to its power to the other,
     /// **simultaneously** (lowered to two `Damage` actions in one whiteboard so deathtouch /
     /// lethal-damage interact correctly). e.g. a fight spell = `Fight{ ChosenIndex(0), ChosenIndex(1) }`.

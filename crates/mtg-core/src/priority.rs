@@ -4079,7 +4079,8 @@ fn collect_specs_into(effect: &Effect, out: &mut Vec<TargetSpec>) {
         Effect::PutCounters { what: EffectTarget::Target(spec), .. }
         | Effect::GrantKeyword { what: EffectTarget::Target(spec), .. }
         | Effect::GrantQualification { what: EffectTarget::Target(spec), .. }
-        | Effect::Tap { what: EffectTarget::Target(spec), .. } => out.push(spec.clone()),
+        | Effect::Tap { what: EffectTarget::Target(spec), .. }
+        | Effect::MayTapOrUntap { what: EffectTarget::Target(spec) } => out.push(spec.clone()),
         // "tap up to two target creatures. Put a stun counter on each of them" — the slot's targets
         // are chosen at cast; `body` applies to each via `Each` (Homesickness).
         Effect::ForEachTarget { slot, .. } => out.push(slot.clone()),
