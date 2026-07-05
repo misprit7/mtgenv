@@ -3,7 +3,7 @@
 Short, dated entries for future-agent consumption. Newest first. One line or a few bullets
 per unit of meaningful progress. Keep it terse — detail lives in `docs/` and git history.
 
-## 2026-07-05 (SOS relay sos-cards-19 — 7 fully-faithful cards + reusable caps; census 257→264/271, 833→850 green; still 0 Natives)
+## 2026-07-05 (SOS relay sos-cards-19 — 8 fully-faithful + 1 tracked-partial; census 257→266/271, 833→854 green; still 0 Natives; SET CARD-COMPLETE modulo roadmap)
 
 - **Headline: the ledger's "3 Natives" were all IR-expressible** — the tag was stale. **Steal the Show** (`2e40f25`) was fully
   misdescribed ("control-theft + wheel" → actually a plain modal wheel + I/S-graveyard burn, ZERO new cap). **Mathemagics**
@@ -20,8 +20,17 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 - **`65b176a` — Flashback**: grant flashback to a graveyard I/S until EOT — new `Object.flashback_until_turn` +
   `Effect::GrantFlashbackUntilEndOfTurn` + `flashback_cost` honors it. (Census diff surfaced Flashback + Zimone — both
   un-bucketed by the ledger.)
-- **7 unauthored remain** = 3 roadmap/layer (Fractalize, Great Hall, Rubble Rouser) + 4 decision-blocked (Pox Native-vs-IR, Nita
-  heavy, Petrified Hamlet name-choice, Resonating Lute grant-mana-class). No clean IR wins left. See SOS_CARDS.md NEXT-AGENT block.
+- **`8e595e4` — Pox Plague** (pure IR, last of the "3 Natives"): new generic `ValueExpr::Half` + `ValueExpr::LifeTotal{who}` +
+  `Effect::ForEachPlayer` (player analogue of `ForEach`, binds `foreach_current` per player in APNAP order → `PlayerRef::Each`
+  resolves to the iterated player). Each-player halving of life/hand/permanents as 3 separate passes (CR 608.2).
+- **`ce41476` — Nita, Forum Conciliator** (TRACKED-PARTIAL): ability 1 faithful — new `CardFilter::OwnedBy` →
+  `SpellCast(Not(OwnedBy(Controller)))` "cast a spell you don't own" → `ForEach` team `PutCounters(+1/+1)`. Ability 2 partial (cost +
+  exile real; the cross-player-impulse + any-mana + exile-on-leave rider deferred — the impulse offer only scans your OWN exile, so
+  casting a card in the OPPONENT's exile needs new machinery; spec in SOS_CARDS.md NEXT-AGENT block).
+- Recorded in WHITEBOARD_MODEL: the Native hatch is still unexercised (0/271) + the EffectCtx state-read/decision-ask limitation the
+  first genuinely-inexpressible card must fix.
+- **5 unauthored remain — ALL roadmap/layer or lead-deferred** (Fractalize, Great Hall, Rubble Rouser + Resonating Lute, Petrified
+  Hamlet). **The set is card-complete modulo the two engine-roadmap items.** No card-agent builds left. See SOS_CARDS.md NEXT-AGENT.
 
 ## 2026-07-05 (SOS relay sos-cards-18 — 9 fully-faithful cards + 8 reusable caps; census 248→257/271, 803→833 green)
 

@@ -6,12 +6,30 @@ per-card triage, modeled on `SELESNYA_LANDFALL_CARDS.md`.
 
 ## ▶ NEXT AGENT — start here (handoff from sos-cards-19, 2026-07-05)
 
-**▶▶ sos-cards-19 SHIPPED — 7 fully-faithful cards + reusable caps, 850 mtg-core green, whole workspace builds, tree clean,
-LEAD pushes.** Census **257→264/271 authored (97%, 261 faithful · 3 tracked-partial)**, **still 0 Native hatches**. **Headline
-finding: the ledger's "3 Natives" were all IR-expressible — the tag was stale.** Steal the Show was fully misdescribed ("control-
-theft + wheel" → actually a plain modal wheel + I/S-graveyard burn, ZERO new cap); Mathemagics = one generic `ValueExpr::Pow2`;
-only Pox Plague has a real IR-vs-Native tradeoff (pending a lead decision — see below). **The census diff also surfaced two
-buildable cards the ledger never bucketed: Flashback + Zimone's Experiment (both shipped).**
+**▶▶ sos-cards-19 SHIPPED — 8 fully-faithful cards + 1 tracked-partial (Nita) + reusable caps, 854 mtg-core green, whole
+workspace builds, tree clean, LEAD pushes.** Census **257→266/271 authored (98%, 262 faithful · 4 tracked-partial)**, **still 0
+Native hatches**. **Headline finding: the ledger's "3 Natives" were ALL IR-expressible — the tag was stale (lead concurred, all
+built pure-IR).** Steal the Show was fully misdescribed ("control-theft + wheel" → actually a plain modal wheel + I/S-graveyard
+burn, ZERO new cap); Mathemagics = one generic `ValueExpr::Pow2`; **Pox Plague = pure IR** via `ValueExpr::Half` + `LifeTotal` +
+`Effect::ForEachPlayer` (per-player-bound halving). **The census diff also surfaced two buildable cards the ledger never bucketed:
+Flashback + Zimone's Experiment (both shipped).** **⇒ THE SET IS NOW EFFECTIVELY CARD-COMPLETE: only 5 unauthored, ALL either
+engine-roadmap or lead-deferred (see the tail below) — 271 cards at 0 Natives stands.**
+
+- **`8e595e4` — Pox Plague** (pure IR, the last of the "3 Natives"). New generic **`ValueExpr::Half`** (floor div-2) +
+  **`ValueExpr::LifeTotal{who}`** + **`Effect::ForEachPlayer{body}`** (player analogue of `ForEach` — loops players in APNAP order
+  binding `foreach_current`, so `PlayerRef::Each` in the body resolves to the iterated player). Pox = `Sequence[ForEachPlayer{
+  LoseLife Half(LifeTotal Each)}, ForEachPlayer{Discard Half(HandSize Each)}, ForEachPlayer{Sacrifice Half(Count their-perms)}]` —
+  three separate passes so all players finish a step before the next (CR 608.2). All pieces evergreen/reusable.
+- **`ce41476` — Nita, Forum Conciliator** — **TRACKED-PARTIAL.** Ability 1 FULLY FAITHFUL: new **`CardFilter::OwnedBy(PlayerRef)`**
+  (added to `enter_filter_matches` [ctx-aware, the real use] + `count_filter_matches` [ctx-free, `true` like `ControlledBy`]) →
+  `SpellCast(Not(OwnedBy(Controller)))` = "a spell you don't own" (the trigger already gates on you being the caster) → `ForEach`
+  creatures-you-control `PutCounters(+1/+1)`. Ability 2 PARTIAL (cost {2}+Sacrifice-another-creature + the exile of a target opp-gy
+  I/S are real; the "**you may cast it this turn, any mana, exile-instead-of-gy**" rider is deferred — **it needs 3 mechanisms that
+  don't exist:** (a) a **cross-player** exile-cast permission [the impulse offer only scans the caster's OWN exile; Nita casts a card
+  in the OPPONENT's exile → needs `castable_by: Option<PlayerId>` on Object + an offer-loop scan of other players' exile — the
+  lead's sketch missed this], (b) a **spend-any-type-of-mana** payment mode [collapse the cast cost to fully-generic in
+  `can_pay`/`pay`], (c) an **exile-on-leave-stack** flag riding the flashback exile path). Until then Nita's activated ability is
+  graveyard-hate only.
 
 Own-commits (`git log -S` before re-scoping — header PROCESS RULES apply):
 - **`cd5a6c0` — Choreographed Sparks** (modal spell-copy). (a) **Wired `CopySpellOnStack`'s `Target` arm into
@@ -42,30 +60,24 @@ Own-commits (`git log -S` before re-scoping — header PROCESS RULES apply):
   **`flashback_until_turn: Option<u32>`** (reset on zone change) + **`flashback_cost` honors it** (returns the card's own mana cost)
   + new **`Effect::GrantFlashbackUntilEndOfTurn{ what }`**. Reuses the existing flashback cast/exile path.
 
-**▶ THE UNAUTHORED TAIL IS NOW 7 — and the buildable-clean-win tail is EXHAUSTED. Every remaining card is either a
-roadmap/layer item (NOT a card agent's job) or blocked on a LEAD DECISION:**
-- **Roadmap / layer (3 — lead is putting these to the user, do NOT build):** **Fractalize** (SET creature-type + base-P/T, CR 613
-  layers 4/7b), **Great Hall of the Biblioplex** (mana land + `{5}: becomes a 2/4 Wizard` layer-4/7 animation), **Rubble Rouser**
-  (loot ETB + `{T},Exile-from-gy:{R}` + reflexive damage — mana-ability-with-cost-and-rider, same class as the **Hydro-Channeler**
-  tracked-partial → do that roadmap item first).
-- **Blocked on a lead decision (4):**
-  - **Pox Plague** — each-player halving-of-choice. **Recommended: make this THE Native exercise** (it's the one genuinely-bespoke
-    case; IR needs `Half` + `LifeTotal{who}` + an EachPlayer loop binding a per-player cursor — real subsystem work for one card).
-    Doing it Native stretches `EffectCtx` (currently can't read arbitrary state or ask decisions), which is the hatch-design
-    friction the architecture doc wants. **Awaiting lead's IR-vs-Native call.**
-  - **Nita, Forum Conciliator** — "cast a spell you don't own"→counter-each (owner-based cast trigger — no owner-filter exists) +
-    `{2},Sac another creature: exile target opp-gy I/S, cast it this turn with any-color mana, if it would hit a gy exile instead`
-    (impulse-with-spend-any-mana + spell-would-die→exile replacement). 3 interlocking bespoke mechs — the heaviest card. **Sketched
-    to lead; awaiting ack (may want roadmap coordination on the any-mana / opp-gy-impulse mechanics).**
+**▶ THE UNAUTHORED TAIL IS NOW 5 — and EVERY ONE is engine-roadmap or lead-deferred. There are NO card-agent builds left; the
+next card-relay agent has an empty queue until the roadmap pass lands.** (Lead's rulings all made this session.)
+- **Roadmap / layer (3 — lead→user, do NOT build as a one-off):** **Fractalize** (SET creature-type + base-P/T, CR 613 layers
+  4/7b), **Great Hall of the Biblioplex** (mana land + `{5}: becomes a 2/4 Wizard` layer-4/7 animation), **Rubble Rouser** (loot ETB
+  + `{T},Exile-from-gy:{R}` + reflexive damage — mana-ability-with-cost-and-rider, same class as the **Hydro-Channeler**
+  tracked-partial → the roadmap's mana-ability-grant pass covers both).
+- **Lead-deferred to the same roadmap pass (2 — honest ledger entries, NOT forced):**
+  - **Resonating Lute** — "Lands you control have '`{T}`: Add two of any one color, I/S-only'." **grant-an-activated-mana-ability-
+    to-a-group** — same class as Hydro-Channeler / Great Hall. Rides the mana-ability-grant roadmap item.
   - **Petrified Hamlet** — "choose a land card NAME on ETB; that name's non-mana activated abilities are off; that name's lands get
-    `{T}:{C}`." Name-choice + two name-keyed statics; near-irrelevant in limited. The **other Native-exercise candidate**. Deferred.
-  - **Resonating Lute** — "Lands you control have '`{T}`: Add two of any one color, I/S-only'." **grant-an-activated-mana-ability-to-
-    a-group** — the SAME class as Hydro-Channeler / Great Hall the lead is putting to the user. **DEFER** (don't build a one-off
-    grant-mana path the roadmap should generalize).
+    `{T}:{C}`." Name-choice + two name-keyed statics; bespoke + negligible in limited. Deferred to the same pass.
+- **The 4 TRACKED-PARTIALS** (`grep -rln '.incomplete()' cards/sos`): **Nita** (ability 2's cross-player-impulse + any-mana +
+  exile-on-leave — spec above), Ral Zarek (−7 coin-flip), Wildgrowth Archaic (enters-with-extra-counters-keyed-to-another-spell),
+  Hydro-Channeler (mana-ability-with-mana-cost). All ride engine-roadmap items.
 
-**→ Net: pending the two engine-roadmap decisions (layer-4/5 completion + the mana-ability-grant class), the set is effectively
-card-complete except Pox/Nita/Petrified, each of which wants a lead call FIRST. If you're the next agent and those calls have been
-made, Pox (Native) and Nita (heavy) are the builds; otherwise there are no clean IR wins left to pick up.**
+**→ Net: the set is CARD-COMPLETE modulo the roadmap. 266/271 authored, 262 fully-faithful, 0 Natives, 4 tracked-partials — the
+remaining 5 unauthored + 4 partials ALL ride two engine-roadmap items (layer-4/5 completion + the mana-ability-grant class) the
+lead is putting to the user. A card-relay agent has nothing clean to pick up until those land.**
 
 **⚠️ hatch-design feedback (the architecture doc wants this):** across 7 cards + the whole session, **0 cards needed the `Native`
 hatch** — every "genuinely inexpressible" ledger tag dissolved on reading the oracle + the code. The IR is expressive enough that

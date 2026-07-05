@@ -69,18 +69,22 @@ MTGA client.
 - **✅ MOBILE WEB CLIENT (2026-07-03).** Game client + lobby fully playable from a phone: mobile
   reflow (sticky prompt sheet, opp-top/you-bottom strips, log toggle), touch previews long-press-only
   (hover gated to real mice), on-screen pass-turn button. Desktop unchanged.
-- **▶ SOS FULL-SET scope: 264/271 authored (97%, 261 faithful · 3 tracked-partial), 850 mtg-core tests green (2026-07-05,
-  sos-cards-19).** 7 fully-faithful cards, still **0 Native hatches**. **Key finding: the ledger's "3 Natives" were all
-  IR-expressible** — Steal the Show (modal wheel + I/S-gy burn, ZERO cap; the "control-theft" tag was wrong), Mathemagics
-  (generic `ValueExpr::Pow2`), and Pox Plague (only a real IR-vs-Native tradeoff). Also: **Choreographed Sparks** (wired the
+- **▶ SOS FULL-SET scope: 266/271 authored (98%, 262 faithful · 4 tracked-partial), 854 mtg-core tests green (2026-07-05,
+  sos-cards-19). EFFECTIVELY CARD-COMPLETE — the 5 unauthored + 4 tracked-partials ALL ride two engine-roadmap items (layer-4/5
+  completion + the mana-ability-grant class); 271 cards at 0 Natives stands.** 8 fully-faithful cards + 1 tracked-partial (Nita).
+  **Key finding: the ledger's "3 Natives" were all IR-expressible (lead concurred, all built pure-IR)** — Steal the Show (modal
+  wheel + I/S-gy burn, ZERO cap; the "control-theft" tag was fully wrong), Mathemagics (generic `ValueExpr::Pow2`), **Pox Plague**
+  (`ValueExpr::Half` + `LifeTotal` + `Effect::ForEachPlayer` per-player-bound halving). **Nita** = tracked-partial (ability 1
+  faithful via new `CardFilter::OwnedBy`; ability 2's cross-player-impulse + any-mana + exile-on-leave deferred to roadmap). Also:
+  **Choreographed Sparks** (wired the
   `CopySpellOnStack` Target arm into `collect_specs_into` + `Effect::CopySpellAsToken` + `Qualification::CantBeCopied` + made
   `Action::Sacrifice` a first-class applied action), **Zaffai** (once/turn free-cast permission — `FreeCastFromHandOncePerTurn` +
   `PlayableAction::CastFreeFromHand`), **Page, Loose Leaf** (Grandeur discard-by-name cost + `Effect::RevealFromTopUntilToHand` +
   `enter_filter_matches` now handles `CardFilter::Named`), **Zimone's Experiment** (`Effect::LookPickCreaturesLands` — look-top-5
   routed by type), **Flashback** (`Effect::GrantFlashbackUntilEndOfTurn` + `Object.flashback_until_turn`; census-diff surfaced it +
-  Zimone, both un-bucketed by the ledger). **The 7 unauthored remaining = 3 roadmap/layer items (Fractalize, Great Hall, Rubble
-  Rouser) + 4 decision-blocked (Pox Native-vs-IR, Nita heavy, Petrified Hamlet name-choice, Resonating Lute grant-mana-class) —
-  no clean IR wins left.** Tracked-partials still 3 (Ral, Wildgrowth, Hydro-Channeler).
+  Zimone, both un-bucketed by the ledger). **The 5 unauthored remaining are ALL roadmap/layer or lead-deferred: Fractalize, Great
+  Hall, Rubble Rouser (layer-4/5 + mana-ability-grant roadmap), Resonating Lute + Petrified Hamlet (deferred to the same pass). No
+  card-agent builds left.** Tracked-partials now 4 (Nita ability-2, Ral, Wildgrowth, Hydro-Channeler) — all ride roadmap items.
 - **▶ SOS (prior — sos-cards-18): 257/271, 833 green.** 9 cards + 8 caps (Skycoach Waypoint `Effect::SetPrepared`, Biblioplex
   Tomekeeper modal triggered-ability support, Mana Sculpt delayed-mana, Archaic's Agony excess-damage impulse, Burrog Barrage
   `Effect::SourcedDamage` "bite" primitive, mill-then-play → Ark of Hunger + Tablet of Discovery, Slumbering Trudge (3−X)-stun,
