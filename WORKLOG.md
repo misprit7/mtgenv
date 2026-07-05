@@ -3,6 +3,50 @@
 Short, dated entries for future-agent consumption. Newest first. One line or a few bullets
 per unit of meaningful progress. Keep it terse — detail lives in `docs/` and git history.
 
+## 2026-07-04/05 (the MuZero re-litigation — user-driven, verdict reversed then completed)
+
+- **User challenged the MuZero negative ("probably a bug") → full re-investigation** (experiments/
+  stochastic_muzero/): plumbing triple-audited CLEAN; real root cause = recipe/credit-assignment
+  mismatch (`td_steps=5` vs 30–60-step episodes → flat-negative value net → passive low-index
+  attractor → all-loss buffer spiral). Winning recipe (shaping 0.5 + td 40 + up 20, plain MuZero):
+  **heralds 0 → 0.9 sampled/0.55 fair-greedy (SUCCESS); swine 0 → 0.12 then re-collapse (NOT
+  competent; PPO 0.90)**. Combat judgment inconclusive — the honest contrast: PPO OVER-blocks
+  (chump 94–97%), MuZero UNDER-plays (block_rate ~0). Two upstream bugs found+fixed (LightZero
+  segment-boundary IndexError on long games; missing **kwargs in stochastic forward). Full
+  observability retrofit: PPO-parity TB tags (fair-greedy + sampled) on all 4 canonical runs,
+  one compact replay per checkpoint in the UI, TB consolidated. Banked at the stopping point.
+- **Training replays now compact ON DISK** (440e43b): `replay_json` emits the v2 delta form —
+  264–483KB vs 15–78MB (the fat-on-disk behavior predated MuZero; server-side compact had masked it).
+- **Auto-priority verified shared UI↔training** (user question): one knob (`full_control`), one
+  elision rule, same MTGA default stop set (own main phases only) across web driver, PyGame, fleet,
+  and the MuZero adapter; deliberate asymmetries = manual-mana (human seat only) + UI stop overrides.
+- **DouZero/DMC research** (user referent): action-as-input Q-head is the scaling answer to the
+  Discrete(98) card-ID head (content already in obs rows; pooled head structurally can't read
+  per-entity features — pointer-head fixable inside PPO); DMC = td∞ (immune to the flat-value
+  failure) but ε≈0 (needs external exploration) and sample-hungry; PerfectDou (PPO+GAE+perfect-info
+  critic) beats it — and our engine feeds a perfect-info critic for free. DMC build PARKED per user.
+- **SOS full-set relay (user directive: full set, no corners):** agents 8–9 = 11 caps + 10 cards +
+  Swamp registered (602 tests): LKI dies-triggers (real snapshot store), S12 cost-modification
+  pipeline (cast+activation, target-dependent with candidate-affordability filtering),
+  FunctionsFrom(zones) graveyard-trigger class, batched combat-damage event, MayPayCost,
+  DirectedDiscard, enters-tapped recursion. No-rewind recorded as pragmatic-not-law (user steer;
+  transactional pending-cast = sanctioned evolution, WHITEBOARD §2.6). Agent 10 on planeswalkers
+  (groundwork mostly exists — verify-and-finish + Dellian Fel/Ral Zarek), then Lessons, prepare-DFCs.
+
+## 2026-07-04 (sos-cards-10)
+
+- **Planeswalkers: verify-and-finish. 602→609 mtg-core tests green** (163→165 authored, 2 tracked-partial
+  PWs). Verified all 4 loyalty points were ALREADY built + tested (enters-with-loyalty via the real cast path;
+  sorcery-speed + once-per-turn-per-PW gate; combat damage removes loyalty; ±N activation) — read-the-code,
+  no fixes needed. Added an end-to-end `planeswalker_lifecycle_cast_activate_ultimate_dies` (cast→+2→−3→drain→
+  0-loyalty SBA).
+- **4 reusable primitives:** `planeswalker()` + `loyalty_ability()` builders (cards/mod.rs); `PlayerRef::Each`
+  (the player analogue of `EffectTarget::Each` → "any number of target players each do X"); a `CardFilter::
+  ManaValue` targeting-filter arm (was fail-closed → now enumerates MV-bounded graveyard/permanent targets).
+- **2 cards** (both tracked-partial, ultimate deferred, noted honestly): **Professor Dellian Fel** (+2 gain 3 /
+  0 draw-lose-1 / −3 destroy; −6 emblem deferred — CR 114) and **Ral Zarek, Guest Lecturer** (+1 Surveil 2 /
+  −1 any-number-target-players-discard / −2 MV≤3 reanimation; −7 coin-flip+skip-turns deferred).
+
 ## 2026-07-04 (sos-cards-9)
 
 - **S12 target-dependent cost reduction — the sub-cap agent-8 deferred as risky. 586→590 mtg-core
