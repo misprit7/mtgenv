@@ -497,7 +497,11 @@ async fn card_catalog() -> impl IntoResponse {
     let db = mtg_core::cards::starter_db();
     let mut cards: Vec<DeckCard> = db
         .iter()
-        .filter(|(_, def)| !def.chars.supertypes.contains(&Supertype::Token))
+        // Exclude non-deckbuildable runtime objects: tokens (Token supertype) and emblems (CR 114 —
+        // no card types, so `card_types.is_empty()`).
+        .filter(|(_, def)| {
+            !def.chars.supertypes.contains(&Supertype::Token) && !def.chars.card_types.is_empty()
+        })
         .map(|(grp, def)| card_view(grp, 1, def))
         .collect();
     deck_sort(&mut cards);

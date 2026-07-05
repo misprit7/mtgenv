@@ -173,6 +173,14 @@ pub enum Effect {
         controller: PlayerRef,
         mods: TokenCopyMods,
     },
+    /// "You get an emblem with '…'" (CR 114). Puts an emblem — an object with no characteristics
+    /// other than the abilities of the registered def `emblem` (in the reserved 9000+ block) — into
+    /// the controller's command zone. The emblem's ability functions from `Zone::Command` (its def
+    /// carries `Ability::FunctionsFrom(vec![Zone::Command])`), so its triggers fire from there.
+    /// Emblems are permanent and untouchable by removal/SBAs. (Planeswalker ultimates, CR 606/114.)
+    CreateEmblem {
+        emblem: u32,
+    },
     /// Counter a target spell or ability (CR 701.6).
     Counter {
         what: EffectTarget,

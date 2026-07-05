@@ -69,14 +69,17 @@ MTGA client.
 - **✅ MOBILE WEB CLIENT (2026-07-03).** Game client + lobby fully playable from a phone: mobile
   reflow (sticky prompt sheet, opp-top/you-bottom strips, log toggle), touch previews long-press-only
   (hover gated to real mice), on-screen pass-turn button. Desktop unchanged.
-- **▶ SOS FULL-SET scope (2026-07-04, user directive — T4 deferral revoked): ~165 authored, 609 mtg-core
-  tests green.** **sos-cards-10: PLANESWALKERS DONE** (verify-and-finish) — all 4 loyalty points were already
-  built + tested (confirmed by reading, no fixes); shipped `planeswalker()`/`loyalty_ability()` builders,
-  `PlayerRef::Each` (any-number-target-players-each-do-X), a `CardFilter::ManaValue` targeting arm (was
-  fail-closed), and 2 tracked-partial cards — **Professor Dellian Fel** (−6 emblem deferred, CR 114) +
-  **Ral Zarek, Guest Lecturer** (−7 coin-flip+skip-turns deferred). Deferred PW-completion subsystems (emblems,
-  coin-flip+skip-turns) sketched for the lead. **Next: remaining S12 cards, then Lessons/Learn + prepare-DFCs
-  (design-sketch first).**
+- **▶ SOS FULL-SET scope (2026-07-04, user directive — T4 deferral revoked): ~165 authored, 611 mtg-core
+  tests green.** **sos-cards-10: PLANESWALKERS + EMBLEMS DONE.** Planeswalkers = verify-and-finish (all 4
+  loyalty points already built+tested); shipped `planeswalker()`/`loyalty_ability()` builders, `PlayerRef::Each`
+  (any-number-target-players-each-do-X), a `CardFilter::ManaValue` targeting arm (was fail-closed), + **Professor
+  Dellian Fel** & **Ral Zarek, Guest Lecturer**. Then the **EMBLEMS/command-zone subsystem** (lead-greenlit, CR
+  114): `Zone::Command` (per-player vec) + registered emblem defs (9500+ block, `cards/emblems.rs`, no
+  characteristics + `Ability::Triggered` + `FunctionsFrom([Command])`) + `Effect::CreateEmblem` + a command-zone
+  trigger scan that threads the triggering amount as `ValueExpr::X` ("that much"). Composed agent-9's FunctionsFrom
+  + the token-def pattern. → **Dellian's −6 → Dellian now FULLY FAITHFUL** (only Ral tracked-partial: −7 coin-flip
+  +skip-turns deferred indefinitely). **Next: remaining S12 cards (Dawning Archaic / Wilt), then Lessons/Learn +
+  prepare-DFCs (design-sketch first).**
 - **▶ SOS (prior — sos-cards-9): ~163 authored, 602 mtg-core
   tests green (+ registered the missing Swamp basic land).** sos-cards-9 shipped 6 caps + 5 cards: S12
   target-dependent cost reduction (Ajani's Response), enters-tapped MoveZone (Teacher's Pest), Exile-as-cost

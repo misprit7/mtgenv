@@ -3181,6 +3181,13 @@ impl Engine {
                 for w in watchers {
                     self.queue_self_triggers(w, EventPattern::GainLife);
                 }
+                // Emblems (CR 114) function from the command zone (Dellian Fel's −6 emblem). The
+                // triggering amount rides on `x` so the effect reads "that much" as `ValueExpr::X`.
+                self.queue_command_functioning_triggers(
+                    *player,
+                    EventPattern::GainLife,
+                    Some(*delta as u32),
+                );
             }
             // Delayed "when this … is exiled" abilities fire when the watched object reaches exile.
             GameEvent::ObjectMoved { obj, to: Zone::Exile } => {
@@ -3250,6 +3257,48 @@ impl Engine {
             });
             if functions_from_gy {
                 self.queue_self_triggers(c, want.clone());
+            }
+        }
+    }
+
+    /// Queue the command-zone-functioning triggered abilities (CR 114 emblems) of `owner`'s emblems
+    /// matching `want`, stamping `x` onto each trigger (the triggering amount — e.g. life gained —
+    /// read as `ValueExpr::X`, i.e. "that much"). Mirrors [`Self::queue_graveyard_functioning_triggers`]
+    /// for `Zone::Command`: an emblem carries `FunctionsFrom(vec![Zone::Command])`, so its triggers
+    /// are active from there. The emblem's `controller` is its owner (the player who got it, CR 114.3).
+    fn queue_command_functioning_triggers(&mut self, owner: PlayerId, want: EventPattern, x: Option<u32>) {
+        let emblems: Vec<ObjId> = self.state.player(owner).command.clone();
+        for c in emblems {
+            let functions_from_command = self.state.def_of(c).is_some_and(|d| {
+                d.abilities.iter().any(|a| {
+                    matches!(a, Ability::FunctionsFrom(zones) if zones.contains(&Zone::Command))
+                })
+            });
+            if !functions_from_command {
+                continue;
+            }
+            let matches: Vec<u32> = match self.state.def_of(c) {
+                Some(def) => def
+                    .abilities
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, a)| matches!(a, Ability::Triggered { event, .. } if *event == want))
+                    .map(|(i, _)| i as u32)
+                    .collect(),
+                None => continue,
+            };
+            let controller = self.state.object(c).controller;
+            for index in matches {
+                let id = self.state.mint_stack();
+                self.state.pending_triggers.push(StackObject {
+                    id,
+                    controller,
+                    source: Some(c),
+                    kind: StackObjectKind::Ability { index },
+                    targets: Vec::new(),
+                    x,
+                    modes: Vec::new(),
+                });
             }
         }
     }

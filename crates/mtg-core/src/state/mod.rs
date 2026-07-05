@@ -204,6 +204,11 @@ pub struct Player {
     pub battlefield: Vec<ObjId>,
     pub graveyard: Vec<ObjId>,
     pub exile: Vec<ObjId>,
+    /// Emblems this player owns (CR 114 / 408). The command zone is modeled per-player (each emblem's
+    /// owner/controller is the player who got it); emblems sit here permanently and are untouchable by
+    /// battlefield removal/SBAs. Empty for players with no emblems.
+    #[serde(default)]
+    pub command: Vec<ObjId>,
     pub mana_pool: ManaPool,
     pub counters: CounterBag,
     /// Lands played this turn (CR 116.2a / 505.6b: one per turn by default).
@@ -250,6 +255,7 @@ impl Player {
             battlefield: Vec::new(),
             graveyard: Vec::new(),
             exile: Vec::new(),
+            command: Vec::new(),
             mana_pool: ManaPool::default(),
             counters: CounterBag::default(),
             lands_played_this_turn: 0,
@@ -264,7 +270,7 @@ impl Player {
         }
     }
 
-    /// The `ObjId`s in one of this player's zones (empty for `Stack`/`Command`).
+    /// The `ObjId`s in one of this player's zones (empty for `Stack`, which is global).
     pub fn zone_ids(&self, zone: Zone) -> &[ObjId] {
         match zone {
             Zone::Library => &self.library,
@@ -272,11 +278,12 @@ impl Player {
             Zone::Battlefield => &self.battlefield,
             Zone::Graveyard => &self.graveyard,
             Zone::Exile => &self.exile,
-            Zone::Stack | Zone::Command => &[],
+            Zone::Command => &self.command,
+            Zone::Stack => &[],
         }
     }
 
-    /// The owned `ObjId` vector for a per-player zone (everything except `Stack`/`Command`).
+    /// The owned `ObjId` vector for a per-player zone (everything except the global `Stack`).
     fn zone_vec_mut(&mut self, zone: Zone) -> Option<&mut Vec<ObjId>> {
         match zone {
             Zone::Library => Some(&mut self.library),
@@ -284,7 +291,8 @@ impl Player {
             Zone::Battlefield => Some(&mut self.battlefield),
             Zone::Graveyard => Some(&mut self.graveyard),
             Zone::Exile => Some(&mut self.exile),
-            Zone::Stack | Zone::Command => None,
+            Zone::Command => Some(&mut self.command),
+            Zone::Stack => None,
         }
     }
 }

@@ -64,6 +64,12 @@ pub enum Action {
         spec: TokenSpec,
         controller: PlayerId,
     },
+    /// Put an emblem (CR 114) into `controller`'s command zone. `emblem_grp` is the registered
+    /// emblem def (reserved 9000+ block) supplying its abilities via `def_of`.
+    CreateEmblem {
+        emblem_grp: u32,
+        controller: PlayerId,
+    },
     AttachTo {
         attachment: ObjId,
         target: Target,

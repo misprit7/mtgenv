@@ -33,6 +33,7 @@ pub mod helpers;
 pub mod misc;
 
 /// Registered token defs (the reserved 9000+ `grp_id` block) — abilities for tokens that have them.
+pub mod emblems;
 pub mod tokens;
 
 // Per-first-printing-set folders (real card pool).
@@ -122,6 +123,13 @@ pub mod grp {
     // These defs carry `Supertype::Token`, so the deck-builder / `/api/cards` catalog filters them out.
     /// 1/1 B/G Pest token — "Whenever this token attacks, you gain 1 life." (SoS Witherbloom Pests).
     pub const PEST_TOKEN: u32 = 9001;
+
+    // ── Reserved emblem-def block (9500+) ─────────────────────────────────────────────────────
+    // Registered *emblem* defs (CR 114) live here — objects that sit in the command zone carrying a
+    // triggered/static ability that functions from `Zone::Command` (`Ability::FunctionsFrom`). Kept
+    // in a distinct sub-block from tokens; created by `Effect::CreateEmblem`.
+    /// Professor Dellian Fel's −6 emblem — "Whenever you gain life, target opponent loses that much life."
+    pub const DELLIAN_EMBLEM: u32 = 9500;
 }
 
 /// A card definition: its printed characteristics + abilities (the Effect IR). Card *data*, not
@@ -534,6 +542,7 @@ pub fn starter_db() -> CardDb {
     let mut db = CardDb::default();
     misc::register(&mut db);
     tokens::register(&mut db);
+    emblems::register(&mut db);
     // Per-set real cards (Selesnya Landfall push).
     lea::register(&mut db);
     dsk::register(&mut db);
@@ -718,7 +727,7 @@ mod tests {
     #[test]
     fn starter_db_has_expected_cards() {
         let db = starter_db();
-        assert_eq!(db.len(), 217);
+        assert_eq!(db.len(), 218);
         // Forest is "type line only": a Basic Land with subtype Forest. Mana is intrinsic
         // (CR 305.6) — the engine derives {T}: Add {G} from the subtype, so the CardDef carries
         // no explicit mana ability (and `is_mana_source` only sees authored abilities).

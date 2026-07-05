@@ -7,9 +7,23 @@ per-card triage, modeled on `SELESNYA_LANDFALL_CARDS.md`.
 ## ▶ NEXT AGENT — start here (handoff from sos-cards-10, 2026-07-04)
 
 **▶▶ sos-cards-10 HANDOFF (2026-07-04) — READ FIRST. SCOPE = FULL SET; quality bar = general CR capability,
-not the minimal hack.** 163→165 authored (2 tracked-partial planeswalkers) / **609 mtg-core tests green, tree
-clean** (LEAD pushes). **PLANESWALKERS are DONE** (verify-and-finish, as briefed) + **2 cards + 4 reusable
-primitives**, each with real-path tests, `git commit --only` on the shared tree (`experiments/` untouched):
+not the minimal hack.** 163→165 authored / **611 mtg-core tests green, tree clean** (LEAD pushes).
+**PLANESWALKERS DONE** + **EMBLEMS (CR 114 / Zone::Command) DONE** (lead-greenlit subsystem) → **Professor
+Dellian Fel is now FULLY FAITHFUL** (only Ral stays tracked-partial: its −7 coin-flip+skip-turns is
+deferred indefinitely). Shipped **2 cards + 5 reusable primitives + the emblem/command-zone subsystem**,
+each with real-path tests, `git commit --only` on the shared tree (`experiments/` untouched):
+
+**EMBLEMS subsystem (CR 114, commit after d62e155):** the engine now has a **command zone**
+(`Zone::Command` = a per-player `Player.command` vec) and emblems. An emblem is a registered def in the
+reserved **9500+** block (`cards/emblems.rs`, mirrors `tokens.rs`) with **no characteristics** (CR 114.2)
+carrying a normal `Ability::Triggered` + `Ability::FunctionsFrom(vec![Zone::Command])`. `Effect::CreateEmblem
+{emblem}` (→ `Action::CreateEmblem` → `create_emblem`) puts one in the controller's command zone; a new
+`queue_command_functioning_triggers` scan (mirrors the graveyard one) fires its triggers from Command,
+stamping the triggering amount onto the trigger's `x` so the effect reads "**that much**" as `ValueExpr::X`.
+Emblems are untouchable (no SBA/removal scans Command). → **Dellian's −6** ("whenever you gain life, target
+opponent loses that much"). **Composed, didn't reinvent** (agent-9's FunctionsFrom + the token-def pattern).
+Catalog filter (mtg-gre-server) now also excludes empty-card_type defs. **This generalizes to every future
+emblem AND gives the engine its command zone.**
 
 1. **Verified the 4 planeswalker points are ALREADY BUILT + TESTED** (as the handoff predicted — read-the-code
    confirmed, no fixes needed): (1) **enters with printed loyalty** through the REAL cast path — `resolve_top`
@@ -944,7 +958,7 @@ Environmental Scientist, Harsh Annotation, Vibrant Outburst, Masterful Flourish,
 | Petrified Hamlet | NameChoice | `sos` | ⏳ | choose a card name -> name-scoped statics |
 | Pigment Wrangler // Striking Palette | DFC | `sos` | ⏳ | modal double-faced card |
 | Prismari, the Inspiration | Storm | `sos` | ⏳ | Elder Dragon granting storm |
-| Professor Dellian Fel | PW | `sos` | ◐ tracked-partial | +2/0/−3 faithful; −6 emblem deferred (CR 114) (`this session`) |
+| Professor Dellian Fel | PW | `sos` | ✅ done | fully faithful — +2/0/−3 + −6 emblem (CR 114 Zone::Command subsystem) (`this session`) |
 | Quandrix, the Proof | Cascade | `sos` | ⏳ | Elder Dragon granting cascade |
 | Quill-Blade Laureate // Twofold Intent | DFC | `sos` | ⏳ | modal double-faced card |
 | Ral Zarek, Guest Lecturer | PW | `sos` | ◐ tracked-partial | +1/−1/−2 faithful; −7 coin-flip+skip-turns deferred (`this session`) |

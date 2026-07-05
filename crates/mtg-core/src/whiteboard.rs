@@ -1258,6 +1258,12 @@ impl EngineCore {
                     });
                 }
             }
+            // "You get an emblem with …" (CR 114) — put an emblem carrying the registered def's
+            // abilities into the controller's command zone.
+            Effect::CreateEmblem { emblem } => {
+                let controller = ctx.controller.unwrap_or(PlayerId(0));
+                wb.push(Action::CreateEmblem { emblem_grp: *emblem, controller });
+            }
             // C6-copy: create a token that's a copy of a permanent (CR 707.9e / 111.3). Snapshot the
             // source's copiable characteristics (its base `chars` — NOT counters/damage/auras/other
             // continuous effects, CR 707.2) into a `TokenSpec` (abilities ride along via the copied
@@ -1695,6 +1701,7 @@ impl EngineCore {
             }
             Action::Mill { player, count } => self.mill(player, count),
             Action::CreateToken { spec, controller } => self.create_token(&spec, controller),
+            Action::CreateEmblem { emblem_grp, controller } => self.create_emblem(emblem_grp, controller),
             Action::AttachTo { attachment, target: Target::Object(host) } => {
                 // Move `attachment` (an Aura/Equipment) onto `host` (CR 701.3). Re-attaching
                 // simply overwrites the old host. Marks chars dirty so the "while attached"
@@ -1915,6 +1922,18 @@ impl EngineCore {
         }
         self.state.mark_chars_dirty();
         self.broadcast(GameEvent::ObjectMoved { obj: id, to: Zone::Battlefield });
+    }
+
+    /// Put an emblem (CR 114) into `controller`'s command zone. The emblem is an object with no
+    /// characteristics other than the abilities of the registered def `emblem_grp` (CR 114.2): its
+    /// `Ability`s (including `FunctionsFrom(vec![Zone::Command])`) come via `def_of`, so `collect_
+    /// triggers`' command-zone scan fires them. Emblems are permanent and untouchable by removal/SBAs.
+    fn create_emblem(&mut self, emblem_grp: u32, controller: PlayerId) {
+        let Some(chars) = self.state.card_db().get(emblem_grp).map(|d| d.chars.clone()) else {
+            return; // unknown emblem def — nothing to create (defensive; every emblem is registered)
+        };
+        let id = self.state.add_card(controller, chars, Zone::Command);
+        self.broadcast(GameEvent::ObjectMoved { obj: id, to: Zone::Command });
     }
 
     // ── IR resolution helpers ─────────────────────────────────────────────────────────────

@@ -43,9 +43,15 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 - **4 reusable primitives:** `planeswalker()` + `loyalty_ability()` builders (cards/mod.rs); `PlayerRef::Each`
   (the player analogue of `EffectTarget::Each` → "any number of target players each do X"); a `CardFilter::
   ManaValue` targeting-filter arm (was fail-closed → now enumerates MV-bounded graveyard/permanent targets).
-- **2 cards** (both tracked-partial, ultimate deferred, noted honestly): **Professor Dellian Fel** (+2 gain 3 /
-  0 draw-lose-1 / −3 destroy; −6 emblem deferred — CR 114) and **Ral Zarek, Guest Lecturer** (+1 Surveil 2 /
-  −1 any-number-target-players-discard / −2 MV≤3 reanimation; −7 coin-flip+skip-turns deferred).
+- **2 cards** (initially tracked-partial): **Professor Dellian Fel** and **Ral Zarek, Guest Lecturer** (+1 Surveil 2 /
+  −1 any-number-target-players-discard / −2 MV≤3 reanimation; −7 coin-flip+skip-turns deferred indefinitely).
+- **EMBLEMS subsystem (CR 114) — lead-greenlit. 609→611 tests green.** The engine now has a **command zone**
+  (`Zone::Command` per-player vec) + emblems: a registered def (reserved 9500+ block, `cards/emblems.rs`) with
+  no characteristics carrying a normal `Ability::Triggered` + `FunctionsFrom([Command])`; `Effect::CreateEmblem`
+  puts it in the command zone; a `queue_command_functioning_triggers` scan fires it from Command, stamping the
+  triggering amount onto `x` so the effect reads "that much" via `ValueExpr::X`. Untouchable (no SBA scans
+  Command). Composed agent-9's FunctionsFrom + the token-def pattern (didn't reinvent). → **Dellian's −6 emblem**
+  ("whenever you gain life, target opponent loses that much") → **Dellian is now FULLY FAITHFUL**.
 
 ## 2026-07-04 (sos-cards-9)
 
