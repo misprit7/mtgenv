@@ -144,6 +144,15 @@ fn eval_value(
         ValueExpr::DistinctCardTypesAmongExiledWith => {
             distinct_card_types_among_exiled_with(state, source)
         }
+        // Life `who` gained this turn (Scheming Silvertongue's "if you gained 2+ life this turn").
+        ValueExpr::LifeGainedThisTurn { who } => {
+            let p = resolve_player(state, *who, source_controller);
+            state.players.get(p.0 as usize).map(|pl| pl.life_gained_this_turn as i64).unwrap_or(0)
+        }
+        // Creatures that died this turn, any controller (Emeritus of Woe's "if two or more died").
+        ValueExpr::CreaturesDiedThisTurn => {
+            state.players.iter().map(|pl| pl.creatures_died_this_turn as i64).sum()
+        }
         // Counters on the source object — for an intervening-"if" like "if it has four or more
         // quest counters on it" (Earthbender Ascension).
         ValueExpr::CountersOnSelf(kind) => source

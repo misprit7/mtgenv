@@ -2260,6 +2260,15 @@ impl EngineCore {
                 .and_then(|p| self.state.players.get(p.0 as usize))
                 .map(|pl| pl.cards_drawn_this_turn as i64)
                 .unwrap_or(0),
+            // Life `who` gained this turn (CR 119) — Scheming Silvertongue's gate.
+            ValueExpr::LifeGainedThisTurn { who } => {
+                let p = self.eval_player(*who, ctx);
+                self.state.players.get(p.0 as usize).map(|pl| pl.life_gained_this_turn as i64).unwrap_or(0)
+            }
+            // Creatures that died this turn, any controller — Emeritus of Woe's gate.
+            ValueExpr::CreaturesDiedThisTurn => {
+                self.state.players.iter().map(|pl| pl.creatures_died_this_turn as i64).sum()
+            }
             // The {X} chosen for the triggering spell of a cast-with-{X} trigger — Geometer's Arthropod.
             ValueExpr::XOfTriggeringSpell => ctx
                 .triggering_spell

@@ -120,6 +120,13 @@ pub enum ValueExpr {
     /// `Object.cast_x`. "Look at the top X cards" (Geometer's Arthropod). `0` outside such a trigger
     /// or if the triggering spell had no `{X}`.
     XOfTriggeringSpell,
+    /// Total life `who` has **gained this turn** (CR 119) — reads `Player.life_gained_this_turn`. For
+    /// a "if you gained N or more life this turn" gate (Scheming Silvertongue), via `ValueAtLeast`.
+    LifeGainedThisTurn { who: PlayerRef },
+    /// The number of **creatures that died this turn** (any controller) — summed across players'
+    /// `Player.creatures_died_this_turn`. For a "if two or more creatures died this turn" gate
+    /// (Emeritus of Woe), via `ValueAtLeast`.
+    CreaturesDiedThisTurn,
 }
 
 impl ValueExpr {
