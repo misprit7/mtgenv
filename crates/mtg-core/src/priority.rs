@@ -2475,8 +2475,23 @@ impl Engine {
                 .map(|o| Target::Object(o.id))
                 .filter(|t| self.target_matches_filter(t, filter, caster, source))
                 .collect(),
-            // StackObject targeting: not needed by the current pool.
-            _ => Vec::new(),
+            // A spell on the stack — "counter target (creature) spell", CR 115 / 701.5. Every
+            // *spell* stack object (an ability on the stack is a Stifle-class target, out of
+            // first-pass scope) matching the filter, EXCLUDING the spell currently being cast:
+            // a counterspell isn't offered as a target of its own targeting requirement (CR
+            // 601.2c order puts it on the stack first — matches MTGA's presented options, avoids a
+            // degenerate self-counter). `target_matches_filter` resolves each `Target::Stack` to
+            // its underlying spell's card object so type/colour/control filters read the spell's
+            // computed characteristics. Spells are public, so no hexproof masking applies.
+            TargetKind::StackObject(filter) => self
+                .state
+                .stack
+                .items
+                .iter()
+                .filter(|so| matches!(so.kind, StackObjectKind::Spell(c) if Some(c) != source))
+                .map(|so| Target::Stack(so.id))
+                .filter(|t| self.target_matches_filter(t, filter, caster, source))
+                .collect(),
         }
     }
 
@@ -2494,6 +2509,21 @@ impl Engine {
         caster: PlayerId,
         source: Option<ObjId>,
     ) -> bool {
+        // A stack target (CR 115): resolve to its underlying spell's card object and apply the
+        // filter to that, so "creature spell" / "instant or sorcery spell" / "spell you control"
+        // read the spell's computed characteristics (a spell on the stack IS a card object in
+        // `Zone::Stack`, controlled by its caster). An ability on the stack has no card, so only
+        // the trivial `Any` filter matches it.
+        if let Target::Stack(sid) = t {
+            let kind = self.state.stack.items.iter().find(|s| s.id == *sid).map(|s| s.kind.clone());
+            return match kind {
+                Some(StackObjectKind::Spell(card)) => {
+                    self.target_matches_filter(&Target::Object(card), filter, caster, source)
+                }
+                Some(_) => matches!(filter, CardFilter::Any),
+                None => false,
+            };
+        }
         let Target::Object(id) = t else { return true };
         let Some(o) = self.state.objects.get(id) else {
             return false;
@@ -4076,6 +4106,12 @@ fn collect_specs_into(effect: &Effect, out: &mut Vec<TargetSpec>) {
         // "Cast target [card] for free" (The Dawning Archaic) — the card to cast is a chosen target
         // (up-to-one; the cast card's own targets are chosen inside the free cast, not here).
         Effect::CastForFree { what: EffectTarget::Target(spec), .. } => out.push(spec.clone()),
+        // "Counter target (creature) spell" (CR 701.5) — the stack object to counter is a chosen
+        // target. `CounterUnlessPay` (Ward, CR 702.21) likewise declares a stack target, though it's
+        // usually fired as a triggered ability (its target = `EffectTarget::Triggering`) rather than
+        // cast; both are collected here so a real cast picks a target and re-checks it at resolution.
+        Effect::Counter { what: EffectTarget::Target(spec) }
+        | Effect::CounterUnlessPay { what: EffectTarget::Target(spec), .. } => out.push(spec.clone()),
         // "Target creature's owner puts it on top or bottom of their library" (Run Behind).
         Effect::PutOnTopOrBottom { what: EffectTarget::Target(spec) } => out.push(spec.clone()),
         // "Put a +1/+1 counter on target creature" / "target creature gains trample" — the targeted

@@ -37,6 +37,7 @@ pub mod arnyn_deathbloom_botanist;
 pub mod artistic_process;
 pub mod ascendant_dustspeaker;
 pub mod banishing_betrayal;
+pub mod brush_off;
 pub mod berta_wise_extrapolator;
 pub mod blech_loafing_pest;
 pub mod bogwater_lumaret;
@@ -228,6 +229,7 @@ pub fn register(db: &mut CardDb) {
     artistic_process::register(db);
     ascendant_dustspeaker::register(db);
     banishing_betrayal::register(db);
+    brush_off::register(db);
     berta_wise_extrapolator::register(db);
     blech_loafing_pest::register(db);
     bogwater_lumaret::register(db);
