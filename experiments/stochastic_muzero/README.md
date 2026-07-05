@@ -7,10 +7,13 @@ has a known, stubborn failure (it chump-blocks the trampling 3/3 even at high li
 Everything here is **isolated**: this dir has its own venv, README, and `.gitignore`. It only
 *reads/imports* `python/mtgenv_gym/` and `crates/` — it never modifies them.
 
-> Status: **M0 ✅ · M1 ✅ · M2 ✅ · M3 negative · DEBUG AUDIT (2026-07-04) ✅ — mechanism found.**
-> The plumbing is CLEAN; the collapse is a real *policy-collapse-to-a-low-index attractor* under
-> sparse reward + a sharp collection temperature, NOT a reward/perspective bug. See the audit
-> section immediately below; the old M3 write-up (kept further down) misattributed the cause.
+> Status: **M0–M2 ✅ · M3 negative · DEBUG AUDIT (2026-07-04) ✅ — root-caused AND FIXED.**
+> Plumbing is CLEAN. The collapse is a *flat value net* (`td_steps=5` too short for 30–60-sub-decision
+> episodes ⇒ terminal ±1 never reaches early decisions), NOT a reward/perspective bug. **The heralds
+> falsifier now SUCCEEDS** with the combined recipe **`--shaping 0.5 --td 40 --up 20`**: collection
+> win-rate escapes the −1.0 collapse and climbs to a stable **~0.45 reward_mean (~72% win), peaking 0.9**
+> (vs every other config pinned at −1.0). TB `3.2-muzero-heralds-combined-long`. See the audit sections
+> below; the old M3 write-up (kept at the bottom) misattributed the cause.
 
 ## DEBUG AUDIT (2026-07-04) — plumbing is clean; the collapse is an exploration failure
 
@@ -76,7 +79,18 @@ none alone fixes it** at short budget: shaping (coef 0.5, anti-mulligan; note 3.
 **Standard metrics ported** (`muzero_metrics.py`): greedy `selfplay/winrate_vs_random` (≥100 games, PPO's exact
 tag) + `stats/productive_rate` (mirroring `tracked_stats.py`), written into the run's TB dir so they overlay PPO.
 Runs on the versioned board: `3.2-muzero-heralds-shaped` (stochastic+shaping — collapsed), `…-plain-shaped`
-(plain+shaping — collapsed over budget), `…-combined` (shaping+td40+up20 — the best-shot fix; verdict pending).
+(plain+shaping — collapsed over budget), `…-combined-long` (**shaping 0.5 + td 40 + up 20 — WORKS**).
+
+**VERDICT — falsifier SUCCEEDS, diagnosis confirmed.** The combined-recipe heralds run escapes the −1.0
+collapse and climbs to a stable **reward_mean ≈ 0.45 (~72% sampled win), peaking 0.9** — every single-lever
+config stayed pinned at −1.0. So MuZero *can* learn this env once the value net gets a signal it can fit
+(longer `td_steps` for credit reach, shaping for an anti-mulligan dense term, lower `update_per_collect` to
+stop over-training the tiny early buffer). This is exactly the "fair MuZero attempt" the M3 note said was
+needed. **Metric caveat:** greedy `winrate_vs_random` UNDER-reads MuZero (argmax hits the low-index PASS
+tie-break: a ~72%-sampled ckpt reads ~0.06 greedy) — compare via collection reward_mean or a temperature>0
+eval, not greedy, when putting MuZero next to PPO's greedy 0.97.
+
+**Next (proposed, not launched): shaped-swine re-run** with the SAME recipe (coef **0.5** not 3.1's 0.1, `td_steps≈40`, `up≈20`).
 
 ## M3 result — Stochastic MuZero fails the swine cold-start (two configs)
 
