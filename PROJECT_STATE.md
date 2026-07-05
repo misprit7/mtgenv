@@ -69,17 +69,19 @@ MTGA client.
 - **✅ MOBILE WEB CLIENT (2026-07-03).** Game client + lobby fully playable from a phone: mobile
   reflow (sticky prompt sheet, opp-top/you-bottom strips, log toggle), touch previews long-press-only
   (hover gated to real mice), on-screen pass-turn button. Desktop unchanged.
-- **▶ SOS FULL-SET scope: 233/271 authored (86%), 759 mtg-core tests green (2026-07-05, sos-cards-16).** **THE COPY-SPELL /
-  CASCADE / AFFINITY CAPS + 4 OF THE 5 COLLEGE ELDER DRAGONS DONE.** 5 reusable caps: **`Effect::CopySpellOnStack`** (thin
+- **▶ SOS FULL-SET scope: 234/271 authored (86%), 764 mtg-core tests green (2026-07-05, sos-cards-16).** **ALL 5 COLLEGE ELDER
+  DRAGONS DONE + 6 REUSABLE CAPS.** 6 caps: **`Effect::CopySpellOnStack`** (thin
   loop over the built `copy_spell_on_stack`, 707.10 — storm/casualty/infusion) + **wired `CostComponent::PayLife` into
   `pay_cost`** (Ward—Pay-life, was a dead no-op); **`Ability::GrantCostReduction`** (a CR 118 cost-mod static a permanent
   grants to your spells matching a filter — `effective_cast_cost` now gathers cross-permanent reductions); **`EventPattern::
   SelfCast`** ("when you cast THIS spell", scans the spell's own abilities via `queue_self_cast_triggers`); **`Effect::Cascade`**
-  (702.83 — exile-until-nonland-cheaper + may-free-cast + `state.rng` random-bottom). Dragons: **Prismari** (Storm), **Silverquill**
-  (Casualty 1), **Witherbloom** (Affinity — own + granted-to-I/S), **Quandrix** (Cascade — own SelfCast + granted-to-I/S). Plus
-  **Lumaret's Favor** (Infusion copy-self) + **Social Snub** (copy-self edict) — both SelfCast+CopySpellOnStack consumers.
-  **Only Lorehold (Miracle) remains** — a real subsystem; design sketch (A stack-trigger reveal window / B immediate-at-draw)
-  with the lead, awaiting the A/B call. Still unblocked: target-spell copy consumers (Choreographed Sparks). 0 Native hatches.
+  (702.83 — exile-until-nonland-cheaper + may-free-cast + `state.rng` random-bottom); **the MIRACLE subsystem** (702.94,
+  lead-approved plan A — `Ability::Miracle`/`GrantMiracle` + `miracle_cost` two-origin check + first-draw capture in `draw()` +
+  `StackObjectKind::MiracleWindow` + `CastVariant::Miracle`). Dragons: **Prismari** (Storm), **Silverquill** (Casualty),
+  **Witherbloom** (Affinity), **Quandrix** (Cascade), **Lorehold** (Miracle — grants miracle {2} to your I/S + opp-upkeep loot).
+  Plus **Lumaret's Favor** + **Social Snub** (SelfCast+CopySpellOnStack consumers). Still unblocked for the next agent:
+  target-spell copy consumers (Choreographed Sparks); medium caps (Increment, Ennis exile-tracker, NoMaxHandSize, Moseo,
+  LKI-counter). 0 Native hatches.
 - **▶ SOS (prior — sos-cards-15): 227/271 authored (84%), 732 mtg-core tests green.** **THE SPELL-LEVEL
   ADDITIONAL-CAST-COST cap (CR 601.2b/f) + all 4 cards DONE.** `AdditionalCost`/`Ability::AdditionalCost` marker (offer-gated
   payability + option choice + mana fold + `pay_additional_nonmana`; `ManaCost::plus`); **`CostComponent::PayLife` wired** +

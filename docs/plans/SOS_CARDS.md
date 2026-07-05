@@ -6,8 +6,8 @@ per-card triage, modeled on `SELESNYA_LANDFALL_CARDS.md`.
 
 ## ▶ NEXT AGENT — start here (handoff from sos-cards-16, 2026-07-05)
 
-**▶▶ sos-cards-16 SHIPPED — 4 of the 5 college Elder Dragons + Lumaret's Favor + Social Snub + 5 reusable caps. 759 mtg-core
-green, whole workspace builds, tree clean, LEAD pushes.** Census **227→233/271 (86%)**, 0 Native hatches. Six own-commits
+**▶▶ sos-cards-16 SHIPPED — ALL 5 college Elder Dragons + Lumaret's Favor + Social Snub + 6 reusable caps. 764 mtg-core
+green, whole workspace builds, tree clean, LEAD pushes.** Census **227→234/271 (86%)**, 0 Native hatches. Seven own-commits
 (`git log -S` before re-scoping):
 - **`4dd31ef` — `Effect::CopySpellOnStack{what,count,choose_new_targets}`** (a thin loop over the built `copy_spell_on_stack`,
   707.10, priority.rs:3990) **+ Prismari, the Inspiration (Storm)** + **wired `CostComponent::PayLife` into `pay_cost`**
@@ -34,15 +34,19 @@ green, whole workspace builds, tree clean, LEAD pushes.** Census **227→233/271
 - **`aad6478` — Social Snub (copy-self edict)** — `Triggered{SelfCast, if CountAtLeast(creatures you control,1),
   Optional{CopySpellOnStack{Triggering,1}}}` + edict/drain main effect (each player sacs a creature · `LoseLife{EachOpponent,1}`
   · `GainLife{Controller,1}`). Copy doubles the edict+drain (tested); the copy has no targets so `choose_new_targets:false`.
+- **`d874ae2` — Lorehold, the Historian (Miracle) + THE MIRACLE SUBSYSTEM (CR 702.94, lead-approved plan A). ALL 5 DRAGONS DONE.**
+  `Ability::Miracle{cost}` (printed) + `Ability::GrantMiracle{cost,filter}` (granted — mirrors `GrantCostReduction`);
+  `miracle_cost(card,caster)` = the two-origin check (printed OR a granting permanent you control); **`draw()` captures the turn's
+  FIRST card** (0→1 transition, 702.94e — only the first card of the first draw event) and queues a new
+  **`StackObjectKind::MiracleWindow`** DIRECTLY (no new GameEvent — implementer's choice; priority still respected via the agenda);
+  on resolution the controller may cast for the miracle cost via new **`CastVariant::Miracle`** (fixed alt-cost, mirrors Warp — see
+  the cost match in `cast_spell`). Lorehold = 5/5 flying-haste + `GrantMiracle{ {2}, I/S }` + opp-upkeep loot
+  (`Triggered{BeginningOfStep(Upkeep), Some(Not(YourTurn)), Optional{IfYouDo{Discard 1, Draw 1}}}`). Tests incl. the required
+  702.94e case (2nd card of the same draw does NOT qualify) + non-first-draw + decline. NB: a looted draw can itself be your first
+  draw of that turn and open a miracle window — the subsystem composes.
 
-### ▶ Where sos-cards-16 points you (the tail after 4 dragons + 5 caps)
-- **Lorehold, the Historian (Miracle) — the ONLY remaining Elder Dragon; a REAL subsystem.** Design sketch is WITH THE LEAD
-  (decision A: stack-trigger reveal window at first-draw / decision B: immediate-at-draw shortcut). **Do NOT build until the
-  lead picks A/B.** Clause 1 (opp-upkeep loot) composes now: `Triggered{ BeginningOfStep(Upkeep), condition: Some(Not(YourTurn)),
-  Optional{IfYouDo{Discard 1, Draw 1}} }`. Clause 2 (Miracle {2} granted to your I/S in hand) = the subsystem — sketch pieces:
-  first-draw capture in `draw()` (priority.rs:3490, cards_drawn_this_turn 0→1); a miracle-source check (printed `Ability::Miracle`
-  OR a `GrantMiracle{cost,filter}` static, mirroring GrantCostReduction/GrantAbility); a cast window (a `MiracleWindow`
-  StackObjectKind or immediate offer); a `CastVariant::Miracle(cost)` alt-cost cast (reuse warp/flashback fixed-alt plumbing).
+### ▶ Where sos-cards-16 points you (the tail after ALL 5 dragons + 6 caps)
+- ~~**Lorehold (Miracle)**~~ ✅ **DONE (`d874ae2`).** All 5 college Elder Dragons shipped.
 - **Newly UNBLOCKED, compose-now (no new cap):**
   - ~~**Social Snub**~~ ✅ **DONE (`aad6478`).**
   - **Choreographed Sparks / other target-spell copies** — via CopySpellOnStack's `what: Target(...)` arm (needs the card to
@@ -56,10 +60,10 @@ green, whole workspace builds, tree clean, LEAD pushes.** Census **227→233/271
 - **Still design-deferred (need lead sketches):** 3 Natives, Fractalize, the special one-offs (Grandeur / theft-cast / name-choice
   / free-cast / grant-mana / non-DFC prepare markers). See census buckets.
 
-*(sos-cards-16 winding down at a clean boundary — 4 Elder Dragons + Lumaret's Favor + Social Snub + 5 reusable caps, trackers
-current at 233/271, 759 green, tree clean. The Elder-Dragon assessment below is now mostly EXECUTED — 4/5 done; only
-Lorehold/Miracle open, pending the lead's A/B on the sketch. `git log -S` + read the code before believing any claim — header
-PROCESS RULES apply.)*
+*(sos-cards-16 done at a clean boundary — ALL 5 Elder Dragons + Lumaret's Favor + Social Snub + 6 reusable caps, trackers
+current at 234/271, 764 green, whole workspace builds, tree clean. The Elder-Dragon assessment below is now FULLY EXECUTED —
+5/5 done. Next agent: the copy/target consumers + the medium caps in the tail above. `git log -S` + read the code before
+believing any claim — header PROCESS RULES apply.)*
 
 ## ▶ Prior — handoff from sos-cards-15, 2026-07-05
 

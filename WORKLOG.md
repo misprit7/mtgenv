@@ -24,9 +24,16 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
   `GainedLifeThisTurn` condition. Gained-life → +4/+8 (copied); no-life → +2/+4.
 - **`aad6478` — Social Snub (copy-self edict)** — `Triggered{SelfCast, if CountAtLeast(creatures you control,1),
   Optional{CopySpellOnStack{Triggering,1}}}` + edict/drain (each player sacs a creature, drain 1). Copy doubles it. Census **233/271**.
-- **Elder Dragons: 4/5 DONE.** Only **Lorehold (Miracle)** remains — a real subsystem; design sketch sent to the lead (A: stack-
-  trigger reveal window / B: immediate-at-draw shortcut), awaiting the A/B call before building. Also newly unblocked:
-  **Social Snub** (SelfCast + Optional-copy) and target-spell copy consumers (Choreographed Sparks via CopySpellOnStack's Target arm).
+- **`d874ae2` — Lorehold, the Historian (Miracle) + THE MIRACLE SUBSYSTEM (CR 702.94, lead-approved plan A). ALL 5 ELDER DRAGONS
+  DONE.** `Ability::Miracle{cost}` (printed) + `Ability::GrantMiracle{cost,filter}` (granted, mirrors GrantCostReduction);
+  `miracle_cost(card,caster)` two-origin check; **`draw()` captures the turn's FIRST card** (0→1 transition, 702.94e) and queues a
+  new **`StackObjectKind::MiracleWindow`** (priority respected via the agenda — queued directly from draw(), no new GameEvent);
+  on resolution the controller may cast for the miracle cost via new **`CastVariant::Miracle`** (fixed alt-cost, mirrors Warp).
+  Lorehold = 5/5 flying-haste + grants miracle {2} to your I/S + opp-upkeep loot (`Optional{IfYouDo{Discard,Draw}}`, gated
+  `Not(YourTurn)`). Tests incl. the required 702.94e case (2nd card of the same draw does NOT qualify). Census **234/271 (86%)**.
+- **Session total: 7 cards (all 5 college Elder Dragons + Lumaret's Favor + Social Snub) + 6 reusable caps, 732→764 green.** Still
+  unblocked for the next agent: target-spell copy consumers (Choreographed Sparks via CopySpellOnStack's Target arm); the medium
+  caps (Increment, Ennis exile-tracker, NoMaxHandSize, Moseo, LKI-counter).
 
 ## 2026-07-05 (SOS relay sos-cards-15 — the SPELL-LEVEL ADDITIONAL-CAST-COST cap + 4 cards)
 
