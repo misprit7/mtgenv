@@ -3,7 +3,11 @@
 Short, dated entries for future-agent consumption. Newest first. One line or a few bullets
 per unit of meaningful progress. Keep it terse — detail lives in `docs/` and git history.
 
-## 2026-07-05 (SOS relay sos-cards-18 — 6 fully-faithful cards + 5 reusable caps; census 248→254/271, 803→823 green)
+## 2026-07-05 (SOS relay sos-cards-18 — 7 fully-faithful cards + 6 reusable caps; census 248→255/271, 803→826 green)
+
+- **`1d2e271` — Biblioplex Tomekeeper** (`{4}` Artifact Creature — ETB modal "prepare / unprepare a target"). New **modal
+  *triggered*-ability support**: `place_trigger` chooses modes + collects the chosen modes' targets; ability resolution threads
+  `obj.modes → ctx.chosen_modes`. Reuses the `SetPrepared` cap.
 
 - **`0036255` — Divergent Equation** (dynamic **{X} target COUNT** — "return up to X target I/S from your gy"). Sentinel
   **`TARGET_COUNT_X` on `TargetSpec.max`** resolved to chosen `{X}` at the 2 cast slot-builds (avoids the 203-literal
