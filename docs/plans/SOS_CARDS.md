@@ -4,12 +4,68 @@ Standing workstream: implement the Secrets of Strixhaven set for **limited (40-c
 `mtg-core`, easiest-first, correctness over count. This ledger is the capability index + full
 per-card triage, modeled on `SELESNYA_LANDFALL_CARDS.md`.
 
-## ▶ NEXT AGENT — start here (handoff from sos-cards-11, 2026-07-04)
+## ▶ NEXT AGENT — start here (handoff from sos-cards-13, 2026-07-05)
 
-**▶▶ sos-cards-11 HANDOFF — READ FIRST. SCOPE = FULL SET; bar = general CR capability ("nicest way that
-extends for any future card").** 168→172 authored, **630 mtg-core tests green, tree clean, LEAD pushes** (6
-commits: a1dbc3e, 5e1754a, b3efee6, 99fc712, 526b372, 3779976). sos-cards-11 built **the long-deferred
-SPELL-COPY subsystem** and its consumers.
+**▶▶ sos-cards-13 HANDOFF — READ FIRST. SCOPE = FULL SET; bar = general CR capability ("nicest way that
+extends for any future card").** ~205 authored, **683 mtg-core tests green, whole workspace builds, tree clean,
+LEAD pushes** (6 commits since last push: d6349eb, dedb749, a30b648, ccebbc9, 19e2f5e, 6c3508f — plus tracker
+commit 4eac66c). sos-cards-13 shipped **the StackObject cluster + 4 of the 9 prepare stragglers = 6 cards + 6
+reusable subsystems.**
+
+### ✅ SHIPPED by sos-cards-13 (all real-path tested; `git log -S` before re-scoping — beliefs drift)
+- **StackObject counterspell real-cast targeting** — the "counterspells never work through the real cast path"
+  gap's REAL root cause was `collect_specs_into` never matching `Effect::Counter`/`CounterUnlessPay` (spec silently
+  dropped → no target → nothing countered). Fixed + `target_candidates` StackObject arm (spells only, excludes the
+  caster's own spell-in-progress) + `target_matches_filter` `Target::Stack`→spell-card resolution. → **Brush Off**.
+- **CR 707.10 copy-a-spell-ON-the-stack** (the copy that is NOT cast, distinct from 707.12 `CastCopy`):
+  `copy_spell_on_stack(spell, by, choose_new_targets)` mints an `is_copy` copy over the original (carries its
+  targets/X/modes, optional `rechoose_copy_targets`, NO SpellCast). Delivered via a one-shot delayed trigger:
+  `Effect::CopyNextSpellCast` → `DelayedTriggerEvent::YouCastSpell{filter, choose_new_targets}` (expires unfired at
+  next turn's start, fired from the SpellCast broadcast) → `StackObjectKind::SpellCopyTrigger`. → **Pigment Wrangler
+  // Striking Palette**. **Reusable for Lumaret's Favor / Twincast-class** (add a thin `Effect::CopySpellOnStack{what}`
+  delegating to `copy_spell_on_stack`).
+- **`Effect::ExileTopUntilManaValueMayCastFree`** (exile-top-until-total-MV, then may-cast-any-number-free during
+  resolution, CR 601.3e) → **Improvisation Capstone** (⇒ **Paradigm 5/5 Lessons**).
+- **`Effect::Blink`** (CR 603.6e exile-then-return; ETB re-fires, counters/damage/summoning-sickness reset via
+  `move_object`) → **Skycoach Conductor // All Aboard**.
+- **The gain-before-exile stat trick** (NO LKI plumbing): for "remove X, then Y = X's OWN stat", sequence the
+  value-reading effect BEFORE the removal so the stat reads live (`Sequence[GainLife{ControllerOfTarget(0),
+  PowerOfTarget(0)}, Exile{target}]`). → **Emeritus of Truce // Swords to Plowshares** (front = target-player Inkling
+  + conditional prepare). ⚠️ The genuine LKI-into-ValueExpr cap is only needed where the value depends on the removal
+  having happened (no current card).
+- **`Effect::MillThenPutCreatureOntoBattlefield`** (mill from your OWN library, reanimate a creature from among the
+  milled set; owner==controller so no control override) → **Vastlands Scavenger // Bind to Life**.
+
+### ▶ REMAINING for sos-cards-14: 5 prepare stragglers (each 1 distinct cap; back ids continue from 9731) + the StackObject cluster's honest deferrals
+Precise per-card blockers are in the **"REMAINING PREPARE"** list below (now down to 5). By yield:
+1. **Grave Researcher // Reanimate** — front is BUILDABLE NOW (`Sequence[Surveil 1, Conditional{Count{gy creatures≥3}
+   → BecomePrepared}]`, upkeep trigger). Back needs (a) a `ValueExpr::ManaValueOfTarget(n)` (lose life = the card's
+   MV — a copiable value, readable anytime, NO LKI), and (b) **reanimate-controller-override** — "put target creature
+   from A graveyard onto the battlefield UNDER YOUR CONTROL". ⚠️ For your-OWN-graveyard (the common case, owner==you)
+   plain `Effect::MoveZone{→Battlefield}` already works; only cross-graveyard steal needs a controller override →
+   **verify the engine's control-vs-ownership model first** (does the battlefield vec key on owner or controller? how
+   does "creatures you control" count it? return-to-owner on death?) before adding a `controller: Option<PlayerRef>`
+   to MoveZone or a dedicated `Effect::ReanimateUnderControl`. Design-sketch to the lead.
+2. **Goblin Glasswright // Craft with Pride** — back "Create a Treasure token": needs a **Treasure token def whose
+   ability is a sacrifice-cost mana ability** ("{T}, Sacrifice: Add one mana of any color"). ⚠️ The mana payment path
+   only taps (no sac-for-mana) — flagged since sos-cards-7. This touches mana AFFORDABILITY during casting (available
+   mana is no longer just untapped lands) → mind the no-rewind invariant; design-sketch first.
+3. **Harmonized Trio // Brainstorm** — front cost "{T}, Tap two untapped creatures you control" (a convoke-like
+   tap-N-OTHERS cost, unbuilt) + back Brainstorm "draw 3, put 2 back on top in any order" (a library-top-order
+   primitive).
+4. **Leech Collector // Bloodletting** — front "gain life for the FIRST time each turn → prepared": needs a
+   `Player.life_gain_events_this_turn` counter + **queue-time condition-checking in `queue_self_triggers`** (mirroring
+   `queue_begin_of_step_triggers`) so a `GainLife` trigger gates on "events==1" AT event time (an intervening-if
+   resolution check fails when two gains batch first). ⚠️ The queue-time change touches ALL self-triggers → **own
+   commit + regression across every self-trigger card**. Back = each opponent loses 2 (`LoseLife` EachOpponent, built).
+5. **Jadzi, Steward of Fate // Oracle's Gift** — back `{X}{X}` create X Fractals then X counters on each Fractal you
+   control: dynamic-X token count + a for-each-Fractal counter pass. **Heaviest back.**
+
+---
+
+### ✅ Prior — sos-cards-11 SHIPPED (superseded header; detail retained below)
+
+**sos-cards-11** built **the long-deferred SPELL-COPY subsystem** and its consumers (630 green then).
 
 ### ✅ SHIPPED (all real-path tested; `git log -S` before re-scoping — beliefs drift)
 - **SPELL-COPY (CR 707.10/12) — the reusable foundation.** `CastVariant::WithoutPayingManaCost`→{0}

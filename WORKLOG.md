@@ -23,8 +23,18 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
   `Effect::ExileTopUntilManaValueMayCastFree`: exile from the top until total MV ≥ threshold, then loop offering to
   cast any number of the exiled NONLAND cards for free during resolution (CR 601.3e; uncast cards + lands stay
   exiled). + Paradigm.
-- Net: 3 cards + 2 reusable subsystems (StackObject counterspell targeting, 707.10 copy-on-stack) + the
-  exile-free-cast leaf. 199→~202 authored, 662→674 mtg-core green, whole workspace builds, tree clean (lead pushes).
+- **Then 3 more prepare stragglers (by yield), each a clean reusable cap** (commits ccebbc9, 19e2f5e, 6c3508f;
+  →683 green): **Skycoach Conductor // All Aboard** (`Effect::Blink` — CR 603.6e exile-then-return: ETB re-fires,
+  counters/damage/summoning-sickness reset via `move_object`); **Emeritus of Truce // Swords to Plowshares** (front
+  target-player-Inkling + conditional prepare; back "exile + controller gains life = power" — sequenced GainLife-
+  BEFORE-Exile so power reads live, NO LKI plumbing: the general trick for "remove X, then Y = X's own stat");
+  **Vastlands Scavenger // Bind to Life** (`Effect::MillThenPutCreatureOntoBattlefield` — mill from your OWN library,
+  reanimate a creature from among them; owner==controller so no control override).
+- Net: **6 cards + 6 reusable subsystems** (StackObject counterspell targeting; 707.10 copy-on-stack + "you next
+  cast" delayed trigger; exile-top-until-MV free-cast; Blink; mill-then-reanimate; the gain-before-exile stat trick).
+  199→~205 authored, 662→**683 mtg-core green**, whole workspace builds, tree clean (lead pushes). **StackObject
+  cluster + 4 of the 9 prepare stragglers done; 5 stragglers remain (Leech Collector, Grave Researcher, Jadzi,
+  Goblin Glasswright, Harmonized Trio), each blocked on a distinct cap — see the SOS_CARDS.md NEXT-AGENT block.**
 
 ## 2026-07-05 (SOS relay sos-cards-12 — PREPARE DFCs: rails + 24 cards)
 
