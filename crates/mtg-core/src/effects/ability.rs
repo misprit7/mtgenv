@@ -133,6 +133,13 @@ pub enum EventPattern {
     /// "Repartee" cycle's "whenever you cast an instant or sorcery spell that targets a creature."
     /// Like [`SpellCast`], but only fires when one of the cast spell's chosen targets is a creature.
     SpellCastTargetingCreature(CardFilter),
+    /// "When you cast **this** spell" (CR 702.83 Cascade, Infusion copy-self) — fires once, from the
+    /// spell being cast, while it is on the stack. Unlike [`SpellCast`] (a watcher on a *battlefield*
+    /// permanent observing *other* casts), this ability lives on the spell itself and is found by
+    /// scanning the just-cast spell's OWN abilities (`queue_self_cast_triggers`). The trigger carries
+    /// the spell as both `source` and `ctx.triggering_spell`, so its effect can read the spell's own
+    /// mana value (Cascade's threshold) or copy the spell (Lumaret's Favor / Social Snub).
+    SelfCast,
     /// "Whenever one or more cards leave your graveyard" (SoS Lorehold): fires once per effect
     /// resolution in which the controller's graveyard shrank.
     CardsLeaveYourGraveyard,

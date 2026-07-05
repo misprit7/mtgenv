@@ -394,6 +394,68 @@ impl EngineCore {
                 }
                 true
             }
+            // Cascade (CR 702.83): exile from the top until a nonland card with MV < the cast spell's
+            // MV (the "cheaper" hit); you may cast that hit for free; the rest go to the bottom in a
+            // random order. Threshold = `ctx.triggering_spell`'s MV. Imperative + interactive, so it
+            // lives here. Flush staged actions first.
+            Effect::Cascade => {
+                self.flush_pending(wb);
+                let player = ctx.controller.unwrap_or(self.state.active_player);
+                // The cascading spell's mana value (the SelfCast spell, or the granted trigger's spell).
+                let threshold = ctx
+                    .triggering_spell
+                    .and_then(|s| self.state.objects.get(&s))
+                    .map(|o| o.chars.mana_value())
+                    .unwrap_or(0);
+                // Exile from the top one at a time until a nonland with MV < threshold (or empty).
+                let mut exiled: Vec<ObjId> = Vec::new();
+                let mut hit: Option<ObjId> = None;
+                let mut guard = 0;
+                while hit.is_none() {
+                    guard += 1;
+                    if guard > 1024 {
+                        break; // safety ceiling (a library can't exceed this)
+                    }
+                    let Some(&top) = self.state.player(player).library.last() else {
+                        break; // library empty — exile as many as you can (CR 702.83e)
+                    };
+                    let mv = self.state.object(top).chars.mana_value();
+                    let is_land = self.state.object(top).chars.is_land();
+                    self.state.move_object(top, Zone::Exile, player);
+                    self.broadcast(GameEvent::ObjectMoved { obj: top, to: Zone::Exile });
+                    exiled.push(top);
+                    if !is_land && mv < threshold {
+                        hit = Some(top);
+                    }
+                }
+                // "You may cast it without paying its mana cost" (CR 702.83e).
+                let mut cast: Option<ObjId> = None;
+                if let Some(h) = hit {
+                    let yes = matches!(
+                        self.ask(player, &DecisionRequest::Confirm { kind: ConfirmKind::MayEffect }),
+                        DecisionResponse::Bool(true)
+                    );
+                    if yes {
+                        self.cast_spell(player, h, CastVariant::WithoutPayingManaCost);
+                        cast = Some(h);
+                    }
+                }
+                // "Put the exiled cards on the bottom of your library in a random order" — everything
+                // exiled except the one cast (which is now on the stack). Bottom = front of the vec.
+                let mut rest: Vec<ObjId> =
+                    exiled.into_iter().filter(|o| Some(*o) != cast).collect();
+                self.state.rng.shuffle(&mut rest);
+                for &c in &rest {
+                    let owner = self.state.object(c).owner;
+                    self.state.move_object(c, Zone::Library, owner); // appends to the top …
+                }
+                let libv = &mut self.state.player_mut(player).library;
+                libv.retain(|o| !rest.contains(o)); // … so pull them back out …
+                for &c in rest.iter().rev() {
+                    libv.insert(0, c); // … and put them on the bottom (front).
+                }
+                true
+            }
             // "Mill `count`, then put a creature card from among them onto the battlefield" (Bind to
             // Life). Mill from `who`'s own library, capturing the milled cards, then (mandatory, if any
             // creature was milled) let them choose one to put onto the battlefield — theirs (owner ==
@@ -1794,6 +1856,7 @@ impl EngineCore {
             | Effect::ExileReturnNextEndStep { .. }
             | Effect::CopyNextSpellCast { .. }
             | Effect::CopySpellOnStack { .. }
+            | Effect::Cascade
             | Effect::MayTapOrUntap { .. }
             | Effect::PutOnTopOrBottom { .. }
             | Effect::PutFromHandOnTop { .. }

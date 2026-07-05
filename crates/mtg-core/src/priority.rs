@@ -3698,6 +3698,9 @@ impl Engine {
             // controls, recording the triggering spell so the ability can read its mana-spent.
             GameEvent::SpellCast { spell, controller } => {
                 self.queue_watching_spellcast_triggers(*spell, *controller);
+                // "When you cast THIS spell" (CR 702.83 Cascade / Infusion copy-self) — a trigger on
+                // the just-cast spell itself, found by scanning its own abilities.
+                self.queue_self_cast_triggers(*spell, *controller);
                 // Delayed "when you next cast a [filter] spell this turn, copy it" (CR 603.7 / 707.10,
                 // Striking Palette) — a one-shot delayed trigger fired by the cast, not a permanent.
                 self.fire_you_cast_spell_delayed_triggers(*spell, *controller);
@@ -4331,6 +4334,52 @@ impl Engine {
                     });
                     self.state.trigger_source_spell.insert(id, card);
                 }
+            }
+        }
+    }
+
+    /// Queue "when you cast THIS spell" triggers (CR 702.83 Cascade / Infusion copy-self) — abilities
+    /// on the just-cast spell ITSELF (`EventPattern::SelfCast`), found by scanning its own def rather
+    /// than the battlefield. Each queued trigger carries the spell as both `source` and
+    /// `trigger_source_spell` (so its effect reads the spell's own MV / copies the spell). Fired from
+    /// the `SpellCast` broadcast, alongside the watcher scan.
+    fn queue_self_cast_triggers(&mut self, spell: StackId, caster: PlayerId) {
+        let card = match self.state.stack.items.iter().find(|s| s.id == spell) {
+            Some(s) => match s.kind {
+                StackObjectKind::Spell(o) => o,
+                _ => return,
+            },
+            None => return,
+        };
+        // (index, condition, intervening_if) of this spell's own SelfCast triggers.
+        let candidates: Vec<(u32, Option<crate::effects::condition::Condition>, bool)> =
+            match self.state.def_of(card) {
+                Some(def) => def
+                    .abilities
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, a)| match a {
+                        Ability::Triggered {
+                            event: EventPattern::SelfCast, condition, intervening_if, ..
+                        } => Some((i as u32, condition.clone(), *intervening_if)),
+                        _ => None,
+                    })
+                    .collect(),
+                None => return,
+            };
+        for (index, condition, intervening_if) in candidates {
+            if self.trigger_queues(&condition, intervening_if, caster, Some(card)) {
+                let id = self.state.mint_stack();
+                self.state.pending_triggers.push(StackObject {
+                    id,
+                    controller: caster,
+                    source: Some(card),
+                    kind: StackObjectKind::Ability { index, source_grp: None },
+                    targets: Vec::new(),
+                    x: None,
+                    modes: Vec::new(),
+                });
+                self.state.trigger_source_spell.insert(id, card);
             }
         }
     }

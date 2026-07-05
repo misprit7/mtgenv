@@ -296,6 +296,17 @@ pub enum Effect {
         count: ValueExpr,
         choose_new_targets: bool,
     },
+    /// **Cascade** (CR 702.83) — "exile cards from the top of your library until you exile a nonland
+    /// card that costs less [than the cascading spell's mana value]. You may cast it without paying its
+    /// mana cost. Put the exiled cards on the bottom of your library in a random order." Fires as a
+    /// "when you cast this spell" trigger ([`crate::effects::ability::EventPattern::SelfCast`], the
+    /// cascade keyword) or as a granted cast-trigger (Quandrix's "instant and sorcery spells you cast
+    /// have cascade"). The **threshold** is the cast spell's mana value, read from `ctx.triggering_spell`
+    /// (`0` → no nonland ever "costs less", so nothing is cast). Imperative + interactive (exiles, asks
+    /// whether to free-cast, bottoms via `state.rng`), so it lives in `interpret`. Cousin of
+    /// [`ExileTopUntilManaValueMayCastFree`] (exile-until-total-MV) — here it's exile-until-one-cheaper
+    /// + random-bottom.
+    Cascade,
     /// "This creature becomes prepared" (SoS "Prepare" DFCs). Sets the `prepared` status on the
     /// ability's source (`ctx.source`) — every "becomes prepared" clause (enters-prepared,
     /// at-the-beginning-of-your-first-main, whenever-this-attacks, landfall, an activated ability, …)
