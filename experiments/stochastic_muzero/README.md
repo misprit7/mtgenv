@@ -7,13 +7,55 @@ has a known, stubborn failure (it chump-blocks the trampling 3/3 even at high li
 Everything here is **isolated**: this dir has its own venv, README, and `.gitignore`. It only
 *reads/imports* `python/mtgenv_gym/` and `crates/` — it never modifies them.
 
-> Status: **M0–M2 ✅ · M3 negative · DEBUG AUDIT (2026-07-04) ✅ — root-caused AND FIXED.**
-> Plumbing is CLEAN. The collapse is a *flat value net* (`td_steps=5` too short for 30–60-sub-decision
-> episodes ⇒ terminal ±1 never reaches early decisions), NOT a reward/perspective bug. **The heralds
-> falsifier now SUCCEEDS** with the combined recipe **`--shaping 0.5 --td 40 --up 20`**: collection
-> win-rate escapes the −1.0 collapse and climbs to a stable **~0.45 reward_mean (~72% win), peaking 0.9**
-> (vs every other config pinned at −1.0). TB `3.2-muzero-heralds-combined-long`. See the audit sections
-> below; the old M3 write-up (kept at the bottom) misattributed the cause.
+> Status: **M0–M2 ✅ · M3 negative · DEBUG AUDIT (2026-07-04) ✅ — root-caused; heralds FIXED, swine still negative.**
+> Plumbing is CLEAN (triple-audited). The collapse is a *flat value net* (`td_steps=5` too short for
+> 30–60-sub-decision episodes ⇒ terminal ±1 never reaches early decisions), NOT a reward/perspective bug.
+> **The heralds falsifier SUCCEEDS** with the recipe **`--shaping 0.5 --td 40 --up 20`** (climbs to ~0.72
+> sampled / peak 0.9, TB `3.2-muzero-heralds-combined-long`). **The swine re-run (3.3) with the SAME recipe
+> is lifted out of *total* collapse (0% → 12% greedy / 48% productive) but does NOT reach competent play**
+> (random 0.535, PPO 0.90) — swine's trample-blocking credit assignment is harder than heralds' "attack all."
+> Full arc + PPO comparison + observability in the two sections below; the old M3 write-up (bottom) misattributed the cause.
+
+## SWINE RE-RUN (3.3) + FINAL COMPARISON (2026-07-04) — recipe helps but does NOT solve swine
+
+Applied the heralds-winning recipe (plain MuZero, `--shaping 0.5 --td 40 --up 20`) to swine (TB
+`3.3-muzero-swine-combined`). Two incidents worth recording:
+- **A real LightZero bug:** swine crashed at ~34k with `IndexError` in `game_buffer_muzero.py:737` —
+  the `varied_action_space` policy-target scatter misaligns `action_mask` vs `child_visit` at a
+  **game-segment boundary**. Swine games run >200 sub-decisions and split at `game_segment_length=200`;
+  heralds games are <200 so never split (why heralds "just worked"). Fixed with `game_segment_length=800`.
+- **A stale wheel:** replay exports were full-frame (~20-70MB) until I rebuilt the `mtg_py` abi3 wheel
+  (the source's `replay_json→to_compact` fix, commit 440e43b, wasn't in the installed wheel). Post-rebuild
+  exports are **~0.3-0.5MB compact**.
+
+**Result — swine is lifted out of *total* collapse but does NOT reach competent play.** Greedy(fair) /
+sampled win-rate vs random, productive_rate, attack_rate at the best checkpoint:
+
+| run | greedy win | sampled win | productive | attack | vs |
+|---|---|---|---|---|---|
+| 3.0 pure (collapse) | 0.00 | ~0 | 0.10 | 0.00 | — |
+| 3.1 shaped@0.1 (collapse) | 0.00 | 0.30 | 0.19 | 0.10 | — |
+| **3.3 combined (best ckpt)** | **0.12** | 0.075 | **0.48** | **0.19** | recipe helps |
+| random baseline | 0.535 | 0.535 | — | — | |
+| PPO 2.9 | ~0.90 | ~0.90 | 1.0 | ~1.0 | |
+
+Collection reward_mean recovered −1.0 → oscillated ~−0.6, **peaked transiently at −0.25 (~37% sampled)**,
+then **re-collapsed to ~−0.82 by the end** — no stable competent checkpoint. So the recipe that makes
+MuZero learn trivial heralds is **necessary but not sufficient** for swine: swine's trample-blocking credit
+assignment is materially harder than heralds' "attack all," and 150k steps isn't enough.
+
+**Combat-judgment (the original question) — inconclusive, mirrors the old M4.** ckpt_best over 150 greedy
+self-mirror games reaches only **24 DeclareBlockers decisions** (n=4 with a Swine attacking at life≥15):
+block_rate ~0 everywhere. That is NOT "good judgment" (take-the-3 reasoning) — it's a **passive policy that
+barely engages combat**. Contrast is the honest headline: **PPO over-blocks (chump-blocks 94-97%); MuZero
+under-plays (blocks ~0%, wins 12%)** — neither demonstrates competent trample judgment. The question can't
+be answered until a MuZero policy actually plays swine competently, which this budget/recipe doesn't reach.
+
+**Observability shipped** (`muzero_observability.py`): all 4 canonical runs carry PPO-parity tags
+(`selfplay/winrate_vs_random`(+`_sampled`), `stats/productive_rate`, `stats/attack_rate`) at env-step;
+fair-greedy breaks ties by the policy prior (raw argmax hits the low-index PASS/mulligan artifact);
+one **compact** replay per checkpoint in `data/replays` (aitrain naming). TB consolidated to 4 canonical
+runs with `run_notes/canonical`.
 
 ## DEBUG AUDIT (2026-07-04) — plumbing is clean; the collapse is an exploration failure
 
