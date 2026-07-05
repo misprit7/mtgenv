@@ -158,6 +158,11 @@ fn eval_value(
             let p = resolve_player(state, *who, source_controller);
             state.players.get(p.0 as usize).map(|pl| pl.hand.len() as i64).unwrap_or(0)
         }
+        // Spells `who` cast this turn (Emeritus of Conflict's "your third spell each turn").
+        ValueExpr::SpellsCastThisTurn { who } => {
+            let p = resolve_player(state, *who, source_controller);
+            state.players.get(p.0 as usize).map(|pl| pl.spells_cast_this_turn as i64).unwrap_or(0)
+        }
         // Counters on the source object — for an intervening-"if" like "if it has four or more
         // quest counters on it" (Earthbender Ascension).
         ValueExpr::CountersOnSelf(kind) => source

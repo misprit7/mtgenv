@@ -2297,6 +2297,11 @@ impl EngineCore {
                 let p = self.eval_player(*who, ctx);
                 self.state.players.get(p.0 as usize).map(|pl| pl.hand.len() as i64).unwrap_or(0)
             }
+            // Spells `who` cast this turn — Emeritus of Conflict's "your third spell" gate.
+            ValueExpr::SpellsCastThisTurn { who } => {
+                let p = self.eval_player(*who, ctx);
+                self.state.players.get(p.0 as usize).map(|pl| pl.spells_cast_this_turn as i64).unwrap_or(0)
+            }
             // The {X} chosen for the triggering spell of a cast-with-{X} trigger — Geometer's Arthropod.
             ValueExpr::XOfTriggeringSpell => ctx
                 .triggering_spell

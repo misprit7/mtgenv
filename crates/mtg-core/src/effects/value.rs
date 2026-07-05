@@ -130,6 +130,10 @@ pub enum ValueExpr {
     /// The number of cards in `who`'s hand (CR 402). For an "if an opponent has more cards in hand
     /// than you" gate (Joined Researchers): `ValueAtLeast(HandSize(Opponent), Sum(HandSize(Controller), 1))`.
     HandSize { who: PlayerRef },
+    /// The number of spells (any type) `who` has cast this turn — `Player.spells_cast_this_turn`. For a
+    /// "whenever you cast your third spell each turn" gate (Emeritus of Conflict): an *exactly-N* check
+    /// via `All(ValueAtLeast(v, N), Not(ValueAtLeast(v, N+1)))`.
+    SpellsCastThisTurn { who: PlayerRef },
 }
 
 impl ValueExpr {

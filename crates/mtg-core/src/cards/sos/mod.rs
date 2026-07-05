@@ -3,6 +3,7 @@
 use crate::cards::CardDb;
 
 pub mod aberrant_manawurm;
+pub mod emeritus_of_conflict;
 pub mod joined_researchers;
 pub mod elite_interceptor;
 pub mod infirmary_healer;
@@ -193,6 +194,7 @@ pub mod zealous_lorecaster;
 
 pub fn register(db: &mut CardDb) {
     aberrant_manawurm::register(db);
+    emeritus_of_conflict::register(db);
     joined_researchers::register(db);
     elite_interceptor::register(db);
     infirmary_healer::register(db);

@@ -716,6 +716,7 @@ impl Engine {
             self.state.players[i].creatures_died_this_turn = 0;
             self.state.players[i].cards_drawn_this_turn = 0;
             self.state.players[i].instants_sorceries_cast_this_turn = 0;
+            self.state.players[i].spells_cast_this_turn = 0;
         }
         // Expire "this turn" floating replacements (CR 614 / 514 cleanup): a rider created on turn N
         // (until_turn = N) is gone once a later turn begins.
@@ -2268,6 +2269,9 @@ impl Engine {
         if is_is {
             self.state.player_mut(p).instants_sorceries_cast_this_turn += 1;
         }
+        // "your Nth spell each turn" (Emeritus of Conflict) — count every spell at cast, before the
+        // SpellCast broadcast so a watching trigger's intervening-if sees the updated count.
+        self.state.player_mut(p).spells_cast_this_turn += 1;
 
         // 601.2i: the spell has been cast.
         self.broadcast(GameEvent::SpellCast {

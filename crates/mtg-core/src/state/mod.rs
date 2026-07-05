@@ -252,6 +252,11 @@ pub struct Player {
     /// Trove) via `Condition::CastInstantOrSorceryThisTurn`.
     #[serde(default)]
     pub instants_sorceries_cast_this_turn: u32,
+    /// How many spells of **any** type this player has cast this turn — reset each turn, incremented in
+    /// `cast_spell`. Read by "whenever you cast your Nth spell each turn" (Emeritus of Conflict) via a
+    /// `ValueExpr::SpellsCastThisTurn` gate.
+    #[serde(default)]
+    pub spells_cast_this_turn: u32,
     pub hand_size_limit: usize,
     pub has_lost: bool,
     /// Set when a draw is attempted from an empty library; the SBA (CR 704.5b) reads it on
@@ -279,6 +284,7 @@ impl Player {
             creatures_died_this_turn: 0,
             cards_drawn_this_turn: 0,
             instants_sorceries_cast_this_turn: 0,
+            spells_cast_this_turn: 0,
             hand_size_limit: DEFAULT_HAND_SIZE,
             has_lost: false,
             drew_from_empty: false,
