@@ -788,18 +788,65 @@ impl EngineCore {
             // "You may pay `cost`. If you do, `then`." — the mana/cost analogue of `IfYouDo`. Ask the
             // resolving ability's controller (only if the cost is payable); on payment, run `then`.
             // Flush staged actions first so `then` sees committed state (mirrors CounterUnlessPay).
+            //
+            // {X} support (Tester of the Tangential's "you may pay {X}. When you do, move X counters …"):
+            // when the mana cost has `{X}`, announce X (bounded by affordable mana) INSTEAD of a yes/no
+            // confirm — X = 0 is the decline — then fold it into the concrete cost and thread it into
+            // `then` via `ctx.x` (so `ValueExpr::X` reads the paid amount). NB: a target inside `then` is
+            // collected as a normal ability target (see `collect_specs_into`), so it's chosen when the
+            // trigger goes on the stack — a beat before the pay decision — rather than reflexively (CR
+            // 603.7c). Acceptable for the pool; noted.
             Effect::MayPayCost { cost, then } => {
                 self.flush_pending(wb);
                 let payer = ctx.controller.unwrap_or(PlayerId(0));
                 let src = ctx.source.unwrap_or(ObjId(0));
-                let pay = self.can_pay_cost(payer, src, cost)
-                    && matches!(
-                        self.ask(payer, &DecisionRequest::Confirm { kind: ConfirmKind::MayEffect }),
-                        DecisionResponse::Bool(true),
-                    );
+                let x_pips = cost.mana.as_ref().map_or(0, |m| m.x);
+                let (concrete, chosen_x) = if x_pips > 0 {
+                    let m = cost.mana.as_ref().unwrap();
+                    let fixed = m.generic + m.colored.values().sum::<u32>();
+                    let max_x = crate::mana::available_mana(&self.state, payer).saturating_sub(fixed) / x_pips;
+                    let x = match self.ask(
+                        payer,
+                        &DecisionRequest::ChooseNumber {
+                            reason: crate::agent::NumberReason::ChooseX,
+                            min: 0,
+                            max: max_x as i64,
+                            step: 1,
+                            forbidden: Vec::new(),
+                            disallow_even: false,
+                            disallow_odd: false,
+                        },
+                    ) {
+                        DecisionResponse::Number(n) => n.clamp(0, max_x as i64) as u32,
+                        _ => 0,
+                    };
+                    // Fold the chosen X into the generic part of the mana cost (CR 601.2f-style).
+                    let mut cm = m.clone();
+                    cm.generic += x * cm.x;
+                    cm.x = 0;
+                    (crate::effects::ability::Cost { mana: Some(cm), components: cost.components.clone() }, x)
+                } else {
+                    (cost.clone(), 0)
+                };
+                // Pay decision: an {X} cost is "paid" iff X > 0 (X = 0 is the decline); a fixed cost asks
+                // a yes/no confirm. Either way the concrete cost must be payable.
+                let pay = if x_pips > 0 {
+                    chosen_x > 0 && self.can_pay_cost(payer, src, &concrete)
+                } else {
+                    self.can_pay_cost(payer, src, &concrete)
+                        && matches!(
+                            self.ask(payer, &DecisionRequest::Confirm { kind: ConfirmKind::MayEffect }),
+                            DecisionResponse::Bool(true),
+                        )
+                };
                 if pay {
-                    self.pay_cost(payer, src, cost);
-                    self.interpret(then, ctx, sid, wb, cursor)
+                    self.pay_cost(payer, src, &concrete);
+                    if x_pips > 0 {
+                        let then_ctx = ResolutionCtx { x: Some(chosen_x), ..ctx.clone() };
+                        self.interpret(then, &then_ctx, sid, wb, cursor)
+                    } else {
+                        self.interpret(then, ctx, sid, wb, cursor)
+                    }
                 } else {
                     false
                 }
@@ -1672,6 +1719,30 @@ impl EngineCore {
                 let n = self.eval_value(n, ctx) as i32;
                 if let Some(Target::Object(obj)) = self.resolve_target(what, ctx, cursor) {
                     wb.push(Action::AddCounters { obj, kind: kind.clone(), n });
+                }
+            }
+            // "Move `count` `kind` counters from `from` onto `to`" (CR 121.6). Cap at what's on `from`
+            // (move-more-than-exists → move all); remove n from `from`, add n to `to` — both in this one
+            // whiteboard step so nothing observes a half-moved state. Resolve `from` before `to` so the
+            // cursor advances in source order.
+            Effect::MoveCounters { from, to, kind, count } => {
+                let want = self.eval_value(count, ctx).max(0);
+                let from_obj = match self.resolve_target(from, ctx, cursor) {
+                    Some(Target::Object(o)) => Some(o),
+                    _ => None,
+                };
+                let to_obj = match self.resolve_target(to, ctx, cursor) {
+                    Some(Target::Object(o)) => Some(o),
+                    _ => None,
+                };
+                if let (Some(from_obj), Some(to_obj)) = (from_obj, to_obj) {
+                    let available =
+                        self.state.objects.get(&from_obj).map(|o| o.counters.get(kind) as i64).unwrap_or(0);
+                    let n = want.min(available) as i32;
+                    if n > 0 {
+                        wb.push(Action::AddCounters { obj: from_obj, kind: kind.clone(), n: -n });
+                        wb.push(Action::AddCounters { obj: to_obj, kind: kind.clone(), n });
+                    }
                 }
             }
             // C3: mill — put the top N cards of a library into its owner's graveyard (CR 701.13).

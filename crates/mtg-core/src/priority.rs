@@ -4834,6 +4834,20 @@ fn collect_specs_into(effect: &Effect, out: &mut Vec<TargetSpec>) {
         Effect::ReanimateUnderControl { what: EffectTarget::Target(spec) } => out.push(spec.clone()),
         // "Put a +1/+1 counter on target creature" / "target creature gains trample" — the targeted
         // reward effects (collected when walking a reflexive branch, not from a Conditional.then).
+        // MoveCounters declares its `from` and/or `to` as targets (usually `to` is "another target
+        // creature", `from` is SourceSelf) — collect whichever are `Target`, in from→to order.
+        Effect::MoveCounters { from, to, .. } => {
+            for t in [from, to] {
+                if let EffectTarget::Target(spec) = t {
+                    out.push(spec.clone());
+                }
+            }
+        }
+        // "You may pay …. When you do, [targeted `then`]" — the `then`'s targets are chosen when the
+        // ability goes on the stack (a beat before the pay decision, not reflexively — Tester of the
+        // Tangential). Walk `then` so they're collected. (No existing MayPayCost card has a targeted
+        // `then`, so this is inert for them.)
+        Effect::MayPayCost { then, .. } => collect_specs_into(then, out),
         Effect::PutCounters { what: EffectTarget::Target(spec), .. }
         | Effect::GrantKeyword { what: EffectTarget::Target(spec), .. }
         | Effect::GrantChosenKeyword { what: EffectTarget::Target(spec), .. }

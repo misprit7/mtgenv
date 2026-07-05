@@ -130,6 +130,17 @@ pub enum Effect {
         keyword: Keyword,
         duration: Duration,
     },
+    /// "Move `count` `kind` counters from `from` onto `to`" (CR 121.6) — Tester of the Tangential's
+    /// combat ability. Removes up to `count` counters of `kind` from `from` (capped at what's actually
+    /// there — instructed to move more than exists → move all, standard counter-movement) and adds
+    /// exactly that many to `to`. Lowers to a paired `AddCounters{-n}` / `AddCounters{+n}` committed in
+    /// one whiteboard step, so no trigger observes a half-moved state.
+    MoveCounters {
+        from: EffectTarget,
+        to: EffectTarget,
+        kind: CounterKind,
+        count: ValueExpr,
+    },
     /// "`what` gains your choice of [one of `options`] until [duration]" (CR 700-series modal-ish choice
     /// baked into a single non-modal effect) — Practiced Offense's "gains your choice of double strike or
     /// lifelink until end of turn." The controller picks one keyword from `options` at resolution; it
