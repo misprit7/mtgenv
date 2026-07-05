@@ -3233,7 +3233,9 @@ impl Engine {
                             x: obj.x,
                             target_controllers: self.snapshot_target_controllers(&obj.targets),
                             chosen_targets: obj.targets.clone(),
-                            chosen_modes: Vec::new(),
+                            // Modes chosen when a modal triggered/activated ability went on the stack
+                            // (CR 603.3d / 700.2) — Biblioplex Tomekeeper. Empty for non-modal abilities.
+                            chosen_modes: obj.modes.clone(),
                             // So a reflexive "when you do" branch can reference back into this ability.
                             ability_index: Some(index),
                             // A "whenever you cast …" trigger carries its triggering spell (Opus).
@@ -3523,7 +3525,33 @@ impl Engine {
             _ => None,
         };
         if let Some(effect) = effect {
-            let specs = collect_target_specs(&effect);
+            // Modal triggered ability (CR 603.3d / 700.2 — Biblioplex Tomekeeper's "choose up to one"):
+            // choose the modes as the trigger goes on the stack, then collect ONLY the chosen modes'
+            // targets (mirrors the modal-SPELL cast path). Non-modal effects choose no modes.
+            let chosen_modes = match &effect {
+                Effect::Modal { modes, min, max, allow_repeat } => {
+                    let ctx = ResolutionCtx {
+                        controller: Some(t.controller),
+                        source: t.source,
+                        ..Default::default()
+                    };
+                    self.choose_modes(&ctx, t.id, modes, *min, *max, *allow_repeat)
+                }
+                _ => Vec::new(),
+            };
+            let specs = match &effect {
+                Effect::Modal { modes, .. } => {
+                    let mut out = Vec::new();
+                    for &m in &chosen_modes {
+                        if let Some(mode) = modes.get(m as usize) {
+                            collect_specs_into(&mode.effect, &mut out);
+                        }
+                    }
+                    out
+                }
+                _ => collect_target_specs(&effect),
+            };
+            t.modes = chosen_modes;
             if !specs.is_empty() {
                 let slots: Vec<TargetSlot> = specs
                     .iter()

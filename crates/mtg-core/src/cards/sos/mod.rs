@@ -28,6 +28,7 @@ pub mod kirol_history_buff;
 pub mod sanar_unfinished_genius;
 pub mod spiritcall_enthusiast;
 pub mod tam_observant_sequencer;
+pub mod biblioplex_tomekeeper;
 pub mod blazing_firesinger;
 pub mod campus_composer;
 pub mod cheerful_osteomancer;
@@ -301,6 +302,7 @@ pub fn register(db: &mut CardDb) {
     slumbering_trudge::register(db);
     divergent_equation::register(db);
     skycoach_waypoint::register(db);
+    biblioplex_tomekeeper::register(db);
     cauldron_of_essence::register(db);
     charging_strifeknight::register(db);
     chase_inspiration::register(db);
