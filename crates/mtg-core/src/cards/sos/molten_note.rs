@@ -9,7 +9,6 @@
 
 use crate::basics::{CardType, Color, DamageKind, Zone};
 use crate::cards::{mana_cost, spell, CardDb};
-use crate::effects::ability::Ability;
 use crate::effects::target::{CardFilter, SelectSpec, TargetKind, TargetSpec};
 use crate::effects::value::{PlayerRef, ValueExpr};
 use crate::effects::{Effect, EffectTarget};
@@ -50,7 +49,7 @@ pub fn register(db: &mut CardDb) {
     let mut def = spell(MOLTEN_NOTE, "Molten Note", CardType::Sorcery, Color::Red, cost, effect)
         .with_text("Molten Note deals damage to target creature equal to the amount of mana spent to cast this spell. Untap all creatures you control.\nFlashback {6}{R}{W}");
     def.chars.colors = vec![Color::Red, Color::White];
-    def.abilities.push(Ability::Flashback { cost: mana_cost(6, &[(Color::Red, 1), (Color::White, 1)]) });
+    def.abilities.push(crate::cards::flashback(mana_cost(6, &[(Color::Red, 1), (Color::White, 1)])));
     db.insert(def);
 }
 

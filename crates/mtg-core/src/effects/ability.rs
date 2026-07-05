@@ -342,8 +342,10 @@ pub enum Ability {
     Warp { cost: ManaCost },
     /// Flashback (CR 702.34): "You may cast this card from your graveyard for its flashback `cost`.
     /// Then exile it." A static casting-permission ability — `legal_priority_actions` scans for it to
-    /// offer casting the card from the graveyard; the spell is exiled as it leaves the stack.
-    Flashback { cost: ManaCost },
+    /// offer casting the card from the graveyard; the spell is exiled as it leaves the stack. The
+    /// `cost` is a full [`Cost`] so a flashback cost can be non-mana (Group Project — "Flashback—Tap
+    /// three untapped creatures you control"), paid through the real cost machinery alongside any mana.
+    Flashback { cost: Cost },
     /// Paradigm (SoS Lessons): "Then exile this spell. After you first resolve a spell with this name,
     /// you may cast a copy of it from exile without paying its mana cost at the beginning of each of
     /// your first main phases." This marker carries only the **"then exile this spell"** half — a

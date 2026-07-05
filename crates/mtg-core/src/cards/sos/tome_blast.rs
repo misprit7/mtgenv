@@ -7,7 +7,6 @@
 
 use crate::basics::{CardType, Color, DamageKind};
 use crate::cards::{mana_cost, spell, CardDb};
-use crate::effects::ability::Ability;
 use crate::effects::target::{TargetKind, TargetSpec};
 use crate::effects::value::ValueExpr;
 use crate::effects::{Effect, EffectTarget};
@@ -28,7 +27,7 @@ pub fn register(db: &mut CardDb) {
     };
     let mut def = spell(TOME_BLAST, "Tome Blast", CardType::Sorcery, Color::Red, mana_cost(1, &[(Color::Red, 1)]), effect)
         .with_text("Tome Blast deals 2 damage to any target.\nFlashback {4}{R}");
-    def.abilities.push(Ability::Flashback { cost: mana_cost(4, &[(Color::Red, 1)]) });
+    def.abilities.push(crate::cards::flashback(mana_cost(4, &[(Color::Red, 1)])));
     db.insert(def);
 }
 

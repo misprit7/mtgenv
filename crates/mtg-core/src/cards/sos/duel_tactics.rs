@@ -7,7 +7,7 @@
 
 use crate::basics::{CardType, Color, DamageKind};
 use crate::cards::{mana_cost, spell, CardDb};
-use crate::effects::ability::{Ability, Qualification};
+use crate::effects::ability::Qualification;
 use crate::effects::condition::Duration;
 use crate::effects::target::{CardFilter, TargetKind, TargetSpec};
 use crate::effects::value::ValueExpr;
@@ -36,7 +36,7 @@ pub fn register(db: &mut CardDb) {
     ]);
     let mut def = spell(DUEL_TACTICS, "Duel Tactics", CardType::Sorcery, Color::Red, mana_cost(0, &[(Color::Red, 1)]), effect)
         .with_text("Duel Tactics deals 1 damage to target creature. It can't block this turn.\nFlashback {1}{R}");
-    def.abilities.push(Ability::Flashback { cost: mana_cost(1, &[(Color::Red, 1)]) });
+    def.abilities.push(crate::cards::flashback(mana_cost(1, &[(Color::Red, 1)])));
     db.insert(def);
 }
 

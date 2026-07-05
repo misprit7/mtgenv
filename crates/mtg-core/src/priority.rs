@@ -1138,7 +1138,13 @@ impl Engine {
             if let Some(fcost) = self.flashback_cost(card) {
                 // Flashback casts an instant/sorcery, so restricted (I/S-only) mana may pay it.
                 let is_is = chars.has_type(CardType::Instant) || chars.has_type(CardType::Sorcery);
-                if mana::can_pay_ex(s, p, &fcost, is_is) && self.card_castable_targets(card, p) {
+                // The flashback cost may be non-mana (Group Project: tap three creatures) — both the
+                // mana and the components must be payable.
+                let mana_ok = fcost.mana.as_ref().is_none_or(|m| mana::can_pay_ex(s, p, m, is_is));
+                if mana_ok
+                    && self.cost_components_payable(p, card, &fcost.components)
+                    && self.card_castable_targets(card, p)
+                {
                     actions.push(PlayableAction::Cast {
                         spell: card,
                         variant: CastVariant::Flashback,
@@ -1364,7 +1370,19 @@ impl Engine {
                 return false;
             }
         }
-        for c in &cost.components {
+        self.cost_components_payable(p, source, &cost.components)
+    }
+
+    /// Whether every non-mana component in `components` can be paid by `p` (with `source` as the
+    /// cost's source). Factored out of [`can_pay_cost`] so the flashback offer gate can reuse it
+    /// (a flashback cost may carry non-mana components — Group Project's "tap three creatures").
+    pub(crate) fn cost_components_payable(
+        &self,
+        p: PlayerId,
+        source: ObjId,
+        components: &[CostComponent],
+    ) -> bool {
+        for c in components {
             let ok = match c {
                 CostComponent::TapSelf => {
                     self.state.objects.get(&source).is_some_and(|o| !o.status.tapped)
@@ -2096,8 +2114,9 @@ impl Engine {
         })
     }
 
-    /// The flashback cost a card declares via `Ability::Flashback`, if any (CR 702.34).
-    fn flashback_cost(&self, card: ObjId) -> Option<ManaCost> {
+    /// The flashback cost a card declares via `Ability::Flashback`, if any (CR 702.34) — a full
+    /// [`Cost`] (mana + any non-mana components, e.g. Group Project's "tap three creatures").
+    fn flashback_cost(&self, card: ObjId) -> Option<Cost> {
         self.state.def_of(card).and_then(|d| {
             d.abilities.iter().find_map(|a| match a {
                 Ability::Flashback { cost } => Some(cost.clone()),
@@ -2277,9 +2296,16 @@ impl Engine {
     /// Affordability + target availability are pre-checked in `legal_priority_actions`, so no
     /// rewind (CR 732) is needed. The caller keeps priority with the caster (CR 601.2i).
     pub(crate) fn cast_spell(&mut self, p: PlayerId, card: ObjId, variant: CastVariant) {
+        // A flashback cost may carry non-mana components (Group Project: tap three creatures) — pay
+        // them alongside the mana below. Captured now; the `cost` match uses only the mana part.
+        let flashback_components: Vec<CostComponent> = if variant == CastVariant::Flashback {
+            self.flashback_cost(card).map(|c| c.components).unwrap_or_default()
+        } else {
+            Vec::new()
+        };
         let cost = match variant {
             CastVariant::Warp => self.warp_cost(card),
-            CastVariant::Flashback => self.flashback_cost(card),
+            CastVariant::Flashback => self.flashback_cost(card).map(|c| c.mana.unwrap_or_default()),
             // "Cast without paying its mana cost" (CR 601.2f / 707.12a): the total cost is {0}, and
             // any `{X}` in the printed cost is 0 (CR 107.3b — there's no other way to choose it).
             // Granted alternative-cast permissions use this (The Dawning Archaic's free gy-cast, a
@@ -2531,6 +2557,13 @@ impl Engine {
             for opt in &chosen_additional {
                 self.pay_additional_nonmana(p, card, opt, &ctx);
             }
+        }
+        // Pay a non-mana **flashback** cost's components (CR 702.34 — Group Project's "tap three
+        // creatures"). The mana part was already paid above via `pay`.
+        if !flashback_components.is_empty() {
+            let ctx = ResolutionCtx { controller: Some(p), source: Some(card), ..Default::default() };
+            let opt = Cost { mana: None, components: flashback_components.clone() };
+            self.pay_additional_nonmana(p, card, &opt, &ctx);
         }
         // Record the total mana spent (incl. {X} and additional mana) on the spell, for an enters-
         // with-counters-equal-to-mana-spent replacement to read when it resolves (CR 601.2f–h;

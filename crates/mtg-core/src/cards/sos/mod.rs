@@ -10,6 +10,7 @@ pub mod harmonized_trio;
 pub mod grave_researcher;
 pub mod leech_collector;
 pub mod goblin_glasswright;
+pub mod group_project;
 pub mod elite_interceptor;
 pub mod end_of_the_hunt;
 pub mod improvisation_capstone;
@@ -218,6 +219,7 @@ pub fn register(db: &mut CardDb) {
     grave_researcher::register(db);
     leech_collector::register(db);
     goblin_glasswright::register(db);
+    group_project::register(db);
     elite_interceptor::register(db);
     end_of_the_hunt::register(db);
     improvisation_capstone::register(db);

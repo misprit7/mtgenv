@@ -8,7 +8,7 @@
 
 use crate::basics::{CardType, Color, CounterKind};
 use crate::cards::{mana_cost, spell, CardDb};
-use crate::effects::ability::{Ability, Keyword};
+use crate::effects::ability::Keyword;
 use crate::effects::condition::Duration;
 use crate::effects::target::{CardFilter, TargetKind, TargetSpec};
 use crate::effects::value::{PlayerRef, ValueExpr};
@@ -45,13 +45,14 @@ pub fn register(db: &mut CardDb) {
     )
     .with_text("Put a +1/+1 counter on target creature you control. It gains vigilance until end of turn.\nFlashback {W}");
     // Flashback {W} — the same single white pip.
-    def.abilities.push(Ability::Flashback { cost: mana_cost(0, &[(Color::White, 1)]) });
+    def.abilities.push(crate::cards::flashback(mana_cost(0, &[(Color::White, 1)])));
     db.insert(def);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::effects::ability::Ability;
     use crate::agent::{Agent, CastVariant, DecisionRequest, DecisionResponse, PlayableAction, PlayerView};
     use crate::basics::{Phase, Zone};
     use crate::cards::{build_game, grp};

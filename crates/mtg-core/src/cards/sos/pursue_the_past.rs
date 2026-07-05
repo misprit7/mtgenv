@@ -7,7 +7,6 @@
 
 use crate::basics::{CardType, Color};
 use crate::cards::{mana_cost, spell, CardDb};
-use crate::effects::ability::Ability;
 use crate::effects::value::{PlayerRef, ValueExpr};
 use crate::effects::Effect;
 
@@ -28,7 +27,7 @@ pub fn register(db: &mut CardDb) {
     let mut def = spell(PURSUE_THE_PAST, "Pursue the Past", CardType::Sorcery, Color::Red, mana_cost(0, &[(Color::Red, 1), (Color::White, 1)]), effect)
         .with_text("You gain 2 life. You may discard a card. If you do, draw two cards.\nFlashback {2}{R}{W}");
     def.chars.colors = vec![Color::Red, Color::White];
-    def.abilities.push(Ability::Flashback { cost: mana_cost(2, &[(Color::Red, 1), (Color::White, 1)]) });
+    def.abilities.push(crate::cards::flashback(mana_cost(2, &[(Color::Red, 1), (Color::White, 1)])));
     db.insert(def);
 }
 

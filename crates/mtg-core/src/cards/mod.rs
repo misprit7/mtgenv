@@ -525,6 +525,13 @@ pub(crate) fn loyalty_ability(loyalty_cost: i32, effect: Effect) -> Ability {
     }
 }
 
+/// A mana-only **flashback** ability (CR 702.34) — `Ability::Flashback` with a mana cost and no
+/// non-mana components. (For a non-mana flashback cost — Group Project's "tap three creatures" —
+/// build `Ability::Flashback { cost }` directly with the full [`Cost`].)
+pub(crate) fn flashback(mana: ManaCost) -> Ability {
+    Ability::Flashback { cost: Cost { mana: Some(mana), components: Vec::new() } }
+}
+
 /// An Aura (CR 303): an Enchantment with the "Aura" subtype. The engine reads the subtype to
 /// require an enchant target at cast and to enter the battlefield attached (CR 303.4f / 608.3e).
 pub(crate) fn aura(grp_id: u32, name: &str, color: Color, cost: ManaCost, abilities: Vec<Ability>) -> CardDef {
@@ -753,7 +760,7 @@ mod tests {
     #[test]
     fn starter_db_has_expected_cards() {
         let db = starter_db();
-        assert_eq!(db.len(), 306);
+        assert_eq!(db.len(), 307);
         // Forest is "type line only": a Basic Land with subtype Forest. Mana is intrinsic
         // (CR 305.6) — the engine derives {T}: Add {G} from the subtype, so the CardDef carries
         // no explicit mana ability (and `is_mana_source` only sees authored abilities).

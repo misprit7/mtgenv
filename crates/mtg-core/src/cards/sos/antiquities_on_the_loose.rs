@@ -12,7 +12,6 @@
 use crate::basics::{CardType, Color, CounterKind, Zone};
 use crate::cards::helpers::spirit_token;
 use crate::cards::{mana_cost, spell, CardDb};
-use crate::effects::ability::Ability;
 use crate::effects::condition::Condition;
 use crate::effects::target::{CardFilter, SelectSpec};
 use crate::effects::value::{PlayerRef, ValueExpr};
@@ -62,13 +61,14 @@ pub fn register(db: &mut CardDb) {
         effect,
     )
     .with_text("Create two 2/2 red and white Spirit creature tokens. Then if this spell was cast from anywhere other than your hand, put a +1/+1 counter on each Spirit you control.\nFlashback {4}{W}{W}");
-    def.abilities.push(Ability::Flashback { cost: mana_cost(4, &[(Color::White, 2)]) });
+    def.abilities.push(crate::cards::flashback(mana_cost(4, &[(Color::White, 2)])));
     db.insert(def);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::effects::ability::Ability;
     use crate::agent::{Agent, DecisionRequest, DecisionResponse, PlayerView};
     use crate::basics::Zone;
     use crate::cards::{build_game, grp};
