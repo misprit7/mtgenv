@@ -341,6 +341,51 @@ impl EngineCore {
                 }
                 true
             }
+            // "Mill `count`, then put a creature card from among them onto the battlefield" (Bind to
+            // Life). Mill from `who`'s own library, capturing the milled cards, then (mandatory, if any
+            // creature was milled) let them choose one to put onto the battlefield — theirs (owner ==
+            // controller), so no control override. Imperative, so it lives here. Flush staged first.
+            Effect::MillThenPutCreatureOntoBattlefield { who, count } => {
+                self.flush_pending(wb);
+                let player = self.eval_player(*who, ctx);
+                let n = self.eval_value(count, ctx).max(0) as u32;
+                let mut milled: Vec<ObjId> = Vec::new();
+                for _ in 0..n {
+                    let Some(top) = self.state.player(player).library.last().copied() else {
+                        break;
+                    };
+                    if self.state.move_object(top, Zone::Graveyard, player) {
+                        self.broadcast(GameEvent::ObjectMoved { obj: top, to: Zone::Graveyard });
+                        milled.push(top);
+                    }
+                }
+                // "put a creature card from among them onto the battlefield" — the eligible set is the
+                // just-milled creature cards (read printed chars — they're in the graveyard now).
+                let creatures: Vec<ObjId> =
+                    milled.into_iter().filter(|&o| self.state.object(o).chars.is_creature()).collect();
+                if !creatures.is_empty() {
+                    let resp = self.ask(
+                        player,
+                        &DecisionRequest::SelectCards {
+                            reason: SelectReason::Generic,
+                            from: creatures.clone(),
+                            min: 1,
+                            max: 1,
+                            description: "put a creature card onto the battlefield".to_string(),
+                        },
+                    );
+                    let i = match resp {
+                        DecisionResponse::Indices(ix) => ix.into_iter().next().unwrap_or(0),
+                        _ => 0,
+                    };
+                    if let Some(&card) = creatures.get(i as usize) {
+                        if self.state.move_object(card, Zone::Battlefield, player) {
+                            self.broadcast(GameEvent::ObjectMoved { obj: card, to: Zone::Battlefield });
+                        }
+                    }
+                }
+                true
+            }
             // "Exile `what`, then return it to the battlefield under its owner's control" (CR 603.6e
             // blink — All Aboard). Exile it (LTB fires), then return it as a NEW object (ETB fires;
             // `move_object` resets status/counters/damage and re-applies summoning sickness). Imperative,
@@ -1551,6 +1596,7 @@ impl EngineCore {
             | Effect::CastCopy { .. }
             | Effect::CastForFree { .. }
             | Effect::ExileTopUntilManaValueMayCastFree { .. }
+            | Effect::MillThenPutCreatureOntoBattlefield { .. }
             | Effect::Blink { .. }
             | Effect::CopyNextSpellCast { .. }
             | Effect::MayTapOrUntap { .. }

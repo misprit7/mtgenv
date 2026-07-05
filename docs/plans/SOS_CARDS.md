@@ -73,7 +73,7 @@ SPELL-COPY subsystem** and its consumers.
   `intervening_if: false` the condition is silently IGNORED. (BeginningOfStep triggers may use `false` — checked
   at queue.) Emeritus of Conflict's gate was initially `false` → fixed to `true` + a real 3-cast integration test.
 
-- **▶ REMAINING PREPARE: 6 cards (was 9; #3 Emeritus of Truce + #6 Skycoach + #9 Pigment Wrangler DONE by sos-cards-13) — each blocked on a distinct BACK-FACE (or activation-cost) cap, NOT prepare.**
+- **▶ REMAINING PREPARE: 5 cards (was 9; #3 Emeritus of Truce, #5 Vastlands Scavenger, #6 Skycoach, #9 Pigment Wrangler DONE by sos-cards-13) — each blocked on a distinct BACK-FACE (or activation-cost) cap, NOT prepare.**
   The prepare front/trigger for every one is trivial (`Effect::BecomePrepared`); what's unbuilt is the back
   effect / front cost. Precise blockers (build the cap → the card is mechanical; back ids continue from 9727):
   1. **Leech Collector // Bloodletting** — front "gain life for the FIRST time each turn": needs a
@@ -96,8 +96,10 @@ SPELL-COPY subsystem** and its consumers.
      having happened, which no current card requires.)
   4. **Jadzi, Steward of Fate // Oracle's Gift** — back `{X}{X}` create X Fractals then X counters on each Fractal
      you control: dynamic-X token count + a for-each-Fractal counter pass. Heaviest back.
-  5. **Vastlands Scavenger // Bind to Life** — back "mill 7, then put a creature card from among them onto the
-     battlefield": a select-from-the-just-milled-set → battlefield primitive.
+  5. ~~**Vastlands Scavenger // Bind to Life**~~ ✅ **DONE (sos-cards-13)** — back = `Effect::MillThenPutCreatureOnto
+     Battlefield { who, count }`: mill N from your OWN library (captures the milled set), then a mandatory pick of a
+     creature card from among them → battlefield (yours, owner==controller, so NO control override). Front = 4/4
+     Deathtouch (back id 9730). Real-path test: mill 7 (a Bears among 6 Forests) → the Bears is reanimated.
   6. ~~**Skycoach Conductor // All Aboard**~~ ✅ **DONE (sos-cards-13)** — back blink built as the reusable
      `Effect::Blink { what }` (CR 603.6e): exile the target then return it as a NEW object (ETB re-fires, counters/
      damage/auras/summoning-sickness reset via `move_object`, CR 400.7). Front = 2/3 Flash/Flying/vigilance (back

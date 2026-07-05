@@ -187,6 +187,7 @@ pub mod tragedy_feaster;
 pub mod traumatic_critique;
 pub mod ulna_alley_shopkeep;
 pub mod unsubtle_mockery;
+pub mod vastlands_scavenger;
 pub mod vibrant_outburst;
 pub mod visionarys_dance;
 pub mod wildgrowth_archaic;
@@ -383,6 +384,7 @@ pub fn register(db: &mut CardDb) {
     traumatic_critique::register(db);
     ulna_alley_shopkeep::register(db);
     unsubtle_mockery::register(db);
+    vastlands_scavenger::register(db);
     vibrant_outburst::register(db);
     visionarys_dance::register(db);
     wander_off::register(db);

@@ -210,6 +210,15 @@ pub enum Effect {
         who: PlayerRef,
         total_mana_value: u32,
     },
+    /// "Mill `count` cards. Then put a creature card from among them onto the battlefield" (Bind to
+    /// Life). `who` mills from their own library (so the put creature is theirs — owner == controller,
+    /// no control override); the just-milled cards are the eligible set ("from among them"), and the
+    /// controller chooses which creature to put (mandatory if any creature was milled — CR "put a … card").
+    /// Imperative (mills + asks + moves), so it lives in `interpret`.
+    MillThenPutCreatureOntoBattlefield {
+        who: PlayerRef,
+        count: ValueExpr,
+    },
     /// "Exile `what`, then return that card to the battlefield under its owner's control" (CR 603.6e
     /// blink/flicker) — All Aboard. Exiles the target then immediately returns it as a **new** object:
     /// enters-the-battlefield triggers fire, and counters / marked damage / auras / summoning-sickness
