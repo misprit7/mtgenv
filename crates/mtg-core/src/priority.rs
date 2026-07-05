@@ -1396,6 +1396,11 @@ impl Engine {
                         .sum();
                     total >= *n as i32
                 }
+                // "Tap N untapped creatures you control": payable iff at least N *other* untapped
+                // creatures exist (count-based sibling of Crew — reuses `crew_candidates`).
+                CostComponent::TapCreatures(n) => {
+                    self.crew_candidates(p, source).len() as u32 >= *n
+                }
                 _ => true,
             };
             if !ok {
@@ -1610,6 +1615,7 @@ impl Engine {
                 CostComponent::Discard(spec) => self.pay_discard(p, spec),
                 CostComponent::Exile(spec) => self.pay_exile_cost(p, source, spec),
                 CostComponent::Crew(n) => self.pay_crew(p, source, *n),
+                CostComponent::TapCreatures(n) => self.pay_tap_creatures(p, source, *n),
                 // "Exile this card from your graveyard" — move the source to exile as the cost.
                 CostComponent::ExileSelfFromGraveyard => {
                     let owner = self.state.object(source).owner;
@@ -1691,6 +1697,42 @@ impl Engine {
                 if let Some(o) = self.state.objects.get_mut(&id) {
                     o.status.tapped = true;
                 }
+            }
+        }
+    }
+
+    /// Pay "Tap N untapped creatures you control" (Harmonized Trio). The controller taps exactly `need`
+    /// of its untapped *other* creatures ([`crew_candidates`] already excludes the source and any
+    /// tapped/non-creature). `can_pay_cost` guaranteed at least `need` exist; if the agent under-picks,
+    /// greedily top up so the cost is met (mirrors [`pay_crew`]).
+    fn pay_tap_creatures(&mut self, payer: PlayerId, source: ObjId, need: u32) {
+        let candidates = self.crew_candidates(payer, source);
+        let idxs = match self.ask(
+            payer,
+            &DecisionRequest::SelectCards {
+                reason: SelectReason::Generic,
+                from: candidates.clone(),
+                min: need,
+                max: need,
+                description: format!("tap {need} untapped creatures you control"),
+            },
+        ) {
+            DecisionResponse::Indices(i) => self.distinct_valid_indices(&i, candidates.len(), need),
+            _ => Vec::new(),
+        };
+        let mut chosen: Vec<ObjId> = idxs.into_iter().map(|i| candidates[i]).collect();
+        // Top up to `need` (agent under-picked) from the remaining candidates.
+        for &id in &candidates {
+            if chosen.len() >= need as usize {
+                break;
+            }
+            if !chosen.contains(&id) {
+                chosen.push(id);
+            }
+        }
+        for id in chosen.into_iter().take(need as usize) {
+            if let Some(o) = self.state.objects.get_mut(&id) {
+                o.status.tapped = true;
             }
         }
     }

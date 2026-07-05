@@ -6,6 +6,7 @@ pub mod aberrant_manawurm;
 pub mod emeritus_of_conflict;
 pub mod joined_researchers;
 pub mod jadzi_steward_of_fate;
+pub mod harmonized_trio;
 pub mod elite_interceptor;
 pub mod improvisation_capstone;
 pub mod infirmary_healer;
@@ -204,6 +205,7 @@ pub fn register(db: &mut CardDb) {
     emeritus_of_conflict::register(db);
     joined_researchers::register(db);
     jadzi_steward_of_fate::register(db);
+    harmonized_trio::register(db);
     elite_interceptor::register(db);
     improvisation_capstone::register(db);
     infirmary_healer::register(db);

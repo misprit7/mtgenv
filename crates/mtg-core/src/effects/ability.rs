@@ -37,6 +37,11 @@ pub enum CostComponent {
     RemoveCounters { kind: CounterKind, n: ValueExpr },
     /// Crew N (CR 702.122): tap any number of untapped creatures you control with total power ≥ N.
     Crew(u32),
+    /// "Tap N untapped creatures you control" as an activation cost (Harmonized Trio's "{T}, Tap two
+    /// untapped creatures you control"). A count-based sibling of [`Crew`] (which is power-based): the
+    /// controller taps exactly N *other* untapped creatures they control (the source is excluded — it's
+    /// already tapped by any `{T}` in the same cost). Payable iff at least N such creatures exist.
+    TapCreatures(u32),
     /// An additional mana payment beyond the base cost.
     AdditionalMana(ManaCost),
     /// A planeswalker loyalty-ability cost (CR 606.2): `+N` adds N loyalty counters, `−N`

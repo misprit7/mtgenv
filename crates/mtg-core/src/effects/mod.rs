@@ -463,6 +463,16 @@ pub enum Effect {
         what: EffectTarget,
     },
 
+    /// "Put `count` cards from your hand on top of your library in any order" (Brainstorm's second
+    /// half). The controller selects `count` cards from their hand (mandatory, up to hand size) and
+    /// chooses their order; the cards move onto the **top** of the library with the first selected
+    /// ending up on top (drawn first). Interactive (a resolution-time hand selection), so it lives in
+    /// `interpret`. Composes with a preceding `Draw` (Brainstorm = `Sequence[Draw 3, PutFromHandOnTop 2]`).
+    PutFromHandOnTop {
+        who: PlayerRef,
+        count: ValueExpr,
+    },
+
     /// No-op (e.g. an unchosen optional, or a placeholder mode).
     Nothing,
 

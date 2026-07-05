@@ -247,6 +247,15 @@ impl EngineCore {
                 }
                 true
             }
+            // "Put `count` cards from your hand on top of your library in any order" (Brainstorm).
+            // Interactive: the controller selects the cards (ordered) then they go onto the library top.
+            Effect::PutFromHandOnTop { who, count } => {
+                self.flush_pending(wb);
+                let pl = self.eval_player(*who, ctx);
+                let n = self.eval_value(count, ctx).max(0) as usize;
+                self.interpret_put_from_hand_on_top(pl, n);
+                true
+            }
             // "You may tap or untap target creature" (Rejoinder). The target was chosen at cast; its
             // controller may decline, else choose the direction. Interactive, so it lives here.
             Effect::MayTapOrUntap { what } => {
@@ -842,6 +851,50 @@ impl EngineCore {
             let owner = self.state.object(card).owner;
             self.state.move_object(card, Zone::Graveyard, owner);
             self.broadcast(GameEvent::ObjectMoved { obj: card, to: Zone::Graveyard });
+        }
+    }
+
+    /// "Put `n` cards from `pl`'s hand on top of their library in any order" (Brainstorm). The player
+    /// selects `n` hand cards (mandatory, capped at hand size) in the order they want them on top; the
+    /// first selected ends up on top (drawn first). The library's top is the vec's tail, so the cards
+    /// are pushed in reverse of the chosen order (last-chosen pushed first, first-chosen pushed last).
+    fn interpret_put_from_hand_on_top(&mut self, pl: PlayerId, n: usize) {
+        let hand = self.state.player(pl).hand.clone();
+        let count = n.min(hand.len());
+        if count == 0 {
+            return;
+        }
+        let req = DecisionRequest::SelectCards {
+            reason: SelectReason::Generic,
+            from: hand.clone(),
+            min: count as u32,
+            max: count as u32,
+            description: "put cards on top of your library".into(),
+        };
+        let mut seen = std::collections::BTreeSet::new();
+        let mut chosen: Vec<ObjId> = match self.ask(pl, &req) {
+            DecisionResponse::Indices(idxs) => idxs
+                .iter()
+                .filter_map(|&i| hand.get(i as usize).copied())
+                .filter(|o| seen.insert(*o))
+                .take(count)
+                .collect(),
+            _ => Vec::new(),
+        };
+        // Top up to `count` (agent under-picked) from the remaining hand, preserving determinism.
+        for &card in &hand {
+            if chosen.len() >= count {
+                break;
+            }
+            if !chosen.contains(&card) {
+                chosen.push(card);
+            }
+        }
+        // Push in reverse so the first-chosen card ends up on top (the library's top is the tail).
+        for card in chosen.iter().rev() {
+            let owner = self.state.object(*card).owner;
+            self.state.move_object(*card, Zone::Library, owner);
+            self.broadcast(GameEvent::ObjectMoved { obj: *card, to: Zone::Library });
         }
     }
 
@@ -1601,6 +1654,7 @@ impl EngineCore {
             | Effect::CopyNextSpellCast { .. }
             | Effect::MayTapOrUntap { .. }
             | Effect::PutOnTopOrBottom { .. }
+            | Effect::PutFromHandOnTop { .. }
             | Effect::MayPayCost { .. }
             | Effect::Sacrifice { .. }
             | Effect::Surveil { .. }
