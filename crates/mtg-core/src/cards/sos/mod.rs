@@ -3,6 +3,11 @@
 use crate::cards::CardDb;
 
 pub mod aberrant_manawurm;
+pub mod abigale_poet_laureate;
+pub mod kirol_history_buff;
+pub mod sanar_unfinished_genius;
+pub mod spiritcall_enthusiast;
+pub mod tam_observant_sequencer;
 pub mod blazing_firesinger;
 pub mod campus_composer;
 pub mod cheerful_osteomancer;
@@ -181,6 +186,11 @@ pub mod zealous_lorecaster;
 
 pub fn register(db: &mut CardDb) {
     aberrant_manawurm::register(db);
+    abigale_poet_laureate::register(db);
+    kirol_history_buff::register(db);
+    sanar_unfinished_genius::register(db);
+    spiritcall_enthusiast::register(db);
+    tam_observant_sequencer::register(db);
     blazing_firesinger::register(db);
     campus_composer::register(db);
     cheerful_osteomancer::register(db);
