@@ -222,6 +222,17 @@ the structural machinery respects the markers.
   computed ones so copy effects in layer 1 work and so "historical" values (Living
   Breakthrough's noted mana value of `spell #278`) are recorded at note-time, not
   recomputed.
+- **A spell on the stack is just an `Object` (in `Zone::Stack`, keyed by `grp_id` → `CardDef`)
+  wrapped by a `StackObject`.** So **casting a copy** (CR 707.12, `Effect::CastCopy`) needs almost
+  no new machinery: mint a fresh `Object` from the source's copiable base `chars` (CR 707.2 — the
+  same snapshot `CreateTokenCopy` does, but keeping mana cost and as a full object; abilities/effect
+  ride along via the copied `grp_id`), then run it through the **existing** `cast_spell` for `{0}`
+  (`CastVariant::WithoutPayingManaCost`) — new modes/targets/X=0, `SpellCast` fires, cast-triggers
+  fire. The copy carries `Object.is_copy`, so when it leaves the stack it **ceases to exist**
+  (CR 707.10a) — `resolve_top`/`interpret_counter` route it through `state.cease_to_exist` instead
+  of a graveyard/exile (checked *before* the flashback/paradigm exile branch, so a copy always
+  vanishes). *(Permanent-spell copies resolving into a token — CR 707.10f — are the one deferred
+  case; the current spell-copy cards are all instants/sorceries.)*
 - **Runtime-minted objects carry their behaviour as a registered def, not a name.** Tokens
   (CR 111) and emblems (CR 114) are created at resolution with no printed card; each points
   at a registered `CardDef` in a reserved `grp_id` block (tokens `9000+`, emblems `9500+`),

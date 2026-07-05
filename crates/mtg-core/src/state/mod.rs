@@ -173,6 +173,12 @@ pub struct Object {
     /// turn" gate (Fractal Tender).
     #[serde(default)]
     pub counter_added_this_turn: bool,
+    /// Set on a **copy of a spell** put on the stack (CR 707, e.g. a Paradigm free-cast copy). A copy
+    /// isn't a card, so when it leaves the stack it **ceases to exist** (CR 707.10a) instead of going
+    /// to a graveyard/exile — `resolve_top`/`interpret_counter` route it through `cease_to_exist`.
+    /// Reset on any zone change (a copy should never reach a normal zone, but keep the invariant).
+    #[serde(default)]
+    pub is_copy: bool,
 }
 
 impl Object {
@@ -657,6 +663,7 @@ impl GameState {
             castable_from_exile: false,
             play_until_turn: None,
             counter_added_this_turn: false,
+            is_copy: false,
         };
         self.objects.insert(id, obj);
         if let Some(v) = self.player_mut(owner).zone_vec_mut(zone) {
@@ -688,6 +695,13 @@ impl GameState {
     /// reuses the id (lands-only carries no counters/continuous effects, so nothing depends
     /// on the new-object rule yet); this is revisited when LKI/counters/effects make it
     /// observable.
+    /// CR 707.10a: a copy of a spell that leaves the stack **ceases to exist** — it isn't a card, so
+    /// it goes to no zone. A stack object lives only in `objects` (its `zone` is `Zone::Stack`, never
+    /// in a player zone vec — see `zone_vec_mut`), so removing it from the arena fully deletes it.
+    pub(crate) fn cease_to_exist(&mut self, id: ObjId) {
+        self.objects.remove(&id);
+    }
+
     pub(crate) fn move_object(&mut self, id: ObjId, to: Zone, to_owner: PlayerId) -> bool {
         let (from_zone, from_owner) = match self.objects.get(&id) {
             Some(o) => (o.zone, o.owner),
@@ -742,6 +756,7 @@ impl GameState {
             o.castable_from_exile = false; // re-granted only by a fresh warp-exile (400.7)
             o.play_until_turn = None; // impulse-play window drops on any zone change (400.7)
             o.counter_added_this_turn = false; // counters exist only on the battlefield (110.5d / 400.7)
+            o.is_copy = false; // a copy never legitimately changes zones (it ceases to exist, 707.10a)
             if to == Zone::Battlefield {
                 o.controller = to_owner;
                 o.summoning_sick = o.chars.is_creature();

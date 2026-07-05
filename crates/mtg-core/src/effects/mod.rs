@@ -173,6 +173,19 @@ pub enum Effect {
         controller: PlayerRef,
         mods: TokenCopyMods,
     },
+    /// "Cast a copy of `source` without paying its mana cost" (CR 707.12). Distinct from
+    /// `CreateTokenCopy` (707.9e — a token on the battlefield) and from copying a spell already on
+    /// the stack (707.10 — a copy that *isn't cast*): this **casts** the copy, so it goes through the
+    /// normal cast pipeline (601.2a–h) — new modes, new targets (707.10c), X=0 — and cast-triggers
+    /// fire. The copy is a fresh object built from `source`'s copiable characteristics (CR 707.2 — its
+    /// base `chars`, so abilities/effect/mana cost ride along via `grp_id`), marked `Object.is_copy`
+    /// so it ceases to exist when it leaves the stack (707.10a). `source` is usually `SourceSelf`
+    /// (Paradigm's exiled Lesson casting a copy of itself); a `Target` form covers "cast a copy of
+    /// target …". `controller` is the player who casts (and thus owns, CR 707.10) the copy.
+    CastCopy {
+        source: EffectTarget,
+        controller: PlayerRef,
+    },
     /// "You get an emblem with '…'" (CR 114). Puts an emblem — an object with no characteristics
     /// other than the abilities of the registered def `emblem` (in the reserved 9000+ block) — into
     /// the controller's command zone. The emblem's ability functions from `Zone::Command` (its def

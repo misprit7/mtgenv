@@ -16,7 +16,7 @@
 //! graceful no-op rather than a panic.
 
 use crate::agent::{
-    ActionRef, ConfirmKind, DecisionRequest, DecisionResponse, GameEvent, ModeOption,
+    ActionRef, CastVariant, ConfirmKind, DecisionRequest, DecisionResponse, GameEvent, ModeOption,
     ReplacementOption, SelectReason,
 };
 use crate::basics::{CardType, Color, CounterKind, DamageKind, Target, Zone, ZoneDest, ZonePos};
@@ -203,6 +203,25 @@ impl EngineCore {
                 self.flush_pending(wb);
                 if let Some(Target::Stack(sid)) = self.resolve_target(what, ctx, cursor) {
                     self.interpret_counter(sid);
+                }
+                true
+            }
+            // Cast a copy of `source` without paying its mana cost (CR 707.12). Mint a fresh object
+            // from the source's copiable characteristics (CR 707.2 — grp_id carries abilities/effect/
+            // mana cost), put it on the stack marked `is_copy` (so it ceases to exist off the stack,
+            // 707.10a), and cast it for free through the real pipeline — new modes/targets/X=0 are
+            // chosen there, SpellCast fires. Imperative (mints an object, asks the caster, pushes to
+            // the stack), so it lives here. Flush staged actions first.
+            Effect::CastCopy { source, controller } => {
+                self.flush_pending(wb);
+                let caster = self.eval_player(*controller, ctx);
+                if let Some(Target::Object(src)) = self.resolve_target(source, ctx, cursor) {
+                    let chars = self.state.object(src).chars.clone();
+                    let copy = self.state.add_card(caster, chars, Zone::Stack);
+                    if let Some(o) = self.state.objects.get_mut(&copy) {
+                        o.is_copy = true;
+                    }
+                    self.cast_spell(caster, copy, CastVariant::WithoutPayingManaCost);
                 }
                 true
             }
@@ -782,9 +801,14 @@ impl EngineCore {
                 return; // CR 701.5f — unaffected; stays on the stack.
             }
             self.state.stack.items.retain(|s| s.id != sid);
-            let owner = self.state.object(card).owner;
-            self.state.move_object(card, Zone::Graveyard, owner);
-            self.broadcast(GameEvent::ObjectMoved { obj: card, to: Zone::Graveyard });
+            // A countered copy ceases to exist (CR 707.10a) rather than going to a graveyard.
+            if self.state.object(card).is_copy {
+                self.state.cease_to_exist(card);
+            } else {
+                let owner = self.state.object(card).owner;
+                self.state.move_object(card, Zone::Graveyard, owner);
+                self.broadcast(GameEvent::ObjectMoved { obj: card, to: Zone::Graveyard });
+            }
         } else {
             // An activated/triggered ability that is countered just leaves the stack (CR 701.5b).
             self.state.stack.items.retain(|s| s.id != sid);
@@ -1366,6 +1390,7 @@ impl EngineCore {
             | Effect::Discard { .. }
             | Effect::Counter { .. }
             | Effect::CounterUnlessPay { .. }
+            | Effect::CastCopy { .. }
             | Effect::MayPayCost { .. }
             | Effect::Sacrifice { .. }
             | Effect::Surveil { .. }

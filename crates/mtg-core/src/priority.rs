@@ -2648,15 +2648,22 @@ impl Engine {
                         }
                         // else: all targets illegal ⇒ countered by game rules, no effect.
                     }
-                    // A flashback-cast spell is exiled as it leaves the stack (CR 702.34d) instead of
-                    // going to its owner's graveyard (608.2n).
-                    let dest = if self.state.object(id).flashback_cast {
-                        Zone::Exile
+                    // A copy of a spell isn't a card — as it leaves the stack it ceases to exist
+                    // (CR 707.10a), never touching a graveyard. Checked before the flashback branch
+                    // so a copy of a flashback-cast spell still vanishes rather than being exiled.
+                    if self.state.object(id).is_copy {
+                        self.state.cease_to_exist(id);
                     } else {
-                        Zone::Graveyard
-                    };
-                    self.state.move_object(id, dest, owner);
-                    self.broadcast(GameEvent::ObjectMoved { obj: id, to: dest });
+                        // A flashback-cast spell is exiled as it leaves the stack (CR 702.34d) instead
+                        // of going to its owner's graveyard (608.2n).
+                        let dest = if self.state.object(id).flashback_cast {
+                            Zone::Exile
+                        } else {
+                            Zone::Graveyard
+                        };
+                        self.state.move_object(id, dest, owner);
+                        self.broadcast(GameEvent::ObjectMoved { obj: id, to: dest });
+                    }
                 }
             }
             StackObjectKind::Ability { index } => {
@@ -3958,6 +3965,10 @@ fn collect_specs_into(effect: &Effect, out: &mut Vec<TargetSpec>) {
         Effect::MoveZone { what: EffectTarget::Target(spec), .. } => out.push(spec.clone()),
         // "Create a token that's a copy of target permanent" — its source is a chosen target.
         Effect::CreateTokenCopy { source: EffectTarget::Target(spec), .. } => out.push(spec.clone()),
+        // "Cast a copy of target [spell/card]" (CR 707.12) — the copy SOURCE is a chosen target (the
+        // copy's own targets are chosen inside the free cast, not here). `SourceSelf` (Paradigm) has
+        // no outer target and falls through.
+        Effect::CastCopy { source: EffectTarget::Target(spec), .. } => out.push(spec.clone()),
         // "Put a +1/+1 counter on target creature" / "target creature gains trample" — the targeted
         // reward effects (collected when walking a reflexive branch, not from a Conditional.then).
         Effect::PutCounters { what: EffectTarget::Target(spec), .. }
@@ -6132,6 +6143,87 @@ mod expect_tests {
         assert!(
             e.state.player(PlayerId(0)).mana_pool.amounts.is_empty(),
             "no mana was ever added or spent"
+        );
+    }
+
+    #[test]
+    fn cast_copy_mints_a_free_copy_that_ceases_to_exist_cr_707_12() {
+        use crate::basics::{DamageKind, ManaCost};
+        use crate::effects::ability::Ability;
+        use crate::effects::action::{ResolutionCtx, WbReason};
+        use crate::effects::target::{PlayerFilter, TargetKind, TargetSpec};
+        use crate::effects::value::{PlayerRef, ValueExpr};
+        use crate::effects::{Effect, EffectTarget};
+        use std::sync::Arc;
+        // CR 707.12 "cast a copy of an object without paying its mana cost": the source is a {5}
+        // instant in exile that deals 3 to target opponent. CastCopy mints a fresh copy on the stack
+        // from the source's copiable chars (707.2, via grp_id), casts it free with a NEW target
+        // chosen, and the copy ceases to exist off the stack (707.10a) — it never reaches a
+        // graveyard. The source card stays untouched in exile.
+        let mut db = cards::starter_db();
+        db.insert(cards::CardDef {
+            chars: Characteristics {
+                name: "Test Zap".into(),
+                card_types: vec![CardType::Instant],
+                mana_cost: Some(ManaCost { generic: 5, ..Default::default() }),
+                grp_id: 9952,
+                ..Default::default()
+            },
+            abilities: vec![Ability::Spell {
+                effect: Effect::DealDamage {
+                    amount: ValueExpr::Fixed(3),
+                    to: EffectTarget::Target(TargetSpec {
+                        kind: TargetKind::Player(PlayerFilter::Opponent),
+                        min: 1,
+                        max: 1,
+                        distinct: true,
+                    }),
+                    kind: DamageKind::Noncombat,
+                },
+            }],
+            text: String::new(),
+            ..Default::default()
+        });
+        let mut state = GameState::new(2, 1);
+        state.set_card_db(Arc::new(db));
+        let source = {
+            let c = state.card_db().get(9952).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, Zone::Exile)
+        };
+        let objs_before = state.objects.len();
+        // EquipAgent answers ChooseTargets by picking candidate 0 of each slot (the sole legal
+        // target here = the opponent); it never sees a Priority request in this direct-driven test.
+        let mut e = Engine::new(state, vec![Box::new(EquipAgent), Box::new(PassAgent)]);
+
+        // Cast a copy of the exiled source for free. SourceSelf = the resolving ability's source
+        // (the exiled card), so no outer target slot; the copy's own target is chosen inside the cast.
+        e.resolve_effect(
+            &Effect::CastCopy { source: EffectTarget::SourceSelf, controller: PlayerRef::Controller },
+            &ResolutionCtx { controller: Some(PlayerId(0)), source: Some(source), ..Default::default() },
+            WbReason::Resolve(crate::ids::StackId(0)),
+        );
+
+        // The copy is a distinct object on the stack; the source card is still in exile.
+        assert_eq!(e.state.stack.len(), 1, "the copy was cast onto the stack");
+        assert_eq!(e.state.object(source).zone, Zone::Exile, "the source card stays in exile");
+        assert_eq!(e.state.objects.len(), objs_before + 1, "one new object: the copy");
+
+        // Resolve the copy → 3 damage to the opponent, then it ceases to exist.
+        e.resolve_top();
+        assert_eq!(e.state.player(PlayerId(1)).life, 17, "the copy dealt 3 to the opponent");
+        assert_eq!(
+            e.state.objects.len(),
+            objs_before,
+            "the copy ceased to exist (707.10a) — the object arena is back to baseline"
+        );
+        assert!(
+            e.state.player(PlayerId(0)).graveyard.is_empty(),
+            "a copy never goes to a graveyard"
+        );
+        assert_eq!(
+            e.state.object(source).zone,
+            Zone::Exile,
+            "the source card is untouched in exile"
         );
     }
 
