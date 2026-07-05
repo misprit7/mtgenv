@@ -35,10 +35,14 @@ on the shared tree; MuZero's `experiments/` untouched):
 
 **▶ RECOMMENDED NEXT ORDER (all remaining need a genuine subsystem — none is a quick win):**
 - **Diary of Dreams** — activated-ability cost reduction (a natural extension of the S12 cast-time work applied at
-  `activate_ability`/the activated-ability offer gate). Needs: a `Page` `CounterKind`; a per-ability cost
-  reduction ("costs {1} less to activate for each page counter") — cleanest is to give `Ability::CostReduction`
-  a scope (Cast vs ActivatedAbilities) and add an `effective_activation_cost` sibling of `effective_cast_cost`
-  (low churn — CostReduction has ~3 literals); + a `SpellCast(I/S)`→add-page-counter trigger (machinery exists).
+  `activate_ability` + the activated-ability offer gate ~priority.rs:1164 `can_pay_cost`). Scoped plan: **(a)** page
+  counter = `CounterKind::Named("page")` — **zero enum churn** (reuse the existing Named variant); **(b)** give
+  `Ability::CostReduction` a `scope: CostReductionScope::{Cast|ActivatedAbilities}` field (migrate the 2 existing
+  literals — Orysa, Ajani — to `Cast`) and add an `effective_activation_cost(source, &Cost)->Cost` sibling of
+  `effective_cast_cost` that applies `ActivatedAbilities`-scoped reductions to the cost's *mana* (a
+  `GenericValue(Count{page counters on self})` amount); apply it at the offer gate AND in `activate_ability`
+  before `pay_cost`; **(c)** a `SpellCast(I/S)`→`PutCounters(page)` trigger (machinery exists — see S22/S8). Then
+  the `{5},{T}: Draw` ability. Low-churn, squarely S12.
 - **The big three (DESIGN-SKETCH TO THE LEAD BEFORE EACH; lead wants Planeswalkers first — most groundwork):**
   Planeswalkers (CR 306/606 — `CostComponent::Loyalty` + a PW-dies test already exist), Lessons/Learn (CR 715
   outside-the-game/sideboard), Prepare-DFCs (~36, the card-faces model — the biggest piece).
