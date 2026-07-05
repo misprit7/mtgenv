@@ -31,6 +31,33 @@ SPELL-COPY subsystem** and its consumers.
 - **`Effect::PutOnTopOrBottom`** (owner chooses top/bottom of library, `ConfirmKind::PutOnTop`) → **Run Behind**
   (+ S12 target-dependent reduction, `TargetMatches(Attacking)`).
 
+### ✅ sos-cards-12 PROGRESS (2026-07-05)
+- **PREPARE-DFC RAILS + 4 representative cards SHIPPED** (commit `bfd3d51`; 172→176 authored, 630→638 mtg-core
+  green). Built exactly the approved design (spell-copy CONSUMER, no CR 711 transform): **`Object.prepared`**
+  flag + **`Effect::BecomePrepared`** (lowers to **`Action::SetPrepared`**; every "becomes prepared" clause is an
+  ordinary trigger/ability — zero new trigger machinery) + **`Ability::Prepare{spell}`** (front→back link) +
+  back-face spell defs in the reserved **9700+ grp block** (`grp::PREPARE_BACK_BLOCK`, excluded from `/api/cards`)
+  + **`PlayableAction::CastPrepared{source}`** offered in `legal_priority_actions` at the back face's timing,
+  executed by **`Engine::cast_prepared`** (mints an `is_copy` copy from the back-face def, `cast_spell(Normal)`
+  **pays** the back cost, unprepares the source; copy ceases to exist off the stack, CR 707.10a). **DESIGN NOTE:**
+  I did NOT widen `Effect::CastCopy` — the prepared cast is a *priority action*, not an effect resolution, so a
+  dedicated `cast_prepared` calling `cast_spell` directly is cleaner than a paid/def-source flag on the effect
+  (Paradigm's free `CastCopy` stays untouched — its free-path test is unchanged & green). Affordability masking is
+  exact: `effective_cast_cost` reads only the cast card's OWN reductions and back faces have none, so the offer's
+  printed-cost check == what `cast_spell` charges (no drift). 4 cards, each oracle-verified + real-path tested:
+  **Adventurous Eater // Have a Bite** (enters-prepared — the flagship full-lifecycle test), **Scathing Shadelock
+  // Venomous Words** (at-first-main, `YourTurn`-gated), **Encouraging Aviator // Jump** (on-attack + a re-prepare
+  loop; instant back → instant-speed offer), **Lluwen // Pest Friend** (an ACTIVATED prepare source — exile-a-
+  creature-from-gy cost — + enters-prepared; back = Pest token).
+- **REMAINING PREPARE FAN-OUT: ~33 cards** (mechanical on proven rails — each still gets oracle-verified from
+  sqlite + a test; front id from 377, back id from 9704). Trigger variety already surveyed: landfall (Tam),
+  cast-a-creature (Abigale), cast-3rd-spell (Emeritus of Conflict), gain-life-first-time (Leech Collector),
+  tokens-enter (Spiritcall), cards-leave-gy (Kirol), conditional end-step/upkeep (Emeritus of Woe, Grave
+  Researcher, Joined Researchers, Scheming Silvertongue) — ALL are just `Effect::BecomePrepared` on the matching
+  trigger (some intervening-if). A few need small back-face caps (Brainstorm's put-2-on-top ordering, Ancestral
+  Recall = draw 3, Reanimate/Regrowth = gy recursion, Swords/Demonic Tutor); most back faces are already-built
+  effects. Harmonized Trio needs a "tap two other creatures" activation cost (unbuilt — defer or build).
+
 ### ▶ REMAINING for YOU (sos-cards-12)
 1. **Improvisation Capstone** (5th Lesson, {5}{R}{R}, ⏳ heaviest): "Exile cards from the top of your library
    until you exile cards with total mana value 4 or greater. You may cast any number of spells from among them
