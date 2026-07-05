@@ -3,6 +3,25 @@
 Short, dated entries for future-agent consumption. Newest first. One line or a few bullets
 per unit of meaningful progress. Keep it terse — detail lives in `docs/` and git history.
 
+## 2026-07-05 (SOS relay sos-cards-12 — PREPARE DFCs: rails + 24 cards)
+
+- **Built the PREPARE-DFC subsystem as a spell-copy CONSUMER (CR 707.12), not a CR 711 transform.**
+  `Object.prepared` flag + `Effect::BecomePrepared` (→ `Action::SetPrepared`) + `Ability::Prepare{spell}`
+  (front→back link) + back-face spell defs in a reserved 9700+ grp block (`grp::PREPARE_BACK_BLOCK`,
+  excluded from `/api/cards`) + `PlayableAction::CastPrepared{source}` offered in `legal_priority_actions`
+  at the back face's timing, executed by `Engine::cast_prepared` (mints an `is_copy` copy from the def,
+  `cast_spell(Normal)` PAYS the back cost, unprepares the source; copy ceases to exist off the stack).
+  **Key payoff: every "becomes prepared" variant is just `Effect::BecomePrepared` on an ordinary trigger/
+  ability — zero new trigger machinery** (enters / at-first-main / on-attack / landfall / cast-a-creature /
+  cards-leave-gy / tokens-enter / end-step-conditional / an activated source all fell out for free). Did NOT
+  widen `Effect::CastCopy` (Paradigm's free path untouched + still green). Commit bfd3d51.
+- **24 of ~36 prepare cards shipped** (batches after bfd3d51; 630→658 mtg-core green). Helper
+  `helpers::enters_prepared`/`prepared_abilities`. Added `ValueExpr::LifeGainedThisTurn{who}` +
+  `CreaturesDiedThisTurn` (both eval paths) for "gained N life" / "N creatures died" gates. The 12 remaining
+  are each blocked on a distinct BACK-FACE cap (blink, tap-or-untap, {X}{X} tokens, LKI-power, mill-to-bf,
+  Treasure sac-mana, exact-Nth-spell, gain-life-first-time, hand-compare, spell-copy-on-stack) — precise
+  per-card blocker list in `docs/plans/SOS_CARDS.md`.
+
 ## 2026-07-04 (SOS relay sos-cards-11 — the SPELL-COPY subsystem + Paradigm Lessons)
 
 - **Built the spell-copy foundation (CR 707.10/12) — the long-deferred, now load-bearing piece.**

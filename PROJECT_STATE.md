@@ -3,7 +3,7 @@
 Single source of truth for goals + where things stand. Update this (without being asked)
 whenever meaningful progress changes the picture. Companion: `WORKLOG.md` (chronological).
 
-_Last updated: 2026-07-04_
+_Last updated: 2026-07-05_
 
 ## Vision (one sentence)
 
@@ -69,7 +69,17 @@ MTGA client.
 - **✅ MOBILE WEB CLIENT (2026-07-03).** Game client + lobby fully playable from a phone: mobile
   reflow (sticky prompt sheet, opp-top/you-bottom strips, log toggle), touch previews long-press-only
   (hover gated to real mice), on-screen pass-turn button. Desktop unchanged.
-- **▶ SOS FULL-SET scope: ~172 authored, 630 mtg-core tests green (2026-07-04, sos-cards-11).** **SPELL-COPY
+- **▶ SOS FULL-SET scope: ~196 authored, 658 mtg-core tests green (2026-07-05, sos-cards-12).** **PREPARE-DFC
+  SUBSYSTEM DONE + 24/36 prepare cards shipped.** Prepare is a spell-copy CONSUMER (CR 707.12), not a CR 711
+  transform: `Object.prepared` + `Effect::BecomePrepared` (→ `Action::SetPrepared`) + `Ability::Prepare{spell}`
+  + back-face defs in a reserved 9700+ grp block (excluded from `/api/cards`) + `PlayableAction::CastPrepared`
+  (offered in `legal_priority_actions`, executed by `Engine::cast_prepared` — mints an `is_copy` copy, pays the
+  back cost via `cast_spell`, unprepares). **Every "becomes prepared" clause is just `Effect::BecomePrepared` on
+  an existing trigger — zero new trigger machinery.** The 12 remaining prepare cards are each blocked on a
+  distinct back-face cap (blink, tap-or-untap, {X}{X} tokens, LKI-power, mill-to-battlefield, Treasure sac-mana,
+  exact-Nth-spell, gain-life-first-time, hand-compare, spell-copy-on-stack) — precise per-card list in the ledger.
+  Still open: Improvisation Capstone, Brush Off (StackObject counterspell gap).
+- **▶ SOS (prior — sos-cards-11): ~172 authored, 630 mtg-core tests green (2026-07-04).** **SPELL-COPY
   SUBSYSTEM (CR 707.10/12) DONE** — the long-deferred, now load-bearing foundation. `Effect::CastCopy` mints a
   copy `Object` from a source's copiable chars and casts it through the EXISTING `cast_spell` for {0}
   (`CastVariant::WithoutPayingManaCost`); `Object.is_copy` → the copy ceases to exist off the stack (707.10a).

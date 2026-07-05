@@ -49,14 +49,53 @@ SPELL-COPY subsystem** and its consumers.
   // Venomous Words** (at-first-main, `YourTurn`-gated), **Encouraging Aviator // Jump** (on-attack + a re-prepare
   loop; instant back → instant-speed offer), **Lluwen // Pest Friend** (an ACTIVATED prepare source — exile-a-
   creature-from-gy cost — + enters-prepared; back = Pest token).
-- **REMAINING PREPARE FAN-OUT: ~33 cards** (mechanical on proven rails — each still gets oracle-verified from
-  sqlite + a test; front id from 377, back id from 9704). Trigger variety already surveyed: landfall (Tam),
-  cast-a-creature (Abigale), cast-3rd-spell (Emeritus of Conflict), gain-life-first-time (Leech Collector),
-  tokens-enter (Spiritcall), cards-leave-gy (Kirol), conditional end-step/upkeep (Emeritus of Woe, Grave
-  Researcher, Joined Researchers, Scheming Silvertongue) — ALL are just `Effect::BecomePrepared` on the matching
-  trigger (some intervening-if). A few need small back-face caps (Brainstorm's put-2-on-top ordering, Ancestral
-  Recall = draw 3, Reanimate/Regrowth = gy recursion, Swords/Demonic Tutor); most back faces are already-built
-  effects. Harmonized Trio needs a "tap two other creatures" activation cost (unbuilt — defer or build).
+- **PREPARE FAN-OUT: 24 of ~36 SHIPPED** (658 mtg-core green; commits after bfd3d51: batch1 10, batch2 5,
+  batch3 4 + a value cap, Infirmary Healer). Added helper **`helpers::enters_prepared` / `prepared_abilities`**
+  (Prepare marker + a becomes-prepared trigger) — every card is 2 defs (front creature + back spell, ids 377+/9704+).
+  Proved the design pays off: **every "becomes prepared" variant is just `Effect::BecomePrepared` on an existing
+  trigger — zero new trigger machinery.** Also added **`ValueExpr::LifeGainedThisTurn{who}` + `CreaturesDiedThisTurn`**
+  (both eval paths) so "if you gained N life" / "if N creatures died" gates compose via `ValueAtLeast`.
+  Shipped (front // back): Adventurous Eater//Have a Bite, Scathing Shadelock//Venomous Words, Encouraging
+  Aviator//Jump, Lluwen//Pest Friend, Studious First-Year//Rampant Growth, Landscape Painter//Vibrant Idea,
+  Blazing Firesinger//Seething Song, Honorbound Page//Forum's Favor, Quill-Blade Laureate//Twofold Intent,
+  Strife Scholar//Awaken the Ages, Campus Composer//Aqueous Aria, Cheerful Osteomancer//Raise Dead, Spellbook
+  Seeker//Careful Study, Maelstrom Artisan//Rocket Volley, Tam//Deep Sight (landfall), Abigale//Heroic Stanza
+  (cast-a-creature), Kirol//Pack a Punch (cards-leave-gy), Spiritcall Enthusiast//Scrollboost (tokens-enter),
+  Sanar//Wild Idea, Emeritus of Abundance//Regrowth (attack+CountAtLeast lands≥8), Emeritus of Ideation//Ancestral
+  Recall (attack+MayPayCost exile-8-gy), Scheming Silvertongue//Sign in Blood (2nd-main+life≥2), Emeritus of
+  Woe//Demonic Tutor (end-step+died≥2), Infirmary Healer//Stream of Life ({X}-spell back).
+
+- **▶ REMAINING PREPARE: 12 cards — each blocked on a distinct BACK-FACE (or activation-cost) cap, NOT prepare.**
+  The prepare rails + trigger for every one are trivial (`Effect::BecomePrepared` on the right trigger); what's
+  unbuilt is the back-face effect or the front's activation cost. Precise blockers (build the cap → the card is
+  mechanical):
+  1. **Emeritus of Conflict // Lightning Bolt** — front "cast your THIRD spell each turn": needs a
+     `Player.spells_cast_this_turn` counter + an *exactly-Nth* SpellCast trigger (fires only on the 3rd). Back = bolt (built).
+  2. **Leech Collector // Bloodletting** — front "gain life for the FIRST time each turn": needs a once-per-turn
+     trigger-fired flag (a `GainLife` trigger gated to first-fire). Back = each opponent loses 2 (`LoseLife` EachOpponent, built).
+  3. **Joined Researchers // Secret Rendezvous** — front "each end step, if an opponent has more cards in hand than
+     you": needs a hand-size-comparison `Condition`. Back = you + target opponent each draw 3 (TargetPlayer + two Draws, built).
+  4. **Grave Researcher // Reanimate** — front is BUILDABLE NOW (`Sequence[Surveil 1, Conditional{CountAtLeast(gy
+     creatures≥3) → BecomePrepared}]` — `Effect::Conditional` + Surveil + CountAtLeast all exist). Back needs a
+     `ValueExpr::ManaValueOfTarget` (lose life = the reanimated card's MV) + reanimate-to-battlefield-under-your-control
+     (see Restoration Seminar). Do the front + build those two for the back.
+  5. **Emeritus of Truce // Swords to Plowshares** — back "controller gains life = its power": needs the LKI power of
+     the exiled creature threaded into a `ValueExpr` (sos-cards-8's noted "LKI value into ResolutionCtx", still unbuilt).
+  6. **Jadzi, Steward of Fate // Oracle's Gift** — back `{X}{X}` create X Fractals then X counters on each Fractal you
+     control: dynamic-X token count + a "for each Fractal" counter pass. Heaviest back.
+  7. **Vastlands Scavenger // Bind to Life** — back "mill 7, then put a creature card from among them onto the
+     battlefield": needs a select-from-the-just-milled-set → battlefield primitive.
+  8. **Skycoach Conductor // All Aboard** — back blink ("exile target non-Pilot creature you control, then return it"):
+     needs an exile-then-immediately-return (flicker) effect.
+  9. **Elite Interceptor // Rejoinder** — back "you may tap OR untap target creature; draw": needs a tap-or-untap
+     player-choice leaf (existing `Effect::Tap` is fixed-direction) wrapped optional. Small.
+  10. **Goblin Glasswright // Craft with Pride** — back "create a Treasure token": needs a Treasure token def whose
+      ability is a **sacrifice-cost mana ability** (flagged since sos-cards-7 — the mana payment path only taps, no sac-for-mana).
+  11. **Harmonized Trio // Brainstorm** — front activation cost "{T}, Tap two untapped creatures you control" (a
+      convoke-like tap-N-others cost, unbuilt) + back Brainstorm's "put two on top in any order" (library-order primitive).
+  12. **Pigment Wrangler // Striking Palette** — back "when you next cast an I/S this turn, copy that spell (new
+      targets)": a DELAYED copy-a-spell-on-the-stack (CR 707.10, distinct from CastCopy which mints+casts) — pairs with
+      the Improvisation/Brush Off StackObject spell-copy family. Defer with those.
 
 ### ▶ REMAINING for YOU (sos-cards-12)
 1. **Improvisation Capstone** (5th Lesson, {5}{R}{R}, ⏳ heaviest): "Exile cards from the top of your library
@@ -69,19 +108,11 @@ SPELL-COPY subsystem** and its consumers.
    (Systemic notes below — `target_candidates` returns empty for StackObject, so counterspells are only tested
    via `resolve_effect`). Own commit with real counterspell cast-path tests. Then Brush Off = Counter +
    `{1}{U}`-less-if-it-targets-an-I/S-spell (the `Cost` reduction arm + `TargetMatches` on a stack target).
-3. **PREPARE-DFCs (~36 cards) — the last big-three item. DESIGN PLAN BELOW (lead-pinged 2026-07-04, awaiting
-   OK).** ⚠️ **Major finding: prepare is a SPELL-COPY CONSUMER, not a CR 712 transform model.** Every prepare
-   card is `Creature (front) // Instant-or-Sorcery (back)`; the reminder is *"While it's prepared, you may cast
-   a copy of its spell. Doing so unprepares it."* The back face is **copy-only** (never cast from hand, no face
-   flip). Build = **spell-copy (done)** + `Object.prepared: bool` + **`Effect::BecomePrepared`** (sets the flag;
-   the "becomes prepared" diversity — enters/first-main/on-attack/landfall/cast-a-creature/activated — is then
-   FREE, each an ordinary trigger/ability) + **back-face spell defs in a reserved grp block (e.g. 9700+)** the
-   front creature links via `Ability::Prepare{spell_grp}` + a **while-prepared cast offer** in
-   `legal_priority_actions` (cast a copy of the linked spell at its timing → unprepare) + **one CastCopy
-   extension:** prepare copies are **PAID** (not free — extend `CastCopy` with a pay/free flag; Paradigm=free,
-   prepare=paid) and the copy source is a **CardDef/grp_id** (not an object — add a "copy from def" source).
-   Build the shared rails + 3-4 representative cards first (enters-prepared / at-first-main / on-attack /
-   activated), then fan out the 36.
+3. **PREPARE-DFCs — RAILS + 24 of ~36 SHIPPED (see the sos-cards-12 PROGRESS block above).** The 12 remaining are
+   each blocked on a distinct **back-face-effect (or activation-cost) cap, NOT prepare** — the precise
+   per-card blocker list is in that PROGRESS block (build the cap → the card is mechanical: front creature with
+   `helpers::enters_prepared`/`prepared_abilities` + a back spell def at 9724+). Cheapest next: Elite Interceptor
+   (a tap-or-untap leaf), Grave Researcher (front buildable now; back needs `ManaValueOfTarget` + reanimate-to-bf).
 
 **PROCESS (unchanged, hard-won):** shared tree → `git commit --only <paths>` (`git add` a NEW file first),
 never `-a`/`add -A`/stash; DON'T touch `experiments/` (MuZero + GPU); `cargo test -p mtg-core` green at every
