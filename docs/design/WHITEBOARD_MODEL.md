@@ -205,6 +205,17 @@ the structural machinery respects the markers.
   computed ones so copy effects in layer 1 work and so "historical" values (Living
   Breakthrough's noted mana value of `spell #278`) are recorded at note-time, not
   recomputed.
+- **Runtime-minted objects carry their behaviour as a registered def, not a name.** Tokens
+  (CR 111) and emblems (CR 114) are created at resolution with no printed card; each points
+  at a registered `CardDef` in a reserved `grp_id` block (tokens `9000+`, emblems `9500+`),
+  so `def_of` supplies its abilities — behaviour stays *data*, never a name-match in the core.
+  An **emblem** is the minimal case: no characteristics (CR 114.2), just a triggered/static
+  ability that **functions from `Zone::Command`** (`Ability::FunctionsFrom(vec![Zone::Command])`,
+  the same zone-of-function marker graveyard-triggers use). The **command zone** is modeled
+  per-player (`Player.command`); it is scanned for functioning triggers exactly like the
+  graveyard, and nothing in the SBA/removal path touches it, so emblems are permanent. A
+  triggered ability that reads "**that much**" (Dellian's emblem: opponent loses the life you
+  gained) carries the triggering amount on the trigger's `x`, read as `ValueExpr::X`.
 
 ### 2.6 Decisions carry constraints
 
