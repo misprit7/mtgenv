@@ -287,6 +287,60 @@ impl EngineCore {
                 }
                 true
             }
+            // "Exile from the top until total MV ≥ N, then you may cast any number of them for free"
+            // (CR 601.3e cast-during-resolution — Improvisation Capstone). Exile one at a time until the
+            // running total mana value reaches the threshold (or the library empties), then loop offering
+            // the controller to cast any number of the exiled NONLAND cards for free (each a real
+            // `cast_spell`, so it picks its own targets/X and goes on the stack). Uncast cards stay
+            // exiled. Imperative + interactive, so it lives here. Flush staged actions first.
+            Effect::ExileTopUntilManaValueMayCastFree { who, total_mana_value } => {
+                self.flush_pending(wb);
+                let player = self.eval_player(*who, ctx);
+                // Exile from the top until the exiled cards' total mana value ≥ threshold.
+                let mut total = 0u32;
+                let mut exiled: Vec<ObjId> = Vec::new();
+                while total < *total_mana_value {
+                    let Some(&top) = self.state.player(player).library.last() else {
+                        break; // library empty (CR 701.x — exile as many as you can)
+                    };
+                    total += self.state.object(top).chars.mana_value();
+                    self.state.move_object(top, Zone::Exile, player);
+                    self.broadcast(GameEvent::ObjectMoved { obj: top, to: Zone::Exile });
+                    exiled.push(top);
+                }
+                // "You may cast any number of them without paying their mana costs" — one at a time
+                // (nothing resolves between casts, so the only choice is which to cast and the stack
+                // order). Only nonland cards are spells.
+                let mut castable: Vec<ObjId> =
+                    exiled.into_iter().filter(|&o| !self.state.object(o).chars.is_land()).collect();
+                let mut guard = 0;
+                while !castable.is_empty() {
+                    guard += 1;
+                    if guard > 256 {
+                        break; // safety ceiling
+                    }
+                    let resp = self.ask(
+                        player,
+                        &DecisionRequest::SelectCards {
+                            reason: SelectReason::Generic,
+                            from: castable.clone(),
+                            min: 0,
+                            max: 1,
+                            description: "cast without paying its mana cost".to_string(),
+                        },
+                    );
+                    let pick = match resp {
+                        DecisionResponse::Indices(ix) => ix.into_iter().next(),
+                        _ => None,
+                    };
+                    let Some(i) = pick.filter(|&i| (i as usize) < castable.len()) else {
+                        break; // declined (or bad index) → stop casting
+                    };
+                    let card = castable.remove(i as usize);
+                    self.cast_spell(player, card, CastVariant::WithoutPayingManaCost);
+                }
+                true
+            }
             // "When you next cast a [filter] spell this turn, copy that spell" (CR 707.10 / 603.7) —
             // arm a one-shot delayed trigger on the controller (Striking Palette). Non-interactive
             // (just registers the trigger); when it later fires the engine mints a `SpellCopyTrigger`
@@ -1481,6 +1535,7 @@ impl EngineCore {
             | Effect::CounterUnlessPay { .. }
             | Effect::CastCopy { .. }
             | Effect::CastForFree { .. }
+            | Effect::ExileTopUntilManaValueMayCastFree { .. }
             | Effect::CopyNextSpellCast { .. }
             | Effect::MayTapOrUntap { .. }
             | Effect::PutOnTopOrBottom { .. }

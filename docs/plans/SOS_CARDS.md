@@ -105,17 +105,14 @@ SPELL-COPY subsystem** and its consumers.
      `Effect::CopyNextSpellCast` → `DelayedTriggerEvent::YouCastSpell` → `StackObjectKind::SpellCopyTrigger` →
      `copy_spell_on_stack` (mint+push over the original, NOT cast; optional new-target reselection).
 
-### ▶ REMAINING for YOU (sos-cards-12)
-1. **Improvisation Capstone** (5th Lesson, {5}{R}{R}, ⏳ heaviest): "Exile cards from the top of your library
-   until you exile cards with total mana value 4 or greater. You may cast any number of spells from among them
-   without paying their mana costs." + Paradigm. Two new bits: (a) an **exile-top-until-total-MV≥N** loop leaf,
-   (b) **cast-any-number-of-the-exiled-for-free** — a repeated optional `CastForFree` over the exiled set (the
-   free-cast primitive + impulse machinery already exist; the loop is the new part). Then append
-   `helpers::paradigm_abilities()`.
-2. **Brush Off** ({2}{U}{U} counter, ⏳): needs the **`TargetKind::StackObject` real-cast enumeration gap**
-   (Systemic notes below — `target_candidates` returns empty for StackObject, so counterspells are only tested
-   via `resolve_effect`). Own commit with real counterspell cast-path tests. Then Brush Off = Counter +
-   `{1}{U}`-less-if-it-targets-an-I/S-spell (the `Cost` reduction arm + `TargetMatches` on a stack target).
+### ▶ REMAINING for YOU (sos-cards-12) — ✅ ALL THREE DONE by sos-cards-13 (the StackObject cluster)
+1. ✅ **Improvisation Capstone DONE (sos-cards-13)** — the 5th Lesson (⇒ **Paradigm now 5/5 Lessons**).
+   `Effect::ExileTopUntilManaValueMayCastFree { who, total_mana_value }` (imperative): exile from the top one card
+   at a time until the exiled cards' total MV ≥ threshold, then loop offering the controller to cast any number of
+   the exiled NONLAND cards for free (real `cast_spell(WithoutPayingManaCost)` during resolution, CR 601.3e —
+   `SelectCards(min:0,max:1)` per pick, stack-order-preserving; uncast cards + lands stay exiled). + Paradigm.
+2. ✅ **Brush Off DONE (sos-cards-13)** — see the SHIPPED block + S12 row. Real counterspell cast-path (the
+   StackObject-enumeration gap was really `collect_specs_into` dropping `Effect::Counter`'s spec).
 3. **PREPARE-DFCs — RAILS + 24 of ~36 SHIPPED (see the sos-cards-12 PROGRESS block above).** The 12 remaining are
    each blocked on a distinct **back-face-effect (or activation-cost) cap, NOT prepare** — the precise
    per-card blocker list is in that PROGRESS block (build the cap → the card is mechanical: front creature with

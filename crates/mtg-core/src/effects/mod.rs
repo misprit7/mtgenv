@@ -199,6 +199,17 @@ pub enum Effect {
         what: EffectTarget,
         exile_on_leave: bool,
     },
+    /// "Exile cards from the top of `who`'s library until you exile cards with total mana value
+    /// `total_mana_value` or greater. You may cast any number of them without paying their mana costs"
+    /// (Improvisation Capstone) — the resolution-time free-cast-from-exile (CR 601.3e / 118.9). Exiles
+    /// one card at a time until the exiled cards' running total mana value reaches the threshold (or the
+    /// library empties), then loops offering the controller to cast any number of the exiled **nonland**
+    /// cards (spells) for free — each a real `cast_spell(WithoutPayingManaCost)` (own targets/X, onto the
+    /// stack). Uncast cards stay exiled. Interactive, so it lives in `interpret`.
+    ExileTopUntilManaValueMayCastFree {
+        who: PlayerRef,
+        total_mana_value: u32,
+    },
     /// "When you next cast a `filter` spell this turn, copy that spell" (CR 707.10) — Striking Palette
     /// ("… an instant or sorcery spell this turn, copy that spell. You may choose new targets for the
     /// copy."). Arms a one-shot delayed triggered ability (CR 603.7,
