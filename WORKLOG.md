@@ -3,6 +3,29 @@
 Short, dated entries for future-agent consumption. Newest first. One line or a few bullets
 per unit of meaningful progress. Keep it terse — detail lives in `docs/` and git history.
 
+## 2026-07-05 (SOS relay sos-cards-16 — the copy-spell / cascade / affinity caps + 4 Elder Dragons + Lumaret's Favor)
+
+- **Shipped 4 of the 5 college Elder Dragons + 5 reusable caps, 732→756 green, census 227→232/271.** Five own-commits:
+- **`4dd31ef` — `Effect::CopySpellOnStack{what,count,choose_new_targets}`** (thin loop over the built `copy_spell_on_stack`,
+  707.10) **+ Prismari, the Inspiration (Storm)** + **wired the dead `CostComponent::PayLife` no-op into `pay_cost`** for
+  Ward—Pay 5 life. Storm = `Triggered{SpellCast(I/S)} → CopySpellOnStack{Triggering, count: SpellsCastThisTurn−1, new targets}`.
+  Tests: storm scales 0/1/2 copies across 3 casts, per-copy new-target reselection, Ward taxes 5 life vs countered.
+- **`cce33d6` — Silverquill, the Disputant (Casualty 1)** = `Triggered{SpellCast(I/S)} → Optional{IfYouDo{Sacrifice(creature
+  power≥1) → CopySpellOnStack{Triggering, count:1}}}`. Timing caveat ledgered (sac trails the true 601.2b window; copy still
+  resolves above the spell — observable result matches).
+- **`f66c23f` — Witherbloom, the Balancer (Affinity) + `Ability::GrantCostReduction`.** Own affinity composes now
+  (`CostReduction{GenericValue(Count creatures), Always, Cast}`); the granted-to-your-I/S clause = the new `GrantCostReduction`
+  static that `effective_cast_cost` gathers from EVERY permanent the caster controls, scoped by a spell filter (CR 118).
+- **`c7f2a8e` — Quandrix, the Proof (Cascade) + `EventPattern::SelfCast` + `Effect::Cascade`.** SelfCast = "when you cast THIS
+  spell" (scans the just-cast spell's own abilities, `queue_self_cast_triggers`) — unblocks cascade AND the Infusion copy-self
+  consumers. Cascade (702.83) = exile-top-until-nonland-cheaper + may-free-cast + random-bottom via `state.rng`. Own cascade
+  (SelfCast) + granted cascade to your I/S (SpellCast watcher). "from hand" not enforced (rare over-trigger) — ledgered.
+- **`42f4b74` — Lumaret's Favor (Infusion copy-self)** — first consumer combining SelfCast + CopySpellOnStack +
+  `GainedLifeThisTurn` condition. Gained-life → +4/+8 (copied); no-life → +2/+4.
+- **Elder Dragons: 4/5 DONE.** Only **Lorehold (Miracle)** remains — a real subsystem; design sketch sent to the lead (A: stack-
+  trigger reveal window / B: immediate-at-draw shortcut), awaiting the A/B call before building. Also newly unblocked:
+  **Social Snub** (SelfCast + Optional-copy) and target-spell copy consumers (Choreographed Sparks via CopySpellOnStack's Target arm).
+
 ## 2026-07-05 (SOS relay sos-cards-15 — the SPELL-LEVEL ADDITIONAL-CAST-COST cap + 4 cards)
 
 - **Shipped the spell-level additional-cast-cost cap (CR 601.2b/f), all 4 cards, 698→713 green.** Three own-commits:

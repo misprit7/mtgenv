@@ -4,7 +4,61 @@ Standing workstream: implement the Secrets of Strixhaven set for **limited (40-c
 `mtg-core`, easiest-first, correctness over count. This ledger is the capability index + full
 per-card triage, modeled on `SELESNYA_LANDFALL_CARDS.md`.
 
-## ▶ NEXT AGENT — start here (handoff from sos-cards-15, 2026-07-05)
+## ▶ NEXT AGENT — start here (handoff from sos-cards-16, 2026-07-05)
+
+**▶▶ sos-cards-16 SHIPPED — 4 of the 5 college Elder Dragons + 5 reusable caps. 756 mtg-core green, whole workspace builds,
+tree clean, LEAD pushes.** Census **227→232/271 (86%)**, 0 Native hatches. Five own-commits (`git log -S` before re-scoping):
+- **`4dd31ef` — `Effect::CopySpellOnStack{what,count,choose_new_targets}`** (a thin loop over the built `copy_spell_on_stack`,
+  707.10, priority.rs:3990) **+ Prismari, the Inspiration (Storm)** + **wired `CostComponent::PayLife` into `pay_cost`**
+  (Ward—Pay 5 life — the dead `_ => {}` no-op is killed; CounterUnlessPay routes Ward costs through `pay_cost`). `what` is an
+  `EffectTarget`: `Triggering` reads `ctx.triggering_spell` (storm/casualty/infusion); a `Target::Stack`/`Object` branch is
+  wired for a future "copy target I/S spell" (Choreographed Sparks) but only `Triggering` is tested. Storm = `Triggered{
+  SpellCast(I/S)} → CopySpellOnStack{Triggering, count: Sum(SpellsCastThisTurn,−1), new targets}` (count reads AFTER the cast's
+  increment). Test drive loop MUST `run_agenda` BEFORE `resolve_top` or the spell resolves before the copy trigger lands.
+- **`cce33d6` — Silverquill, the Disputant (Casualty 1)** = `Triggered{SpellCast(I/S)} → Optional{IfYouDo{Sacrifice(creature
+  power≥1 = `All([Creature, Not(PowerAtMost(0))])`) → CopySpellOnStack{Triggering, count:1}}}`. ⚠️ sac trails the true 601.2b
+  cast-time window (observable result matches — the copy still resolves above the still-on-stack spell).
+- **`f66c23f` — Witherbloom, the Balancer (Affinity) + `Ability::GrantCostReduction{amount, spell_filter}`.** Own affinity
+  composes now (`CostReduction{GenericValue(Count creatures), State(Always), Cast}`). The **granted-to-your-I/S** clause = the
+  new `GrantCostReduction` static: `effective_cast_cost` gathers these from EVERY permanent the caster controls whose
+  `spell_filter` matches the cast card (generic-only, CR 118/702.40). Applies at both the offer gate AND cast (same fn).
+- **`c7f2a8e` — Quandrix, the Proof (Cascade) + `EventPattern::SelfCast` + `Effect::Cascade`.** **SelfCast** = "when you cast
+  THIS spell" — found by scanning the just-cast spell's OWN abilities (`queue_self_cast_triggers`, wired into the `SpellCast`
+  broadcast next to the watcher scan); carries the spell as `source` + `trigger_source_spell` so its effect reads the spell's
+  own MV / copies it. **Cascade** (702.83) = exile-top-until-nonland with MV < the cast spell's MV (`ctx.triggering_spell`),
+  may-free-cast, bottom the rest via `state.rng` (bottom = front of the lib vec). Quandrix = own cascade (SelfCast) + granted
+  cascade to your I/S (SpellCast watcher). ⚠️ "from your hand" NOT enforced (cast-zone isn't threaded) — rare over-trigger.
+- **`42f4b74` — Lumaret's Favor (Infusion copy-self)** — first consumer combining SelfCast + CopySpellOnStack: `PumpPT{target
+  creature,+2/+4}` + `Triggered{SelfCast, if GainedLifeThisTurn → CopySpellOnStack{Triggering,1,new targets}}`.
+
+### ▶ Where sos-cards-16 points you (the tail after 4 dragons + 5 caps)
+- **Lorehold, the Historian (Miracle) — the ONLY remaining Elder Dragon; a REAL subsystem.** Design sketch is WITH THE LEAD
+  (decision A: stack-trigger reveal window at first-draw / decision B: immediate-at-draw shortcut). **Do NOT build until the
+  lead picks A/B.** Clause 1 (opp-upkeep loot) composes now: `Triggered{ BeginningOfStep(Upkeep), condition: Some(Not(YourTurn)),
+  Optional{IfYouDo{Discard 1, Draw 1}} }`. Clause 2 (Miracle {2} granted to your I/S in hand) = the subsystem — sketch pieces:
+  first-draw capture in `draw()` (priority.rs:3490, cards_drawn_this_turn 0→1); a miracle-source check (printed `Ability::Miracle`
+  OR a `GrantMiracle{cost,filter}` static, mirroring GrantCostReduction/GrantAbility); a cast window (a `MiracleWindow`
+  StackObjectKind or immediate offer); a `CastVariant::Miracle(cost)` alt-cost cast (reuse warp/flashback fixed-alt plumbing).
+- **Newly UNBLOCKED, compose-now (no new cap):**
+  - **Social Snub** ({1}{W}{B} sorcery) — `Triggered{SelfCast, condition: Some(CountAtLeast{creatures,Controller,1}), Optional{
+    CopySpellOnStack{Triggering,1}}}` (the "while you control a creature, you may copy" clause) + main effect (each player
+    sacrifices a creature + drain 1). Reuses SelfCast + CopySpellOnStack + Sacrifice/drain.
+  - **Choreographed Sparks / other target-spell copies** — via CopySpellOnStack's `what: Target(...)` arm (needs the card to
+    target a spell on the stack; the arm resolves `Target::Stack`/`Object` → spell obj, already wired, untested).
+  - **Aziza, Mica** (per the S15 tail) — spell-copy consumers; check their oracle for the exact trigger + copy shape.
+- **Medium caps still open (each a real new piece; from the S15 tail, still valid):** **Ennis** ("cards put into exile this
+  turn" per-turn tracker + end-step +1/+1 condition, on top of the shipped `ExileReturnNextEndStep`); **Increment** keyword
+  (Tester, Ambitious Augmenter — SpellCast-trigger comparing `ManaSpentOnTrigger` vs `Power/ToughnessOfSelf` + a 2nd ability);
+  **NoMaxHandSize** (Wisdom of Ages); **Moseo** (targeted MV≤life-gained reanimate — `resolve_dynamic_filter` into the TARGET
+  path); **LKI-counter-count** (Scolding Administrator); **discarded-this-resolution** (Mind Roots, Borrowed Knowledge, Colossus).
+- **Still design-deferred (need lead sketches):** 3 Natives, Fractalize, the special one-offs (Grandeur / theft-cast / name-choice
+  / free-cast / grant-mana / non-DFC prepare markers). See census buckets.
+
+*(sos-cards-16 winding down at a clean boundary — 4 Elder Dragons + Lumaret's Favor + 5 reusable caps, trackers current at
+232/271, 756 green, tree clean. The Elder-Dragon assessment below is now mostly EXECUTED — 4/5 done; only Lorehold/Miracle open,
+pending the lead's A/B on the sketch. `git log -S` + read the code before believing any claim — header PROCESS RULES apply.)*
+
+## ▶ Prior — handoff from sos-cards-15, 2026-07-05
 
 **▶▶ sos-cards-15 SHIPPED — the SPELL-LEVEL ADDITIONAL-CAST-COST cap (CR 601.2b/f), all 4 cards + a bonus dynamic-MV
 filter. 713 mtg-core green, whole workspace builds, tree clean, LEAD pushes.** Three own-commits (`git log -S` before
