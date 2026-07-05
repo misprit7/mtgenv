@@ -1025,6 +1025,17 @@ impl Engine {
                     actions.push(PlayableAction::PlayLand { card });
                 }
             }
+            // Mill-then-play (SoS): a LAND milled with play-permission is *played* from the graveyard
+            // (using your land drop, so this is gated on the per-turn limit) within its window.
+            for &card in &s.player(p).graveyard {
+                let o = s.object(card);
+                if o.playable_from_graveyard
+                    && o.chars.is_land()
+                    && o.play_until_turn.is_some_and(|until| s.turn_number <= until)
+                {
+                    actions.push(PlayableAction::PlayLand { card });
+                }
+            }
             for zone in [Zone::Graveyard, Zone::Exile] {
                 if self.can_play_lands_from(p, zone) {
                     let cards: Vec<ObjId> = s
@@ -1128,6 +1139,33 @@ impl Engine {
                 continue;
             }
             if self.card_castable_targets(card, p) {
+                actions.push(PlayableAction::Cast { spell: card, variant: CastVariant::Normal });
+            }
+        }
+
+        // Mill-then-play (SoS): cast a non-land card milled with play-permission straight from the
+        // graveyard, for its normal mana cost, at its own timing and within its window. Distinct from
+        // flashback (below) — a normal cast, so the spell goes to the graveyard (not exile) as it
+        // leaves the stack.
+        for &card in &s.player(p).graveyard {
+            let o = s.object(card);
+            if !o.playable_from_graveyard {
+                continue;
+            }
+            let chars = &o.chars;
+            if chars.is_land() {
+                continue; // a land is played, not cast (offered above).
+            }
+            let instant_speed =
+                chars.has_type(CardType::Instant) || chars.keywords.contains(&Keyword::Flash);
+            let within_window = o.play_until_turn.is_some_and(|until| s.turn_number <= until);
+            if !within_window || !(instant_speed || sorcery_speed) {
+                continue;
+            }
+            let is_is = chars.has_type(CardType::Instant) || chars.has_type(CardType::Sorcery);
+            let affordable =
+                chars.mana_cost.as_ref().is_some_and(|c| mana::can_pay_ex(s, p, c, is_is));
+            if affordable && self.card_castable_targets(card, p) {
                 actions.push(PlayableAction::Cast { spell: card, variant: CastVariant::Normal });
             }
         }

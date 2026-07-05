@@ -472,6 +472,15 @@ pub enum Effect {
         what: EffectTarget,
         window: PlayWindow,
     },
+    /// "Mill a card. You may play that card this turn." (Ark of Hunger / Tablet of Discovery) — mill the
+    /// top card of `who`'s library and grant permission to **play** it (cast it / play it as a land)
+    /// straight from the graveyard until the end of `window`. Sets `Object.playable_from_graveyard` +
+    /// `play_until_turn`; the offer loop honours the card's own timing and the expiry. No-op on an empty
+    /// library. The graveyard analogue of [`ExileForPlay`].
+    MillThenPlay {
+        who: PlayerRef,
+        window: PlayWindow,
+    },
     /// Attach `what` onto `to` (sets `what`'s `attached_to`). `what` is usually `SourceSelf` (the
     /// Equipment equip ability, `{cost}: attach this to target creature you control`, sorcery-
     /// speed); the explicit field also covers "attach target Aura/Equipment to …" effects.

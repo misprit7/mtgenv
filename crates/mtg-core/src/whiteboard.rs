@@ -1695,6 +1695,22 @@ impl EngineCore {
                     wb.push(Action::ExileForPlay { obj, until });
                 }
             }
+            // "Mill a card. You may play that card this turn." (Ark of Hunger / Tablet of Discovery) —
+            // the window is anchored to the *milling player* (CR 400.7), not a target's owner.
+            Effect::MillThenPlay { who, window } => {
+                let player = self.eval_player(*who, ctx);
+                let until = match window {
+                    crate::effects::PlayWindow::ThisTurn => self.state.turn_number,
+                    crate::effects::PlayWindow::YourNextTurn => {
+                        if self.state.active_player == player {
+                            self.state.turn_number + 2
+                        } else {
+                            self.state.turn_number + 1
+                        }
+                    }
+                };
+                wb.push(Action::MillForPlay { player, until });
+            }
             // Move targeted object(s) to another zone (CR 400.7 / 608.2) — "return target permanent
             // to its owner's hand" (bounce), "return target creature card from your graveyard to the
             // battlefield" (reanimate), "return up to two target creature cards … to your hand"
@@ -2545,6 +2561,19 @@ impl EngineCore {
                 }
             }
             Action::Mill { player, count } => self.mill(player, count),
+            // Mill the top card and grant permission to play it from the graveyard until `until`.
+            Action::MillForPlay { player, until } => {
+                if let Some(top) = self.state.player(player).library.last().copied() {
+                    // move_object resets the flags (400.7), so set them AFTER the move.
+                    if self.state.move_object(top, Zone::Graveyard, player) {
+                        if let Some(o) = self.state.objects.get_mut(&top) {
+                            o.playable_from_graveyard = true;
+                            o.play_until_turn = Some(until);
+                        }
+                        self.broadcast(GameEvent::ObjectMoved { obj: top, to: Zone::Graveyard });
+                    }
+                }
+            }
             Action::CreateToken { spec, controller } => self.create_token(&spec, controller),
             Action::CreateEmblem { emblem_grp, controller } => self.create_emblem(emblem_grp, controller),
             Action::SetPrepared { obj, prepared } => {

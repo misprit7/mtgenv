@@ -111,6 +111,13 @@ pub enum Action {
         obj: ObjId,
         until: u32,
     },
+    /// Mill-then-play (SoS): put the top card of `player`'s library into their graveyard, then grant
+    /// permission to play THAT card from the graveyard through turn `until` (inclusive). Sets
+    /// `playable_from_graveyard` + `play_until_turn = Some(until)` on it. No-op on an empty library.
+    MillForPlay {
+        player: PlayerId,
+        until: u32,
+    },
     /// Grant a continuous effect created by resolution (CR 611) over a fixed set of objects —
     /// "until end of turn" pumps, animations (Earthbend's land→creature), etc. Applied by pushing
     /// a [`crate::chars::ContinuousEffect`] into game state, where the layer system folds it in

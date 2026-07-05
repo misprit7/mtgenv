@@ -161,10 +161,17 @@ pub struct Object {
     /// Set on a card warp-exiled at its end step (CR 702.x) — it may be cast from exile on a later
     /// turn (for its normal cost). Reset on any zone change (cast it, or it leaves exile).
     pub castable_from_exile: bool,
+    /// Set on a card **milled with play-permission** ("Mill a card. You may play that card this turn."
+    /// — Ark of Hunger / Tablet of Discovery). While set (and within `play_until_turn`), the offer lets
+    /// its owner *play* it — cast a spell or play a land — straight from the graveyard. The graveyard
+    /// analogue of `castable_from_exile`; the two never overlap (a card is in one zone). Reset on any
+    /// zone change (CR 400.7).
+    #[serde(default)]
+    pub playable_from_graveyard: bool,
     /// The last turn number on which an **impulse-exiled** card may be played (inclusive) — "you may
     /// play it until end of turn / your next turn" (SoS impulse-play). `None` = no turn limit (a
-    /// warp-exiled card, playable any later turn). Read alongside `castable_from_exile` at the offer;
-    /// reset on any zone change (CR 400.7).
+    /// warp-exiled card, playable any later turn). Read alongside `castable_from_exile` /
+    /// `playable_from_graveyard` at the offer; reset on any zone change (CR 400.7).
     #[serde(default)]
     pub play_until_turn: Option<u32>,
     /// Set when one or more counters were put on this permanent **this turn** (any counter kind, via
@@ -699,6 +706,7 @@ impl GameState {
             warp_cast: false,
             flashback_cast: false,
             castable_from_exile: false,
+            playable_from_graveyard: false,
             play_until_turn: None,
             counter_added_this_turn: false,
             is_copy: false,
@@ -812,6 +820,7 @@ impl GameState {
             o.warp_cast = false; // a fresh object identity (CR 400.7)
             o.flashback_cast = false; // a fresh object identity (CR 400.7)
             o.castable_from_exile = false; // re-granted only by a fresh warp-exile (400.7)
+            o.playable_from_graveyard = false; // re-granted only by a fresh mill-then-play (400.7)
             o.play_until_turn = None; // impulse-play window drops on any zone change (400.7)
             o.counter_added_this_turn = false; // counters exist only on the battlefield (110.5d / 400.7)
             o.is_copy = false; // a copy never legitimately changes zones (it ceases to exist, 707.10a)
