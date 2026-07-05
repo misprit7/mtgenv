@@ -195,6 +195,51 @@ impl EngineCore {
                 self.interpret_discard_chosen(player);
                 true
             }
+            // "Put up to `max` [filter] card(s) discarded this way onto the battlefield tapped under your
+            // control" (Mind Roots). Selects among this resolution's discard scratch. Imperative + asks
+            // the controller, so it lives here. Flush staged actions first.
+            Effect::PutDiscardedOntoBattlefield { filter, max } => {
+                self.flush_pending(wb);
+                let controller = ctx.controller.unwrap_or(self.state.active_player);
+                let filter = self.resolve_dynamic_filter(filter, ctx);
+                let candidates: Vec<ObjId> = self
+                    .discarded_this_resolution
+                    .iter()
+                    .copied()
+                    .filter(|&id| self.count_filter_matches(id, &filter))
+                    .collect();
+                if !candidates.is_empty() && *max > 0 {
+                    let chosen = match self.ask(
+                        controller,
+                        &DecisionRequest::SelectCards {
+                            reason: SelectReason::Generic,
+                            from: candidates.clone(),
+                            min: 0,
+                            max: *max,
+                            description: "Put discarded card(s) onto the battlefield".into(),
+                        },
+                    ) {
+                        DecisionResponse::Indices(v) => v
+                            .iter()
+                            .filter_map(|&i| candidates.get(i as usize).copied())
+                            .take(*max as usize)
+                            .collect::<Vec<_>>(),
+                        DecisionResponse::Index(i) => candidates.get(i as usize).copied().into_iter().collect(),
+                        _ => Vec::new(),
+                    };
+                    for card in chosen {
+                        // Under YOUR control (owner unchanged): move to the battlefield keyed to the
+                        // controller, then tap it (CR "onto the battlefield tapped under your control").
+                        if self.state.move_object(card, Zone::Battlefield, controller) {
+                            if let Some(o) = self.state.objects.get_mut(&card) {
+                                o.status.tapped = true;
+                            }
+                            self.broadcast(GameEvent::ObjectMoved { obj: card, to: Zone::Battlefield });
+                        }
+                    }
+                }
+                true
+            }
             // "You have no maximum hand size for the rest of the game" (CR 402.2) — Wisdom of Ages.
             // Imperative single-field mutation; flush staged actions first for ordering.
             Effect::SetNoMaxHandSize { who } => {
@@ -1940,6 +1985,7 @@ impl EngineCore {
             | Effect::AddMana { .. }
             | Effect::Discard { .. }
             | Effect::DiscardChosen { .. }
+            | Effect::PutDiscardedOntoBattlefield { .. }
             | Effect::SetNoMaxHandSize { .. }
             | Effect::GrantChosenKeyword { .. }
             | Effect::Counter { .. }

@@ -398,6 +398,15 @@ pub enum Effect {
         who: PlayerRef,
         count: ValueExpr,
     },
+    /// "Put up to `max` [filter] card(s) discarded this way onto the battlefield tapped under your
+    /// control" (CR 701.8 "discarded this way" reference) — Mind Roots's land drop. Selects among the
+    /// per-resolution discard scratch (`discarded_this_resolution`), the controller picks up to `max`
+    /// matching `filter`, and each moves to the battlefield under the CONTROLLER's control (owner
+    /// unchanged), tapped. Only useful right after a `Discard`/`DiscardChosen` this resolution.
+    PutDiscardedOntoBattlefield {
+        filter: CardFilter,
+        max: u32,
+    },
     /// "Discard any number of cards" (CR 701.8) — `who` chooses **how many** (0 up to their whole
     /// hand) and which. Distinct from [`Effect::Discard`], where the count is fixed. The number
     /// actually discarded is recorded in the per-resolution scratch, so a following effect can read

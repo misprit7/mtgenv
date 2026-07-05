@@ -149,6 +149,7 @@ pub mod practiced_offense;
 pub mod ambitious_augmenter;
 pub mod scolding_administrator;
 pub mod tester_of_the_tangential;
+pub mod mind_roots;
 pub mod pigment_wrangler;
 pub mod planar_engineering;
 pub mod prismari_the_inspiration;
@@ -378,6 +379,7 @@ pub fn register(db: &mut CardDb) {
     ambitious_augmenter::register(db);
     scolding_administrator::register(db);
     tester_of_the_tangential::register(db);
+    mind_roots::register(db);
     pigment_wrangler::register(db);
     prismari_the_inspiration::register(db);
     quandrix_the_proof::register(db);
