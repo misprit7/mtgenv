@@ -3,6 +3,25 @@
 Short, dated entries for future-agent consumption. Newest first. One line or a few bullets
 per unit of meaningful progress. Keep it terse — detail lives in `docs/` and git history.
 
+## 2026-07-05 (SOS: CARD-COMPLETE MODULO ROADMAP)
+
+- **The full-set relay reached its terminal state: 266/271 authored (98%) — 262 fully-faithful ·
+  4 tracked-partial · 5 unauthored · ZERO Native hatches at 271 cards · 854 mtg-core tests.**
+  Nineteen agents, one continuous ledger, every commit green. The remaining 9 items (5 unauthored:
+  Fractalize, Great Hall, Rubble Rouser, Resonating Lute, Petrified Hamlet; 4 partials: Nita ab.2,
+  Ral −7, Wildgrowth, Hydro-Channeler 2nd) ALL ride two engine-roadmap decisions held for the user:
+  (1) layer-4/5 completion (type/color-changing continuous effects), (2) the transactional-payment /
+  mana-ability-grant class (WHITEBOARD §2.6). Card-agent queue is EMPTY until those land.
+- Highlights of the final day: all 5 college Elder Dragons (4 were compositions; Miracle = the one
+  real subsystem, stack-trigger reveal window); prepare-DFCs complete (36; copy-only back-face
+  design); Paradigm 5/5 Lessons; spell-copy BOTH semantics (707.10 + 707.12); planeswalkers +
+  emblems + command zone; floating replacements + death-path interception; counterspell real-cast
+  targeting; ~15 silently-inert defect classes killed across the push (unfired triggers, no-op
+  costs/actions, dead filter/target arms, bypassed replacement passes).
+- Architecture validation: the Effect-IR expressed every card attempted — the Native escape hatch
+  is UNEXERCISED at 271 cards (recorded in WHITEBOARD_MODEL with the EffectCtx limitation the first
+  real Native will need addressed).
+
 ## 2026-07-05 (SOS relay sos-cards-19 — 8 fully-faithful + 1 tracked-partial; census 257→266/271, 833→854 green; still 0 Natives; SET CARD-COMPLETE modulo roadmap)
 
 - **Headline: the ledger's "3 Natives" were all IR-expressible** — the tag was stale. **Steal the Show** (`2e40f25`) was fully
