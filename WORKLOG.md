@@ -24,6 +24,11 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
   gain-life-on-attack + `{B}{G}` graveyard-recursion to the battlefield **tapped** — completes the
   graveyard-recursion trio). Also registered the missing **Swamp** basic land (`grp::SWAMP=5` — no
   black basic land existed).
+- **Exile-as-cost wiring + Postmortem Professor. 592→595 tests.** Wired `CostComponent::Exile(SelectSpec)`
+  in `can_pay_cost`/`pay_cost` (`exile_cost_candidates`/`pay_exile_cost`, mirror the Discard pair; excludes
+  the source, moves chosen cards to Exile) — it was defined-but-unpaid. → **Postmortem Professor** ({1}{B}
+  can't-block Zombie + attack drain + `{1}{B}`,exile-an-I/S-from-gy graveyard-recursion). Reusable for
+  future escape/delve.
 
 ## 2026-07-03 (sos-cards-7)
 

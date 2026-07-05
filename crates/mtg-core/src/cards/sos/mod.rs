@@ -94,6 +94,7 @@ pub mod paradox_surveyor;
 pub mod pestbrood_sloth;
 pub mod poisoners_apprentice;
 pub mod pensive_professor;
+pub mod postmortem_professor;
 pub mod potioners_trove;
 pub mod practiced_scrollsmith;
 pub mod primary_research;
@@ -246,6 +247,7 @@ pub fn register(db: &mut CardDb) {
     pestbrood_sloth::register(db);
     poisoners_apprentice::register(db);
     pensive_professor::register(db);
+    postmortem_professor::register(db);
     potioners_trove::register(db);
     practiced_scrollsmith::register(db);
     primary_research::register(db);

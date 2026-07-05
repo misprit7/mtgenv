@@ -1330,6 +1330,12 @@ impl Engine {
                 CostComponent::Discard(spec) => {
                     self.discard_candidates(p, spec).len() as u32 >= cost_count(&spec.min)
                 }
+                // Exile-as-cost (CR 118.9 — escape/delve, and SoS "Exile an instant or sorcery card
+                // from your graveyard:" Postmortem Professor): payable iff enough matching cards
+                // (other than the source) sit in `spec.zone`.
+                CostComponent::Exile(spec) => {
+                    self.exile_cost_candidates(p, source, spec).len() as u32 >= cost_count(&spec.min)
+                }
                 // Crew N (CR 702.122): payable iff untapped creatures you control total power ≥ N.
                 CostComponent::Crew(n) => {
                     let total: i32 = self
@@ -1547,6 +1553,7 @@ impl Engine {
                 }
                 CostComponent::Sacrifice(spec) => self.pay_sacrifice(p, source, spec),
                 CostComponent::Discard(spec) => self.pay_discard(p, spec),
+                CostComponent::Exile(spec) => self.pay_exile_cost(p, source, spec),
                 CostComponent::Crew(n) => self.pay_crew(p, source, *n),
                 // "Exile this card from your graveyard" — move the source to exile as the cost.
                 CostComponent::ExileSelfFromGraveyard => {
@@ -1739,6 +1746,50 @@ impl Engine {
             let owner = self.state.object(obj).owner;
             self.state.move_object(obj, Zone::Graveyard, owner);
             self.broadcast(GameEvent::ObjectMoved { obj, to: Zone::Graveyard });
+        }
+    }
+
+    /// The cards `payer` could exile to pay a [`CostComponent::Exile`] — cards in `spec.zone` (a
+    /// graveyard for escape/delve and SoS "Exile an I/S card from your graveyard") matching the
+    /// filter, **excluding the ability's own `source`** (an ability can't spend itself as its own
+    /// fuel; the source is committed to the effect, e.g. Postmortem Professor returns itself).
+    fn exile_cost_candidates(&self, payer: PlayerId, source: ObjId, spec: &SelectSpec) -> Vec<ObjId> {
+        self.state
+            .player(payer)
+            .zone_ids(spec.zone)
+            .iter()
+            .copied()
+            .filter(|&o| o != source && self.enter_filter_matches(o, &spec.filter, payer, None))
+            .collect()
+    }
+
+    /// Pay a [`CostComponent::Exile`]: exile `spec.min` matching cards (CR 118.9). When more than
+    /// enough candidates exist, the payer chooses which (`SelectCards`); otherwise no decision.
+    fn pay_exile_cost(&mut self, payer: PlayerId, source: ObjId, spec: &SelectSpec) {
+        let candidates = self.exile_cost_candidates(payer, source, spec);
+        let want = cost_count(&spec.min).min(candidates.len() as u32);
+        let chosen: Vec<ObjId> = if candidates.len() as u32 <= want {
+            candidates
+        } else {
+            let req = DecisionRequest::SelectCards {
+                reason: SelectReason::Delve,
+                from: candidates.clone(),
+                min: want,
+                max: want,
+                description: "exile as a cost".to_string(),
+            };
+            let idxs = match self.ask(payer, &req) {
+                DecisionResponse::Indices(i) => {
+                    self.distinct_valid_indices(&i, candidates.len(), want)
+                }
+                _ => (0..want as usize).collect(),
+            };
+            idxs.into_iter().map(|i| candidates[i]).collect()
+        };
+        for obj in chosen {
+            let owner = self.state.object(obj).owner;
+            self.state.move_object(obj, Zone::Exile, owner);
+            self.broadcast(GameEvent::ObjectMoved { obj, to: Zone::Exile });
         }
     }
 
