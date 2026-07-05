@@ -58,7 +58,11 @@ main_config = EasyDict(dict(
         model_path=None, cuda=True, env_type='not_board_games', action_type='varied_action_space',
         manual_temperature_decay=FIX,
         game_segment_length=200, num_simulations=num_simulations, reanalyze_ratio=0.0,
-        num_unroll_steps=5, td_steps=5, discount_factor=0.997,
+        # td_steps/num_unroll default 5 is FAR too short for 30-60-sub-decision episodes: terminal ±1
+        # never reaches early decisions, so the value stays flat/uninformative (audit_policy_shift.py
+        # showed value -> flat -0.3 while the prior barely moves). --td / --unroll test longer credit.
+        num_unroll_steps=_argval("--unroll", int, 5), td_steps=_argval("--td", int, 5),
+        discount_factor=0.997,
         n_episode=n_episode,
         update_per_collect=_argval("--up", int, 2 if SMOKE else 100), batch_size=batch_size,
         optim_type='Adam', learning_rate=_argval("--lr", float, 0.003),

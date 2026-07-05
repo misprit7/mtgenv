@@ -42,9 +42,41 @@ There is **no exploration floor** (`random_collect_episode_num=0`, `eps_greedy_e
 The README's original "always-mulligan" is the *eval/greedy* symptom; *collection* loses via passive play in
 normal-length games, not mulligan-to-death.
 
-**Candidate fixes (being tested on the heralds falsifier):** raise the collection temperature (→1.0) or use
-`manual_temperature_decay` from a high start; seed with `random_collect_episode_num>0`; add eps-greedy. The
-value/reward plumbing needs no change.
+## HERALDS FALSIFIER (2026-07-04) — collapse is SYSTEMIC; reward-shaping arrests it
+
+Heralds mirror is trivially-learnable (play land, cast herald, attack; PPO ~0.972). If MuZero can't
+learn it, the swine failure is not deck-difficulty. Result: **heralds collapses identically to swine.**
+I then ruled out every "it's a bug in X" candidate by A/B (instrumented real collector, per-episode
+win-rate quintiles via `audit_collect_trace.py --config heralds_plain`):
+
+| variant | first-collect win | collapse curve (episode quintiles) | verdict |
+|---|---|---|---|
+| stochastic-muzero, temp 0.25 (default) | ~0.4 | →0 | collapses |
+| **plain muzero** (no VQ chance machinery) | 0.5–0.75 | 0.50→0.25→0.125→0.00→0.22 | collapses → **not the chance machinery** |
+| temp 1.0 (`--fix`, manual_temperature_decay) | — | →−1.0, value→−0.44 | collapses → **not temperature** |
+| SSL off (`--nossl`) | — | 0.56→0.06→0.00 | collapses → **not latent collapse** |
+| lower lr / update_per_collect | — | slower →0 | collapses (slower) |
+| reward shaping, coef 0.5 (`--shaping 0.5`) | 0.5 | dips then holds ~0.44 in a 3.5k trace; over a real 20k budget still →~−0.9 | **delays/moderates, does NOT fully arrest** (mull-to-death 6% vs 49% early) |
+| **td_steps 40 (`--td 40`)** | 0.44 | 0.44→0.62→0.62→0.00→0.11 | **holds/improves ~50 eps then falls** — value discrimination helps |
+
+**Root cause (from `audit_policy_shift.py`, comparing iteration_0 vs a post-collapse ckpt of the same run):**
+training barely moves the **policy prior** (mulligan stays 0.51/0.49; PASS rises only 0.125→0.36) — it is NOT
+a hard policy collapse. What breaks is the **value function: it goes *flat*-negative (~−0.3 at every state)**
+instead of learning winning-vs-losing. A flat value gives the search no signal, so the mild low-index tilt +
+the mulligan-to-death attractor slowly win out, the buffer drifts to all-losses, and value settles ~−0.3…−0.8.
+**Why the value stays flat:** `td_steps=5`/`num_unroll=5` is far too short for 30–60-sub-decision episodes —
+the terminal ±1 never propagates to early-game decisions (PPO avoids this via GAE-λ over the whole episode).
+
+**Conclusion — NOT an adapter/plumbing/chance/temperature/SSL bug; a MuZero-recipe mismatch to this env:**
+sparse terminal reward + very long factored episodes + `td_steps=5` (no early-game credit) + a legal PASS at
+index 0 (the attractor) + `update_per_collect=100` (over-trains the tiny early buffer). Each lever **helps but
+none alone fixes it** at short budget: shaping (coef 0.5, anti-mulligan; note 3.1 swine's 0.1 was too weak),
+`td_steps≈40` (value discrimination), `--up 20` (less over-training). A real fix needs them **combined + budget**.
+
+**Standard metrics ported** (`muzero_metrics.py`): greedy `selfplay/winrate_vs_random` (≥100 games, PPO's exact
+tag) + `stats/productive_rate` (mirroring `tracked_stats.py`), written into the run's TB dir so they overlay PPO.
+Runs on the versioned board: `3.2-muzero-heralds-shaped` (stochastic+shaping — collapsed), `…-plain-shaped`
+(plain+shaping — collapsed over budget), `…-combined` (shaping+td40+up20 — the best-shot fix; verdict pending).
 
 ## M3 result — Stochastic MuZero fails the swine cold-start (two configs)
 
