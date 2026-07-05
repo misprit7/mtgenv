@@ -3,6 +3,24 @@
 Short, dated entries for future-agent consumption. Newest first. One line or a few bullets
 per unit of meaningful progress. Keep it terse — detail lives in `docs/` and git history.
 
+## 2026-07-05 (SOS relay sos-cards-17 — spell-copy consumers + LKI-counter & discard subsystems; census 234→244/271, 764→791 green)
+
+- **9 fully-faithful cards + 1 tracked-partial + cleared Colossus + 7 reusable caps.** The clean-compose tail is now EXHAUSTED.
+- **`898b23b` — Mica, Reader of Ruins** (sac-artifact spell-copy, pure Silverquill re-skin + Ward). 0 new cap.
+- **`a4eb133` — discarded-this-resolution cap** (`Effect::DiscardChosen` "discard any number" + `ValueExpr::DiscardedThisResolution`
+  over a per-resolution scratch) → **Borrowed Knowledge** (modal discard-hand-then-draw) + **Colossus dies clause cleared from
+  tracked-partial** (discard any number, draw that many + 1).
+- **Aziza, Mage Tower Captain** (tap-3 spell-copy over existing `MayPayCost`; caveat: TapCreatures excludes Aziza herself). 0 cap.
+- **Mind into Matter** (Draw X + `Search{Hand,min:0}` put-permanent-MV≤X-tapped) + **fixed `interpret_search` dynamic-filter resolution**.
+- **Wisdom of Ages** — `Effect::SetNoMaxHandSize` + `Ability::ExileOnResolve` marker + return-all-I/S (ForEach max:999).
+- **Practiced Offense** — `Effect::GrantChosenKeyword` ("your choice of X or Y", composes in a Sequence) + TargetPlayer/ForEach counters + flashback.
+- **Ambitious Augmenter + Scolding Administrator** — **LKI counter-count**: `Lki` snapshots the counter bag at death; `CountersOnSelf`
+  falls back to it off-battlefield (fixed whiteboard AND conditions.rs eval). Reuse the existing `increment_ability()` helper.
+- **Tester of the Tangential** — Increment done; combat move-counters deferred (tracked-partial: needs MayPayCost-{X}+reflexive-target+MoveCounters).
+- **Mind Roots** — `Effect::PutDiscardedOntoBattlefield` (put a discarded land under your control) over TargetPlayer+Discard-2.
+- Census: **244/271 authored (240 faithful · 4 tracked-partial [Ral, Wildgrowth, Hydro-Channeler, Tester]) · 27 unauthored · 0 Natives.**
+  Next high-yield cap = **target-path dynamic-filter resolution** (unlocks Moseo + Sundering Archaic). See SOS_CARDS.md census.
+
 ## 2026-07-05 (SOS relay sos-cards-16 — the copy-spell / cascade / affinity caps + 4 Elder Dragons + Lumaret's Favor)
 
 - **Shipped 4 of the 5 college Elder Dragons + 5 reusable caps, 732→756 green, census 227→232/271.** Five own-commits:

@@ -4,7 +4,84 @@ Standing workstream: implement the Secrets of Strixhaven set for **limited (40-c
 `mtg-core`, easiest-first, correctness over count. This ledger is the capability index + full
 per-card triage, modeled on `SELESNYA_LANDFALL_CARDS.md`.
 
-## ▶ NEXT AGENT — start here (handoff from sos-cards-16, 2026-07-05)
+## ▶ NEXT AGENT — start here (handoff from sos-cards-17, 2026-07-05)
+
+**▶▶ sos-cards-17 SHIPPED — 9 fully-faithful cards + 1 tracked-partial + cleared 1 tracked-partial + 7 reusable caps. 791
+mtg-core green, whole workspace builds, tree clean, LEAD pushes.** Census **234→244/271 authored (90%)**, 0 Native hatches.
+Own-commits (`git log -S` before re-scoping — header PROCESS RULES apply):
+- **`898b23b` — Mica, Reader of Ruins** — sac-artifact spell-copy; a pure Silverquill re-skin (`SpellCast(I/S) → Optional{
+  IfYouDo{ Sacrifice(artifact) → CopySpellOnStack{Triggering, new targets} } }`) + `ward_pay_life(3)`. 0 new cap.
+- **`a4eb133` — discarded-this-resolution cap → Borrowed Knowledge + Colossus cleared.** New `Effect::DiscardChosen` ("discard
+  any number", player-chosen count) + `ValueExpr::DiscardedThisResolution` over a per-resolution `discarded_this_resolution`
+  scratch (mirrors `searched_this_resolution`). Borrowed Knowledge = modal discard-your-hand-then-draw; **Colossus of the Blood
+  Age** dies clause ("discard any number, draw that many + 1") composes over the same cap → **cleared from tracked-partial**.
+- **`898b…d?` — Aziza, Mage Tower Captain** — tap-3 spell-copy over the EXISTING `Effect::MayPayCost` (`SpellCast(I/S) →
+  MayPayCost{ TapCreatures(3), then: CopySpellOnStack{Triggering} }`). 0 new cap. ⚠️ documented caveat: `TapCreatures(3)`
+  reuses `crew_candidates` which excludes the source, so Aziza can't count herself among the three (rare unpayable edge).
+- **Mind into Matter** — `Draw X` + `Search{ zone: Hand, min:0, max:1 }` (put a permanent MV≤X from hand onto bf tapped),
+  filter = `Not(I/S) ∧ ManaValueExpr{max:X}`. **Also fixed `interpret_search` to resolve dynamic (X-keyed) filters** (it was
+  matching the raw `ManaValueExpr` against the ctx-free matcher → never matched; same class as the historical select bug).
+- **Wisdom of Ages** — new `Effect::SetNoMaxHandSize` (lifts the cleanup discard limit) + new `Ability::ExileOnResolve` marker
+  (resolve_top exiles the card instead of gy, alongside the flashback/Paradigm branch) + return-all-I/S-from-gy via the Jadzi
+  `ForEach{ max:999 = all }` select-all idiom.
+- **Practiced Offense** — new `Effect::GrantChosenKeyword{ options }` ("gains your choice of double strike or lifelink"): the
+  target is a normal cast-time target (collected in `collect_specs_into`), the keyword is chosen at resolution via ChooseModes
+  — composes inside a `Sequence` UNLIKE a nested `Modal` (whose targets aren't collected). Plus `TargetPlayer` + `ForEach`
+  counters scoped to the target player (`chooser: ChosenTarget(0)`) + flashback. NB: `TargetPlayer` advances the target cursor.
+- **LKI counter-count for dies triggers → Ambitious Augmenter + Scolding Administrator.** `state::Lki` now snapshots the
+  **counter bag** at death; `ValueExpr::CountersOnSelf` falls back to it off-battlefield (fixed BOTH eval paths —
+  `whiteboard::eval_value` AND `conditions::eval_value`; the second was the bug). Both cards reuse the EXISTING
+  `helpers::increment_ability()` (Increment was already a shared helper). Augmenter = dies→Fractal via CreateToken
+  `dynamic_counters`; Scolding = Menace + Repartee + dies→PutCounters{target, +1/+1, CountersOnSelf(LKI)}.
+- **Tester of the Tangential** — Increment faithful; combat "pay {X}, move X +1/+1 counters onto target" **deferred (tracked-
+  partial)**: needs `MayPayCost`-with-`{X}` (announce+thread X) + a **reflexive** target (CR 603.7c) + `Effect::MoveCounters`.
+- **Mind Roots** — new `Effect::PutDiscardedOntoBattlefield{ filter, max }` (select among the discard scratch → bf tapped under
+  YOUR control, owner unchanged) over `TargetPlayer` + `Discard{ChosenTarget(0), 2}`.
+
+### ★ FULL-SET CENSUS (sos-cards-17, 2026-07-05, Scryfall-diff verified) — 244/271 authored (90%)
+Method: `comm -23` of the 271 sos front-face names vs every card-name string literal in `crates/mtg-core/src/cards/**`.
+**244 authored (240 fully-faithful · 4 tracked-partial) · 27 unauthored. 0 Native hatches. 791 mtg-core green.**
+
+**The 4 TRACKED-PARTIAL** (`grep -rln '.incomplete()' cards/sos`): Ral Zarek Guest Lecturer (−7 coin-flip+skip-turns),
+Wildgrowth Archaic (enters-with-extra-counters-keyed-to-another-spell), Hydro-Channeler (mana-ability-with-mana-cost),
+**Tester of the Tangential** (combat move-counters — new this session). *(Colossus was cleared this session.)*
+
+**The 27 UNAUTHORED — bucketed:**
+- **Natives (3, genuinely inexpressible — lead sketch):** Mathemagics (2^X exponential), Pox Plague (halving), Steal the Show
+  (control-theft + wheel).
+- **Milestone-5 layer system (1):** Fractalize (SET creature-type + set-base-P/T, CR 613 layers 4/7b).
+- **Special one-offs (9, each a bespoke mechanism — lead sketch):** Nita Forum Conciliator (cast-a-spell-you-don't-own +
+  exile-opp-gy-cast-with-any-mana), Page Loose Leaf (Grandeur), Petrified Hamlet (choose-a-name static), Resonating Lute
+  (grant-a-mana-ability), Zaffai and the Tempests (once/turn free-cast), Skycoach Waypoint (non-DFC prepare land), Biblioplex
+  Tomekeeper (make-target-prepared/unprepared), Great Hall of the Biblioplex (mana land + becomes-a-creature layer),
+  Choreographed Sparks (mode1 copy-target-I/S = the CopySpellOnStack Target arm, BUILDABLE; mode2 copy-creature-spell→token +
+  grant haste/sac = a creature-spell-copy-to-token cap).
+- **Cap-blocked buildable (14, each ONE new cap):**
+  - **▶▶ HIGHEST-YIELD NEXT CAP — target-path dynamic-filter resolution** (`target_candidates` is `&self`/ctx-free, so a
+    `ManaValueExpr`/`ColorsSpent`-keyed TARGET filter never matches — same class as the `interpret_search` bug I fixed). Fixing
+    it (build a source-derived ctx and `resolve_dynamic_filter` before enumerating) unlocks **Moseo Vein's New Dean** (reanimate
+    target MV≤life-gained — a legend) AND **Sundering Archaic** (Converge exile target MV≤colors-spent; its {2}:gy→bottom-library
+    is a plain targeted `MoveZone{Bottom}`). Two cards, one legend.
+  - **Snooping Page** — needs a **self**-combat-damage-to-player event (`YouDealCombatDamageToPlayer` is a per-controller batch,
+    over-triggers; `DamageDealt` is per-instance but unused/unwired). + Repartee (exists) + CantBeBlocked-until-EOT (exists).
+  - **Ennis, Debate Moderator** — cards-put-into-exile-this-turn tracker (the end-step +1/+1 condition); ETB half =
+    `ExileReturnNextEndStep` (exists).
+  - **Burrog Barrage** — `PowerOfTarget` one-sided damage (exists); "if you've cast another **I/S** this turn" needs a
+    type-filtered spell counter (`SpellsCastThisTurn` is untyped → minor over-count, or a small typed-count cap).
+  - **Divergent Equation** — dynamic **{X} target COUNT** ("up to X target I/S"); `TargetSpec.max` is a fixed `u32`. + ExileOnResolve (exists).
+  - **Ark of Hunger** / **Tablet of Discovery** — **mill-then-play-that-card** cap (Tablet is NOT authored — the ledger was
+    stale; Tablet also has a restricted mana ability). Ark's CardsLeaveYourGraveyard half = damage+gain (exists).
+  - **Rubble Rouser** — loot ETB (exists) + `{T}, Exile-from-gy: Add {R}` + reflexive damage = mana-ability-with-cost-and-rider
+    (same class as Hydro-Channeler / Treasure).
+  - **Slumbering Trudge** — stun counters (enters-with-stun-keyed-to-X + untap-replacement).
+  - **Mana Sculpt** — Counter (exists) + delayed "add {C} at your next main phase" (delayed mana).
+  - **Archaic's Agony** — Converge damage + excess-damage impulse-exile (excess-damage tracking + multi-card impulse).
+
+*(sos-cards-17 done at a clean boundary. The clean-compose tail is EXHAUSTED — every remaining card needs a genuinely new cap
+or a lead design sketch. Recommended next: the **target-path dynamic-filter fix** (2 cards incl. a legend), then Ennis's
+exile-this-turn tracker, then the Snooping-Page self-combat-damage event. `git log -S` + READ THE CODE before believing any
+claim.)*
+
 
 **▶▶ sos-cards-16 SHIPPED — ALL 5 college Elder Dragons + Lumaret's Favor + Social Snub + 6 reusable caps. 764 mtg-core
 green, whole workspace builds, tree clean, LEAD pushes.** Census **227→234/271 (86%)**, 0 Native hatches. Seven own-commits

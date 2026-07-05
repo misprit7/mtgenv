@@ -69,7 +69,18 @@ MTGA client.
 - **✅ MOBILE WEB CLIENT (2026-07-03).** Game client + lobby fully playable from a phone: mobile
   reflow (sticky prompt sheet, opp-top/you-bottom strips, log toggle), touch previews long-press-only
   (hover gated to real mice), on-screen pass-turn button. Desktop unchanged.
-- **▶ SOS FULL-SET scope: 234/271 authored (86%), 764 mtg-core tests green (2026-07-05, sos-cards-16).** **ALL 5 COLLEGE ELDER
+- **▶ SOS FULL-SET scope: 244/271 authored (90%), 791 mtg-core tests green (2026-07-05, sos-cards-17).** **THE SPELL-COPY
+  CONSUMERS + THE LKI-COUNTER & DISCARDED-THIS-RESOLUTION SUBSYSTEMS.** 9 fully-faithful cards (Mica, Borrowed Knowledge, Aziza,
+  Wisdom of Ages, Mind into Matter, Practiced Offense, Ambitious Augmenter, Scolding Administrator, Mind Roots) + 1 tracked-
+  partial (Tester of the Tangential — Increment done, combat move-counters deferred) + **cleared Colossus from tracked-partial**.
+  7 reusable caps: **`Effect::DiscardChosen` + `ValueExpr::DiscardedThisResolution`** (per-resolution discard scratch); **LKI
+  counter-count** (`Lki` snapshots the counter bag at death; `CountersOnSelf` falls back to it off-battlefield — BOTH eval
+  paths); **`Effect::SetNoMaxHandSize`**; **`Ability::ExileOnResolve`** (self-exiling I/S); **`Effect::GrantChosenKeyword`**
+  ("your choice of X or Y" — composes in a Sequence unlike a nested Modal); **`Effect::PutDiscardedOntoBattlefield`**; **fixed
+  `interpret_search` to resolve dynamic (X-keyed) filters**. Tracked-partials now 4 (Ral, Wildgrowth, Hydro-Channeler, Tester).
+  **Clean-compose tail EXHAUSTED** — the 27 unauthored all need a new cap or lead sketch (see SOS_CARDS.md census). Highest-yield
+  next cap = **target-path dynamic-filter resolution** (unlocks Moseo + Sundering Archaic). 0 Native hatches.
+- **▶ SOS (prior — sos-cards-16): 234/271 authored (86%), 764 mtg-core tests green (2026-07-05).** **ALL 5 COLLEGE ELDER
   DRAGONS DONE + 6 REUSABLE CAPS.** 6 caps: **`Effect::CopySpellOnStack`** (thin
   loop over the built `copy_spell_on_stack`, 707.10 — storm/casualty/infusion) + **wired `CostComponent::PayLife` into
   `pay_cost`** (Ward—Pay-life, was a dead no-op); **`Ability::GrantCostReduction`** (a CR 118 cost-mod static a permanent
