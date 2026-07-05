@@ -36,7 +36,31 @@ reusable subsystems.**
 - **`Effect::MillThenPutCreatureOntoBattlefield`** (mill from your OWN library, reanimate a creature from among the
   milled set; owner==controller so no control override) → **Vastlands Scavenger // Bind to Life**.
 
-### ▶ sos-cards-14 PROGRESS — 2 of the final 5 SHIPPED (688 mtg-core green), 3 flagged remain
+### ▶ sos-cards-14 PROGRESS — 4 of the final 5 SHIPPED (695 mtg-core green), only Goblin Glasswright (③) remains (lead scope decision)
+- ✅ **Grave Researcher // Reanimate** (commit `f09c497`, back id 9733) — SKETCH 1 built as a **dedicated `Effect::Reanimate
+  UnderControl`** (NOT a widened MoveZone — 24 existing MoveZone sites, too much churn; mirrors the `MillThenPutCreature
+  OntoBattlefield` precedent). + `ValueExpr::ManaValueOfTarget` (both eval paths) + the `move_object` control-vs-owner
+  source-removal fix (battlefield/stack sources remove from the CONTROLLER's vec — a **no-op for every existing card**;
+  full suite green). Real-path tests incl. steal-from-opp-gy + dies-to-owner's-gy.
+- ✅ **Leech Collector // Bloodletting** (commit `88465ed`, back id 9734) — SKETCH 2 built. The **queue-time condition check**
+  (helper `Engine::trigger_queues`, mirrors begin-of-step's `!intervening_if` gate) added to ALL 4 non-begin-of-step queue
+  sites (`queue_self_triggers` + spellcast/enters/**you_attack** siblings). **ZERO regression confirmed** — 695 green, the 3
+  Bucket-A cards (Emeritus of Conflict/Abundance, Living History; all intervening_if:true) explicitly re-verified passing.
+  + `Player.life_gain_events_this_turn` (reset each turn; bumped in the `LifeChanged{delta>0}` handler BEFORE the queue loop)
+  + `ValueExpr::LifeGainEventsThisTurn` (both paths). Front gate = exactly-1 (All/Not), `intervening_if:false`.
+
+### ▶ ORIGINAL sketches (retained for the record)
+- ✅ **Jadzi, Steward of Fate // Oracle's Gift** (commit `7a45fbf`, back id 9731) — **NO new cap.** {X}{X} = `ManaCost.x=2`
+  (charges 2X; `cast_x`→`ValueExpr::X`). Back = `Sequence[CreateToken{fractal(0), count:X}, ForEach{Fractals you control →
+  PutCounters{Each, +1/+1, X}}]` (the shipped Blech `ForEach{…max:999…}` selects ALL matching, so new + pre-existing
+  Fractals both get counters). Front = enters-prepared + a 2nd `SelfEnters` trigger (draw 2, discard 2).
+- ✅ **Harmonized Trio // Brainstorm** (commit `5345c20`, back id 9732) — **2 contained caps, NOT flagged.**
+  `CostComponent::TapCreatures(u32)` (count-based sibling of Crew; reuses `crew_candidates`/select-N-and-tap) drives the
+  front's "{T}, Tap two untapped creatures you control:" activated prepare. `Effect::PutFromHandOnTop{who,count}` (select
+  N hand cards ordered → library top, first-chosen on top; `move_object` pushes to the tail=top) drives Brainstorm =
+  `Sequence[Draw 3, PutFromHandOnTop 2]`.
+
+### ▶ REMAINING for sos-cards-14: **Goblin Glasswright // Craft with Pride** (③) — awaiting lead's scope pick (A/B/C below)
 - ✅ **Jadzi, Steward of Fate // Oracle's Gift** (commit `7a45fbf`, back id 9731) — **NO new cap.** {X}{X} = `ManaCost.x=2`
   (charges 2X; `cast_x`→`ValueExpr::X`). Back = `Sequence[CreateToken{fractal(0), count:X}, ForEach{Fractals you control →
   PutCounters{Each, +1/+1, X}}]` (the shipped Blech `ForEach{…max:999…}` selects ALL matching, so new + pre-existing
