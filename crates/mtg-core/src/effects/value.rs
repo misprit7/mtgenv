@@ -68,6 +68,14 @@ pub enum ValueExpr {
         filter: CardFilter,
         controller: Option<PlayerRef>,
     },
+    /// The **greatest mana value** (CR 202.3) among battlefield objects matching `filter`, optionally
+    /// restricted by controller — "the greatest mana value among creatures and planeswalkers they
+    /// control" (End of the Hunt). `0` if none match. Used dynamically (via `CardFilter::ManaValueExpr`)
+    /// to select the max-MV object.
+    GreatestManaValue {
+        filter: CardFilter,
+        controller: Option<PlayerRef>,
+    },
     /// The **computed power** of the effect's source object at resolution (CR 613) — used by the SoS
     /// "Increment" check ("mana spent > this creature's power or toughness"). `0` if no source.
     PowerOfSelf,

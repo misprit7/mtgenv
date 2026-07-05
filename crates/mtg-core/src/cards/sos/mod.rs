@@ -11,6 +11,7 @@ pub mod grave_researcher;
 pub mod leech_collector;
 pub mod goblin_glasswright;
 pub mod elite_interceptor;
+pub mod end_of_the_hunt;
 pub mod improvisation_capstone;
 pub mod infirmary_healer;
 pub mod emeritus_of_abundance;
@@ -218,6 +219,7 @@ pub fn register(db: &mut CardDb) {
     leech_collector::register(db);
     goblin_glasswright::register(db);
     elite_interceptor::register(db);
+    end_of_the_hunt::register(db);
     improvisation_capstone::register(db);
     infirmary_healer::register(db);
     emeritus_of_abundance::register(db);

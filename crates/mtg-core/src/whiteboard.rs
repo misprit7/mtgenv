@@ -2586,6 +2586,20 @@ impl EngineCore {
                     .map(|id| self.state.computed(id).toughness.unwrap_or(0) as i64)
                     .sum()
             }
+            // The greatest mana value among matching battlefield objects (End of the Hunt); `0` if none.
+            ValueExpr::GreatestManaValue { filter, controller } => {
+                let want = controller.map(|r| self.eval_player(r, ctx));
+                self.state
+                    .objects
+                    .values()
+                    .filter(|o| o.zone == Zone::Battlefield)
+                    .filter(|o| want.is_none_or(|p| o.controller == p))
+                    .map(|o| o.id)
+                    .filter(|&id| self.count_filter_matches(id, filter))
+                    .map(|id| self.state.objects.get(&id).map_or(0, |o| o.chars.mana_value()) as i64)
+                    .max()
+                    .unwrap_or(0)
+            }
         }
     }
 
