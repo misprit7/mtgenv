@@ -120,6 +120,7 @@ pub mod oracles_restoration;
 pub mod orysa_tide_choreographer;
 pub mod paradox_gardens;
 pub mod pest_mascot;
+pub mod pigment_wrangler;
 pub mod planar_engineering;
 pub mod owlin_historian;
 pub mod paradox_surveyor;
@@ -312,6 +313,7 @@ pub fn register(db: &mut CardDb) {
     orysa_tide_choreographer::register(db);
     paradox_gardens::register(db);
     pest_mascot::register(db);
+    pigment_wrangler::register(db);
     planar_engineering::register(db);
     owlin_historian::register(db);
     paradox_surveyor::register(db);

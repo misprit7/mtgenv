@@ -287,6 +287,25 @@ impl EngineCore {
                 }
                 true
             }
+            // "When you next cast a [filter] spell this turn, copy that spell" (CR 707.10 / 603.7) —
+            // arm a one-shot delayed trigger on the controller (Striking Palette). Non-interactive
+            // (just registers the trigger); when it later fires the engine mints a `SpellCopyTrigger`
+            // over the just-cast spell. `watching` is inert here (the dies/exile firing path never
+            // matches a `YouCastSpell` event — it fires from the `SpellCast` broadcast instead).
+            Effect::CopyNextSpellCast { filter, choose_new_targets } => {
+                let controller = ctx.controller.unwrap_or(PlayerId(0));
+                wb.push(Action::RegisterDelayedTrigger {
+                    watching: ctx.source.unwrap_or(ObjId(0)),
+                    event: DelayedTriggerEvent::YouCastSpell {
+                        filter: filter.clone(),
+                        choose_new_targets: *choose_new_targets,
+                    },
+                    controller,
+                    source: ctx.source,
+                    actions: Vec::new(),
+                });
+                true
+            }
             // Ward soft-counter (CR 702.21): counter `what` unless *its controller* (the targeting
             // player, not the Ward controller) pays `cost`. They're only offered the choice if they
             // can afford it; declining or being unable to pay counters the spell/ability. Imperative
@@ -1462,6 +1481,7 @@ impl EngineCore {
             | Effect::CounterUnlessPay { .. }
             | Effect::CastCopy { .. }
             | Effect::CastForFree { .. }
+            | Effect::CopyNextSpellCast { .. }
             | Effect::MayTapOrUntap { .. }
             | Effect::PutOnTopOrBottom { .. }
             | Effect::MayPayCost { .. }

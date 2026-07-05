@@ -118,6 +118,7 @@ pub fn render_state(state: &GameState) -> String {
                 mtg_core::stack::StackObjectKind::Ability { .. } => "<ability>".into(),
                 mtg_core::stack::StackObjectKind::DelayedAbility { .. } => "<delayed ability>".into(),
                 mtg_core::stack::StackObjectKind::ReflexiveAbility { .. } => "<reflexive ability>".into(),
+                mtg_core::stack::StackObjectKind::SpellCopyTrigger { .. } => "<copy spell>".into(),
             })
             .collect();
         let _ = write!(s, "Stack (top last): {}", items.join(", "));

@@ -199,6 +199,18 @@ pub enum Effect {
         what: EffectTarget,
         exile_on_leave: bool,
     },
+    /// "When you next cast a `filter` spell this turn, copy that spell" (CR 707.10) — Striking Palette
+    /// ("… an instant or sorcery spell this turn, copy that spell. You may choose new targets for the
+    /// copy."). Arms a one-shot delayed triggered ability (CR 603.7,
+    /// [`crate::effects::action::DelayedTriggerEvent::YouCastSpell`]) on the controller; when they next
+    /// cast a matching spell it fires a [`crate::stack::StackObjectKind::SpellCopyTrigger`] over that
+    /// spell, which on resolution mints an `is_copy` copy on the stack (NOT cast — no cast triggers,
+    /// distinct from [`CastCopy`]'s 707.12 mint+cast). `choose_new_targets` offers the 707.10c "you may
+    /// choose new targets" reselection. Expires unfired at the next turn's start.
+    CopyNextSpellCast {
+        filter: CardFilter,
+        choose_new_targets: bool,
+    },
     /// "This creature becomes prepared" (SoS "Prepare" DFCs). Sets the `prepared` status on the
     /// ability's source (`ctx.source`) — every "becomes prepared" clause (enters-prepared,
     /// at-the-beginning-of-your-first-main, whenever-this-attacks, landfall, an activated ability, …)

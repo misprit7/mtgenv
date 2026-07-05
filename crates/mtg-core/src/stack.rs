@@ -30,6 +30,13 @@ pub enum StackObjectKind {
     /// targeted `Conditional.then`/`Optional.body`) of the source's `ability_index` ability — its
     /// target is chosen as it goes on the stack, not at the parent ability.
     ReflexiveAbility { source: ObjId, ability_index: u32 },
+    /// A fired "copy that spell" delayed trigger (CR 707.10) — e.g. Striking Palette's "when you next
+    /// cast an instant or sorcery spell this turn, copy that spell." When it resolves, the engine mints
+    /// a copy of `spell` (the card object still on the stack below it) and puts it on the stack;
+    /// `choose_new_targets` offers the "you may choose new targets for the copy" reselection (707.10c).
+    /// Self-contained + serializable (no live source object needed — the creating spell has left the
+    /// stack), so it survives its source ceasing to exist, exactly like [`Self::DelayedAbility`].
+    SpellCopyTrigger { spell: ObjId, choose_new_targets: bool },
 }
 
 /// One object on the stack (CR 405.1).

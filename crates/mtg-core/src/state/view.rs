@@ -115,6 +115,10 @@ fn stack_view(state: &GameState, s: &StackObject) -> StackObjView {
             name: "Reflexive ability".to_string(),
             ..Default::default()
         },
+        StackObjectKind::SpellCopyTrigger { .. } => CharacteristicsView {
+            name: "Copy spell".to_string(),
+            ..Default::default()
+        },
     };
     StackObjView {
         id: s.id,

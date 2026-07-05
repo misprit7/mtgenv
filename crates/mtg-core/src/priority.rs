@@ -21,7 +21,9 @@ use crate::effects::ability::{
     Ability, Cost, CostComponent, CostReductionAmount, CostReductionCondition, CostReductionScope,
     EventPattern, Keyword, Restriction, StaticContribution, Timing,
 };
-use crate::effects::action::{Action, MoveCause, ResolutionCtx, Whiteboard, WbReason};
+use crate::effects::action::{
+    Action, DelayedTriggerEvent, MoveCause, ResolutionCtx, Whiteboard, WbReason,
+};
 use crate::effects::target::{CardFilter, PlayerFilter, SelectSpec, TargetKind, TargetSpec};
 use crate::effects::value::{PlayerRef, ValueExpr};
 use crate::effects::{Effect, EffectTarget};
@@ -722,6 +724,11 @@ impl Engine {
         // (until_turn = N) is gone once a later turn begins.
         let turn = self.state.turn_number;
         self.state.floating_replacements.retain(|f| f.until_turn >= turn);
+        // "When you next cast a spell THIS TURN, …" delayed triggers (CR 603.7, Striking Palette) are
+        // per-turn — drop any left unfired once a new turn begins.
+        self.state
+            .delayed_triggers
+            .retain(|dt| !matches!(dt.event, DelayedTriggerEvent::YouCastSpell { .. }));
         // "you put a counter on this creature this turn" is per-turn and read on EACH end step, so
         // reset the flag on every permanent (not just the active player's).
         let all: Vec<ObjId> = self.state.objects.keys().copied().collect();
@@ -2844,6 +2851,12 @@ impl Engine {
                 }
                 self.commit(wb);
             }
+            // A "copy that spell" delayed trigger resolving (CR 707.10, Striking Palette): mint an
+            // `is_copy` copy of the still-on-the-stack spell over the original, offering new targets
+            // when permitted. The copy is NOT cast (707.10a — no SpellCast, no cast triggers).
+            StackObjectKind::SpellCopyTrigger { spell, choose_new_targets } => {
+                self.copy_spell_on_stack(spell, obj.controller, choose_new_targets);
+            }
         }
     }
 
@@ -3344,6 +3357,9 @@ impl Engine {
             // controls, recording the triggering spell so the ability can read its mana-spent.
             GameEvent::SpellCast { spell, controller } => {
                 self.queue_watching_spellcast_triggers(*spell, *controller);
+                // Delayed "when you next cast a [filter] spell this turn, copy it" (CR 603.7 / 707.10,
+                // Striking Palette) — a one-shot delayed trigger fired by the cast, not a permanent.
+                self.fire_you_cast_spell_delayed_triggers(*spell, *controller);
             }
             GameEvent::LeftGraveyard { player } => {
                 self.queue_watching_graveyard_leave_triggers(*player);
@@ -3597,6 +3613,137 @@ impl Engine {
                 modes: Vec::new(),
             });
         }
+    }
+
+    /// Fire (and consume, CR 603.7b) each armed "when you next cast a [filter] spell this turn"
+    /// delayed trigger whose controller just cast `spell` and whose filter matches it — Striking
+    /// Palette's copy trigger. One-shot ("next"): the matched trigger is removed. Queues a
+    /// `SpellCopyTrigger` over the just-cast spell so it resolves above (and thus copies) it, carrying
+    /// the trigger's `choose_new_targets` (707.10c). Fired from the `SpellCast` broadcast.
+    fn fire_you_cast_spell_delayed_triggers(&mut self, spell: StackId, caster: PlayerId) {
+        // The just-cast spell's card object (to match the filter against, and to copy).
+        let card = match self.state.stack.items.iter().find(|s| s.id == spell) {
+            Some(s) => match s.kind {
+                StackObjectKind::Spell(o) => o,
+                _ => return,
+            },
+            None => return,
+        };
+        // Two-pass (the filter check reads `self`, so it can't run inside a `retain` that mutably
+        // borrows `self.state.delayed_triggers`): find the matching triggers, then consume them.
+        let fired: Vec<(u64, Option<ObjId>, bool)> = self
+            .state
+            .delayed_triggers
+            .iter()
+            .filter_map(|dt| {
+                if dt.controller != caster {
+                    return None;
+                }
+                let DelayedTriggerEvent::YouCastSpell { filter, choose_new_targets } = &dt.event else {
+                    return None;
+                };
+                self.enter_filter_matches(card, filter, caster, None)
+                    .then_some((dt.id, dt.source, *choose_new_targets))
+            })
+            .collect();
+        if fired.is_empty() {
+            return;
+        }
+        let fire_ids: std::collections::BTreeSet<u64> = fired.iter().map(|(id, _, _)| *id).collect();
+        self.state.delayed_triggers.retain(|dt| !fire_ids.contains(&dt.id));
+        for (_, source, choose_new_targets) in fired {
+            let id = self.state.mint_stack();
+            self.state.pending_triggers.push(StackObject {
+                id,
+                controller: caster,
+                source,
+                kind: StackObjectKind::SpellCopyTrigger { spell: card, choose_new_targets },
+                targets: Vec::new(),
+                x: None,
+                modes: Vec::new(),
+            });
+        }
+    }
+
+    /// Copy a spell on the stack (CR 707.10): mint a fresh `is_copy` object from `spell`'s copiable
+    /// characteristics (707.2 — its base `chars`, so ability/effect/mana cost ride via `grp_id`) and
+    /// push a copy `StackObject` over the original, controlled by `by`, carrying the original's chosen
+    /// targets / X / modes (707.10b). If `choose_new_targets`, the controller may pick new legal targets
+    /// for the copy (707.10c) — reusing the cast-time target machinery; if a slot can't be re-filled the
+    /// copied targets are kept. The copy is NOT cast (707.10a — no `SpellCast`, so no cast triggers), and
+    /// ceases to exist when it leaves the stack (`is_copy`). No-op if the original already left the stack.
+    fn copy_spell_on_stack(&mut self, spell: ObjId, by: PlayerId, choose_new_targets: bool) {
+        // The original's current stack object (its chosen targets/X/modes to copy). Gone → no-op.
+        let Some(orig) = self
+            .state
+            .stack
+            .items
+            .iter()
+            .find(|s| matches!(s.kind, StackObjectKind::Spell(o) if o == spell))
+            .cloned()
+        else {
+            return;
+        };
+        // 707.2: build the copy from the spell's copiable characteristics; carry its chosen X.
+        let chars = self.state.object(spell).chars.clone();
+        let cast_x = self.state.object(spell).cast_x;
+        let copy = self.state.add_card(by, chars, Zone::Stack);
+        if let Some(o) = self.state.objects.get_mut(&copy) {
+            o.is_copy = true;
+            o.cast_x = cast_x;
+        }
+        // 707.10b: the copy has the same targets, unless 707.10c lets the controller choose new ones.
+        let targets = if choose_new_targets {
+            self.rechoose_copy_targets(copy, by).unwrap_or(orig.targets.clone())
+        } else {
+            orig.targets.clone()
+        };
+        let sid = self.state.mint_stack();
+        self.state.stack.push(StackObject {
+            id: sid,
+            controller: by,
+            source: Some(copy),
+            kind: StackObjectKind::Spell(copy),
+            targets: targets.clone(),
+            x: orig.x,
+            modes: orig.modes.clone(),
+        });
+        // CR 603.2: the copy's chosen objects become its targets (drives "becomes the target" /
+        // Ward). No `SpellCast` — a copy isn't cast (707.10a).
+        let targeted = self.targeted_object_ids(&targets);
+        self.fire_targeted(&targeted, by, sid);
+    }
+
+    /// Offer the "you may choose new targets for the copy" reselection (CR 707.10c): rebuild each of the
+    /// copy's spell-effect target slots and ask `chooser` to pick (they may reproduce the originals).
+    /// Returns `None` (→ keep the copied targets) if the spell has no targets or any required slot has
+    /// fewer than `min` legal candidates now. First pass re-chooses ALL slots together — fine for the
+    /// single-target copies in the pool; a "keep some, change others" per-target UI can come later.
+    fn rechoose_copy_targets(&mut self, copy: ObjId, chooser: PlayerId) -> Option<Vec<Target>> {
+        let effect = self.state.def_of(copy).and_then(|d| d.spell_effect().cloned())?;
+        let specs = collect_target_specs(&effect);
+        if specs.is_empty() {
+            return None;
+        }
+        let slots: Vec<TargetSlot> = specs
+            .iter()
+            .map(|spec| TargetSlot {
+                description: String::new(),
+                legal: self.target_candidates(spec, chooser, Some(copy)),
+                min: spec.min,
+                max: spec.max,
+            })
+            .collect();
+        if slots.iter().any(|s| (s.legal.len() as u32) < s.min) {
+            return None; // can't re-fill a required slot → keep the copied targets (707.10c).
+        }
+        let req = DecisionRequest::ChooseTargets {
+            for_action: ActionRef(StackId(0)),
+            source: Some(copy),
+            slots: slots.clone(),
+        };
+        let resp = self.ask(chooser, &req);
+        Some(parse_targets(&slots, &resp))
     }
 
     /// Queue every battlefield permanent's "at the beginning of [`phase`] …" trigger (CR 603.2) at a

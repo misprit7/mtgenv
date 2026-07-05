@@ -144,14 +144,20 @@ pub enum Action {
 }
 
 /// The event a delayed triggered ability (CR 603.7) waits for. A starter vocabulary; grows with
-/// the card pool.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+/// the card pool. (Not `Copy`/`Hash` — [`Self::YouCastSpell`] carries a `CardFilter`.)
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DelayedTriggerEvent {
     /// The watched permanent leaves the battlefield by dying (→ graveyard) or being exiled.
     DiesOrExiled,
     /// The beginning of the next end step after this trigger was armed (CR 513 / warp's "exile this
     /// at the beginning of the next end step"). Fires once, then is consumed.
     AtBeginningOfNextEndStep,
+    /// The controller's **next** cast of a spell matching `filter`, this turn (CR 603.7 / "when you
+    /// next cast a … spell this turn") — Striking Palette's "when you next cast an instant or sorcery
+    /// spell this turn, copy that spell." One-shot; expires unfired at the next turn's start. When it
+    /// fires the engine mints a [`crate::stack::StackObjectKind::SpellCopyTrigger`] over the just-cast
+    /// spell; `choose_new_targets` rides onto it (707.10c "you may choose new targets for the copy").
+    YouCastSpell { filter: super::target::CardFilter, choose_new_targets: bool },
 }
 
 /// Why an object is changing zones — distinguishes destruction/sacrifice/bounce/etc. so the
