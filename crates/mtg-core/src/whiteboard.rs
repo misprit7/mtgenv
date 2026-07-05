@@ -3378,6 +3378,11 @@ impl EngineCore {
             // The enumeration scope already restricts by controller (a `Count`'s controller
             // restriction / a `ForEach`'s chooser), so a `ControlledBy` in the filter is redundant.
             CardFilter::ControlledBy(_) => true,
+            // Owner-scoping isn't wired into `Count`/`Select` (this matcher is ctx-free — no player to
+            // resolve the `PlayerRef` against). `OwnedBy` is currently only used by a cast-trigger filter
+            // (via `enter_filter_matches`, which is ctx-aware); no select/count uses it. Match `true` like
+            // `ControlledBy`; a future owner-scoped select adds a ctx-aware path here.
+            CardFilter::OwnedBy(_) => true,
             // Name equality (CR 201) — e.g. "cards named Ancestral Anger in your graveyard". Name is a
             // base characteristic (read from the object's chars, like `Supertype`).
             CardFilter::Named(name) => {

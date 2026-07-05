@@ -124,6 +124,11 @@ pub enum CardFilter {
     HasCounter(CounterKind),
     /// Matches a specific named card (rare; for the few effects that name a card).
     Named(String),
+    /// Matches iff the object's **owner** (CR 108.3) is the named player — "a spell you don't own" =
+    /// `Not(OwnedBy(Controller))` (Nita, Forum Conciliator's cast trigger). Distinct from
+    /// [`ControlledBy`], which reads the controller. `PlayerRef` is resolved relative to the matcher's
+    /// perspective (for a cast trigger, `Controller` = the caster).
+    OwnedBy(PlayerRef),
     /// A card with `{X}` in its mana cost (CR 107.3) — Paradox Surveyor's "a card with {X} in its
     /// mana cost". Matches when the printed cost has one or more `{X}` symbols.
     HasXInCost,

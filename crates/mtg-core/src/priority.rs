@@ -4899,6 +4899,21 @@ impl Engine {
                 };
                 self.state.objects.get(&obj).map(|o| o.controller) == Some(want)
             }
+            // "owned by <player>" (CR 108.3) — reads the object's owner. `Not(OwnedBy(Controller))` =
+            // "a spell you don't own" (Nita). `Opponent` resolves relative to the watcher's controller.
+            CardFilter::OwnedBy(pref) => {
+                let want = match pref {
+                    PlayerRef::Opponent | PlayerRef::EachOpponent => self
+                        .state
+                        .players
+                        .iter()
+                        .map(|p| p.id)
+                        .find(|&q| q != watcher_controller)
+                        .unwrap_or(watcher_controller),
+                    _ => watcher_controller, // Controller / Owner
+                };
+                self.state.objects.get(&obj).map(|o| o.owner) == Some(want)
+            }
             CardFilter::All(fs) => fs.iter().all(|f| self.enter_filter_matches(obj, f, watcher_controller, source)),
             CardFilter::AnyOf(fs) => fs.iter().any(|f| self.enter_filter_matches(obj, f, watcher_controller, source)),
             CardFilter::Not(f) => !self.enter_filter_matches(obj, f, watcher_controller, source),
