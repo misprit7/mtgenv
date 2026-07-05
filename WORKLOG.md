@@ -28,9 +28,13 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 - **Then Moment of Reckoning** (`b2d822d`) — NO new cap: a repeatable `Modal{max:4, allow_repeat:true}` over two existing
   effects (Destroy nonland permanent · MoveZone nonland-permanent-card gy→battlefield); the modal cursor already targets each
   instance. Census **223/271 (82%)**, 722 green. (Noted a minor modal cross-instance-distinctness mask caveat.)
-- **Design-sketch sent to lead:** grant-a-triggered-ability-until-EOT (Rabid Attack, Root Manipulation) — proposed
-  `StaticContribution::GrantAbility{source_grp, ability_index}` (serde-safe reference-by-grp) + granted-ability scan in
-  `queue_self_triggers` + `source_grp` on the trigger stack object. Awaiting approval before building.
+- **Then Daydream** (`497f1b3`) — NO new cap: `Sequence[Blink{target creature you control}, PutCounters{ChosenIndex(0),+1/+1}]`
+  (blink reuses the object id, so the locked target still names it) + mana flashback. Census **224/271 (83%)**, 725 green.
+- **Session total: 9 cards + 8 reusable engine caps + a Scryfall-diff census verification** (215→224/271, 698→725 green).
+- **Design-sketch sent to lead (awaiting approval):** grant-a-triggered-ability-until-EOT (Rabid Attack, Root Manipulation) —
+  proposed `StaticContribution::GrantAbility{source_grp, ability_index}` (serde-safe reference-by-grp) + granted-ability scan in
+  `queue_self_triggers` + `source_grp` on the trigger stack object. Highest-yield remaining cap but the only architecture-adjacent
+  one, so held for the lead's OK on the reference-by-grp representation.
 
 ## 2026-07-05 (SOS relay sos-cards-14 — the FINAL FIVE prepare stragglers + 2 subsystems + honest census)
 

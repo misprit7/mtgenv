@@ -41,7 +41,10 @@ re-scoping):
   gives each mode instance its own target. (Minor caveat noted in the card: cross-instance target *distinctness* for repeated
   modes isn't enforced — a same-mode-same-object double just fizzles the 2nd; a general modal-mask nicety, no functional loss.)
 
-**Census now 223/271 authored (82%). 0 Native escape hatches. Rows DONE: additional-cast-cost · base-P/T-set · GreatestMV · Flashback-non-mana · repeatable-modal.**
+- **`497f1b3` — Daydream** (no new cap) — `Sequence[ Blink{target creature you control}, PutCounters{ChosenIndex(0), +1/+1} ]`
+  (the blink reuses the object id, so the locked target still names the returned creature) + a mana `flashback`. Pure composition.
+
+**Census now 224/271 authored (83%). 0 Native escape hatches. Rows DONE: additional-cast-cost · base-P/T-set · GreatestMV · Flashback-non-mana · repeatable-modal · (Daydream = pure composition).**
 
 ### ▶ Where sos-cards-15 points you (unchanged tail, minus the additional-cast-cost row)
 Work the by-cap triage below (grouped by yield). Highest-yield remaining caps: **Grant-a-triggered-ability-until-EOT** (Rabid
@@ -183,8 +186,8 @@ name across `crates/mtg-core/src/cards/**` (DFC fronts matched on the pre-`//` n
 per-card ⏳ triage table below is STALE** (dozens of ⏳ rows are actually shipped: Pull from the Grave, Aberrant Manawurm,
 Brush Off, Antiquities on the Loose, Stun/Look-and-pick/Graveyard-activated subsystems, …). Trust code + this diff, not the table.
 
-**Headline (Scryfall-diff RE-VERIFIED 2026-07-05 by sos-cards-15; +Moment of Reckoning since): 223 / 271 authored (82%).
-219 fully faithful · 4 tracked-partial · 48 unauthored. 0 Native escape hatches used. 722 mtg-core tests green.** (Diff method: every sos set name —
+**Headline (Scryfall-diff RE-VERIFIED 2026-07-05 by sos-cards-15; +Moment of Reckoning +Daydream since): 224 / 271 authored
+(83%). 220 fully faithful · 4 tracked-partial · 47 unauthored. 0 Native escape hatches used. 725 mtg-core tests green.** (Diff method: every sos set name —
 front face, pre-`//` — checked against string literals in `crates/mtg-core/src/cards/**`; the 49 unauthored match the buckets
 below exactly. sos-cards-15 added Seize the Spoils, Vicious Rivalry, Fix What's Broken, Soaring Stoneglider, Quandrix Charm,
 End of the Hunt, Group Project.) (Goblin Glasswright shipped since the first census; Seize the Spoils remains — it
