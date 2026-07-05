@@ -3,6 +3,16 @@
 use crate::cards::CardDb;
 
 pub mod aberrant_manawurm;
+pub mod blazing_firesinger;
+pub mod campus_composer;
+pub mod cheerful_osteomancer;
+pub mod honorbound_page;
+pub mod landscape_painter;
+pub mod maelstrom_artisan;
+pub mod quill_blade_laureate;
+pub mod spellbook_seeker;
+pub mod strife_scholar;
+pub mod studious_first_year;
 pub mod abstract_paintmage;
 pub mod additive_evolution;
 pub mod adventurous_eater;
@@ -171,6 +181,16 @@ pub mod zealous_lorecaster;
 
 pub fn register(db: &mut CardDb) {
     aberrant_manawurm::register(db);
+    blazing_firesinger::register(db);
+    campus_composer::register(db);
+    cheerful_osteomancer::register(db);
+    honorbound_page::register(db);
+    landscape_painter::register(db);
+    maelstrom_artisan::register(db);
+    quill_blade_laureate::register(db);
+    spellbook_seeker::register(db);
+    strife_scholar::register(db);
+    studious_first_year::register(db);
     abstract_paintmage::register(db);
     additive_evolution::register(db);
     adventurous_eater::register(db);

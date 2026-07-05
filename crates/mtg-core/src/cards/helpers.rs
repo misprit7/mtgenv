@@ -131,6 +131,28 @@ pub(crate) fn paradigm_abilities() -> Vec<Ability> {
     ]
 }
 
+/// **Prepare** (SoS DFCs) — the abilities shared by a front-face creature: the
+/// [`Ability::Prepare`] marker linking its `back_spell` (a copy-only def in the reserved 9700+ block)
+/// plus a "becomes prepared" trigger. `prepared_abilities` is the general form (any trigger `event`,
+/// optionally intervening-if-gated by `condition`); [`enters_prepared`] is the common
+/// enters-the-battlefield case. Append any extra abilities (e.g. an activated prepare source) after.
+pub(crate) fn prepared_abilities(
+    back_spell: u32,
+    event: EventPattern,
+    condition: Option<Condition>,
+    intervening_if: bool,
+) -> Vec<Ability> {
+    vec![
+        Ability::Prepare { spell: back_spell },
+        Ability::Triggered { event, condition, intervening_if, effect: Effect::BecomePrepared },
+    ]
+}
+
+/// [`prepared_abilities`] for the "this creature enters prepared" case (a `SelfEnters` trigger).
+pub(crate) fn enters_prepared(back_spell: u32) -> Vec<Ability> {
+    prepared_abilities(back_spell, EventPattern::SelfEnters, None, false)
+}
+
 /// "an instant or sorcery spell" — `AnyOf([Instant, Sorcery])`. Shared by the SoS Opus / Repartee
 /// cast-trigger cycles ("whenever you cast an instant or sorcery spell").
 pub(crate) fn instant_or_sorcery() -> CardFilter {
