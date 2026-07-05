@@ -22,6 +22,9 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
   P/T X/Y until EOT") lowering to the existing `GrantContinuous{SetBasePT}`; a +1/+1 counter still stacks (tested 6/6).
   **End of the Hunt** (`cd1fbe2`) — new `ValueExpr::GreatestManaValue` feeding a dynamic `ManaValueExpr` for a greatest-MV
   edict (`TargetPlayer(Opponent)` + `Exile{Select}`). Census **221/271 (82%)**, 717 mtg-core green.
+- **Then Group Project** (`b7a1e51`) — **widened `Ability::Flashback` from `ManaCost` → a full `Cost`** so a flashback cost can
+  be non-mana ("Flashback—Tap three creatures" = the shipped `TapCreatures(3)`); factored `cost_components_payable` out of
+  `can_pay_cost`, migrated the 6 existing flashback cards to a `cards::flashback(mana)` helper. Census **222/271 (82%)**, 720 green.
 - **Design-sketch sent to lead:** grant-a-triggered-ability-until-EOT (Rabid Attack, Root Manipulation) — proposed
   `StaticContribution::GrantAbility{source_grp, ability_index}` (serde-safe reference-by-grp) + granted-ability scan in
   `queue_self_triggers` + `source_grp` on the trigger stack object. Awaiting approval before building.

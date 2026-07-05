@@ -32,8 +32,12 @@ re-scoping):
 - **`cd1fbe2` — End of the Hunt** (GreatestMV cap) — greatest-MV edict: `TargetPlayer(Opponent)` + `Exile{Select}` whose filter
   is the new **`ValueExpr::GreatestManaValue{filter,controller}`** feeding a dynamic `ManaValueExpr{min:g,max:g}` (reuses the
   additional-cast-cost session's `resolve_dynamic_filter`). The GreatestMV row is DONE.
+- **`b7a1e51` — Group Project** (non-mana-flashback cap) — **widened `Ability::Flashback{cost: ManaCost}` → a full `Cost`** so a
+  flashback cost can be non-mana (Group Project's "Flashback—Tap three creatures" = the shipped `TapCreatures(3)`). Offer gate +
+  cast path pay the flashback components (factored `Engine::cost_components_payable` out of `can_pay_cost`; `pay_additional_nonmana`
+  pays them at cast); the 6 existing flashback cards migrated to the new `cards::flashback(mana)` helper. Flashback-non-mana row DONE.
 
-**Census now 221/271 authored (82%). 0 Native escape hatches. The additional-cast-cost + base-P/T-set + GreatestMV rows are DONE.**
+**Census now 222/271 authored (82%). 0 Native escape hatches. Rows DONE: additional-cast-cost · base-P/T-set · GreatestMV · Flashback-non-mana.**
 
 ### ▶ Where sos-cards-15 points you (unchanged tail, minus the additional-cast-cost row)
 Work the by-cap triage below (grouped by yield). Highest-yield remaining caps: **Grant-a-triggered-ability-until-EOT** (Rabid
@@ -76,8 +80,8 @@ the bracketed cards fall out. Grouped by yield (verify oracle from sqlite; real-
   Moderator**, **Conciliator's Duelist** (Repartee returns).
 - ~~**Base-P/T-set until EOT (layer 7b)** → **Quandrix Charm**.~~ ✅ **DONE (sos-cards-15, `4b41def`)** — `Effect::SetBasePT`
   lowering to `GrantContinuous{SetBasePT}`. Reusable for any "has base P/T X/Y until EOT".
-- **Flashback with a NON-mana cost** (widen `Ability::Flashback{cost: ManaCost}` → a full `Cost`, or add a component) →
-  **Group Project** (Flashback = Tap three creatures = the shipped `TapCreatures(3)`; +`spirit_token`, both exist).
+- ~~**Flashback with a NON-mana cost** → **Group Project**.~~ ✅ **DONE (sos-cards-15, `b7a1e51`)** — `Ability::Flashback`
+  now carries a full `Cost`; reusable for any non-mana flashback/alternative cost.
 - ~~**GreatestMV** (highest-mana-value among a set) → **End of the Hunt**.~~ ✅ **DONE (sos-cards-15, `cd1fbe2`)** —
   `ValueExpr::GreatestManaValue`. **NoMaxHandSize** (player static) → **Wisdom of Ages** (also needs mass-return-I/S + self-exile).
   **Increment** (mana-spent vs P/T self-counter) → **Tester of the Tangential**, **Ambitious Augmenter**. **LKI-counter-count**
