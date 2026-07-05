@@ -195,6 +195,12 @@ pub struct Object {
     /// landfall …) lowers to. Reset on any zone change (a fresh object identity, CR 400.7).
     #[serde(default)]
     pub prepared: bool,
+    /// The last turn number on which this card (in a graveyard) has **granted flashback** (CR 702.34) for
+    /// its mana cost — "gains flashback until end of turn" (Flashback). `None` = no granted flashback. While
+    /// set and `turn_number <= this`, `flashback_cost` offers a flashback cast equal to the card's mana
+    /// cost. Reset on any zone change (a fresh object identity, CR 400.7).
+    #[serde(default)]
+    pub flashback_until_turn: Option<u32>,
 }
 
 impl Object {
@@ -711,6 +717,7 @@ impl GameState {
             counter_added_this_turn: false,
             is_copy: false,
             prepared: false,
+            flashback_until_turn: None,
         };
         self.objects.insert(id, obj);
         if let Some(v) = self.player_mut(owner).zone_vec_mut(zone) {
@@ -825,6 +832,7 @@ impl GameState {
             o.counter_added_this_turn = false; // counters exist only on the battlefield (110.5d / 400.7)
             o.is_copy = false; // a copy never legitimately changes zones (it ceases to exist, 707.10a)
             o.prepared = false; // a fresh object identity (CR 400.7); the "prepared" status ends on leaving play
+            o.flashback_until_turn = None; // granted flashback drops on any zone change (400.7)
             if to == Zone::Battlefield {
                 o.controller = to_owner;
                 o.summoning_sick = o.chars.is_creature();

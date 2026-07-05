@@ -2246,14 +2246,24 @@ impl Engine {
     }
 
     /// The flashback cost a card declares via `Ability::Flashback`, if any (CR 702.34) — a full
-    /// [`Cost`] (mana + any non-mana components, e.g. Group Project's "tap three creatures").
+    /// [`Cost`] (mana + any non-mana components, e.g. Group Project's "tap three creatures"). Also honors
+    /// a **granted** flashback (Flashback the card): while `flashback_until_turn` is set and this turn is
+    /// within it, the flashback cost equals the card's own mana cost.
     fn flashback_cost(&self, card: ObjId) -> Option<Cost> {
-        self.state.def_of(card).and_then(|d| {
+        if let Some(cost) = self.state.def_of(card).and_then(|d| {
             d.abilities.iter().find_map(|a| match a {
                 Ability::Flashback { cost } => Some(cost.clone()),
                 _ => None,
             })
-        })
+        }) {
+            return Some(cost);
+        }
+        // Granted flashback (CR 702.34 — "gains flashback … the flashback cost is equal to its mana cost").
+        let o = self.state.objects.get(&card)?;
+        if o.flashback_until_turn.is_some_and(|until| self.state.turn_number <= until) {
+            return o.chars.mana_cost.clone().map(|m| Cost { mana: Some(m), components: vec![] });
+        }
+        None
     }
 
     /// The effective mana cost to cast `card` (base cost `base`) after applying the card's
@@ -5037,6 +5047,8 @@ fn collect_specs_into(effect: &Effect, out: &mut Vec<TargetSpec>) {
         | Effect::CounterUnlessPay { what: EffectTarget::Target(spec), .. } => out.push(spec.clone()),
         // "Target creature becomes prepared / unprepared" (Skycoach Waypoint, Biblioplex Tomekeeper).
         Effect::SetPrepared { what: EffectTarget::Target(spec), .. } => out.push(spec.clone()),
+        // "Target instant or sorcery card in your graveyard gains flashback …" (Flashback).
+        Effect::GrantFlashbackUntilEndOfTurn { what: EffectTarget::Target(spec) } => out.push(spec.clone()),
         // "Target creature's owner puts it on top or bottom of their library" (Run Behind).
         Effect::PutOnTopOrBottom { what: EffectTarget::Target(spec) } => out.push(spec.clone()),
         // "Exile target … creature you control, then return it" (blink — All Aboard).

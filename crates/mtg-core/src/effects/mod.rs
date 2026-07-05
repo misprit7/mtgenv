@@ -359,6 +359,13 @@ pub enum Effect {
     /// [`ExileTopUntilManaValueMayCastFree`] (exile-until-total-MV) — here it's exile-until-one-cheaper
     /// + random-bottom.
     Cascade,
+    /// "Target instant or sorcery card in your graveyard gains flashback until end of turn. The flashback
+    /// cost is equal to its mana cost" (Flashback). Sets the target's `flashback_until_turn` to the current
+    /// turn; `flashback_cost` then offers a flashback cast (CR 702.34) equal to the card's mana cost, and
+    /// the card is exiled as it leaves the stack (the normal flashback path). `what` is a chosen target.
+    GrantFlashbackUntilEndOfTurn {
+        what: EffectTarget,
+    },
     /// "Reveal cards from the top of your library until you reveal a `filter` card. Put that card into
     /// your hand and the rest on the bottom of your library in a random order" (Page, Loose Leaf's
     /// Grandeur — `filter` = instant/sorcery). Reveals from the top one at a time until a match (or the

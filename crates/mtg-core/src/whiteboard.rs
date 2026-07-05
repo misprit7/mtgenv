@@ -607,6 +607,19 @@ impl EngineCore {
                 }
                 true
             }
+            // "Target I/S card in your graveyard gains flashback until end of turn, cost = its mana cost"
+            // (Flashback). Set the target's `flashback_until_turn` to this turn; the flashback offer reads
+            // it. Imperative (flag flip on a chosen target), so it lives here. Flush staged actions first.
+            Effect::GrantFlashbackUntilEndOfTurn { what } => {
+                self.flush_pending(wb);
+                if let Some(Target::Object(obj)) = self.resolve_target(what, ctx, cursor) {
+                    let turn = self.state.turn_number;
+                    if let Some(o) = self.state.objects.get_mut(&obj) {
+                        o.flashback_until_turn = Some(turn);
+                    }
+                }
+                true
+            }
             // "Reveal from the top until you reveal a `filter` card; put it into hand, rest on the bottom
             // in random order" (Page, Loose Leaf's Grandeur). Reveal-until analogue of Cascade. Imperative
             // (library scan + rng), so it lives here. Flush staged actions first.
@@ -2333,6 +2346,7 @@ impl EngineCore {
             | Effect::ExileTopUntilManaValueMayCastFree { .. }
             | Effect::MillThenPutCreatureOntoBattlefield { .. }
             | Effect::RevealFromTopUntilToHand { .. }
+            | Effect::GrantFlashbackUntilEndOfTurn { .. }
             | Effect::ReanimateUnderControl { .. }
             | Effect::Blink { .. }
             | Effect::ExileReturnNextEndStep { .. }
