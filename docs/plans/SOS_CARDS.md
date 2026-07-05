@@ -4,7 +4,42 @@ Standing workstream: implement the Secrets of Strixhaven set for **limited (40-c
 `mtg-core`, easiest-first, correctness over count. This ledger is the capability index + full
 per-card triage, modeled on `SELESNYA_LANDFALL_CARDS.md`.
 
-## ▶ NEXT AGENT — start here (handoff from sos-cards-14, 2026-07-05)
+## ▶ NEXT AGENT — start here (handoff from sos-cards-15, 2026-07-05)
+
+**▶▶ sos-cards-15 SHIPPED — the SPELL-LEVEL ADDITIONAL-CAST-COST cap (CR 601.2b/f), all 4 cards + a bonus dynamic-MV
+filter. 713 mtg-core green, whole workspace builds, tree clean, LEAD pushes.** Three own-commits (`git log -S` before
+re-scoping):
+- **`6318597` — rails + Seize the Spoils** (discard-a-card additional cost). New general machinery: **`AdditionalCost{options:
+  Vec<Cost>}`** (a possibly-**modal** "or" clause) carried as an **`Ability::AdditionalCost` marker** (NOT a `CardDef` field —
+  avoids touching 40+ literals, mirrors the `CostReduction` marker idiom; read via `CardDef::additional_costs()`). Offer gate
+  requires every clause payable (`Engine::additional_costs_payable` — discard excludes the on-stack spell; a mana option is
+  checked jointly with the base via **`ManaCost::plus`**). `cast_spell` chooses one payable option per clause
+  (`choose_additional_options`, asks only when >1 payable), folds a chosen option's mana into the mana payment, and pays the
+  non-mana components (`pay_additional_nonmana`) at 601.2f–h → **discarded AT CAST, so a countered spell still paid**.
+- **`a2b6a3a` — Vicious Rivalry + Fix What's Broken** (pay-**X**-life additional cost). **X-announcement generalized**: a spell
+  announces X when the mana cost has `{X}` **OR** an additional cost references X (`component_uses_x`), bounded by life for
+  PayLife; the single chosen X (`ValueExpr::X`, stored on the stack object) is shared. **`CostComponent::PayLife` is now wired**
+  (was a dead `_ => {}` no-op) for additional costs, via `change_life` with a ctx carrying the chosen X. Plus the reusable
+  **`CardFilter::ManaValueExpr{min,max: Option<Box<ValueExpr>>}`** (dynamic, X-keyed MV bound) — resolved to a concrete
+  `ManaValue` against the ctx by **`resolve_dynamic_filter`** at `select_for_each` (ctx-free matchers only see the static
+  form). This is the ledger's "Dynamic-MV filter" cap → **also unblocks Moseo** (MV≤life-gained: swap the bound expr).
+- **`eed8a13` — Soaring Stoneglider** (modal: exile two from gy OR pay {1}{W}) — exercises the modal option choice + the
+  mana-option fold on a **creature** cast (additional costs apply to any card, not just I/S).
+
+**Census now 219/271 authored (81%). 0 Native escape hatches. The additional-cast-cost row below is DONE — strike it.**
+
+### ▶ Where sos-cards-15 points you (unchanged tail, minus the additional-cast-cost row)
+Work the by-cap triage below (grouped by yield). Highest-yield remaining caps: **Grant-a-triggered-ability-until-EOT** (Rabid
+Attack, Root Manipulation), **timed-blink** (Ennis, Conciliator's Duelist — reuse `Effect::Blink` + a delayed end-step return),
+**base-P/T-set** (Quandrix Charm mode 3), **Flashback-with-a-non-mana-cost** (Group Project — reuse `TapCreatures(3)`), and the
+small one-off value caps (GreatestMV, NoMaxHandSize, Increment, LKI-counter-count, discarded-this-resolution). **Moseo is now
+cheap** (dynamic-MV reanimate filter shipped — `ManaValueExpr` with a life-gained bound expr). The 5 Elder Dragons + 3 Natives
++ Fractalize + special one-offs still need lead-approved design sketches. Read the by-cap list + census buckets below.
+
+*(sos-cards-15 still active — will rewrite this block fully on retirement. For now: additional-cast-cost cap done, ledger + census
+current, pointing the tail at the next-highest-yield caps.)*
+
+## ▶ Prior — handoff from sos-cards-14, 2026-07-05
 
 **▶▶ sos-cards-14 HANDOFF — READ FIRST. SCOPE = FULL SET (215/271 authored); bar = general CR capability
 ("nicest way that extends for any future card").** **698 mtg-core tests green, whole workspace builds, tree clean,
@@ -25,9 +60,9 @@ section — read it; it corrects the stale ⏳ triage table and buckets the 56 r
 ### ▶ REMAINING = the tail (56 unauthored) — **triaged by cap so ONE cap unlocks SEVERAL cards** (sos-cards-14 pre-scoped this)
 Every remaining buildable card needs a small NEW cap (the pure-existing-machinery cards are all harvested). Build the cap →
 the bracketed cards fall out. Grouped by yield (verify oracle from sqlite; real-path test each):
-- **Additional-cast-cost (spell-level, CR 601.2f)** → **Seize the Spoils** (discard a card; +draw2+Treasure), **Vicious Rivalry**
-  & **Fix What's Broken** (pay X life; +mass destroy/reanimate by MV=X), **Soaring Stoneglider** (exile 2 from gy OR pay {1}{W}).
-  A `spell`-level `Cost` (non-mana components paid at cast) — the biggest-yield cap. Mind the no-rewind cast path.
+- ~~**Additional-cast-cost (spell-level, CR 601.2f)** → Seize the Spoils, Vicious Rivalry, Fix What's Broken, Soaring
+  Stoneglider.~~ ✅ **DONE (sos-cards-15)** — `AdditionalCost`/`Ability::AdditionalCost` + PayLife wiring + `ManaValueExpr`
+  dynamic-MV filter. See the sos-cards-15 SHIPPED block at the top.
 - **Grant-a-triggered-ability-until-EOT** → **Rabid Attack** (grant "when this dies, draw"), **Root Manipulation** (anthem +
   menace + attack-trigger). A continuous grant of a full `Ability::Triggered`.
 - **Exile-and-return-at-next-end-step (timed blink, reuse `Effect::Blink` + a delayed return trigger)** → **Ennis, Debate
@@ -131,8 +166,8 @@ name across `crates/mtg-core/src/cards/**` (DFC fronts matched on the pre-`//` n
 per-card ⏳ triage table below is STALE** (dozens of ⏳ rows are actually shipped: Pull from the Grave, Aberrant Manawurm,
 Brush Off, Antiquities on the Loose, Stun/Look-and-pick/Graveyard-activated subsystems, …). Trust code + this diff, not the table.
 
-**Headline (post-③): 215 / 271 authored (79%). 211 fully faithful · 4 tracked-partial · 56 unauthored. 0 Native escape
-hatches used. 698 mtg-core tests green.** (Goblin Glasswright shipped since the first census; Seize the Spoils remains — it
+**Headline (post-③ + sos-cards-15's 4 additional-cast-cost cards): 219 / 271 authored (81%). 215 fully faithful · 4
+tracked-partial · 52 unauthored. 0 Native escape hatches used. 713 mtg-core tests green.** (Goblin Glasswright shipped since the first census; Seize the Spoils remains — it
 needs an ADDITIONAL-CAST-COST cap "as an additional cost, discard a card", NOT just the Treasure.) (215 counts sos-set cards
 covered by a def in ANY set folder — 200 are sos-first-printed modules;
 ~15 are reprints whose defs live in their first-printing folders.)

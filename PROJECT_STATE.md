@@ -69,7 +69,14 @@ MTGA client.
 - **✅ MOBILE WEB CLIENT (2026-07-03).** Game client + lobby fully playable from a phone: mobile
   reflow (sticky prompt sheet, opp-top/you-bottom strips, log toggle), touch previews long-press-only
   (hover gated to real mice), on-screen pass-turn button. Desktop unchanged.
-- **▶ SOS FULL-SET scope: 215/271 authored (79%), 698 mtg-core tests green (2026-07-05, sos-cards-14).** **THE FINAL
+- **▶ SOS FULL-SET scope: 219/271 authored (81%), 713 mtg-core tests green (2026-07-05, sos-cards-15).** **THE SPELL-LEVEL
+  ADDITIONAL-CAST-COST cap (CR 601.2b/f) + all 4 cards DONE.** `AdditionalCost`/`Ability::AdditionalCost` marker (offer-gated
+  payability + option choice + mana fold + `pay_additional_nonmana`; `ManaCost::plus`); **`CostComponent::PayLife` wired** +
+  X announced from an additional cost (not just `{X}` in mana); reusable **`CardFilter::ManaValueExpr`** (dynamic X-keyed MV
+  bound, resolved via `resolve_dynamic_filter` — the "Dynamic-MV filter" cap, **also unblocks Moseo**). Cards: Seize the
+  Spoils (discard), Vicious Rivalry + Fix What's Broken (pay X life + mass destroy/reanimate by MV), Soaring Stoneglider
+  (modal exile-two-OR-pay-{1}{W} on a creature). 0 Native hatches.
+- **▶ SOS (prior — sos-cards-14): 215/271 authored (79%), 698 mtg-core tests green (2026-07-05).** **THE FINAL
   FIVE PREPARE STRAGGLERS DONE + 2 subsystems + honest census.** Shipped Jadzi // Oracle's Gift (no new cap), Harmonized
   Trio // Brainstorm (`CostComponent::TapCreatures` + `Effect::PutFromHandOnTop`), Grave Researcher // Reanimate
   (`Effect::ReanimateUnderControl` + `ValueExpr::ManaValueOfTarget` + the `move_object` control-vs-owner fix — control≠owner

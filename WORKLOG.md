@@ -3,6 +3,22 @@
 Short, dated entries for future-agent consumption. Newest first. One line or a few bullets
 per unit of meaningful progress. Keep it terse — detail lives in `docs/` and git history.
 
+## 2026-07-05 (SOS relay sos-cards-15 — the SPELL-LEVEL ADDITIONAL-CAST-COST cap + 4 cards)
+
+- **Shipped the spell-level additional-cast-cost cap (CR 601.2b/f), all 4 cards, 698→713 green.** Three own-commits:
+  **Seize the Spoils** (`6318597`) — the rails: `AdditionalCost{options:Vec<Cost>}` (a possibly-modal "or" clause) as an
+  **`Ability::AdditionalCost` marker** (not a `CardDef` field — avoids 40+ literals, mirrors `CostReduction`); offer gate
+  gates on payability (`additional_costs_payable`; discard excludes the on-stack spell; mana option checked jointly via new
+  `ManaCost::plus`); `cast_spell` picks a payable option per clause, folds option mana into the payment, pays non-mana
+  components at 601.2f–h → **discarded AT CAST** (a countered spell still paid). **Vicious Rivalry + Fix What's Broken**
+  (`a2b6a3a`) — pay-**X**-life: **X-announcement generalized** (announce X when the mana cost has `{X}` OR an additional
+  cost references X, bounded by life); **`CostComponent::PayLife` now wired** (was a dead no-op); + reusable
+  **`CardFilter::ManaValueExpr`** (dynamic X-keyed MV bound) resolved to a concrete `ManaValue` against the ctx by
+  `resolve_dynamic_filter` at `select_for_each` — the ledger's "Dynamic-MV filter" cap (**also unblocks Moseo**). **Soaring
+  Stoneglider** (`eed8a13`) — modal (exile two from gy OR pay {1}{W}) on a **creature** cast; exercises the option choice +
+  mana fold.
+- Census 215→**219/271 (81%)**, 0 Native hatches. Ledger + census updated; the additional-cast-cost triage row struck.
+
 ## 2026-07-05 (SOS relay sos-cards-14 — the FINAL FIVE prepare stragglers + 2 subsystems + honest census)
 
 - **Shipped all 5 remaining prepare stragglers** (683→698 green): **Jadzi // Oracle's Gift** (`7a45fbf`, no new cap —
