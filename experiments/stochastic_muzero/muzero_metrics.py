@@ -32,6 +32,8 @@ from mtgenv_gym import MtgEnv
 def _load_config(name):
     if name == "heralds_plain":
         import heralds_muzero_config as m
+    elif name == "swine_plain":
+        import swine_muzero_config as m
     elif name == "heralds_stoch":
         import heralds_stochastic_muzero_config as m
     else:
