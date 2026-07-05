@@ -3134,10 +3134,12 @@ impl Engine {
                         // spell") is exiled as it leaves the stack instead of going to its owner's
                         // graveyard (608.2n). The Paradigm card then provides its recurring free-copy
                         // recast from exile (its `FunctionsFrom(Exile)` trigger).
-                        let paradigm = self.state.def_of(id).is_some_and(|d| {
-                            d.abilities.iter().any(|a| matches!(a, Ability::Paradigm))
+                        let exiles_self = self.state.def_of(id).is_some_and(|d| {
+                            d.abilities
+                                .iter()
+                                .any(|a| matches!(a, Ability::Paradigm | Ability::ExileOnResolve))
                         });
-                        let dest = if self.state.object(id).flashback_cast || paradigm {
+                        let dest = if self.state.object(id).flashback_cast || exiles_self {
                             Zone::Exile
                         } else {
                             Zone::Graveyard

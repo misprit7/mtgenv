@@ -195,6 +195,16 @@ impl EngineCore {
                 self.interpret_discard_chosen(player);
                 true
             }
+            // "You have no maximum hand size for the rest of the game" (CR 402.2) — Wisdom of Ages.
+            // Imperative single-field mutation; flush staged actions first for ordering.
+            Effect::SetNoMaxHandSize { who } => {
+                self.flush_pending(wb);
+                let player = self.eval_player(*who, ctx);
+                if let Some(pl) = self.state.players.get_mut(player.0 as usize) {
+                    pl.hand_size_limit = usize::MAX;
+                }
+                true
+            }
             // Directed discard (CR 701.8): `who` reveals their hand, `chooser` picks up to `count`
             // cards matching `filter`, and `who` discards them (Render Speechless's "you choose").
             // Imperative + asks two different players, so it lives here. Flush staged first.
@@ -1892,6 +1902,7 @@ impl EngineCore {
             | Effect::AddMana { .. }
             | Effect::Discard { .. }
             | Effect::DiscardChosen { .. }
+            | Effect::SetNoMaxHandSize { .. }
             | Effect::Counter { .. }
             | Effect::CounterUnlessPay { .. }
             | Effect::CastCopy { .. }

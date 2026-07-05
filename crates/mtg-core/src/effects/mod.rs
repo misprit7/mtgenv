@@ -395,6 +395,11 @@ pub enum Effect {
     DiscardChosen {
         who: PlayerRef,
     },
+    /// "`who` has no maximum hand size for the rest of the game" (CR 402.2) — lifts the cleanup-step
+    /// discard limit permanently (Wisdom of Ages). Sets `Player.hand_size_limit` to the max.
+    SetNoMaxHandSize {
+        who: PlayerRef,
+    },
     /// "Target player reveals their hand. You choose N `filter` card(s) from it. That player
     /// discards them" (CR 701.8 discard driven by *another* player's choice — Render Speechless,
     /// Coercion, Thoughtseize-likes). Unlike `Discard` (the discarding player chooses which),

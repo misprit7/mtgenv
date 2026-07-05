@@ -383,6 +383,12 @@ pub enum Ability {
     /// — active only once the card reaches exile (so "after you first resolve it" falls out for free).
     /// Assemble the whole bundle with `cards::helpers::paradigm_lesson`.
     Paradigm,
+    /// "Exile [this spell]" on resolution (CR 608.2n override) — an instant/sorcery that puts *itself*
+    /// into exile rather than its owner's graveyard as it finishes resolving (Wisdom of Ages's "Exile
+    /// Wisdom of Ages"). A pure marker read by `resolve_top` alongside the `flashback_cast`/`Paradigm`
+    /// exile branch; unlike Paradigm it carries no recast half. Distinct from a mid-resolution
+    /// `MoveZone{ SourceSelf → Exile }`, which the epilogue's graveyard move would override.
+    ExileOnResolve,
     /// **Prepare** (SoS DFCs): a front-face creature marker linking it to its back-face spell. `spell`
     /// is the back face's registered `grp_id` (in the reserved 9700+ block). The reminder reads "While
     /// it's prepared, you may cast a copy of its spell. Doing so unprepares it." — so while a permanent
