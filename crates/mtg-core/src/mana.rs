@@ -22,20 +22,29 @@ use crate::subtypes::{LandType, Subtype};
 /// (`Ability::Activated{is_mana}`, condition-aware), and the **intrinsic** basic-land-type mana
 /// derived from the permanent's COMPUTED subtypes (CR 305.6 — see [`basic_land_type_color`]).
 fn mana_sources(state: &GameState, p: PlayerId) -> Vec<(ObjId, Vec<Color>)> {
-    mana_sources_kind(state, p, false)
+    // Auto-pay: only simple `{T}` sources (cost-bearing mana abilities are excluded — the auto-payer
+    // can't pay a sacrifice/mana activation cost, so a Treasure never enters the auto-pay pool).
+    mana_sources_kind(state, p, false, false)
 }
 
 /// The untapped mana sources `p` controls that produce **restricted** mana (CR 106.6, "spend only to
 /// cast instant and sorcery spells" — SoS Hydro-Channeler). Intrinsic basic-land-type mana is never
 /// restricted, so only authored `AddMana` abilities carrying a `SpendRestriction` contribute here.
 fn restricted_mana_sources(state: &GameState, p: PlayerId) -> Vec<(ObjId, Vec<Color>)> {
-    mana_sources_kind(state, p, true)
+    mana_sources_kind(state, p, true, false)
 }
 
 /// Shared source enumeration. `restricted == false` yields each source's *unrestricted* colours
 /// (unrestricted `AddMana` abilities + intrinsic basic-land-type mana); `restricted == true` yields
 /// only colours from `AddMana` abilities carrying a `SpendRestriction` (no intrinsic mana).
-fn mana_sources_kind(state: &GameState, p: PlayerId, restricted: bool) -> Vec<(ObjId, Vec<Color>)> {
+/// `include_cost_bearing == false` (the auto-pay path) skips mana abilities with a non-`{T}` cost
+/// (Treasure's `{T},Sacrifice`) — those are usable only via manual activation (CR 605.3a).
+fn mana_sources_kind(
+    state: &GameState,
+    p: PlayerId,
+    restricted: bool,
+    include_cost_bearing: bool,
+) -> Vec<(ObjId, Vec<Color>)> {
     state
         .player(p)
         .battlefield
@@ -53,7 +62,7 @@ fn mana_sources_kind(state: &GameState, p: PlayerId, restricted: bool) -> Vec<(O
                 return None;
             }
             let def = state.card_db.get(o.chars.grp_id)?;
-            let mut colors = producible_colors(state, def, p, restricted);
+            let mut colors = producible_colors(state, def, p, restricted, include_cost_bearing);
             // CR 305.6: any land with a basic land type has an intrinsic `{T}: Add <colour>`
             // ability per type, NOT authored on the card. We read the COMPUTED subtypes
             // (post-layer-system) so type-changing effects flow through for free — an animated
@@ -100,6 +109,7 @@ fn producible_colors(
     def: &crate::cards::CardDef,
     p: PlayerId,
     restricted: bool,
+    include_cost_bearing: bool,
 ) -> Vec<Color> {
     let mut colors: Vec<Color> = Vec::new();
     let push = |c: Color, v: &mut Vec<Color>| {
@@ -109,6 +119,7 @@ fn producible_colors(
     };
     for ab in &def.abilities {
         if let Ability::Activated {
+            cost,
             effect: Effect::AddMana { mana, .. },
             restriction,
             is_mana: true,
@@ -118,6 +129,11 @@ fn producible_colors(
             // Select abilities by whether their produced mana carries a spend restriction (CR 106.6):
             // the unrestricted pass wants `mana.restriction == None`, the restricted pass the rest.
             if mana.restriction.is_some() != restricted {
+                continue;
+            }
+            // The auto-pay pool excludes cost-bearing mana abilities (a `{T},Sacrifice` Treasure) —
+            // auto-pay only taps; their extra cost is payable only via manual activation (CR 605.3a).
+            if !include_cost_bearing && !cost.is_simple_tap_mana() {
                 continue;
             }
             let legal = restriction
@@ -370,7 +386,9 @@ pub fn available_mana(state: &GameState, p: PlayerId) -> u32 {
 /// sources the auto-payer draws from (tapped + summoning-sick sources already filtered out); pure
 /// floating pool mana is NOT included (it isn't produced by a tap).
 pub fn usable_mana_sources(state: &GameState, p: PlayerId) -> Vec<(ObjId, Vec<Color>)> {
-    mana_sources(state, p)
+    // The manual (UI) path INCLUDES cost-bearing mana abilities (a Treasure's `{T},Sacrifice`), which
+    // the auto-pay pool excludes — a human can choose to activate them (paying the extra cost).
+    mana_sources_kind(state, p, false, true)
 }
 
 /// Manually activate `source`'s mana ability for one mana of `color` (CR 605.3 — a mana ability, no

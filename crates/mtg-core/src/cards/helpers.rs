@@ -266,6 +266,24 @@ pub(crate) fn fractal_token(counters: u32) -> TokenSpec {
     }
 }
 
+/// The "Treasure" token (CR 111.3): a colourless artifact with "{T}, Sacrifice this token: Add one
+/// mana of any color." Its abilities come from the registered [`grp::TREASURE_TOKEN`] def (a cost-
+/// bearing mana ability); the spec just points at it. Shared by every Treasure-maker (Craft with
+/// Pride, Seize the Spoils, …). Non-creature, so its `power`/`toughness` fields are unused.
+pub(crate) fn treasure_token() -> TokenSpec {
+    TokenSpec {
+        grp_id: crate::cards::grp::TREASURE_TOKEN,
+        name: "Treasure".to_string(),
+        card_types: vec![CardType::Artifact],
+        subtypes: vec![crate::subtypes::ArtifactType::Treasure.into()],
+        colors: vec![],
+        power: 0,
+        toughness: 0,
+        keywords: vec![],
+        counters: vec![],
+    }
+}
+
 /// The "Elemental" token (CR 111.3): a 3/3 blue-and-red Elemental with flying. Shared by every
 /// Elemental-maker (Muse's Encouragement, Artistic Process, Visionary's Dance, …).
 pub(crate) fn elemental_token() -> TokenSpec {

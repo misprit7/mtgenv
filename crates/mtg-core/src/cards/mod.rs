@@ -123,6 +123,10 @@ pub mod grp {
     // These defs carry `Supertype::Token`, so the deck-builder / `/api/cards` catalog filters them out.
     /// 1/1 B/G Pest token — "Whenever this token attacks, you gain 1 life." (SoS Witherbloom Pests).
     pub const PEST_TOKEN: u32 = 9001;
+    /// Treasure artifact token — "{T}, Sacrifice this token: Add one mana of any color." Its mana
+    /// ability is cost-bearing (a sacrifice), so it's usable only via manual mana activation, never
+    /// the auto-payer (see `mana::mana_sources_kind` / `Engine::activate_mana_ability`).
+    pub const TREASURE_TOKEN: u32 = 9002;
 
     // ── Reserved emblem-def block (9500+) ─────────────────────────────────────────────────────
     // Registered *emblem* defs (CR 114) live here — objects that sit in the command zone carrying a
@@ -736,7 +740,7 @@ mod tests {
     #[test]
     fn starter_db_has_expected_cards() {
         let db = starter_db();
-        assert_eq!(db.len(), 297);
+        assert_eq!(db.len(), 300);
         // Forest is "type line only": a Basic Land with subtype Forest. Mana is intrinsic
         // (CR 305.6) — the engine derives {T}: Add {G} from the subtype, so the CardDef carries
         // no explicit mana ability (and `is_mana_source` only sees authored abilities).

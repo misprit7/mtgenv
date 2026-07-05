@@ -18,6 +18,17 @@ pub struct Cost {
     pub components: Vec<CostComponent>,
 }
 
+impl Cost {
+    /// A "simple tap" mana-ability cost — only `{T}` (no extra mana, no sacrifice/discard/etc.). The
+    /// engine's auto-payer models such a source as free-to-tap. A **cost-bearing** mana ability
+    /// (`!is_simple_tap_mana()` — a Treasure's `{T}, Sacrifice this:` or Hydro-Channeler's `{1}, {T}:`)
+    /// is NOT auto-payable — its extra cost must be paid through `pay_cost`, so it's offered only via
+    /// manual mana activation (CR 605.3a) and kept out of the auto-pay source pool.
+    pub fn is_simple_tap_mana(&self) -> bool {
+        self.mana.is_none() && self.components.iter().all(|c| matches!(c, CostComponent::TapSelf))
+    }
+}
+
 /// A non-mana cost component.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CostComponent {

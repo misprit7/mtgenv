@@ -1133,7 +1133,7 @@ impl EngineCore {
     /// C19: add a `ManaSpec`'s mana to `player`'s pool (CR 106.4). `produces` is fixed colours;
     /// `any_color` asks the player to pick. (The simplified payment path taps sources directly,
     /// so this is used by explicit mana-ability activation / ritual effects.)
-    fn add_mana(&mut self, player: PlayerId, mana: &ManaSpec, ctx: &ResolutionCtx) {
+    pub(crate) fn add_mana(&mut self, player: PlayerId, mana: &ManaSpec, ctx: &ResolutionCtx) {
         // Restricted mana (CR 106.6, "spend only to cast instant/sorcery spells") floats in the pool's
         // separate `restricted` bucket so it can't later pay a creature spell or an ability cost.
         let restricted = mana.restriction.is_some();
@@ -2331,13 +2331,16 @@ impl EngineCore {
     /// printing (`grp_id` 0) — its characteristics live entirely on the object, including its
     /// printed keyword abilities (`TokenSpec.keywords`, e.g. an Inkling's Flying).
     fn create_token(&mut self, spec: &TokenSpec, controller: PlayerId) {
+        // Only creatures carry P/T (CR 208.1) — a non-creature token (a Treasure artifact) has no P/T,
+        // so it isn't mistaken for a 0/0 by power/toughness readers or the toughness-0 SBA.
+        let is_creature_spec = spec.card_types.contains(&CardType::Creature);
         let chars = Characteristics {
             name: spec.name.clone(),
             card_types: spec.card_types.clone(),
             subtypes: spec.subtypes.clone(),
             colors: spec.colors.clone(),
-            power: Some(spec.power),
-            toughness: Some(spec.toughness),
+            power: is_creature_spec.then_some(spec.power),
+            toughness: is_creature_spec.then_some(spec.toughness),
             keywords: spec.keywords.clone(),
             // A registered token def (reserved 9000+ block) supplies the token's triggered/activated
             // abilities via `def_of`; `0` = vanilla/keyword-only.

@@ -1453,18 +1453,56 @@ impl Engine {
                 self.activate_ability(p, *source, *ability)
             }
             // Mana abilities resolve immediately without the stack (CR 605.3b).
-            PlayableAction::ActivateMana { source, .. } => self.activate_mana_ability(p, *source),
+            PlayableAction::ActivateMana { source, ability } => {
+                self.activate_mana_ability(p, *source, *ability)
+            }
             // Special actions (CR 116) — none routed through here yet.
             PlayableAction::Special { .. } => {}
         }
     }
 
-    /// Manually activate a mana ability (CR 605.3 — no stack): tap `source` for one mana, asking the
-    /// controller which colour when it can produce more than one. The mana floats into the pool
+    /// Manually activate a mana ability (CR 605.3 — no stack): produce `source`'s mana, asking the
+    /// controller which colour when it can make more than one. The mana floats into the pool
     /// (CR 106.4, emptied at end of step). The seat retains priority (it acted), so it can tap
-    /// several sources in a row before paying a cost — letting a human choose which lands fund a
+    /// several sources in a row before paying a cost — letting a human choose which sources fund a
     /// spell (#36). A no-op if `source` isn't a current usable mana source for `p`.
-    fn activate_mana_ability(&mut self, p: PlayerId, source: ObjId) {
+    ///
+    /// For a **cost-bearing** mana ability (a Treasure's `{T}, Sacrifice this:`), pay the full cost
+    /// through `pay_cost` (which taps AND sacrifices), then float the produced mana — so the Treasure
+    /// leaves the battlefield and the mana persists (CR 605.3b). Auto-pay never reaches these sources
+    /// (they're excluded from the auto-pay pool), so this manual path is the only way to spend them.
+    pub(crate) fn activate_mana_ability(&mut self, p: PlayerId, source: ObjId, ability: AbilityRef) {
+        // The specific mana ability's `(cost, produced-mana spec)`, if `ability` names an authored one
+        // (a `u32::MAX` sentinel = intrinsic basic-land-type mana, which has no authored ability).
+        let mana_ability = if ability.0 == u32::MAX {
+            None
+        } else {
+            self.state.def_of(source).and_then(|d| d.abilities.get(ability.0 as usize)).and_then(|a| {
+                match a {
+                    Ability::Activated {
+                        cost, effect: Effect::AddMana { mana, .. }, is_mana: true, ..
+                    } => Some((cost.clone(), mana.clone())),
+                    _ => None,
+                }
+            })
+        };
+
+        // Cost-bearing mana ability: pay the extra cost (sacrifice etc.), then float the mana.
+        if let Some((cost, spec)) = mana_ability.filter(|(c, _)| !c.is_simple_tap_mana()) {
+            if !self.can_pay_cost(p, source, &cost) {
+                return;
+            }
+            self.pay_cost(p, source, &cost); // taps + sacrifices (+ any mana cost) via the real path
+            let ctx = crate::effects::action::ResolutionCtx {
+                controller: Some(p),
+                ..Default::default()
+            };
+            self.add_mana(p, &spec, &ctx); // floats the produced mana (any-colour asks the player)
+            self.broadcast(GameEvent::ManaPoolChanged { player: p });
+            return;
+        }
+
+        // Simple `{T}` source (land / dork / intrinsic mana): tap + float, as before.
         let colors = match mana::usable_mana_sources(&self.state, p)
             .into_iter()
             .find(|(id, _)| *id == source)

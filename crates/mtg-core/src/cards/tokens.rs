@@ -7,12 +7,14 @@
 //! name-match in the core.
 
 use crate::basics::{CardType, Color};
+use crate::cards::helpers::sacrifice_self;
 use crate::cards::{grp, CardDb, CardDef};
-use crate::effects::ability::{Ability, EventPattern};
+use crate::effects::ability::{Ability, Cost, CostComponent, EventPattern, Timing};
+use crate::effects::target::ManaSpec;
 use crate::effects::value::{PlayerRef, ValueExpr};
 use crate::effects::Effect;
 use crate::state::Characteristics;
-use crate::subtypes::{CreatureType, Supertype};
+use crate::subtypes::{ArtifactType, CreatureType, Supertype};
 
 pub fn register(db: &mut CardDb) {
     // 1/1 black-and-green Pest — "Whenever this token attacks, you gain 1 life." (SoS Witherbloom).
@@ -35,6 +37,36 @@ pub fn register(db: &mut CardDb) {
             effect: Effect::GainLife { who: PlayerRef::Controller, amount: ValueExpr::Fixed(1) },
         }],
         text: "Whenever this token attacks, you gain 1 life.".to_string(),
+        fully_implemented: true,
+    });
+
+    // Treasure — colourless artifact token: "{T}, Sacrifice this token: Add one mana of any color."
+    // (CR 111.3 / Treasure). A cost-bearing mana ability (the sacrifice) — usable only via manual mana
+    // activation, kept out of the auto-pay pool (`mana::mana_sources_kind` skips non-`{T}` mana costs).
+    db.insert(CardDef {
+        chars: Characteristics {
+            name: "Treasure".to_string(),
+            card_types: vec![CardType::Artifact],
+            subtypes: vec![ArtifactType::Treasure.into()],
+            supertypes: vec![Supertype::Token],
+            colors: vec![], // colourless
+            grp_id: grp::TREASURE_TOKEN,
+            ..Default::default()
+        },
+        abilities: vec![Ability::Activated {
+            cost: Cost {
+                mana: None,
+                components: vec![CostComponent::TapSelf, CostComponent::Sacrifice(sacrifice_self())],
+            },
+            effect: Effect::AddMana {
+                who: PlayerRef::Controller,
+                mana: ManaSpec { produces: vec![], any_color: Some(ValueExpr::Fixed(1)), restriction: None },
+            },
+            timing: Timing::Instant,
+            restriction: None,
+            is_mana: true,
+        }],
+        text: "{T}, Sacrifice this token: Add one mana of any color.".to_string(),
         fully_implemented: true,
     });
 }
