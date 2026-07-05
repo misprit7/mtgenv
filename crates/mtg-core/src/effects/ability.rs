@@ -287,6 +287,12 @@ pub enum StaticContribution {
     /// The controller may play lands from `zone` (not just hand) — e.g. Crucible / Icetill's "play
     /// lands from your graveyard." A player-level permission read by the land-play legality.
     PlayLandsFrom(crate::basics::Zone),
+    /// "Once during each of your turns, you may cast a `filter` spell from your hand without paying its
+    /// mana cost" (Zaffai and the Tempests). A permission read by the priority-action builder, which
+    /// offers a [`crate::agent::PlayableAction::CastFreeFromHand`] for each matching hand card while the
+    /// granting permanent is unused this turn (`used_once_per_turn`). Not painted on objects (like
+    /// `ExtraLandPlays`/`PlayLandsFrom`); the layer painter ignores it.
+    FreeCastFromHandOncePerTurn { filter: CardFilter },
 }
 
 /// Evergreen keyword abilities (CR 702) — the starter set. Grows with the card pool.

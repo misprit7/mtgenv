@@ -46,8 +46,9 @@ pub fn summarize(req: &DecisionRequest, resp: &DecisionResponse) -> Vec<(&'stati
                         | PlayableAction::PlayLand { .. }
                         | PlayableAction::Activate { .. }
                         | PlayableAction::ActivateMana { .. }
-                        // A prepared-spell cast (SoS Prepare) is a real game action, not a pass.
+                        // A prepared-spell cast (SoS Prepare) / free-cast (Zaffai) is a real action, not a pass.
                         | PlayableAction::CastPrepared { .. }
+                        | PlayableAction::CastFreeFromHand { .. }
                 )
             };
             vec![

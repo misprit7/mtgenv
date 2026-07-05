@@ -414,6 +414,12 @@ pub enum PlayableAction {
     /// of the linked back-face spell, pays its mana cost through the normal cast pipeline (CR 707.12),
     /// and unprepares `source`. Offered only while `source` is prepared and at the back face's timing.
     CastPrepared { source: ObjId },
+    /// Cast a spell from hand **without paying its mana cost**, using a once-per-turn free-cast
+    /// permission granted by `source` (a permanent carrying a `StaticContribution::
+    /// FreeCastFromHandOncePerTurn` static — Zaffai and the Tempests). Casting `spell` for
+    /// [`CastVariant::WithoutPayingManaCost`] marks `source` used for the turn (`used_once_per_turn`).
+    /// Offered only on the controller's turn, at `spell`'s own timing, while `source` is unused.
+    CastFreeFromHand { source: ObjId, spell: ObjId },
     Special { kind: SpecialAction },
 }
 

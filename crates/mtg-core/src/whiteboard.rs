@@ -3210,8 +3210,9 @@ impl EngineCore {
     }
 
     /// Evaluate a `CardFilter` against a single object's computed characteristics, for the subset
-    /// `ValueExpr::Count` needs (`ControlledBy` is handled by Count's `controller` restriction).
-    fn count_filter_matches(&self, id: ObjId, filter: &CardFilter) -> bool {
+    /// `ValueExpr::Count` needs (`ControlledBy` is handled by Count's `controller` restriction). Also
+    /// used by the priority-action builder to filter a free-cast permission's eligible hand cards.
+    pub(crate) fn count_filter_matches(&self, id: ObjId, filter: &CardFilter) -> bool {
         let cc = self.state.computed(id);
         match filter {
             CardFilter::Any => true,

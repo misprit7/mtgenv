@@ -108,6 +108,7 @@ fn action_obj(a: &PlayableAction) -> Option<u64> {
             Some(source.0)
         }
         PlayableAction::CastPrepared { source } => Some(source.0),
+        PlayableAction::CastFreeFromHand { spell, .. } => Some(spell.0),
         PlayableAction::Special { .. } => None,
     }
 }
@@ -204,6 +205,9 @@ fn describe_action(view: &PlayerView, a: &PlayableAction) -> String {
         }
         PlayableAction::CastPrepared { source } => {
             format!("Cast prepared spell — {}", name_of(view, *source))
+        }
+        PlayableAction::CastFreeFromHand { spell, .. } => {
+            format!("Cast without paying — {}", name_of(view, *spell))
         }
         PlayableAction::Special { kind } => format!("Special action: {kind:?}"),
     }

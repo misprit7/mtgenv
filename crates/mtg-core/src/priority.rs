@@ -1108,6 +1108,51 @@ impl Engine {
             }
         }
 
+        // Free-cast from hand (Zaffai and the Tempests): "once during each of your turns, you may cast a
+        // [filter] spell from your hand without paying its mana cost." A `FreeCastFromHandOncePerTurn`
+        // permission on a permanent you control, usable only on your turn while that permanent is unused
+        // this turn. Offered at the spell's own timing (instant/Flash → any priority; else sorcery speed);
+        // no affordability check (it's free). Reads the permanent's PRINTED static (Zaffai's is printed).
+        if p == s.active_player {
+            let sources: Vec<(ObjId, CardFilter)> = s
+                .player(p)
+                .battlefield
+                .iter()
+                .copied()
+                .filter(|&perm| !s.object(perm).used_once_per_turn)
+                .filter_map(|perm| {
+                    s.def_of(perm).and_then(|d| {
+                        d.abilities.iter().find_map(|ab| match ab {
+                            Ability::Static {
+                                contribution: StaticContribution::FreeCastFromHandOncePerTurn { filter },
+                                ..
+                            } => Some((perm, filter.clone())),
+                            _ => None,
+                        })
+                    })
+                })
+                .collect();
+            for (source, filter) in sources {
+                for &card in &s.player(p).hand {
+                    let chars = &s.object(card).chars;
+                    if chars.is_land() {
+                        continue;
+                    }
+                    let instant_speed =
+                        chars.has_type(CardType::Instant) || chars.keywords.contains(&Keyword::Flash);
+                    if !(instant_speed || sorcery_speed) {
+                        continue;
+                    }
+                    if !self.count_filter_matches(card, &filter) {
+                        continue;
+                    }
+                    if self.card_castable_targets(card, p) {
+                        actions.push(PlayableAction::CastFreeFromHand { source, spell: card });
+                    }
+                }
+            }
+        }
+
         // Cast a card from exile that has recast/impulse permission (`castable_from_exile`), for its
         // normal mana cost. Warp recast (CR 702.x): sorcery speed, any later turn. Impulse-play (SoS):
         // the card's own timing, through its `play_until_turn` window. (Playing an impulse-exiled *land*
@@ -1650,6 +1695,9 @@ impl Engine {
             PlayableAction::PlayLand { card } => self.play_land(p, *card),
             PlayableAction::Cast { spell, variant } => self.cast_spell(p, *spell, *variant),
             PlayableAction::CastPrepared { source } => self.cast_prepared(p, *source),
+            PlayableAction::CastFreeFromHand { source, spell } => {
+                self.cast_free_from_hand(p, *source, *spell)
+            }
             PlayableAction::Activate { source, ability } => {
                 self.activate_ability(p, *source, *ability)
             }
@@ -2710,6 +2758,16 @@ impl Engine {
     /// free `CastCopy`). The offer gate (`legal_priority_actions`) already checked timing/affordability/
     /// targets, so the cast won't rewind. The back face is copy-only: it never lives in a real zone, and
     /// only ever reaches the stack as this copy.
+    /// Cast `spell` from hand without paying its mana cost, spending `source`'s once-per-turn free-cast
+    /// permission (Zaffai). The cast runs through the normal pipeline (target/X/mode selection), just for
+    /// [`CastVariant::WithoutPayingManaCost`]; then `source` is marked used for the turn.
+    pub(crate) fn cast_free_from_hand(&mut self, p: PlayerId, source: ObjId, spell: ObjId) {
+        self.cast_spell(p, spell, CastVariant::WithoutPayingManaCost);
+        if let Some(o) = self.state.objects.get_mut(&source) {
+            o.used_once_per_turn = true;
+        }
+    }
+
     pub(crate) fn cast_prepared(&mut self, p: PlayerId, source: ObjId) {
         // The linked back-face spell's grp_id, from the source's Prepare marker.
         let Some(spell_grp) = self.state.def_of(source).and_then(prepare_spell_grp) else { return };

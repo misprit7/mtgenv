@@ -243,6 +243,7 @@ pub mod wild_hypothesis;
 pub mod choreographed_sparks;
 pub mod mathemagics;
 pub mod steal_the_show;
+pub mod zaffai_and_the_tempests;
 pub mod wilt_in_the_heat;
 pub mod witherbloom_charm;
 pub mod withering_curse;
@@ -252,6 +253,7 @@ pub fn register(db: &mut CardDb) {
     choreographed_sparks::register(db);
     mathemagics::register(db);
     steal_the_show::register(db);
+    zaffai_and_the_tempests::register(db);
     aberrant_manawurm::register(db);
     emeritus_of_conflict::register(db);
     joined_researchers::register(db);

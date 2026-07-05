@@ -238,7 +238,8 @@ impl Interaction {
                 let mut used: BTreeSet<usize> = BTreeSet::new();
                 for (i, a) in actions.iter().enumerate() {
                     let slot = match a {
-                        PlayableAction::Cast { spell, .. } => self.obj_slot(*spell),
+                        PlayableAction::Cast { spell, .. }
+                        | PlayableAction::CastFreeFromHand { spell, .. } => self.obj_slot(*spell),
                         PlayableAction::PlayLand { card } => self.obj_slot(*card),
                         PlayableAction::Activate { source, .. }
                         | PlayableAction::ActivateMana { source, .. }
