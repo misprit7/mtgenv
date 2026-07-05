@@ -2021,6 +2021,11 @@ impl Engine {
         let cost = match variant {
             CastVariant::Warp => self.warp_cost(card),
             CastVariant::Flashback => self.flashback_cost(card),
+            // "Cast without paying its mana cost" (CR 601.2f / 707.12a): the total cost is {0}, and
+            // any `{X}` in the printed cost is 0 (CR 107.3b — there's no other way to choose it).
+            // Granted alternative-cast permissions use this (The Dawning Archaic's free gy-cast, a
+            // Paradigm copy). Skips `effective_cast_cost` like the other alternative costs below.
+            CastVariant::WithoutPayingManaCost => Some(ManaCost::default()),
             _ => self.state.object(card).chars.mana_cost.clone(),
         };
         let cost = match cost {
@@ -6072,6 +6077,62 @@ mod expect_tests {
         assert_eq!(e.state.object(card).zone, Zone::Battlefield, "recast from exile resolves");
         assert!(!e.state.player(PlayerId(0)).exile.contains(&card), "it left exile");
         assert!(e.state.delayed_triggers.is_empty(), "a normal recast does not re-arm a warp exile");
+    }
+
+    #[test]
+    fn cast_without_paying_mana_cost_is_free() {
+        use crate::basics::ManaCost;
+        use crate::effects::ability::Ability;
+        use crate::effects::value::{PlayerRef, ValueExpr};
+        use crate::effects::Effect;
+        use std::sync::Arc;
+        // CR 601.2f / 707.12a "cast without paying its mana cost": the total cost is {0}. A sorcery
+        // with a printed {5} the caster can't afford (no mana at all) still casts and resolves when
+        // granted the free-cast permission. This is the primitive shared by The Dawning Archaic's
+        // free graveyard-cast and a Paradigm copy.
+        let mut db = cards::starter_db();
+        db.insert(cards::CardDef {
+            chars: Characteristics {
+                name: "Free Draw (test)".into(),
+                card_types: vec![CardType::Sorcery],
+                mana_cost: Some(ManaCost { generic: 5, ..Default::default() }),
+                grp_id: 9951,
+                ..Default::default()
+            },
+            abilities: vec![Ability::Spell {
+                effect: Effect::Draw { who: PlayerRef::Controller, count: ValueExpr::Fixed(2) },
+            }],
+            text: String::new(),
+            ..Default::default()
+        });
+        let mut state = GameState::new(2, 1);
+        state.set_card_db(Arc::new(db));
+        let card = {
+            let c = state.card_db().get(9951).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, Zone::Hand)
+        };
+        // Two cards to draw; the caster has NO lands and no mana.
+        for _ in 0..2 {
+            let f = state.card_db().get(grp::FOREST).unwrap().chars.clone();
+            state.add_card(PlayerId(0), f, Zone::Library);
+        }
+        let mut e = pass_engine(state);
+        assert_eq!(mana::available_mana(&e.state, PlayerId(0)), 0, "the caster has no mana");
+
+        // Cast it for free (no mana paid), then resolve → draw 2.
+        e.cast_spell(PlayerId(0), card, CastVariant::WithoutPayingManaCost);
+        e.resolve_top();
+
+        assert_eq!(e.state.player(PlayerId(0)).hand.len(), 2, "drew 2 despite paying no mana");
+        assert_eq!(
+            e.state.object(card).zone,
+            Zone::Graveyard,
+            "the free-cast sorcery went to its owner's graveyard"
+        );
+        assert!(
+            e.state.player(PlayerId(0)).mana_pool.amounts.is_empty(),
+            "no mana was ever added or spent"
+        );
     }
 
     #[test]
