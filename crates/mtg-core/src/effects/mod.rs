@@ -210,6 +210,14 @@ pub enum Effect {
         who: PlayerRef,
         total_mana_value: u32,
     },
+    /// "Exile `what`, then return that card to the battlefield under its owner's control" (CR 603.6e
+    /// blink/flicker) — All Aboard. Exiles the target then immediately returns it as a **new** object:
+    /// enters-the-battlefield triggers fire, and counters / marked damage / auras / summoning-sickness
+    /// all reset (CR 400.7). `what` is chosen at cast (collected by `collect_specs_into`). Imperative
+    /// (two zone moves + broadcasts), so it lives in `interpret`.
+    Blink {
+        what: EffectTarget,
+    },
     /// "When you next cast a `filter` spell this turn, copy that spell" (CR 707.10) — Striking Palette
     /// ("… an instant or sorcery spell this turn, copy that spell. You may choose new targets for the
     /// copy."). Arms a one-shot delayed triggered ability (CR 603.7,

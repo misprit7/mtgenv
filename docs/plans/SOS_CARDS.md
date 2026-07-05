@@ -73,7 +73,7 @@ SPELL-COPY subsystem** and its consumers.
   `intervening_if: false` the condition is silently IGNORED. (BeginningOfStep triggers may use `false` — checked
   at queue.) Emeritus of Conflict's gate was initially `false` → fixed to `true` + a real 3-cast integration test.
 
-- **▶ REMAINING PREPARE: 9 cards — each blocked on a distinct BACK-FACE (or activation-cost) cap, NOT prepare.**
+- **▶ REMAINING PREPARE: 7 cards (was 9; #6 Skycoach + #9 Pigment Wrangler DONE by sos-cards-13) — each blocked on a distinct BACK-FACE (or activation-cost) cap, NOT prepare.**
   The prepare front/trigger for every one is trivial (`Effect::BecomePrepared`); what's unbuilt is the back
   effect / front cost. Precise blockers (build the cap → the card is mechanical; back ids continue from 9727):
   1. **Leech Collector // Bloodletting** — front "gain life for the FIRST time each turn": needs a
@@ -94,8 +94,10 @@ SPELL-COPY subsystem** and its consumers.
      you control: dynamic-X token count + a for-each-Fractal counter pass. Heaviest back.
   5. **Vastlands Scavenger // Bind to Life** — back "mill 7, then put a creature card from among them onto the
      battlefield": a select-from-the-just-milled-set → battlefield primitive.
-  6. **Skycoach Conductor // All Aboard** — back blink ("exile target non-Pilot creature you control, then return
-     it"): an exile-then-immediately-return (flicker) effect.
+  6. ~~**Skycoach Conductor // All Aboard**~~ ✅ **DONE (sos-cards-13)** — back blink built as the reusable
+     `Effect::Blink { what }` (CR 603.6e): exile the target then return it as a NEW object (ETB re-fires, counters/
+     damage/auras/summoning-sickness reset via `move_object`, CR 400.7). Front = 2/3 Flash/Flying/vigilance (back
+     id 9728). Real-path test: blink an Elvish Visionary → its ETB "draw" re-fires, counter+damage cleared, sick.
   7. **Goblin Glasswright // Craft with Pride** — back "create a Treasure token": a Treasure token def whose ability
      is a **sacrifice-cost mana ability** (flagged since sos-cards-7 — the mana payment path only taps, no sac-for-mana).
   8. **Harmonized Trio // Brainstorm** — front cost "{T}, Tap two untapped creatures you control" (a convoke-like

@@ -12,6 +12,7 @@ pub mod emeritus_of_abundance;
 pub mod emeritus_of_ideation;
 pub mod emeritus_of_woe;
 pub mod scheming_silvertongue;
+pub mod skycoach_conductor;
 pub mod abigale_poet_laureate;
 pub mod kirol_history_buff;
 pub mod sanar_unfinished_genius;
@@ -206,6 +207,7 @@ pub fn register(db: &mut CardDb) {
     emeritus_of_ideation::register(db);
     emeritus_of_woe::register(db);
     scheming_silvertongue::register(db);
+    skycoach_conductor::register(db);
     abigale_poet_laureate::register(db);
     kirol_history_buff::register(db);
     sanar_unfinished_genius::register(db);

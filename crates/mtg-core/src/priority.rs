@@ -4261,6 +4261,8 @@ fn collect_specs_into(effect: &Effect, out: &mut Vec<TargetSpec>) {
         | Effect::CounterUnlessPay { what: EffectTarget::Target(spec), .. } => out.push(spec.clone()),
         // "Target creature's owner puts it on top or bottom of their library" (Run Behind).
         Effect::PutOnTopOrBottom { what: EffectTarget::Target(spec) } => out.push(spec.clone()),
+        // "Exile target … creature you control, then return it" (blink — All Aboard).
+        Effect::Blink { what: EffectTarget::Target(spec) } => out.push(spec.clone()),
         // "Put a +1/+1 counter on target creature" / "target creature gains trample" — the targeted
         // reward effects (collected when walking a reflexive branch, not from a Conditional.then).
         Effect::PutCounters { what: EffectTarget::Target(spec), .. }

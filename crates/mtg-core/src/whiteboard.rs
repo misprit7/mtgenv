@@ -341,6 +341,21 @@ impl EngineCore {
                 }
                 true
             }
+            // "Exile `what`, then return it to the battlefield under its owner's control" (CR 603.6e
+            // blink — All Aboard). Exile it (LTB fires), then return it as a NEW object (ETB fires;
+            // `move_object` resets status/counters/damage and re-applies summoning sickness). Imperative,
+            // so it lives here. Flush staged actions first.
+            Effect::Blink { what } => {
+                self.flush_pending(wb);
+                if let Some(Target::Object(obj)) = self.resolve_target(what, ctx, cursor) {
+                    let owner = self.state.object(obj).owner;
+                    self.state.move_object(obj, Zone::Exile, owner);
+                    self.broadcast(GameEvent::ObjectMoved { obj, to: Zone::Exile });
+                    self.state.move_object(obj, Zone::Battlefield, owner);
+                    self.broadcast(GameEvent::ObjectMoved { obj, to: Zone::Battlefield });
+                }
+                true
+            }
             // "When you next cast a [filter] spell this turn, copy that spell" (CR 707.10 / 603.7) —
             // arm a one-shot delayed trigger on the controller (Striking Palette). Non-interactive
             // (just registers the trigger); when it later fires the engine mints a `SpellCopyTrigger`
@@ -1536,6 +1551,7 @@ impl EngineCore {
             | Effect::CastCopy { .. }
             | Effect::CastForFree { .. }
             | Effect::ExileTopUntilManaValueMayCastFree { .. }
+            | Effect::Blink { .. }
             | Effect::CopyNextSpellCast { .. }
             | Effect::MayTapOrUntap { .. }
             | Effect::PutOnTopOrBottom { .. }
