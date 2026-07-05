@@ -311,6 +311,16 @@ pub enum Ability {
     /// Then exile it." A static casting-permission ability — `legal_priority_actions` scans for it to
     /// offer casting the card from the graveyard; the spell is exiled as it leaves the stack.
     Flashback { cost: ManaCost },
+    /// Paradigm (SoS Lessons): "Then exile this spell. After you first resolve a spell with this name,
+    /// you may cast a copy of it from exile without paying its mana cost at the beginning of each of
+    /// your first main phases." This marker carries only the **"then exile this spell"** half — a
+    /// Paradigm card (the original, not a copy) is put into **exile** rather than its graveyard as it
+    /// resolves (`resolve_top` reads this, checked after the `is_copy` cease-to-exist branch). The
+    /// recurring-recast half is pure data on the same card: `FunctionsFrom(vec![Zone::Exile])` +
+    /// a `Triggered{ BeginningOfStep(PrecombatMain) }` whose optional effect is `CastCopy{SourceSelf}`
+    /// — active only once the card reaches exile (so "after you first resolve it" falls out for free).
+    /// Assemble the whole bundle with `cards::helpers::paradigm_lesson`.
+    Paradigm,
     /// A cost-modification static (CR 601.2f / 118) applying to **casting this card**: while the
     /// card is being cast, reduce its total cost by `amount` if `condition` holds. Self-referential
     /// — read during cost determination (`effective_cast_cost`), evaluated relative to the caster.

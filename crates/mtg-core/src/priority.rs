@@ -2654,9 +2654,14 @@ impl Engine {
                     if self.state.object(id).is_copy {
                         self.state.cease_to_exist(id);
                     } else {
-                        // A flashback-cast spell is exiled as it leaves the stack (CR 702.34d) instead
-                        // of going to its owner's graveyard (608.2n).
-                        let dest = if self.state.object(id).flashback_cast {
+                        // A flashback-cast spell (CR 702.34d) OR a Paradigm card ("Then exile this
+                        // spell") is exiled as it leaves the stack instead of going to its owner's
+                        // graveyard (608.2n). The Paradigm card then provides its recurring free-copy
+                        // recast from exile (its `FunctionsFrom(Exile)` trigger).
+                        let paradigm = self.state.def_of(id).is_some_and(|d| {
+                            d.abilities.iter().any(|a| matches!(a, Ability::Paradigm))
+                        });
+                        let dest = if self.state.object(id).flashback_cast || paradigm {
                             Zone::Exile
                         } else {
                             Zone::Graveyard
@@ -3225,8 +3230,13 @@ impl Engine {
             }
             // "At the beginning of [this step] …" permanent triggers (CR 603.2) — fire for every
             // permanent whose `BeginningOfStep(phase)` matches, condition-gated (see below).
-            GameEvent::PhaseBegan { phase, .. } => {
+            GameEvent::PhaseBegan { phase, active, .. } => {
                 self.queue_begin_of_step_triggers(*phase);
+                // Paradigm (SoS Lessons): "at the beginning of each of your first main phases, you may
+                // cast a copy …" is a `BeginningOfStep` trigger that FUNCTIONS FROM EXILE. Scan the
+                // active player's exile (the "your" gate — a precombat main is only the active
+                // player's), mirroring the graveyard/command functioning-trigger scans.
+                self.queue_exile_functioning_triggers(*active, EventPattern::BeginningOfStep(*phase));
                 // Beginning of the end step (CR 513): also fire armed "at the next end step" delayed
                 // triggers (warp's exile-at-end-step). Sorcery-speed-armed ⇒ "next" = this end step.
                 if *phase == Phase::End {
@@ -3275,6 +3285,25 @@ impl Engine {
                 })
             });
             if functions_from_gy {
+                self.queue_self_triggers(c, want.clone());
+            }
+        }
+    }
+
+    /// Queue the exile-functioning triggered abilities (CR 113.6 — [`Ability::FunctionsFrom`]) of
+    /// `owner`'s exiled cards matching `want`. Mirrors [`Self::queue_graveyard_functioning_triggers`]
+    /// for `Zone::Exile`: a Paradigm Lesson, once it exiles itself on resolve, carries
+    /// `FunctionsFrom(vec![Zone::Exile])` so its "at the beginning of each of your first main phases,
+    /// you may cast a copy" trigger fires from exile. `owner` is the active player (the "your" gate).
+    fn queue_exile_functioning_triggers(&mut self, owner: PlayerId, want: EventPattern) {
+        let cards: Vec<ObjId> = self.state.player(owner).exile.clone();
+        for c in cards {
+            let functions_from_exile = self.state.def_of(c).is_some_and(|d| {
+                d.abilities.iter().any(|a| {
+                    matches!(a, Ability::FunctionsFrom(zones) if zones.contains(&Zone::Exile))
+                })
+            });
+            if functions_from_exile {
                 self.queue_self_triggers(c, want.clone());
             }
         }

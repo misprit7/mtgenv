@@ -6,7 +6,7 @@
 //! `CardDef`/`Ability` builders like `creature`/`mana_ability`, in the parent `crate::cards`).
 //! That keeps every card module a leaf node — no card-to-card tangle as the pool grows.
 
-use crate::basics::{CardType, Color, CounterKind, Zone, ZoneDest, ZonePos};
+use crate::basics::{CardType, Color, CounterKind, Phase, Zone, ZoneDest, ZonePos};
 use crate::effects::ability::{Ability, Cost, CostComponent, EventPattern, Keyword};
 use crate::effects::condition::Condition;
 use crate::effects::target::{CardFilter, SelectSpec, TargetKind, TargetSpec, TokenSpec};
@@ -96,6 +96,39 @@ pub(crate) fn ward_discard() -> Ability {
             max: ValueExpr::Fixed(1),
         })],
     })
+}
+
+/// **Paradigm** (SoS Lessons keyword) — the recurring-recast half, shared by all 5 Lesson cards.
+/// "Then exile this spell. After you first resolve a spell with this name, you may cast a copy of it
+/// from exile without paying its mana cost at the beginning of each of your first main phases."
+///
+/// Returns the three abilities to append to a Lesson's `Ability::Spell`:
+/// - [`Ability::Paradigm`] — the "then exile this spell" marker (`resolve_top` routes the original to
+///   exile instead of the graveyard as it resolves);
+/// - [`Ability::FunctionsFrom`]`(vec![Zone::Exile])` — makes the trigger below fire while the card
+///   sits in exile (so it's dormant until the Lesson first resolves and exiles itself — "after you
+///   first resolve a spell with this name" falls out for free);
+/// - a [`Ability::Triggered`] on `BeginningOfStep(PrecombatMain)` (the first main phase, gated to the
+///   active player by the exile-functioning scan) whose optional effect casts a copy of itself for
+///   free ([`Effect::CastCopy`] `{ SourceSelf }`, CR 707.12).
+pub(crate) fn paradigm_abilities() -> Vec<Ability> {
+    vec![
+        Ability::Paradigm,
+        Ability::FunctionsFrom(vec![Zone::Exile]),
+        Ability::Triggered {
+            event: EventPattern::BeginningOfStep(Phase::PrecombatMain),
+            condition: None,
+            intervening_if: false,
+            effect: Effect::Optional {
+                prompt: "Cast a copy of this Lesson from exile without paying its mana cost?"
+                    .to_string(),
+                body: Box::new(Effect::CastCopy {
+                    source: EffectTarget::SourceSelf,
+                    controller: PlayerRef::Controller,
+                }),
+            },
+        },
+    ]
 }
 
 /// "an instant or sorcery spell" — `AnyOf([Instant, Sorcery])`. Shared by the SoS Opus / Repartee
