@@ -60,7 +60,9 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
   fixes: SBA creature-death AND `interpret_sacrifice` took a direct `move_object` that bypassed replacements —
   both now route through a shared `death_zone_for`; also **revived the dead `WouldBeDestroyed`/`WouldDie` static
   path** (`affected_object` never covered `Destroy`). Scope invalidates on zone change (CR 400.7) + expires at
-  turn start. → **Wilt in the Heat** (165→166 authored). Unblocks Wildgrowth Archaic + the Dawning Archaic rider.
+  turn start. → **Wilt in the Heat** (165→166 authored). Cleanly unblocks the Dawning Archaic's would-die→exile
+  rider; the general container is also the rails for Wildgrowth Archaic (a *delayed enters-with-counters* clause —
+  needs a `FloatingRewrite::EntersWithCounters` follow-on, NOT free).
 
 ## 2026-07-04 (sos-cards-9)
 

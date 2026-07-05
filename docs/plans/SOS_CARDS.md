@@ -26,7 +26,10 @@ replacements`). Also **revived the previously-dead `WouldBeDestroyed`/`WouldDie`
 (`affected_object` never covered `Destroy`, so any "would be destroyed" static was unreachable). Scope
 invalidates on zone change (CR 400.7, in `move_object`) + expires at turn start. → **Wilt in the Heat**
 (5 dmg + exile-if-dies; real-path tests: lethal-damage-exiles, sacrifice-exiles, invalidation, 2-rider
-ChooseReplacement ordering). **Unblocks Wildgrowth Archaic + the Dawning Archaic rider too.**
+ChooseReplacement ordering). **Cleanly unblocks the Dawning Archaic's would-die→exile rider.** (The general
+container is also the right rails for **Wildgrowth Archaic**, but that clause is a *delayed enters-with-counters*
+on the next-cast creature — needs a `FloatingRewrite::EntersWithCounters` variant + `WouldEnterBattlefield`
+matched for floating riders; a modest follow-on, NOT free.)
 
 **PLANESWALKERS + EMBLEMS (earlier this session):**
 

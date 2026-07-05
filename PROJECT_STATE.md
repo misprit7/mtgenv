@@ -75,8 +75,9 @@ MTGA client.
   rewrite+duration+one_shot container) on the same rewrite pass as printed statics; `Effect::ExileIfWouldDie`
   ("if it would die this turn, exile it instead", where "dies" = any battlefield→graveyard move). Load-bearing:
   SBA-death + sacrifice bypassed the replacement pass (direct move_object) → now route through `death_zone_for`;
-  revived the dead `WouldBeDestroyed`/`WouldDie` static path. → **Wilt in the Heat** (unblocks Wildgrowth Archaic
-  + the Dawning Archaic rider). **sos-cards-10: PLANESWALKERS + EMBLEMS DONE.** Planeswalkers = verify-and-finish (all 4
+  revived the dead `WouldBeDestroyed`/`WouldDie` static path. → **Wilt in the Heat** (cleanly unblocks the Dawning
+  Archaic's would-die→exile rider; Wildgrowth Archaic's *delayed enters-with-counters* clause needs a follow-on
+  `FloatingRewrite` variant, not free). **sos-cards-10: PLANESWALKERS + EMBLEMS DONE.** Planeswalkers = verify-and-finish (all 4
   loyalty points already built+tested); shipped `planeswalker()`/`loyalty_ability()` builders, `PlayerRef::Each`
   (any-number-target-players-each-do-X), a `CardFilter::ManaValue` targeting arm (was fail-closed), + **Professor
   Dellian Fel** & **Ral Zarek, Guest Lecturer**. Then the **EMBLEMS/command-zone subsystem** (lead-greenlit, CR
