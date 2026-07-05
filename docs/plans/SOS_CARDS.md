@@ -40,10 +40,17 @@ on the shared tree; MuZero's `experiments/` untouched):
 
 **▶ RECOMMENDED NEXT ORDER (all remaining need a genuine subsystem — none is a quick win):**
 - **The big three (DESIGN-SKETCH TO THE LEAD BEFORE EACH; lead wants Planeswalkers FIRST — most groundwork):**
-  **Planeswalkers** (CR 306 permanents / 606 loyalty abilities — `CostComponent::Loyalty` + a
-  `planeswalker_enters_with_loyalty_and_dies_at_zero` test ALREADY exist; needs: loyalty as a starting value on
-  the permanent, the once-per-turn loyalty-ability legality [`used_once_per_turn` exists], direct attacks against
-  a planeswalker, the 0-loyalty SBA, and an emblem token or two). Then **Lessons/Learn** (CR 715 outside-the-game
+  **Planeswalkers** — ⚠️ **the groundwork is MOSTLY BUILT (verify by reading before scoping!):** `CardType::
+  Planeswalker`, `CostComponent::Loyalty(±N)` (with the "can't pay −N without N loyalty" check), the **0-loyalty
+  SBA** (`sba.rs`), `used_once_per_turn` + `OncePerTurn` restriction, AND **direct attacks** (combat's `may_attack`
+  defender list already includes the defender's planeswalkers, `combat/mod.rs` ~139) all EXIST, plus a
+  `planeswalker_enters_with_loyalty_and_dies_at_zero` test. **Verify these 4 before building:** (1) enters-with-
+  starting-loyalty from card data; (2) loyalty abilities offered at sorcery speed + once/turn *across all* the
+  PW's loyalty abilities; (3) combat damage to a planeswalker REMOVES loyalty counters (CR 120.3 — check the
+  `Action::Damage` executor handles a `Target::Object(pw)`); (4) the loyalty-ability activation path. Then author
+  **Professor Dellian Fel** + **Ral Zarek, Guest Lecturer** (emblems, CR 114, may be deferrable per-card — a
+  command-zone token with a static). Likely a small-to-moderate finish, not a from-scratch subsystem. Then
+  **Lessons/Learn** (CR 715 outside-the-game
   / a sideboard-pool concept — gym decks may need a sideboard notion; note the boundary), then **Prepare-DFCs**
   (~36 — a real card-faces model in the CR 712 shape: face selection on cast, characteristics from the active
   face through the layer system; the biggest piece).
