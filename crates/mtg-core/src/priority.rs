@@ -1976,21 +1976,15 @@ impl Engine {
             let ch = &self.state.object(card).chars;
             ch.has_type(CardType::Instant) || ch.has_type(CardType::Sorcery)
         };
-        // Does this spell carry a *target-dependent* cost reduction (CR 601.2f)? If so a target
-        // choice changes the cost, so cast-time target candidates must be constrained to what the
-        // caster can pay (below) and the final cost recomputed from the chosen targets.
-        let target_dependent_reduction = variant == CastVariant::Normal
-            && self.state.def_of(card).is_some_and(|d| {
-                d.abilities.iter().any(|a| {
-                    matches!(
-                        a,
-                        Ability::CostReduction {
-                            condition: CostReductionCondition::TargetMatches(_),
-                            ..
-                        }
-                    )
-                })
-            });
+        // A Normal cast's total cost can depend on the chosen targets (CR 601.2f target-dependent
+        // cost modifiers), so its target candidates are constrained below to what the caster can
+        // actually pay. We DON'T special-case "has a reduction": the constraint consumes the full
+        // effective cost for each candidate, so it's correct for a future target-dependent cost
+        // *increase* too (keep a candidate iff payable at its own effective cost) — the reduction
+        // vs increase asymmetry disappears by construction. For a modifier-free spell the effective
+        // cost equals the printed cost the offer gate already found affordable, so it's a no-op.
+        // (Warp/Flashback pay a fixed alternative cost, not `effective_cast_cost`, so skip them.)
+        let cost_varies_by_target = variant == CastVariant::Normal;
         let effect = self.state.def_of(card).and_then(|d| d.spell_effect().cloned());
 
         // 601.2a: the card becomes a spell on top of the stack.
@@ -2082,13 +2076,14 @@ impl Engine {
                 .iter()
                 .map(|spec| {
                     let mut legal = self.target_candidates(spec, p, Some(card));
-                    // No-rewind guard (CR 601.2f): with a target-dependent discount in play, keep
-                    // only candidates whose choice leaves the spell affordable. Reductions only
-                    // lower cost, so when the un-reduced cost is affordable this keeps every
-                    // candidate; when only the discounted cost is affordable it keeps just the
-                    // discount-granting ones. Single-slot only — every such SoS card has one target;
-                    // a multi-target discount would need a joint check, which no card requires yet.
-                    if target_dependent_reduction && single_slot {
+                    // No-rewind guard (CR 601.2f): keep only candidates whose choice leaves the
+                    // spell payable at *its own* effective cost. A no-op unless a cost modifier makes
+                    // the effective cost differ from the printed one for some candidate; then it
+                    // keeps exactly the affordable choices (for a reduction: all when the printed
+                    // cost is affordable, else only discount-granting ones; for a future increase:
+                    // only those not taxed beyond reach). Single-slot only — a multi-target modifier
+                    // would need a joint check, which no card requires yet.
+                    if cost_varies_by_target && single_slot {
                         legal.retain(|c| {
                             let sel = [*c];
                             let cost =

@@ -217,6 +217,20 @@ The whiteboard model and the agent interface meet here: the engine produces full
 specified, legal-option-masked choice points; a backend (scripted AI, Python RL, or the
 decompiled MTGA protocol) answers.
 
+**No-rewind is a pragmatic economy, not an architecture law.** Today the cast path pre-masks
+so tightly that no decision ever needs undoing — affordability and target legality are
+resolved before anything is committed (e.g. target-dependent cost modifiers, CR 601.2f: the
+final cost is computed *after* targets are chosen and each target candidate is pre-filtered to
+what the caster can pay, so `auto_pay` never underpays). Keep that where the pre-filter stays
+cheap — an exact legal mask is valuable to an RL agent. But it is **not** a rule the design must
+bend to preserve: when a mechanic makes pre-filtering combinatorial (convoke/improvise-class
+alternate payments, stacked cost modifiers × restricted mana, modal + X + affordability
+interactions), the sanctioned path is a **transactional pending-cast** — snapshot/hold the cast
+context and allow cancel/rollback before commitment. That is exactly MTGA's GRE model (a pending
+cast the player can back out of), and mirroring the GRE is a stated project goal — so a future
+agent should reach for rollback rather than over-engineer pre-filtering to avoid a rewind the
+architecture actually permits.
+
 ---
 
 ## 3. Worked examples (from the dev diaries)

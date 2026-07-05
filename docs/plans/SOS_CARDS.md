@@ -61,6 +61,23 @@ test (cast/activate→pay→target→resolve) for every mechanism; expect-test s
 Ping the lead at subsystem boundaries + design sketches for new classes / the big three. On fatigue: declare,
 rewrite THIS block, hand off clean.
 
+### ▶ Systemic notes (cross-cutting — read before scoping cost/targeting/counterspell work)
+- **No-rewind is a pragmatic economy, NOT architecture law** (user directive, 2026-07-04). The cast path
+  currently pre-masks so nothing needs undoing (target-dependent cost modifiers filter target candidates by
+  affordability — see `cast_spell`). Keep exact pre-filtering where it stays cheap (RL values exact masks), but
+  when a mechanic makes pre-filtering **combinatorial** (convoke/improvise-class alt-payments, stacked cost
+  modifiers × restricted mana, modal×X×affordability), the sanctioned path is a **transactional pending-cast**:
+  snapshot/hold the cast context, allow cancel/rollback before commitment — exactly MTGA's GRE pending-cast+cancel
+  model (mirroring the GRE is a project goal). Don't contort future designs to preserve no-rewind. Recorded in
+  `docs/design/WHITEBOARD_MODEL.md` §2.6. The candidate filter already consumes each candidate's *full* effective
+  cost (not "reduction present"), so a future target-dependent cost **increase** works by construction.
+- **Counterspell targeting has NEVER gone through the real cast path (latent gap).** `target_candidates` returns
+  `Vec::new()` for `TargetKind::StackObject` (priority.rs ~2176 `_ => Vec::new()`), so a spell that "counters
+  target spell" would rewind if cast for real — every counterspell (Essence Scatter, Cost of Brilliance, etc.) is
+  only tested via `resolve_effect`-direct with a hand-built `Target::Stack`. Wiring StackObject candidate
+  enumeration + `target_matches_filter` for `Target::Stack` (currently returns `true` = matches-anything) is its
+  own cap; it blocks **Brush Off** (S12 target-dependent-on-a-spell) and real-path counterspell play.
+
 ---
 ### Prior handoff — sos-cards-8 (superseded by the block above, kept for provenance)
 
