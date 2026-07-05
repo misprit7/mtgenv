@@ -395,6 +395,21 @@ impl EngineCore {
                 }
                 true
             }
+            // "Put target card onto the battlefield under your control" (Reanimate). Move the chosen
+            // target to the CONTROLLER's battlefield (owner unchanged) so it enters under your control
+            // even from an opponent's graveyard; ETB triggers fire via the broadcast. Imperative, so it
+            // lives here. Flush staged actions first.
+            Effect::ReanimateUnderControl { what } => {
+                self.flush_pending(wb);
+                if let Some(Target::Object(obj)) = self.resolve_target(what, ctx, cursor) {
+                    let controller =
+                        ctx.controller.unwrap_or_else(|| self.state.object(obj).owner);
+                    if self.state.move_object(obj, Zone::Battlefield, controller) {
+                        self.broadcast(GameEvent::ObjectMoved { obj, to: Zone::Battlefield });
+                    }
+                }
+                true
+            }
             // "Exile `what`, then return it to the battlefield under its owner's control" (CR 603.6e
             // blink — All Aboard). Exile it (LTB fires), then return it as a NEW object (ETB fires;
             // `move_object` resets status/counters/damage and re-applies summoning sickness). Imperative,
@@ -1650,6 +1665,7 @@ impl EngineCore {
             | Effect::CastForFree { .. }
             | Effect::ExileTopUntilManaValueMayCastFree { .. }
             | Effect::MillThenPutCreatureOntoBattlefield { .. }
+            | Effect::ReanimateUnderControl { .. }
             | Effect::Blink { .. }
             | Effect::CopyNextSpellCast { .. }
             | Effect::MayTapOrUntap { .. }
@@ -2428,6 +2444,15 @@ impl EngineCore {
             // C15: the computed power of the Nth chosen target, read once at resolution (608.2h).
             ValueExpr::PowerOfTarget(n) => match ctx.chosen_targets.get(*n as usize) {
                 Some(Target::Object(id)) => self.state.computed(*id).power.unwrap_or(0) as i64,
+                _ => 0,
+            },
+            // The mana value of the Nth chosen target (Reanimate's "life equal to that card's mana
+            // value"). Reads the object's characteristics mana value — a printed/copiable value stable
+            // across a zone move. `0` if the target isn't an object.
+            ValueExpr::ManaValueOfTarget(n) => match ctx.chosen_targets.get(*n as usize) {
+                Some(Target::Object(id)) => {
+                    self.state.objects.get(id).map(|o| o.chars.mana_value() as i64).unwrap_or(0)
+                }
                 _ => 0,
             },
             // The `kind` counters on the Nth chosen target — live state (the `PutCounters` interpret

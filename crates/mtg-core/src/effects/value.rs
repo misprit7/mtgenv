@@ -82,6 +82,11 @@ pub enum ValueExpr {
     /// adds the target's current power to itself. `0` if the target isn't an object on the
     /// battlefield.
     PowerOfTarget(u32),
+    /// The **mana value** (CR 202.3) of the Nth chosen target, read at resolution. Mana value is a
+    /// printed/copiable characteristic (from the card's mana cost), so it's stable across a zone move
+    /// in the same resolution — used by "you lose life equal to that card's mana value" (Reanimate),
+    /// which reads the reanimated creature card's MV. `0` if the target isn't an object.
+    ManaValueOfTarget(u32),
     /// The number of `kind` counters on the Nth chosen target, read at resolution. Unlike a value
     /// snapshotted once, this reads **live** state — so a prior counter-adding step in the same
     /// resolution is visible IF it committed first. The `PutCounters` interpret arm flushes staged

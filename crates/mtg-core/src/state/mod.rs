@@ -724,9 +724,20 @@ impl GameState {
     }
 
     pub(crate) fn move_object(&mut self, id: ObjId, to: Zone, to_owner: PlayerId) -> bool {
-        let (from_zone, from_owner) = match self.objects.get(&id) {
-            Some(o) => (o.zone, o.owner),
+        let (from_zone, from_owner, from_controller) = match self.objects.get(&id) {
+            Some(o) => (o.zone, o.owner, o.controller),
             None => return false,
+        };
+        // Which player's zone-vec the object currently sits in: a battlefield/stack permanent lives in
+        // its CONTROLLER's vec (CR 109.4 — `move_object` pushed it to `to_owner` and set that as the
+        // controller), whereas in any other zone it lives in its OWNER's vec. These coincide whenever
+        // control == owner (the common case), but a control-override reanimation (Reanimate) puts an
+        // opponent-owned card under your control — so source removal must key on the controller for
+        // battlefield sources, else the object would be searched for in the wrong player's vec.
+        let from_holder = if from_zone == Zone::Battlefield || from_zone == Zone::Stack {
+            from_controller
+        } else {
+            from_owner
         };
         // Capture last-known information (CR 603.10a) as the permanent LEAVES the battlefield —
         // before its controller/counters/damage are reset below — so dies/LTB triggers see how it
@@ -741,8 +752,8 @@ impl GameState {
             // redirected to exile already consumed its one-shot rider in the rewrite pass.)
             self.floating_replacements.retain(|f| f.scope != id);
         }
-        // Remove from the source zone vector.
-        if let Some(v) = self.player_mut(from_owner).zone_vec_mut(from_zone) {
+        // Remove from the source zone vector (keyed by the holder computed above, not always owner).
+        if let Some(v) = self.player_mut(from_holder).zone_vec_mut(from_zone) {
             if let Some(pos) = v.iter().position(|&x| x == id) {
                 v.remove(pos);
             }

@@ -219,6 +219,17 @@ pub enum Effect {
         who: PlayerRef,
         count: ValueExpr,
     },
+    /// "Put target card onto the battlefield **under your control**" (Reanimate) — the control-override
+    /// reanimation (CR 111.1a / 400.7). Distinct from [`Effect::MoveZone`]→Battlefield, which always
+    /// enters under the card's *owner*'s control: this enters under the effect's **controller** even
+    /// when the card is owned by another player (a graveyard-steal). `what` is a chosen target (a
+    /// graveyard card, collected by `collect_specs_into`); at resolution the object is put onto the
+    /// controller's battlefield via `move_object(_, Battlefield, controller)` — `owner` is unchanged
+    /// (so it returns to its owner's graveyard on death), and enters-the-battlefield triggers fire.
+    /// Imperative (a control-carrying zone move), so it lives in `interpret`.
+    ReanimateUnderControl {
+        what: EffectTarget,
+    },
     /// "Exile `what`, then return that card to the battlefield under its owner's control" (CR 603.6e
     /// blink/flicker) — All Aboard. Exiles the target then immediately returns it as a **new** object:
     /// enters-the-battlefield triggers fire, and counters / marked damage / auras / summoning-sickness
