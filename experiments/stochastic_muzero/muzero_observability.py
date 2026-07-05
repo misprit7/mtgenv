@@ -131,16 +131,20 @@ def eval_checkpoint(agent, deck, games, sampled_games, seed0=5_000_000):
 
 
 def record_replay(agent, deck, step, run_name, seed=777):
-    """One greedy self-mirror game (both seats = this MuZero policy) → data/replays via export_replay
-    with the standard aitrain naming (reuses env.export_replay; drives the MCTS agent, not model.predict)."""
-    env = MtgEnv(deck=deck, record_replay=True, replay_step=int(step), opponent=agent, max_decisions=3000)
+    """One greedy game — MuZero (seat 0) vs a RANDOM-legal opponent — → data/replays via export_replay
+    (v2 COMPACT delta form, same writer PPO uses; drives the MCTS agent, not model.predict).
+    Opponent is RANDOM (not a self-mirror): an untrained/collapsed policy PASSes, and a self-mirror of
+    two passers does nothing for ~deck-out-many turns → a >70MB replay. A random opponent actively
+    develops a board and ends the game in ~40-60 decisions, keeping every replay bounded (PPO range)
+    and matching the win-rate-vs-random protocol. max_decisions=600 is a belt-and-suspenders cap."""
+    env = MtgEnv(deck=deck, record_replay=True, replay_step=int(step), opponent="random", max_decisions=600)
     obs, info = env.reset(seed=seed + int(step)); done = False
     while not done:
         a = agent.act_greedy(obs, info["action_mask"])
         obs, _r, term, trunc, info = env.step(a); done = term or trunc
     tag = f"MuZero@{run_name}:{step}"
     try:
-        return env.export_replay(REPLAY_DIR, int(time.time() * 1000), names=[tag, tag], decks=[deck, deck], run_name=run_name)
+        return env.export_replay(REPLAY_DIR, int(time.time() * 1000), names=[tag, "random"], decks=[deck, deck], run_name=run_name)
     except Exception as e:
         print(f"  [replay] skipped ({type(e).__name__}: {e})"); return None
 
@@ -183,11 +187,15 @@ def main():
         eval_list.append((best, "best", max_step))
     print(f"run={args.run_name} config={args.config} deck={deck} ckpts={len(eval_list)} games={args.games}(+{args.sampled_games} sampled)")
     tags_written = set()
+    replayed_steps = set()  # one replay per distinct env-step (ckpt_best often shares the final step)
     for ck, it, step in eval_list:
         policy, _ = build_policy(args.config, ck, args.device, latent=args.latent, sims=args.sims)
         agent = MZAgent(policy, keys, args.device)
         m = eval_checkpoint(agent, deck, args.games, args.sampled_games)
-        rp = None if args.no_replay else record_replay(agent, deck, step, args.run_name)
+        rp = None
+        if not args.no_replay and step not in replayed_steps:
+            rp = record_replay(agent, deck, step, args.run_name)
+            replayed_steps.add(step)
         for k, v in m.items():
             tag = f"selfplay/{k}" if k.startswith("winrate") else f"stats/{k}"
             writer.add_scalar(tag, v, step); tags_written.add(tag)
