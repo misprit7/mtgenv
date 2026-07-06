@@ -550,6 +550,17 @@ pub enum Effect {
     Exile {
         what: EffectTarget,
     },
+    /// Nita, Forum Conciliator's rider: exile `what` (a card in another player's graveyard) and grant
+    /// the **controller** permission to cast it **this turn** — even though it's in the opponent's
+    /// exile. Sets, on the exiled object: `castable_from_exile` + `castable_by = the controller`
+    /// (cross-player permission; the offer scans other players' exile) + `play_until_turn = this turn`,
+    /// plus `spend_any_mana` (colored pips payable by any colour, if `any_mana`) and `exile_on_leave`
+    /// (the cast spell is exiled instead of graveyard'd when it leaves the stack, if `exile_on_leave`).
+    ExileTargetThenMayCast {
+        what: EffectTarget,
+        any_mana: bool,
+        exile_on_leave: bool,
+    },
     /// Impulse-play (SoS): exile `what` and grant its owner permission to **play** it (cast it / play
     /// it as a land) from exile until the end of `window` (CR — "you may play that card until …").
     /// Sets `Object.castable_from_exile` + `play_until_turn`; the offer loop honours the card's own

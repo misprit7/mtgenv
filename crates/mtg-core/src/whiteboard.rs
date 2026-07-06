@@ -1689,8 +1689,16 @@ impl EngineCore {
                 self.state.cease_to_exist(card);
             } else {
                 let owner = self.state.object(card).owner;
-                self.state.move_object(card, Zone::Graveyard, owner);
-                self.broadcast(GameEvent::ObjectMoved { obj: card, to: Zone::Graveyard });
+                // A flashback-cast spell — or a Nita exile-on-leave cast — is exiled instead of going
+                // to the graveyard even when countered (CR 702.34d — the exile replacement applies
+                // whenever it would leave the stack, including a counter).
+                let dest = if self.state.object(card).flashback_cast {
+                    Zone::Exile
+                } else {
+                    Zone::Graveyard
+                };
+                self.state.move_object(card, dest, owner);
+                self.broadcast(GameEvent::ObjectMoved { obj: card, to: dest });
             }
         } else {
             // An activated/triggered ability that is countered just leaves the stack (CR 701.5b).
@@ -1974,6 +1982,20 @@ impl EngineCore {
             Effect::Exile { what } => {
                 if let Some(Target::Object(obj)) = self.resolve_target(what, ctx, cursor) {
                     wb.push(Action::Exile { obj, source: ctx.source });
+                }
+            }
+            // Nita: exile the target (opponent's gy card) and grant the CONTROLLER cross-player
+            // permission to cast it this turn, with the any-mana / exile-on-leave riders.
+            Effect::ExileTargetThenMayCast { what, any_mana, exile_on_leave } => {
+                if let Some(Target::Object(obj)) = self.resolve_target(what, ctx, cursor) {
+                    let by = ctx.controller.unwrap_or_else(|| self.state.object(obj).owner);
+                    wb.push(Action::ExileForCastBy {
+                        obj,
+                        by,
+                        until: self.state.turn_number, // "this turn" (CR 601.3e window)
+                        any_mana: *any_mana,
+                        exile_on_leave: *exile_on_leave,
+                    });
                 }
             }
             // Impulse-play: exile the target and grant its owner play-from-exile permission through
@@ -3054,6 +3076,24 @@ impl EngineCore {
                     if let Some(o) = self.state.objects.get_mut(&obj) {
                         o.castable_from_exile = true;
                         o.play_until_turn = Some(until);
+                    }
+                    self.broadcast(GameEvent::ObjectMoved { obj, to: Zone::Exile });
+                }
+            }
+            Action::ExileForCastBy { obj, by, until, any_mana, exile_on_leave } => {
+                // Exile to the OWNER's exile (CR 400.7) but grant the cast permission to `by` (Nita's
+                // controller). Set the flags AFTER the move (move_object resets them).
+                let owner = match self.state.objects.get(&obj) {
+                    Some(o) => o.owner,
+                    None => return,
+                };
+                if self.state.move_object(obj, Zone::Exile, owner) {
+                    if let Some(o) = self.state.objects.get_mut(&obj) {
+                        o.castable_from_exile = true;
+                        o.castable_by = Some(by);
+                        o.play_until_turn = Some(until);
+                        o.spend_any_mana = any_mana;
+                        o.exile_on_leave = exile_on_leave;
                     }
                     self.broadcast(GameEvent::ObjectMoved { obj, to: Zone::Exile });
                 }

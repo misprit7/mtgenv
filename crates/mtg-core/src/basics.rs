@@ -163,6 +163,22 @@ impl ManaCost {
         out.mono_hybrid.extend_from_slice(&other.mono_hybrid);
         out
     }
+
+    /// Collapse every coloured requirement into **generic** mana — "mana of any type can be spent"
+    /// (CR 106.6, Nita, Forum Conciliator). Each coloured pip, each hybrid pip, and each mono-hybrid
+    /// pip's mana value (`n`) becomes generic mana, so the total mana value is unchanged but any colour
+    /// can pay it. `generic` and `x` are unchanged.
+    pub fn collapse_to_generic(&self) -> ManaCost {
+        let colored_pips: u32 = self.colored.values().sum();
+        let mono: u32 = self.mono_hybrid.iter().map(|&(n, _)| n).sum();
+        ManaCost {
+            generic: self.generic + colored_pips + self.hybrid.len() as u32 + mono,
+            colored: BTreeMap::new(),
+            x: self.x,
+            hybrid: Vec::new(),
+            mono_hybrid: Vec::new(),
+        }
+    }
 }
 
 impl Color {

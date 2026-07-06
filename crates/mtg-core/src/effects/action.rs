@@ -111,6 +111,17 @@ pub enum Action {
         obj: ObjId,
         until: u32,
     },
+    /// Nita's cross-player exile-cast (CR 601.3e): exile `obj` (to its owner's exile) and grant player
+    /// `by` permission to cast it through turn `until` (inclusive) — `castable_from_exile` +
+    /// `castable_by = Some(by)` + `play_until_turn = Some(until)`, plus `spend_any_mana` and
+    /// `exile_on_leave` for Nita's "any type of mana" / "exile instead of graveyard" riders.
+    ExileForCastBy {
+        obj: ObjId,
+        by: PlayerId,
+        until: u32,
+        any_mana: bool,
+        exile_on_leave: bool,
+    },
     /// Mill-then-play (SoS): put the top card of `player`'s library into their graveyard, then grant
     /// permission to play THAT card from the graveyard through turn `until` (inclusive). Sets
     /// `playable_from_graveyard` + `play_until_turn = Some(until)` on it. No-op on an empty library.

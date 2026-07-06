@@ -6,20 +6,18 @@
 //!   You may cast it this turn, and mana of any type can be spent to cast that spell. If that spell would
 //!   be put into a graveyard, exile it instead. Activate only as a sorcery.
 //!
-//! **TRACKED-PARTIAL (`.incomplete()`).**
-//! - **Ability 1 — fully faithful.** "Whenever you cast a spell you don't own" is a `SpellCast` trigger
-//!   filtered by the new [`CardFilter::OwnedBy`] (`Not(OwnedBy(Controller))` = a spell whose owner isn't
-//!   you; the trigger already gates on you being the caster). Effect = `ForEach` creature you control →
+//! **Fully implemented.**
+//! - **Ability 1.** "Whenever you cast a spell you don't own" is a `SpellCast` trigger filtered by
+//!   [`CardFilter::OwnedBy`] (`Not(OwnedBy(Controller))` = a spell whose owner isn't you; the trigger
+//!   already gates on you being the caster). Effect = `ForEach` creature you control →
 //!   `PutCounters(+1/+1)`.
-//! - **Ability 2 — PARTIAL.** The cost ({2} + sacrifice another creature) and the removal (exile a target
-//!   instant/sorcery from an opponent's graveyard) are implemented, but the **"you may cast it this turn,
-//!   mana of any type, exile-instead-of-graveyard"** rider is NOT — it needs three mechanisms that don't
-//!   exist yet: (a) a **cross-player** exile-cast permission (the impulse offer only scans the caster's
-//!   OWN exile; here you cast a card in the OPPONENT's exile — a `castable_by: Option<PlayerId>` on the
-//!   object + an offer-loop scan of other players' exile), (b) a **spend-any-type-of-mana** payment mode
-//!   (collapse the cast cost to fully-generic in `can_pay`/`pay`), and (c) an **exile-on-leave-stack** flag
-//!   riding the flashback exile path (CR 702.34d). Until then Nita's activated ability is graveyard-hate
-//!   only (it still exiles the card). See the SOS_CARDS.md NEXT-AGENT block for the spec.
+//! - **Ability 2.** Cost ({2} + sacrifice another creature) + exile a target instant/sorcery from an
+//!   opponent's graveyard, then the full rider via [`Effect::ExileTargetThenMayCast`]: (a) a
+//!   **cross-player** exile-cast permission (`Object.castable_by = the controller` + the offer-loop scan
+//!   of other players' exile), (b) **spend-any-type-of-mana** (`Object.spend_any_mana` collapses the
+//!   cast's coloured pips to generic at both the offer gate and `cast_spell`'s payment), and (c)
+//!   **exile-on-leave-stack** (`Object.exile_on_leave` → `flashback_cast` on the resulting spell, so it's
+//!   exiled instead of graveyard'd when it leaves the stack — on resolve OR counter, CR 702.34d).
 
 use crate::basics::{CardType, Color, CounterKind, Zone};
 use crate::cards::{creature, mana_cost, CardDb};
@@ -61,9 +59,9 @@ fn cast_a_spell_you_dont_own() -> Ability {
     }
 }
 
-/// "{2}, Sacrifice another creature: Exile target I/S card from an opponent's graveyard. …" — PARTIAL:
-/// cost + exile are real; the "cast it with any mana / exile-instead-of-gy" rider is deferred (see the
-/// module docs). Activate only as a sorcery.
+/// "{2}, Sacrifice another creature: Exile target I/S card from an opponent's graveyard. You may cast
+/// it this turn, and mana of any type can be spent to cast that spell. If that spell would be put into a
+/// graveyard, exile it instead. Activate only as a sorcery." (See the module docs.)
 fn exile_opp_gy_is() -> Ability {
     Ability::Activated {
         cost: Cost {
@@ -79,7 +77,7 @@ fn exile_opp_gy_is() -> Ability {
                 max: ValueExpr::Fixed(1),
             })],
         },
-        effect: Effect::Exile {
+        effect: Effect::ExileTargetThenMayCast {
             what: EffectTarget::Target(TargetSpec {
                 kind: TargetKind::CardInZone {
                     zone: Zone::Graveyard,
@@ -92,6 +90,8 @@ fn exile_opp_gy_is() -> Ability {
                 max: 1,
                 distinct: true,
             }),
+            any_mana: true,       // "mana of any type can be spent to cast that spell"
+            exile_on_leave: true, // "if that spell would be put into a graveyard, exile it instead"
         },
         timing: Timing::Sorcery,
         restriction: None,
@@ -113,7 +113,7 @@ pub fn register(db: &mut CardDb) {
     def.chars.supertypes = vec![Supertype::Legendary];
     def.chars.colors = vec![Color::White, Color::Black];
     def.text = "Whenever you cast a spell you don't own, put a +1/+1 counter on each creature you control.\n{2}, Sacrifice another creature: Exile target instant or sorcery card from an opponent's graveyard. You may cast it this turn, and mana of any type can be spent to cast that spell. If that spell would be put into a graveyard, exile it instead. Activate only as a sorcery.".to_string();
-    db.insert(def.incomplete());
+    db.insert(def);
 }
 
 #[cfg(test)]
@@ -140,10 +140,14 @@ mod tests {
         assert_eq!(def.chars.colors, vec![Color::White, Color::Black]);
         assert_eq!((def.chars.power, def.chars.toughness), (Some(2), Some(3)));
         assert_eq!(def.chars.supertypes, vec![Supertype::Legendary]);
-        assert!(!def.fully_implemented, "tracked-partial: ability 2's cast rider is deferred");
+        assert!(def.fully_implemented, "ability 2's full rider is now implemented");
         assert!(matches!(
             def.abilities[0],
             Ability::Triggered { event: EventPattern::SpellCast(_), .. }
+        ));
+        assert!(matches!(
+            def.abilities[1],
+            Ability::Activated { effect: Effect::ExileTargetThenMayCast { any_mana: true, exile_on_leave: true, .. }, .. }
         ));
     }
 
@@ -211,5 +215,97 @@ mod tests {
         // Nita's trigger put a +1/+1 counter on each creature P0 controls (Nita + the Bears).
         assert_eq!(e.state.computed(bears).power, Some(3), "Bears got a +1/+1 counter");
         assert_eq!(e.state.computed(nita).power, Some(3), "Nita got one too (2/3 → 3/4)");
+    }
+
+    /// Picks the bolt in the opponent's graveyard for Nita's target, and player P1 for anything cast at
+    /// "any target" (the bolt). Passes otherwise.
+    struct RiderAgent;
+    impl Agent for RiderAgent {
+        fn decide(&mut self, _v: &PlayerView, req: &DecisionRequest) -> DecisionResponse {
+            match req {
+                DecisionRequest::ChooseTargets { slots, .. } => {
+                    // Prefer targeting P1 (for the bolt); else the first legal candidate (Nita's
+                    // graveyard-card target has just one — the bolt).
+                    let idx = slots[0]
+                        .legal
+                        .iter()
+                        .position(|t| matches!(t, crate::basics::Target::Player(PlayerId(1))))
+                        .unwrap_or(0);
+                    DecisionResponse::Pairs(vec![(0, idx as u32)])
+                }
+                _ => DecisionResponse::Pass,
+            }
+        }
+    }
+
+    /// The full ability-2 rider (clears the tracked-partial): `{2}, Sac another creature` exiles a
+    /// target instant from the OPPONENT's graveyard, then P0 casts it THIS TURN from P1's exile, paying
+    /// its `{R}` with GREEN mana (mana of any type), and it's EXILED (not put in a graveyard) as it
+    /// leaves the stack.
+    #[test]
+    fn ability2_cross_player_any_mana_exile_on_leave() {
+        use crate::agent::{AbilityRef, PlayableAction};
+        let mut state = GameState::new(2, 1);
+        state.set_card_db(Arc::new(db_with_card()));
+        // P0: Nita + one other creature (auto-sacrificed) + three Forests (green only).
+        let nita = {
+            let c = state.card_db().get(NITA_FORUM_CONCILIATOR).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, Zone::Battlefield)
+        };
+        {
+            let c = state.card_db().get(grp::GRIZZLY_BEARS).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, Zone::Battlefield);
+        }
+        for _ in 0..3 {
+            let f = state.card_db().get(grp::FOREST).unwrap().chars.clone();
+            state.add_card(PlayerId(0), f, Zone::Battlefield);
+        }
+        // P1 owns a Lightning Bolt ({R}) in their graveyard — the cross-player target.
+        let bolt = {
+            let c = state.card_db().get(grp::LIGHTNING_BOLT).unwrap().chars.clone();
+            state.add_card(PlayerId(1), c, Zone::Graveyard)
+        };
+        state.active_player = PlayerId(0);
+        state.phase = crate::basics::Phase::PrecombatMain;
+        let p1_life = state.player(PlayerId(1)).life;
+        let mut e = Engine::new(state, vec![Box::new(RiderAgent), Box::new(RiderAgent)]);
+
+        // Activate ability 2 (index 1): pays {2} (two Forests) + auto-sacs the Bears, targeting the bolt.
+        e.activate_ability(PlayerId(0), nita, AbilityRef(1));
+        e.resolve_top();
+        e.run_agenda();
+
+        // The bolt is now in P1's EXILE, castable by P0 this turn, any-mana + exile-on-leave.
+        let bo = e.state.object(bolt);
+        assert_eq!(bo.zone, Zone::Exile, "the bolt was exiled from P1's graveyard");
+        assert!(bo.castable_from_exile && bo.castable_by == Some(PlayerId(0)), "P0 may cast it");
+        assert!(bo.spend_any_mana && bo.exile_on_leave, "any-mana + exile-on-leave riders set");
+        assert!(
+            e.state.player(PlayerId(1)).exile.contains(&bolt),
+            "it sits in the OWNER's (P1's) exile"
+        );
+
+        // P0 is offered the cast (cross-player exile scan + any-mana affordability with only green mana).
+        let offered = e
+            .legal_actions(PlayerId(0))
+            .iter()
+            .any(|a| matches!(a, PlayableAction::Cast { spell, .. } if *spell == bolt));
+        assert!(offered, "P0 is offered the cast — {{R}} payable by green via 'any type of mana'");
+
+        // Cast it (paid {R} with the last Forest via the any-mana collapse), targeting P1.
+        e.cast_spell(PlayerId(0), bolt, CastVariant::Normal);
+        e.run_agenda();
+        while !e.state.stack.items.is_empty() {
+            e.resolve_top();
+            e.run_agenda();
+        }
+        assert_eq!(
+            e.state.player(PlayerId(1)).life,
+            p1_life - 3,
+            "the borrowed bolt dealt 3 to P1 — it was cast and paid with green mana"
+        );
+        // Exile-on-leave: the spell was exiled (not put into a graveyard) as it left the stack.
+        assert_eq!(e.state.object(bolt).zone, Zone::Exile, "exiled instead of graveyard'd (CR 702.34d)");
+        assert!(!e.state.player(PlayerId(1)).graveyard.contains(&bolt), "not in the graveyard");
     }
 }

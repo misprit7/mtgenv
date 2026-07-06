@@ -209,6 +209,25 @@ pub struct Object {
     /// fresh object re-chooses on re-entry).
     #[serde(default)]
     pub chosen_name: Option<String>,
+    /// A **cross-player exile-cast permission** (CR 601.3e — Nita, Forum Conciliator's "you may cast it
+    /// this turn"): the player who may cast this exiled card, when that isn't its owner. The basic
+    /// impulse (`castable_from_exile`) only lets the owner cast from their own exile; this lets Nita's
+    /// controller cast a card sitting in the *opponent's* exile (the offer scans other players' exile
+    /// for `castable_by == Some(me)`). `None` = owner-only, the default. Reset on any zone change (400.7).
+    #[serde(default)]
+    pub castable_by: Option<PlayerId>,
+    /// Set on an exile-castable card whose cast may be paid with **mana of any type** (CR 106.6 —
+    /// Nita's "mana of any type can be spent to cast that spell"): its coloured pips are payable by any
+    /// colour (the cost is collapsed to generic for that one cast). Read at the offer affordability gate
+    /// and by `cast_spell`'s payment. Reset on any zone change (400.7).
+    #[serde(default)]
+    pub spend_any_mana: bool,
+    /// Set on an exile-castable card that should be **exiled instead of put into a graveyard** when the
+    /// resulting spell leaves the stack (CR 702.34d — Nita's "if that spell would be put into a
+    /// graveyard, exile it instead"). Read by `cast_spell` (before moving the card to the stack) to set
+    /// `flashback_cast` on the resulting spell — the existing exile-on-leave path. Reset on zone change.
+    #[serde(default)]
+    pub exile_on_leave: bool,
 }
 
 impl Object {
@@ -733,6 +752,9 @@ impl GameState {
             prepared: false,
             flashback_until_turn: None,
             chosen_name: None,
+            castable_by: None,
+            spend_any_mana: false,
+            exile_on_leave: false,
         };
         self.objects.insert(id, obj);
         if let Some(v) = self.player_mut(owner).zone_vec_mut(zone) {
@@ -849,6 +871,9 @@ impl GameState {
             o.prepared = false; // a fresh object identity (CR 400.7); the "prepared" status ends on leaving play
             o.flashback_until_turn = None; // granted flashback drops on any zone change (400.7)
             o.chosen_name = None; // a fresh object re-chooses its noted name on re-entry (400.7)
+            o.castable_by = None; // cross-player exile-cast permission drops on any zone change (400.7)
+            o.spend_any_mana = false; // any-type-mana permission is per exile grant (400.7)
+            o.exile_on_leave = false; // read at cast time, then re-expressed as flashback_cast (400.7)
             if to == Zone::Battlefield {
                 o.controller = to_owner;
                 o.summoning_sick = o.chars.is_creature();

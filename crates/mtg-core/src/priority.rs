@@ -1166,12 +1166,28 @@ impl Engine {
         // Cast a card from exile that has recast/impulse permission (`castable_from_exile`), for its
         // normal mana cost. Warp recast (CR 702.x): sorcery speed, any later turn. Impulse-play (SoS):
         // the card's own timing, through its `play_until_turn` window. (Playing an impulse-exiled *land*
-        // from exile is deferred — no such card in the pool yet; this offers casts only.)
+        // from exile is deferred — no such card in the pool yet; this offers casts only.) Candidates are
+        // `p`'s own castable-from-exile cards PLUS cards in OTHER players' exile granted to `p` via
+        // `castable_by` (Nita, Forum Conciliator's cross-player "you may cast it this turn").
+        let mut exile_candidates: Vec<ObjId> = Vec::new();
         for &card in &s.player(p).exile {
-            let o = s.object(card);
-            if !o.castable_from_exile {
+            if s.object(card).castable_from_exile {
+                exile_candidates.push(card);
+            }
+        }
+        for pl in &s.players {
+            if pl.id == p {
                 continue;
             }
+            for &card in &pl.exile {
+                let o = s.object(card);
+                if o.castable_from_exile && o.castable_by == Some(p) {
+                    exile_candidates.push(card);
+                }
+            }
+        }
+        for card in exile_candidates {
+            let o = s.object(card);
             let chars = &o.chars;
             if chars.is_land() {
                 continue; // a land is played, not cast — impulse land-play is deferred.
@@ -1188,8 +1204,11 @@ impl Engine {
                 continue;
             }
             let is_is = chars.has_type(CardType::Instant) || chars.has_type(CardType::Sorcery);
-            let affordable =
-                o.chars.mana_cost.as_ref().is_some_and(|c| mana::can_pay_ex(s, p, c, is_is));
+            // "Mana of any type can be spent" (Nita) collapses the colour requirements to generic.
+            let affordable = o.chars.mana_cost.as_ref().is_some_and(|c| {
+                let c = if o.spend_any_mana { c.collapse_to_generic() } else { c.clone() };
+                mana::can_pay_ex(s, p, &c, is_is)
+            });
             if !affordable {
                 continue;
             }
@@ -2553,6 +2572,15 @@ impl Engine {
             .any(component_uses_x);
         let needs_x = cost.x > 0 || additional_uses_x;
 
+        // Cross-player exile-cast riders (Nita, Forum Conciliator) — captured NOW, before the card
+        // moves to the stack (which resets its exile-cast flags, CR 400.7). `spend_any` collapses the
+        // payment to any colour; `exile_on_leave` re-expresses as `flashback_cast` on the resulting
+        // spell so it's exiled (not graveyard'd) as it leaves the stack (CR 702.34d / 608.2n).
+        let (spend_any, exile_on_leave) = {
+            let o = self.state.object(card);
+            (o.spend_any_mana, o.exile_on_leave)
+        };
+
         // 601.2a: the card becomes a spell on top of the stack.
         let sid = self.state.mint_stack();
         self.move_to_stack(card, p);
@@ -2562,9 +2590,9 @@ impl Engine {
                 o.warp_cast = true;
             }
         }
-        // Flag a flashback-cast spell so it's exiled (not put in the graveyard) as it leaves the
-        // stack (CR 702.34).
-        if variant == CastVariant::Flashback {
+        // Flag a flashback-cast spell (or a Nita exile-on-leave cast) so it's exiled (not put in the
+        // graveyard) as it leaves the stack (CR 702.34 / Nita's "exile it instead").
+        if variant == CastVariant::Flashback || exile_on_leave {
             if let Some(o) = self.state.objects.get_mut(&card) {
                 o.flashback_cast = true;
             }
@@ -2667,6 +2695,9 @@ impl Engine {
                             let sel = [*c];
                             let cost =
                                 self.effective_cast_cost(p, card, &base_cost, TargetCtx::Chosen(&sel));
+                            // "Mana of any type can be spent" (Nita) — the constraint must size the cost
+                            // the same way the payer will, else a legal target is wrongly pruned.
+                            let cost = if spend_any { cost.collapse_to_generic() } else { cost };
                             mana::can_pay_ex(&self.state, p, &cost, is_is)
                         });
                     }
@@ -2736,6 +2767,11 @@ impl Engine {
             if let Some(m) = &opt.mana {
                 pay = pay.plus(m);
             }
+        }
+        // "Mana of any type can be spent to cast that spell" (Nita): collapse the colour requirements
+        // to generic so any colour pays them (CR 106.6). Done after folding additional-cost mana.
+        if spend_any {
+            pay = pay.collapse_to_generic();
         }
         let colors_spent = mana::auto_pay_ex(&mut self.state, p, &pay, is_is).unwrap_or_default();
         // Pay the non-mana additional-cost components (CR 601.2f–h) — with `chosen_x` in a resolution
@@ -5089,6 +5125,8 @@ fn collect_specs_into(effect: &Effect, out: &mut Vec<TargetSpec>) {
         Effect::ExileIfWouldDie { what: EffectTarget::Target(spec) } => out.push(spec.clone()),
         // Impulse-play exiles a targeted card (Practiced Scrollsmith's graveyard card).
         Effect::ExileForPlay { what: EffectTarget::Target(spec), .. } => out.push(spec.clone()),
+        // Nita exiles a targeted opponent-graveyard I/S (its "cast it this turn" rider).
+        Effect::ExileTargetThenMayCast { what: EffectTarget::Target(spec), .. } => out.push(spec.clone()),
         // "Return target card from a zone …" — a chosen target (Pull from the Grave's graveyard→hand,
         // Forum Necroscribe / Lorehold Charm's graveyard→battlefield reanimation).
         Effect::MoveZone { what: EffectTarget::Target(spec), .. } => out.push(spec.clone()),
