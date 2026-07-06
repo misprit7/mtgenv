@@ -748,6 +748,16 @@ pub enum Effect {
         /// makes the take *optional* (you may take none if nothing qualifies).
         take_filter: CardFilter,
     },
+    /// "Look at the top `count` cards. Put `to_hand` into your hand, `to_exile_play` into exile (you may
+    /// play them until `window`), and the rest on the bottom of your library" (Expressive Iteration).
+    /// A 3-way look-distribute: the controller chooses which looked-at cards go to hand, which are
+    /// exiled with play permission, and the remainder are bottomed. Imperative, so it lives in `interpret`.
+    LookDistribute {
+        count: ValueExpr,
+        to_hand: u32,
+        to_exile_play: u32,
+        window: PlayWindow,
+    },
 
     /// Declare a **"target player"** (CR 115.1) for the spell/ability — a targeting slot with no
     /// effect of its own. The player-affecting effects that follow reference the chosen player via

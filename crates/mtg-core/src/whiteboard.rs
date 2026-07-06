@@ -957,6 +957,56 @@ impl EngineCore {
                 self.interpret_look_and_pick(player, n, take, *take_to, *rest_to, take_filter);
                 true
             }
+            // "Look at the top `count`; put `to_hand` into hand, `to_exile_play` into exile (playable
+            // until `window`), rest on the bottom" (Expressive Iteration). Imperative; flush first.
+            Effect::LookDistribute { count, to_hand, to_exile_play, window } => {
+                self.flush_pending(wb);
+                let player = ctx.controller.unwrap_or(PlayerId(0));
+                let n = (self.eval_value(count, ctx).max(0) as usize)
+                    .min(self.state.player(player).library.len());
+                if n == 0 {
+                    return true;
+                }
+                // Top-first snapshot of the looked-at cards.
+                let mut pool: Vec<ObjId> =
+                    self.state.player(player).library.iter().rev().take(n).copied().collect();
+                // 1) Choose `to_hand` for hand.
+                let want_hand = (*to_hand as usize).min(pool.len());
+                let hand: Vec<ObjId> = self.choose_n(player, &pool, want_hand, SelectReason::Generic, "put into your hand");
+                pool.retain(|o| !hand.contains(o));
+                for &c in &hand {
+                    self.state.move_object(c, Zone::Hand, player);
+                    self.broadcast(GameEvent::ObjectMoved { obj: c, to: Zone::Hand });
+                }
+                // 2) Choose `to_exile_play` to exile with play permission until `window`.
+                let want_exile = (*to_exile_play as usize).min(pool.len());
+                let exiled: Vec<ObjId> = self.choose_n(player, &pool, want_exile, SelectReason::Generic, "exile to play this turn");
+                pool.retain(|o| !exiled.contains(o));
+                let until = match window {
+                    crate::effects::PlayWindow::ThisTurn => self.state.turn_number,
+                    crate::effects::PlayWindow::YourNextTurn => {
+                        if self.state.active_player == player { self.state.turn_number + 2 } else { self.state.turn_number + 1 }
+                    }
+                };
+                for &c in &exiled {
+                    if self.state.move_object(c, Zone::Exile, player) {
+                        if let Some(o) = self.state.objects.get_mut(&c) {
+                            o.castable_from_exile = true;
+                            o.play_until_turn = Some(until);
+                        }
+                        self.broadcast(GameEvent::ObjectMoved { obj: c, to: Zone::Exile });
+                    }
+                }
+                // 3) The rest go on the bottom (front of the library vec).
+                if !pool.is_empty() {
+                    let libv = &mut self.state.player_mut(player).library;
+                    libv.retain(|o| !pool.contains(o));
+                    for &c in pool.iter().rev() {
+                        libv.insert(0, c);
+                    }
+                }
+                true
+            }
             // Zimone's Experiment: look at the top `count`, pick up to `take` creature/land cards, route
             // lands → battlefield tapped and creatures → hand, rest to the bottom in random order.
             Effect::LookPickCreaturesLands { count, take } => {
@@ -1607,6 +1657,45 @@ impl EngineCore {
     /// "Look at the top `n`, put `take` into `take_to`, the rest into `rest_to`" (SoS look-and-pick).
     /// The controller chooses which of the looked-at cards to take. `rest_to == Library` places the
     /// remainder on the **bottom** of the library.
+    /// Ask `player` to choose exactly `want` cards from `pool` (mandatory; if the agent under-selects,
+    /// the front of `pool` fills in). Returns the chosen `ObjId`s. Used by multi-destination look effects.
+    fn choose_n(&mut self, player: PlayerId, pool: &[ObjId], want: usize, reason: SelectReason, desc: &str) -> Vec<ObjId> {
+        if want == 0 || pool.is_empty() {
+            return Vec::new();
+        }
+        let want = want.min(pool.len());
+        let resp = self.ask(
+            player,
+            &DecisionRequest::SelectCards {
+                reason,
+                from: pool.to_vec(),
+                min: want as u32,
+                max: want as u32,
+                description: desc.into(),
+            },
+        );
+        let mut seen = std::collections::BTreeSet::new();
+        let mut picks: Vec<ObjId> = match resp {
+            DecisionResponse::Indices(idxs) => idxs
+                .iter()
+                .filter_map(|&i| pool.get(i as usize).copied())
+                .filter(|o| seen.insert(*o))
+                .take(want)
+                .collect(),
+            _ => Vec::new(),
+        };
+        // Mandatory: fill from the front if the agent under-selected.
+        for &c in pool {
+            if picks.len() >= want {
+                break;
+            }
+            if seen.insert(c) {
+                picks.push(c);
+            }
+        }
+        picks
+    }
+
     fn interpret_look_and_pick(
         &mut self,
         pl: PlayerId,
@@ -2676,6 +2765,7 @@ impl EngineCore {
             | Effect::Scry { .. }
             | Effect::FlipCoinsSkipNextTurns { .. }
             | Effect::LookAndPick { .. }
+            | Effect::LookDistribute { .. }
             | Effect::LookPickCreaturesLands { .. }
             | Effect::DirectedDiscard { .. }
             | Effect::ChooseLandName { .. }
