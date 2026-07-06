@@ -45,6 +45,10 @@ pub enum CostComponent {
     Discard(SelectSpec),
     /// Exile cards matching the spec (e.g. for escape/delve).
     Exile(SelectSpec),
+    /// Return permanents matching the spec (that the payer controls) to their owner's hand — Daze's
+    /// alternative cost "return an Island you control to its owner's hand" (CR 118.9). `spec.min`
+    /// permanents are returned; payable iff the payer controls that many matching permanents.
+    ReturnToHand(SelectSpec),
     /// Remove counters from the source.
     RemoveCounters { kind: CounterKind, n: ValueExpr },
     /// Crew N (CR 702.122): tap any number of untapped creatures you control with total power ≥ N.
@@ -397,6 +401,12 @@ pub enum Ability {
     /// `cost` is a full [`Cost`] so a flashback cost can be non-mana (Group Project — "Flashback—Tap
     /// three untapped creatures you control"), paid through the real cost machinery alongside any mana.
     Flashback { cost: Cost },
+    /// Alternative cast cost (CR 118.9): "You may [pay `cost`] rather than pay this spell's mana cost."
+    /// A static casting-permission ability read at the hand-cast offer (like [`Overload`]); an
+    /// alternative cast pays this non-mana [`Cost`] (Daze — return an Island; Force of Will — pay 1 life
+    /// and exile a blue card) INSTEAD of the mana cost (`CastVariant::Alternative`), the spell's normal
+    /// effect and targets otherwise unchanged. The `cost` may also carry mana (none in the current pool).
+    AlternativeCast { cost: Cost },
     /// Overload (CR 702.96): "You may cast this spell for its overload `cost`. If you do, change 'target'
     /// in its text to 'each'." A static casting-permission ability read at the hand-cast offer; an
     /// overloaded cast pays this alternative mana cost, chooses NO targets (702.96b replaces the word),

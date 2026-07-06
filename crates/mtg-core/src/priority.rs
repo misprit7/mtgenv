@@ -1128,6 +1128,13 @@ impl Engine {
                     }
                 }
             }
+            // Alternative cast (CR 118.9 — Daze, Force of Will): a non-mana cost paid instead of the
+            // mana cost, from the hand at the card's own timing (both are instants). Offered when the
+            // alternative cost is payable AND a legal target exists (the `card_castable_targets` gate
+            // above already `continue`d otherwise) — even when the mana cost is unaffordable.
+            if self.alternative_cost(card).is_some() && self.alternative_cost_payable(card, p, is_is) {
+                actions.push(PlayableAction::Cast { spell: card, variant: CastVariant::Alternative });
+            }
         }
 
         // Free-cast from hand (Zaffai and the Tempests): "once during each of your turns, you may cast a
@@ -1572,6 +1579,10 @@ impl Engine {
                 CostComponent::TapCreatures(n) => {
                     self.crew_candidates(p, source).len() as u32 >= *n
                 }
+                // "Return a [spec] you control to its owner's hand" (Daze alt-cost).
+                CostComponent::ReturnToHand(spec) => {
+                    self.return_candidates(p, source, spec).len() as u32 >= cost_count(&spec.min)
+                }
                 _ => true,
             };
             if !ok {
@@ -1629,6 +1640,11 @@ impl Engine {
                 }
                 CostComponent::Sacrifice(spec) => {
                     self.sacrifice_candidates(p, card, spec).len() as u32 >= cost_count(&spec.min)
+                }
+                // "Return an Island you control" (Daze) — payable iff enough matching permanents (the
+                // spell is on the stack, so it can't return itself; `card` isn't a permanent anyway).
+                CostComponent::ReturnToHand(spec) => {
+                    self.return_candidates(p, card, spec).len() as u32 >= cost_count(&spec.min)
                 }
                 // "Pay X life": X ≥ 0 is always payable (X can be chosen as 0); a *fixed* amount
                 // needs that much life (CR 119.4 — you can't pay life you don't have).
@@ -1705,6 +1721,7 @@ impl Engine {
                 CostComponent::Discard(spec) => self.pay_discard(p, spec),
                 CostComponent::Exile(spec) => self.pay_exile_cost(p, card, spec),
                 CostComponent::Sacrifice(spec) => self.pay_sacrifice(p, card, spec),
+                CostComponent::ReturnToHand(spec) => self.pay_return_to_hand(p, card, spec),
                 CostComponent::TapCreatures(n) => self.pay_tap_creatures(p, card, *n),
                 // Mana is folded into the cast's mana payment; no other component appears as a
                 // spell-level additional cast cost.
@@ -2154,6 +2171,46 @@ impl Engine {
         }
     }
 
+    /// The permanents `payer` could return to hand to pay a [`CostComponent::ReturnToHand`] — the
+    /// permanents they control matching the filter (Daze's "an Island you control").
+    fn return_candidates(&self, payer: PlayerId, source: ObjId, spec: &SelectSpec) -> Vec<ObjId> {
+        self.state
+            .player(payer)
+            .battlefield
+            .iter()
+            .copied()
+            .filter(|&o| self.sac_filter_matches(o, &spec.filter, source, payer))
+            .collect()
+    }
+
+    /// Pay a [`CostComponent::ReturnToHand`]: return `spec.min` matching permanents to their owner's
+    /// hand (CR 118.9 — Daze). When more than enough candidates exist, the payer chooses which.
+    fn pay_return_to_hand(&mut self, payer: PlayerId, source: ObjId, spec: &SelectSpec) {
+        let candidates = self.return_candidates(payer, source, spec);
+        let want = cost_count(&spec.min).min(candidates.len() as u32);
+        let chosen: Vec<ObjId> = if candidates.len() as u32 <= want {
+            candidates
+        } else {
+            let req = DecisionRequest::SelectCards {
+                reason: SelectReason::Generic,
+                from: candidates.clone(),
+                min: want,
+                max: want,
+                description: "return to hand as a cost".to_string(),
+            };
+            let idxs = match self.ask(payer, &req) {
+                DecisionResponse::Indices(i) => self.distinct_valid_indices(&i, candidates.len(), want),
+                _ => (0..want as usize).collect(),
+            };
+            idxs.into_iter().map(|i| candidates[i]).collect()
+        };
+        for obj in chosen {
+            let owner = self.state.object(obj).owner;
+            self.state.move_object(obj, Zone::Hand, owner);
+            self.broadcast(GameEvent::ObjectMoved { obj, to: Zone::Hand });
+        }
+    }
+
     /// The cards `payer` could discard to pay a [`CostComponent::Discard`] — cards in `spec.zone`
     /// (normally the hand) they control that match the filter. "Discard a card" = any hand card.
     fn discard_candidates(&self, payer: PlayerId, spec: &SelectSpec) -> Vec<ObjId> {
@@ -2313,6 +2370,27 @@ impl Engine {
                 _ => None,
             })
         })
+    }
+
+    /// The alternative cast cost a card declares via [`Ability::AlternativeCast`] (CR 118.9 — Daze,
+    /// Force of Will), if any. Paid "rather than pay this spell's mana cost."
+    fn alternative_cost(&self, card: ObjId) -> Option<Cost> {
+        self.state.def_of(card).and_then(|d| {
+            d.abilities.iter().find_map(|a| match a {
+                Ability::AlternativeCast { cost } => Some(cost.clone()),
+                _ => None,
+            })
+        })
+    }
+
+    /// Whether `p` can pay `card`'s alternative cast cost (CR 118.9) — its non-mana components (with
+    /// `card` treated as already on the stack, so it can't return/exile itself) and any mana. Gates the
+    /// offer (no post-payment rewind, §2.6). Reuses [`additional_option_payable`] against an empty base.
+    fn alternative_cost_payable(&self, card: ObjId, p: PlayerId, is_is: bool) -> bool {
+        match self.alternative_cost(card) {
+            Some(cost) => self.additional_option_payable(p, card, &cost, &ManaCost::default(), is_is),
+            None => false,
+        }
     }
 
     /// Spree offer gate (CR 702.163): `true` unless `card` is a Spree spell that can't afford `base`
@@ -2541,16 +2619,23 @@ impl Engine {
     /// Affordability + target availability are pre-checked in `legal_priority_actions`, so no
     /// rewind (CR 732) is needed. The caller keeps priority with the caster (CR 601.2i).
     pub(crate) fn cast_spell(&mut self, p: PlayerId, card: ObjId, variant: CastVariant) {
-        // A flashback cost may carry non-mana components (Group Project: tap three creatures) — pay
-        // them alongside the mana below. Captured now; the `cost` match uses only the mana part.
-        let flashback_components: Vec<CostComponent> = if variant == CastVariant::Flashback {
-            self.flashback_cost(card).map(|c| c.components).unwrap_or_default()
-        } else {
-            Vec::new()
+        // A flashback cost (Group Project: tap three creatures) or an **alternative** cost (Daze:
+        // return an Island; Force of Will: pay 1 life + exile a blue card, CR 118.9) may carry non-mana
+        // components — pay them alongside the mana below. Captured now; the `cost` match uses only the
+        // mana part (None → {0} for the pay-no-mana alternatives).
+        let extra_components: Vec<CostComponent> = match variant {
+            CastVariant::Flashback => self.flashback_cost(card).map(|c| c.components).unwrap_or_default(),
+            CastVariant::Alternative => self.alternative_cost(card).map(|c| c.components).unwrap_or_default(),
+            _ => Vec::new(),
         };
         let cost = match variant {
             CastVariant::Warp => self.warp_cost(card),
             CastVariant::Flashback => self.flashback_cost(card).map(|c| c.mana.unwrap_or_default()),
+            // Alternative cast (CR 118.9): a non-mana cost paid "rather than pay this spell's mana cost"
+            // — the mana cost becomes {0} (the components are paid below, mirroring flashback).
+            CastVariant::Alternative => {
+                Some(self.alternative_cost(card).and_then(|c| c.mana).unwrap_or_default())
+            }
             // Overload (CR 702.96): a fixed alternative mana cost; the effect is broadened to "each".
             CastVariant::Overload => self.overload_cost(card),
             // Miracle (CR 702.94): a fixed alternative cast cost — printed or granted (`miracle_cost`).
@@ -2875,11 +2960,12 @@ impl Engine {
                 self.pay_additional_nonmana(p, card, opt, &ctx);
             }
         }
-        // Pay a non-mana **flashback** cost's components (CR 702.34 — Group Project's "tap three
-        // creatures"). The mana part was already paid above via `pay`.
-        if !flashback_components.is_empty() {
+        // Pay a **flashback** cost's non-mana components (CR 702.34 — Group Project's "tap three
+        // creatures") or an **alternative** cost's components (Daze's return-an-Island, Force of Will's
+        // pay-1-life + exile-a-blue-card, CR 118.9). The mana part was already paid above via `pay`.
+        if !extra_components.is_empty() {
             let ctx = ResolutionCtx { controller: Some(p), source: Some(card), ..Default::default() };
-            let opt = Cost { mana: None, components: flashback_components.clone() };
+            let opt = Cost { mana: None, components: extra_components.clone() };
             self.pay_additional_nonmana(p, card, &opt, &ctx);
         }
         // Record the total mana spent (incl. {X} and additional mana) on the spell, for an enters-

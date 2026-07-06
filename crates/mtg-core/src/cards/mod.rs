@@ -40,6 +40,7 @@ pub mod tokens;
 // Per-first-printing-set folders (real card pool).
 pub mod aer;
 pub mod ala;
+pub mod all;
 pub mod blb;
 pub mod bfz;
 pub mod bro;
@@ -72,6 +73,7 @@ pub mod mh2;
 pub mod mir;
 pub mod mkm;
 pub mod mrd;
+pub mod nem;
 pub mod nph;
 pub mod ody;
 pub mod one;
@@ -684,6 +686,8 @@ pub fn starter_db() -> CardDb {
     usg::register(&mut db);
     vis::register(&mut db);
     // `soa` bonus-sheet first-printing folders.
+    all::register(&mut db);
+    nem::register(&mut db);
     bfz::register(&mut db);
     cmd::register(&mut db);
     chk::register(&mut db);
@@ -852,7 +856,7 @@ mod tests {
         let db = starter_db();
         // 359 base pool + the `soa` bonus-sheet reprints authored into their first-printing folders
         // (+ the registered Clue token def for Investigate + the two Role Aura token defs).
-        assert_eq!(db.len(), 414);
+        assert_eq!(db.len(), 416);
         // Forest is "type line only": a Basic Land with subtype Forest. Mana is intrinsic
         // (CR 305.6) — the engine derives {T}: Add {G} from the subtype, so the CardDef carries
         // no explicit mana ability (and `is_mana_source` only sees authored abilities).

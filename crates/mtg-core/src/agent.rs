@@ -449,6 +449,11 @@ pub enum CastVariant {
     /// the spell chooses no targets and every "target …" in its effect becomes "each …" (an engine-side
     /// `Target(spec)`→`ForEach` rewrite). Offered from the hand alongside the normal cast.
     Overload,
+    /// Cast for the card's **alternative cost** (CR 118.9,
+    /// [`crate::effects::ability::Ability::AlternativeCast`]): pay a non-mana cost (Daze — return an
+    /// Island; Force of Will — pay 1 life + exile a blue card) rather than the mana cost. Offered from
+    /// the hand alongside the normal cast, at the card's own timing.
+    Alternative,
 }
 
 /// A special action (CR 116) — no stack, no response.
