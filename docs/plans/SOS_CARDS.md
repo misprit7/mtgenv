@@ -241,6 +241,26 @@ Cap-then-cards, `git log -S` before scoping any "absent" mechanic (some B caps m
     copy mode), documented in both leaves.
   - Tests (real-path cast→modes→pay→target→resolve): 1-mode counters + mana tapped, 2-mode destroy-artifact+counters +
     3 mana, offer gate (base+mode affordability), copy-doubles-a-Bolt, change-target redirects a Bolt.
+- **sos-bonus-2 (2026-07-06): 52/65, 960 mtg-core green, whole workspace builds.** `38badd7` **ROLES subsystem**
+  → **Monstrous Rage, Royal Treatment** (`woe/`, grp 650–651).
+  - **`Effect::CreateRoleToken{ role, attach_to }`** — mints a registered **Role Aura token** (new 9000+ token defs
+    `MONSTER_ROLE_TOKEN=9004`, `ROYAL_ROLE_TOKEN=9005` in `tokens.rs`) attached to the spell's targeted creature
+    (`ChosenIndex(0)`). Role tokens are Enchantment — Aura Role, colourless, `Supertype::Token`, statics via `def_of`
+    (the Pacifism/Bonesplitter host-scoped idiom): Monster = `ModifyPT{+1/+1}` + `GrantKeyword(Trample)`; Royal =
+    `ModifyPT{+1/+1}` + **ward {1}** as a printed `Triggered{ BecomesTargeted{ AttachedHost, by_opponent } →
+    CounterUnlessPay{ Triggering, {1} } }` ON the token def (the change-free path — the granted-ability scan doesn't
+    cover `BecomesTargeted`; bare `Keyword::Ward` is inert).
+  - **One-Role-per-controller** (CR 303.4k reminder): `create_role_token` moves any prior Role the controller controls
+    on that creature to the graveyard at attach (newest survives). ⚠️ ledgered timing approximation — the prior Role is
+    graveyard'd immediately at attach, not via the general 303.4k post-both-ETB SBA batch (observationally identical in
+    the pool; "newest survives" is exact).
+  - **NEW: `StateBasedAction::TokenCeasesToExist`** (CR 111.7 / 704.5d) — a `Supertype::Token` object in any
+    non-battlefield/non-stack zone ceases to exist (`state.cease_to_exist`). This was **absent** before; now a Role
+    (or Treasure/Clue/Pest) that dies/falls-off/sac's goes to graveyard then vanishes. General — 960 green (no
+    Treasure/Clue regression). A Role losing its host: existing `AuraFallsOff` → graveyard, then this SBA → gone.
+  - Tests: pump+trample (2/2→5/3 trample), second-Role-replaces-first (prior ceases to exist), Role-ceases-when-host-
+    leaves, hexproof+1/+1+ward-trigger-present, and **ward behaviourally counters an unpaid opp Shock** (hexproof
+    expired via `end_of_turn_continuous_cleanup`, opp has {R} for Shock but no spare {1}).
 
 ---
 
