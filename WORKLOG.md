@@ -9,14 +9,20 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
   **`soa`** (Secrets of Strixhaven Mystical Archive), **65 distinct booster-legal cards**. Full per-card
   triage in `docs/plans/SOS_CARDS.md` ★ BONUS SHEET. Reprints live in their first-printing folders;
   bonus grp_id block = 600+.
-- **39/65 authored** (real-path tested, 925 mtg-core green, whole workspace builds). New engine caps (all
-  additive, card-agnostic): `CardFilter::PowerAtLeast/ToughnessAtLeast`, `Effect::Scry`,
-  `Effect::ReturnSpellToHand`, `Effect::ExileTopForPlay` (multi-card impulse), Clue token def,
-  search→shuffle→place (tutor-to-top). Zero-cap composites incl. storm cards, Bring to Light (converge
-  search+free-cast), Jeska's Will, Subterranean Tremors.
-- **Remaining 26** need moderate leaf caps (Glimpse/Berserk/Crackle/Expressive Iteration/Culling
-  Ritual/Ad Nauseam/Veil of Summer) or lead sign-off (pay-life/Phyrexian, alt-cast, token-identity, and
-  the C subsystems Overload/Spree/Roles/Protection/Infect/Suspend/Convoke/Redirect/Split-second).
+- **46/65 authored** (real-path tested, 943 mtg-core green, whole workspace builds). Engine caps (all
+  additive/card-agnostic): `CardFilter::PowerAtLeast/ToughnessAtLeast`, `Effect::Scry`,
+  `Effect::ReturnSpellToHand`, `Effect::ExileTopForPlay`, `Effect::RevealTopLoseLifeMayRepeat`,
+  `Effect::LookDistribute`, Clue token, search→shuffle→place, **token-identity** (created objects stamped
+  `Supertype::Token` — fixes Lorehold Charm's nontoken gap + Spiritcall's tokens-enter trigger),
+  **phyrexian pip class** (`ManaCost.phyrexian`, single `resolve_phyrexian` seam, no-suicide auto gate),
+  **YouCastSpell delayed-trigger parametrized** (`reaction`+`until_end_of_turn`, storm/copy consumers green).
+  Cards incl. storm, converge (Bring to Light / Prismatic Ending), Jeska's Will, Crackle, Dismember,
+  Bitter Triumph, Ad Nauseam, Expressive Iteration, Glimpse of Nature, Sheoldred's Edict.
+- **Remaining 19:** Berserk (needs attacked-this-turn flag + conditional delayed destroy — combat-touching,
+  deferred), Culling Ritual (`ManaSpec` subset-choice breaks ~20 literals — deferred to a batched refactor),
+  Veil of Summer (3 new mechanisms), Daze/Force of Will (alt-cast `CastVariant` subsystem), and the **12
+  C-subsystem cards** — Overload/Spree/Roles sketched to lead (awaiting sign-off), then
+  Protection/Infect/Suspend/Convoke/Redirect/Split-second. All well-scoped in `docs/plans/SOS_CARDS.md`.
 
 ## 2026-07-06 (evalkit — algorithm-agnostic eval/metrics/logging framework, gym/Python)
 

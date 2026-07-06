@@ -77,13 +77,16 @@ MTGA client.
 - **✅ MOBILE WEB CLIENT (2026-07-03).** Game client + lobby fully playable from a phone: mobile
   reflow (sticky prompt sheet, opp-top/you-bottom strips, log toggle), touch previews long-press-only
   (hover gated to real mice), on-screen pass-turn button. Desktop unchanged.
-- **▶ SOS BONUS SHEET in progress: `soa` (Secrets of Strixhaven Mystical Archive), 65 cards — 39/65 authored, 925
-  mtg-core green (2026-07-06, sos-bonus-1).** SOS *limited* = the 271 main set + this 65-card bonus sheet; the directive is
-  "everything playable in SOS limited must be in the engine." Reprints go in first-printing folders (grp block 600+). New
-  additive caps: `CardFilter::PowerAtLeast/ToughnessAtLeast`, `Effect::Scry`, `Effect::ReturnSpellToHand`,
-  `Effect::ExileTopForPlay`, Clue token def, search→shuffle→place. Remaining 26 need moderate leaf caps or lead sign-off
-  (pay-life/Phyrexian, alt-cast, token-identity, and the Overload/Spree/Roles/Protection/Infect/Suspend/Convoke/Redirect/
-  Split-second subsystems). Full triage + progress log in `docs/plans/SOS_CARDS.md` ★ BONUS SHEET.
+- **▶ SOS BONUS SHEET in progress: `soa` (Secrets of Strixhaven Mystical Archive), 65 cards — 46/65 authored (71%), 943
+  mtg-core green, whole workspace builds (2026-07-06, sos-bonus-1).** SOS *limited* = the 271 main set + this 65-card bonus
+  sheet; directive: "everything playable in SOS limited must be in the engine." Reprints in first-printing folders (grp
+  600+). Engine caps added (all additive/card-agnostic): `PowerAtLeast/ToughnessAtLeast`, `Effect::Scry`,
+  `ReturnSpellToHand`, `ExileTopForPlay`, `RevealTopLoseLifeMayRepeat`, `LookDistribute`, Clue token, search→shuffle→place,
+  **token-identity** (created objects stamped `Supertype::Token`), **phyrexian pip class** (one `resolve_phyrexian` seam,
+  no-suicide auto-pay gate), **parametrized YouCastSpell delayed trigger** (reaction + recurring). Remaining 19: Berserk
+  (attacked-this-turn — deferred), Culling Ritual (ManaSpec churn — deferred), Veil of Summer, Daze/Force of Will (alt-cast
+  subsystem), + 12 C-subsystem cards (Overload/Spree/Roles sketched to lead, awaiting sign-off; then Protection/Infect/
+  Suspend/Convoke/Redirect/Split-second). Full triage + progress in `docs/plans/SOS_CARDS.md` ★ BONUS SHEET.
 - **✅ SOS FULL-SET COMPLETE: 271/271 authored · 271 fully-faithful · 0 tracked-partials · 0 Native hatches, 871 mtg-core
   green (2026-07-06, sos-cards-21 finale).** Scryfall-diff verified vs. `set_code='sos'`. Final 3: Resonating Lute
   (granted-mana subsystem — `StaticContribution::GrantTapMana` + `chars::granted_tap_mana` + per-tap-count payment),
