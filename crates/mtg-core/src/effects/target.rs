@@ -124,6 +124,12 @@ pub enum CardFilter {
     HasCounter(CounterKind),
     /// Matches a specific named card (rare; for the few effects that name a card).
     Named(String),
+    /// Matches iff the object's name equals the **chosen name noted on the matcher's SOURCE** (its
+    /// [`crate::state::Object::chosen_name`]) — Petrified Hamlet's "Lands with the chosen name have
+    /// '{T}: Add {C}'". A dynamic sibling of [`Named`] whose target isn't fixed at authoring; the
+    /// grant's static reads the source Hamlet's runtime choice. No match while the source has no
+    /// chosen name.
+    NamedAsChooser,
     /// Matches iff the object's **owner** (CR 108.3) is the named player — "a spell you don't own" =
     /// `Not(OwnedBy(Controller))` (Nita, Forum Conciliator's cast trigger). Distinct from
     /// [`ControlledBy`], which reads the controller. `PlayerRef` is resolved relative to the matcher's

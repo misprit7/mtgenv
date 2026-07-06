@@ -175,6 +175,16 @@ pub enum Effect {
         options: Vec<Keyword>,
         duration: Duration,
     },
+    /// Choose a **land card name** and note it on `what` (CR 201.4) — Petrified Hamlet's "When this
+    /// land enters, choose a land card name." The controller picks one from the engine-enumerated
+    /// distinct land-card names present in the game (a `DecisionRequest::ChooseOption` /
+    /// `OptionReason::NameCard`); the choice is stored in the target's
+    /// [`crate::state::Object::chosen_name`], where the card's name-keyed statics read it (the
+    /// ability-legality gate + the `NamedAsChooser` `{T}: Add {C}` grant). No-op if there are no land
+    /// names to choose (nothing noted).
+    ChooseLandName {
+        what: EffectTarget,
+    },
     /// Grant a **triggered ability** to the target for a duration (CR 613.1f) — "gains 'When this
     /// creature dies, draw a card' until end of turn" (Rabid Attack) / "'Whenever this creature
     /// attacks, you gain 1 life'" (Root Manipulation). `template_grp` names a one-ability def in the

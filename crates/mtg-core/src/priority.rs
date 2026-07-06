@@ -1300,6 +1300,13 @@ impl Engine {
                 if *is_mana {
                     continue;
                 }
+                // Petrified Hamlet: "Activated abilities of sources with the chosen name can't be
+                // activated unless they're mana abilities." Mana abilities are skipped just above; a
+                // non-mana ability of a permanent whose name matches any noted `chosen_name` (CR 201.4)
+                // is illegal to activate.
+                if name_is_chosen(s, &s.object(perm).chars.name) {
+                    continue;
+                }
                 let timing_ok = match timing {
                     Timing::Instant => true,
                     Timing::Sorcery => sorcery_speed,
@@ -1360,6 +1367,10 @@ impl Engine {
                 if *is_mana || !gy_usable {
                     continue;
                 }
+                // Petrified Hamlet name-gate (CR 201.4) — applies to a source in any zone.
+                if name_is_chosen(s, &s.object(gy).chars.name) {
+                    continue;
+                }
                 let timing_ok = match timing {
                     Timing::Instant => true,
                     Timing::Sorcery => sorcery_speed,
@@ -1399,6 +1410,10 @@ impl Engine {
                 if *is_mana
                     || !cost.components.iter().any(|c| matches!(c, CostComponent::DiscardSelfFromHand))
                 {
+                    continue;
+                }
+                // Petrified Hamlet name-gate (CR 201.4) — applies to a source in any zone.
+                if name_is_chosen(s, &s.object(h).chars.name) {
                     continue;
                 }
                 let timing_ok = match timing {
@@ -4984,6 +4999,14 @@ pub(crate) fn collect_target_specs(effect: &Effect) -> Vec<TargetSpec> {
     let mut out = Vec::new();
     collect_specs_into(effect, &mut out);
     out
+}
+
+/// Whether `name` is noted as the **chosen name** on any object (CR 201.4 — Petrified Hamlet's "choose
+/// a land card name"). `chosen_name` resets on any zone change, so only a battlefield chooser can carry
+/// one. Read by the activated-ability legality gate ("abilities of sources with the chosen name can't
+/// be activated unless mana abilities").
+fn name_is_chosen(state: &GameState, name: &str) -> bool {
+    state.objects.values().any(|o| o.chosen_name.as_deref() == Some(name))
 }
 
 /// The back-face spell's `grp_id` a def links to via its `Ability::Prepare` marker (SoS Prepare DFCs),

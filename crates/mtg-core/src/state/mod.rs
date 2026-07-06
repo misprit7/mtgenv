@@ -201,6 +201,14 @@ pub struct Object {
     /// cost. Reset on any zone change (a fresh object identity, CR 400.7).
     #[serde(default)]
     pub flashback_until_turn: Option<u32>,
+    /// A **card name this permanent has chosen/noted** (CR 201.4 — "choose a card name") — Petrified
+    /// Hamlet's "When this land enters, choose a land card name." Read by the name-keyed statics it
+    /// powers: the ability-legality gate ("activated abilities of sources with the chosen name can't be
+    /// activated unless mana abilities") and the [`crate::effects::target::CardFilter::NamedAsChooser`]
+    /// grant ("lands with the chosen name have '{T}: Add {C}'"). Reset on any zone change (CR 400.7 — a
+    /// fresh object re-chooses on re-entry).
+    #[serde(default)]
+    pub chosen_name: Option<String>,
 }
 
 impl Object {
@@ -724,6 +732,7 @@ impl GameState {
             is_copy: false,
             prepared: false,
             flashback_until_turn: None,
+            chosen_name: None,
         };
         self.objects.insert(id, obj);
         if let Some(v) = self.player_mut(owner).zone_vec_mut(zone) {
@@ -839,6 +848,7 @@ impl GameState {
             o.is_copy = false; // a copy never legitimately changes zones (it ceases to exist, 707.10a)
             o.prepared = false; // a fresh object identity (CR 400.7); the "prepared" status ends on leaving play
             o.flashback_until_turn = None; // granted flashback drops on any zone change (400.7)
+            o.chosen_name = None; // a fresh object re-chooses its noted name on re-entry (400.7)
             if to == Zone::Battlefield {
                 o.controller = to_owner;
                 o.summoning_sick = o.chars.is_creature();

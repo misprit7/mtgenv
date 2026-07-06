@@ -489,6 +489,14 @@ fn matches_filter(
         // anthem. Re-evaluated each recompute (CR 613.8), so trample appears/vanishes as counters
         // change. Counters already feed layer-7 P/T, so a counter change already marks chars dirty.
         CardFilter::HasCounter(kind) => o.counters.get(kind) > 0,
+        // "Lands with the chosen name …" (Petrified Hamlet): the candidate's name equals the noted
+        // name on the source doing the granting (`src_id`'s `chosen_name`). No source / no choice → no
+        // match, so an un-chosen Hamlet grants nothing.
+        CardFilter::NamedAsChooser => state
+            .objects
+            .get(&src_id)
+            .and_then(|s| s.chosen_name.as_deref())
+            .is_some_and(|name| o.chars.name == name),
         // Tapped/Untapped/ManaValue/Named/Colorless: not needed by the current pool.
         _ => false,
     }

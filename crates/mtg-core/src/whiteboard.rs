@@ -17,7 +17,7 @@
 
 use crate::agent::{
     ActionRef, CastVariant, ConfirmKind, DecisionRequest, DecisionResponse, GameEvent, ModeOption,
-    ReplacementOption, SelectReason,
+    OptionLabel, OptionReason, ReplacementOption, SelectReason,
 };
 use crate::basics::{CardType, Color, CounterKind, DamageKind, Target, Zone, ZoneDest, ZonePos};
 use crate::effects::ability::{
@@ -105,6 +105,20 @@ impl EngineCore {
                 self.broadcast(GameEvent::LeftGraveyard { player: PlayerId(i as u32) });
             }
         }
+    }
+
+    /// The distinct land-card names currently present in the game, in a deterministic (sorted) order —
+    /// the engine-enumerated option list for "choose a land card name" (Petrified Hamlet). A "land
+    /// card" is any object whose printed card type includes Land (CR 305), across every zone. Empty if
+    /// no land cards exist (then the choice is skipped).
+    fn land_card_names(&self) -> Vec<String> {
+        let mut names: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+        for o in self.state.objects.values() {
+            if o.chars.card_types.contains(&CardType::Land) {
+                names.insert(o.chars.name.clone());
+            }
+        }
+        names.into_iter().collect()
     }
 
     /// Commit the deferred actions accumulated in `wb` SO FAR, then leave it empty (same reason/ctx)
@@ -281,6 +295,39 @@ impl EngineCore {
                         contributions: vec![StaticContribution::GrantKeyword(keyword)],
                         duration: *duration,
                     });
+                }
+                true
+            }
+            // Choose a land card name and note it on `what` (Petrified Hamlet). Enumerate the distinct
+            // land-card names present in the game, ask the controller, and store the pick in the
+            // target's `chosen_name` (read by its name-keyed statics). Direct state mutation like
+            // `CastForFree` — it's plain object state, not a continuous effect.
+            Effect::ChooseLandName { what } => {
+                if let Some(Target::Object(obj)) = self.resolve_target(what, ctx, cursor) {
+                    let controller = ctx.controller.unwrap_or(self.state.active_player);
+                    let names = self.land_card_names();
+                    if !names.is_empty() {
+                        let options: Vec<OptionLabel> =
+                            names.iter().map(|n| OptionLabel { label: n.clone() }).collect();
+                        let idx = match self.ask(
+                            controller,
+                            &DecisionRequest::ChooseOption {
+                                reason: OptionReason::NameCard,
+                                options,
+                                min: 1,
+                                max: 1,
+                            },
+                        ) {
+                            DecisionResponse::Indices(v) => v.first().copied().unwrap_or(0) as usize,
+                            DecisionResponse::Index(i) => i as usize,
+                            _ => 0,
+                        };
+                        if let Some(name) = names.get(idx).or(names.first()) {
+                            if let Some(o) = self.state.objects.get_mut(&obj) {
+                                o.chosen_name = Some(name.clone());
+                            }
+                        }
+                    }
                 }
                 true
             }
@@ -2451,6 +2498,7 @@ impl EngineCore {
             | Effect::LookAndPick { .. }
             | Effect::LookPickCreaturesLands { .. }
             | Effect::DirectedDiscard { .. }
+            | Effect::ChooseLandName { .. }
             | Effect::Nothing => {}
         }
     }
@@ -3501,11 +3549,11 @@ impl EngineCore {
             CardFilter::All(fs) => fs.iter().all(|f| self.count_filter_matches(id, f)),
             CardFilter::AnyOf(fs) => fs.iter().any(|f| self.count_filter_matches(id, f)),
             CardFilter::Not(f) => !self.count_filter_matches(id, f),
-            // `ItSelf`/`AttachedHost` resolve against the effect's source/attachment, which a bare
-            // `Count`/`ForEach` enumeration doesn't carry — no such filter is used in that context, so
-            // treat as no match. Exhaustive by design (no wildcard): a NEW `CardFilter` without an arm
-            // is a compile error here, not a silent `false`.
-            CardFilter::ItSelf | CardFilter::AttachedHost => false,
+            // `ItSelf`/`AttachedHost`/`NamedAsChooser` resolve against the effect's source (its
+            // attachment / chosen name), which a bare `Count`/`ForEach` enumeration doesn't carry — no
+            // such filter is used in that context, so treat as no match. Exhaustive by design (no
+            // wildcard): a NEW `CardFilter` without an arm is a compile error here, not a silent `false`.
+            CardFilter::ItSelf | CardFilter::AttachedHost | CardFilter::NamedAsChooser => false,
         }
     }
 
