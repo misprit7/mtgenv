@@ -582,6 +582,15 @@ pub enum Effect {
         what: EffectTarget,
         window: PlayWindow,
     },
+    /// Impulse-play the top `count` cards of `who`'s library (CR — "exile the top N cards … you may play
+    /// them until `window`"): exile each and grant play permission (`castable_from_exile` +
+    /// `play_until_turn`). Distinct from [`ExileForPlay`] (a single already-chosen object) — this walks
+    /// the library top imperatively so each exile sees the updated top (Jeska's Will "exile the top three").
+    ExileTopForPlay {
+        who: PlayerRef,
+        count: ValueExpr,
+        window: PlayWindow,
+    },
     /// "Deal `amount` damage to `to`; exile cards from the top of your library equal to the **excess
     /// damage** dealt to it this way — you may play those until `window`" (Archaic's Agony). Excess
     /// (CR 120.7) = `max(0, amount − (toughness − damage already marked))`, computed from the target's

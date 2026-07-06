@@ -883,6 +883,35 @@ impl EngineCore {
                 self.interpret_scry(player, n);
                 true
             }
+            // Impulse-play the top `count` cards (Jeska's Will). Imperative: exile the current top,
+            // repeat, so each iteration sees the updated top. Flush any staged actions first.
+            Effect::ExileTopForPlay { who, count, window } => {
+                self.flush_pending(wb);
+                let player = self.eval_player(*who, ctx);
+                let n = self.eval_value(count, ctx).max(0) as usize;
+                let until = match window {
+                    crate::effects::PlayWindow::ThisTurn => self.state.turn_number,
+                    crate::effects::PlayWindow::YourNextTurn => {
+                        if self.state.active_player == player {
+                            self.state.turn_number + 2
+                        } else {
+                            self.state.turn_number + 1
+                        }
+                    }
+                };
+                for _ in 0..n {
+                    let Some(top) = self.state.player(player).library.last().copied() else { break };
+                    let owner = self.state.object(top).owner;
+                    if self.state.move_object(top, Zone::Exile, owner) {
+                        if let Some(o) = self.state.objects.get_mut(&top) {
+                            o.castable_from_exile = true;
+                            o.play_until_turn = Some(until);
+                        }
+                        self.broadcast(GameEvent::ObjectMoved { obj: top, to: Zone::Exile });
+                    }
+                }
+                true
+            }
             // Ral Zarek −7: flip `coins` coins on the seeded RNG; `who` skips that many of their next
             // turns (CR 720). Reads `state.rng`, so it's an imperative effect (flush first).
             Effect::FlipCoinsSkipNextTurns { who, coins } => {
@@ -2592,6 +2621,7 @@ impl EngineCore {
             | Effect::ForEachPlayer { .. }
             | Effect::ForEachTarget { .. }
             | Effect::DealDamageExcessImpulse { .. }
+            | Effect::ExileTopForPlay { .. }
             | Effect::Search { .. }
             | Effect::AddMana { .. }
             | Effect::Discard { .. }
