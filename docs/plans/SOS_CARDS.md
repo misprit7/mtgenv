@@ -261,6 +261,21 @@ Cap-then-cards, `git log -S` before scoping any "absent" mechanic (some B caps m
   - Tests: pump+trample (2/2→5/3 trample), second-Role-replaces-first (prior ceases to exist), Role-ceases-when-host-
     leaves, hexproof+1/+1+ward-trigger-present, and **ward behaviourally counters an unpaid opp Shock** (hexproof
     expired via `end_of_turn_continuous_cleanup`, opp has {R} for Shock but no spare {1}).
+- **sos-bonus-2 (2026-07-06): 54/65, 965 mtg-core green, whole workspace builds.** `<alt>` **ALT-CAST subsystem**
+  → **Daze** (`nem/`, grp 652), **Force of Will** (`all/`, grp 653).
+  - **`CastVariant::Alternative`** + **`Ability::AlternativeCast{ cost: Cost }`** (CR 118.9 — "pay [cost] rather than
+    pay this spell's mana cost"), wired mirroring Flashback: lookup `alternative_cost(card)`, offer from hand at the
+    card's timing when `alternative_cost_payable` (reuses `additional_option_payable` against an empty base — so
+    Exile/PayLife self-exclusion + affordability come free), and pay the non-mana components via the generalized
+    `extra_components` path in `cast_spell` (renamed from `flashback_components`; covers both). Offered even when the
+    mana cost is unaffordable; gated behind the existing `card_castable_targets` check (needs a target spell).
+  - **`CostComponent::ReturnToHand(SelectSpec)`** (+ `return_candidates`/`pay_return_to_hand`, payability in both
+    `cost_components_payable` and `additional_option_payable`) → Daze's "return an Island you control." Force of Will
+    reuses the existing `PayLife` + `Exile`(blue-from-hand) components (self-excluded — FoW is on the stack when paid).
+  - Daze effect = `CounterUnlessPay{ target spell, {1} }` (soft), Force of Will = `Counter{ target spell }` (hard).
+  - Tests: alt-cast offered with only an Island / with 1 life + a blue card (and NOT offered with no other blue card
+    or no mana for Normal); real-path alt-cast returns the Island / pays 1 life + exiles the blue card, counters the
+    target spell.
 
 ---
 
