@@ -3,6 +3,35 @@
 Short, dated entries for future-agent consumption. Newest first. One line or a few bullets
 per unit of meaningful progress. Keep it terse — detail lives in `docs/` and git history.
 
+## 2026-07-06 (SOS ENDGAME — sos-cards-20: 266→269 authored, 4→1 partials)
+
+- **The roadmap items landed; the "empty queue" opened up.** Census **269/271 authored · 268
+  fully-faithful · 1 tracked-partial (Nita ab.2) · 0 Natives · 864 mtg-core green.** Three partials
+  cleared, two new cards, two general engine extensions. Every commit green.
+- **Subsystem A (layer-4/5 completion) — DONE.** The layer system was already ~complete (types,
+  colors, keywords, 7a/b/c P/T); the only gap was **creature-subtype mutation**. New
+  `StaticContribution::AddSubtype` / `SetCreatureSubtypes` (layer 4) + a general `Effect::Becomes{
+  contributions, base_pt, duration }` (concrete-resolves a dynamic base P/T). → **Fractalize**
+  (`3bd4a44`, becomes a G/U Fractal, X+1) + **Great Hall** (`26daeca`, `{5}` → 2/4 Wizard land).
+- **`44a4387` Wildgrowth clause 2** — `FloatingRewrite::EntersWithCounters` + `EntersWithCountersRider`
+  arm a one-shot ETB rider on a just-cast creature spell (partial cleared).
+- **`9795cbb` Rubble Rouser** — modeled the `{T},Exile-gy: Add {R}. When you do, ping` as a NON-mana
+  activated ability (`Sequence[AddMana, DealDamage each-opp]`) so the ping is agent-selectable (mana
+  abilities aren't offered to RL seats). No engine work.
+- **`26daeca` Great Hall** also added: **granted cast-triggers now fire** (extended
+  `queue_watching_spellcast_triggers` to scan `GrantAbility` templates, mirroring `queue_self_triggers`)
+  + **`Condition::SelfIsCreature`** (computed-type read, the re-animation guard).
+- **`70559fc` Hydro-Channeler 2nd** + Great Hall pay-life — authored as **cost-bearing mana abilities
+  under the established "option-B"** convention (faithful data, works via the manual mana path, auto-pay-
+  inert like Treasures/Goblin Glasswright; §2.6 is the eventual fix). Hydro partial cleared.
+- **`9099864` Ral Zarek −7** — `Player.skip_next_turns` (CR 720, consumed by `advance_turn`) +
+  `Effect::FlipCoinsSkipNextTurns` (seeded RNG). Partial cleared.
+- **Open decision to the lead:** does option-B count as "fully-faithful" for the 271 census (Treasure
+  precedent), or build **B1/B2** (auto-pay for cost-bearing mana, §2.6-adjacent)? Recommended option-B.
+- **Remaining (3):** Resonating Lute + Petrified Hamlet (both need **B3** — granted-mana enumeration +
+  "2-of-one-color" multi-mana; `producible_colors` reads only printed abilities), Nita ab.2 (cross-
+  player impulse + any-mana + exile-on-leave). See SOS_CARDS.md NEXT-AGENT block.
+
 ## 2026-07-05 (SOS: CARD-COMPLETE MODULO ROADMAP)
 
 - **The full-set relay reached its terminal state: 266/271 authored (98%) — 262 fully-faithful ·

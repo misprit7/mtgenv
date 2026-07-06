@@ -69,9 +69,15 @@ MTGA client.
 - **✅ MOBILE WEB CLIENT (2026-07-03).** Game client + lobby fully playable from a phone: mobile
   reflow (sticky prompt sheet, opp-top/you-bottom strips, log toggle), touch previews long-press-only
   (hover gated to real mice), on-screen pass-turn button. Desktop unchanged.
-- **▶ SOS FULL-SET scope: 266/271 authored (98%, 262 faithful · 4 tracked-partial), 854 mtg-core tests green (2026-07-05,
-  sos-cards-19). EFFECTIVELY CARD-COMPLETE — the 5 unauthored + 4 tracked-partials ALL ride two engine-roadmap items (layer-4/5
-  completion + the mana-ability-grant class); 271 cards at 0 Natives stands.** 8 fully-faithful cards + 1 tracked-partial (Nita).
+- **▶ SOS FULL-SET scope: 269/271 authored (99%, 268 faithful · 1 tracked-partial), 864 mtg-core green (2026-07-06,
+  sos-cards-20). ENDGAME — 2 unauthored + 1 partial left.** Cleared 3 partials + shipped 2 new cards + 2 general engine extensions.
+  **Subsystem A (layer-4 subtype changes) DONE**: new `StaticContribution::AddSubtype`/`SetCreatureSubtypes` + general
+  `Effect::Becomes` → Fractalize + Great Hall (`{5}` land animation). Also: granted cast-triggers now fire
+  (`queue_watching_spellcast_triggers` scans GrantAbility templates), `Condition::SelfIsCreature`, `Player.skip_next_turns` +
+  `Effect::FlipCoinsSkipNextTurns` (Ral −7), `FloatingRewrite::EntersWithCounters` (Wildgrowth clause 2). **Great Hall pay-life +
+  Hydro-2nd = cost-bearing mana under "option-B"** (auto-pay-inert like Treasures; §2.6 the eventual fix). **Remaining: Resonating
+  Lute + Petrified Hamlet (need B3 = granted-mana enumeration + multi-mana), Nita ab.2 (cross-player impulse + any-mana). See
+  SOS_CARDS.md NEXT-AGENT block.** Prior state (sos-cards-19): 266/271, 854 green — 3 "Natives" were all IR-expressible.
   **Key finding: the ledger's "3 Natives" were all IR-expressible (lead concurred, all built pure-IR)** — Steal the Show (modal
   wheel + I/S-gy burn, ZERO cap; the "control-theft" tag was fully wrong), Mathemagics (generic `ValueExpr::Pow2`), **Pox Plague**
   (`ValueExpr::Half` + `LifeTotal` + `Effect::ForEachPlayer` per-player-bound halving). **Nita** = tracked-partial (ability 1

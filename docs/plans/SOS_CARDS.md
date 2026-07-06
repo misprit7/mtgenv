@@ -4,7 +4,74 @@ Standing workstream: implement the Secrets of Strixhaven set for **limited (40-c
 `mtg-core`, easiest-first, correctness over count. This ledger is the capability index + full
 per-card triage, modeled on `SELESNYA_LANDFALL_CARDS.md`.
 
-## ▶ NEXT AGENT — start here (handoff from sos-cards-19, 2026-07-05)
+## ▶ NEXT AGENT — start here (handoff from sos-cards-20, 2026-07-06)
+
+**▶▶ sos-cards-20 SHIPPED — 2 new cards + 3 tracked-partials cleared + 2 general engine extensions. 864 mtg-core green, whole
+workspace builds, tree clean, LEAD pushes.** Census **266→269/271 authored (99%, 268 fully-faithful · 1 tracked-partial) · 0
+Native hatches.** PROCESS RULES in the header apply (`git log -S` + read the code before believing anything).
+
+**What shipped (own commits):**
+- **`44a4387` Wildgrowth Archaic clause 2** — new **`FloatingRewrite::EntersWithCounters{kind,n}`** + **`Effect::
+  EntersWithCountersRider{what,kind,n}`** arm a one-shot floating ETB replacement (CR 614.1e) on the just-cast creature spell
+  (`what: Triggering` reads `ctx.triggering_spell` directly, like CopySpellOnStack), `n = ColorsSpentOnTrigger` fixed at trigger
+  resolution. Stack→bf doesn't invalidate the scope, so the counters land as it enters. **Partial cleared.**
+- **`3bd4a44` Fractalize + SUBSYSTEM A (layer-4 subtype changes).** The layer system was already ~complete; the only gap was
+  creature-subtype mutation. New **`StaticContribution::AddSubtype(Subtype)`** + **`SetCreatureSubtypes(Vec<Subtype>)`** (layer 4,
+  folded into `chars::compute` timestamp-ordered next to AddType) + general **`Effect::Becomes{what, contributions, base_pt:
+  Option<(ValueExpr,ValueExpr)>, duration}`** (grants a bag of contributions + a **concrete-resolved** base P/T — a static recompute
+  has no cast-X, so SetBasePTValue can't carry X+1). Collected in `collect_specs_into`. Fractalize = becomes a G/U Fractal, base P/T
+  X+1, losing other colors/creature types.
+- **`9795cbb` Rubble Rouser** — the `{T},Exile-gy: Add {R}. When you do, ping each opp` modeled as a **NON-mana activated ability**
+  (`Sequence[AddMana{R}, DealDamage{1, EachOpponent}]`), because the RL/gym seat is never offered mana-ability activations (only
+  auto-pay + non-mana Activate) and the reflexive ping is the card's point. Cost paid by existing `pay_cost`/`pay_exile_cost`. ETB
+  loot = existing `Optional{IfYouDo{Discard,Draw}}`. **NO engine work.**
+- **`26daeca` Great Hall of the Biblioplex** (SUBSYSTEM A `{5}` animation) + 2 general extensions: (1) **granted cast-triggers now
+  fire** — extended `queue_watching_spellcast_triggers` to scan `GrantAbility` templates (mirrors the granted scan in
+  `queue_self_triggers`); (2) **`Condition::SelfIsCreature`** (reads COMPUTED types via `chars::compute`, the re-animation guard).
+  New grant template `grp::GRANT_ISCAST_PUMP` (9802). `{5}` = `Conditional(Not(SelfIsCreature), Becomes{AddType(Creature),
+  AddSubtype(Wizard), GrantAbility{pump}, base_pt 2/4, Permanent})`. Pay-life ability = option-B (see below).
+- **`70559fc` Hydro-Channeler 2nd** + Great Hall pay-life — cost-bearing mana abilities authored under **"option-B"** (the
+  established convention: faithful DATA, works via the manual mana path which pays the extra cost through `pay_cost`, **auto-pay-inert
+  for agent seats** — same as Treasures / Goblin Glasswright; §2.6 is the eventual fix). **Hydro partial cleared.**
+- **`9099864` Ral Zarek −7** — new **`Player.skip_next_turns`** (CR 720; `advance_turn` consumes one skip per seat, capped at n) +
+  **`Effect::FlipCoinsSkipNextTurns{who, coins}`** (flips on the seeded `state.rng`, adds heads to the opponent's skips). `who:
+  Opponent` = "target opponent" in 2-player scope. **Partial cleared.**
+
+**⚠️ OPEN DECISION TO THE LEAD (blocks the census wording, not the code):** does **option-B count as "fully-faithful"** for the 271
+endgame (Great Hall's pay-life + Hydro-2nd are auto-pay-inert but faithful data + work manually, per the Treasure precedent) — OR
+build **B1/B2** (fold cost-bearing mana into AUTO-PAY, the §2.6-adjacent payment work) so they're usable in training too? I recommend
+option-B for the census + defer B1/B2 to §2.6. **This does NOT unblock the remaining 3 cards** — they need real subsystems either way.
+
+**▶ THE REMAINING 3 (all touch the payment/enumeration core or need a new cross-crate decision — treat as engine milestones, sketch
+to the lead before building; I HELD them rather than rush the crown-jewel at session end):**
+1. **Resonating Lute** `{2}{U}{R}` Artifact — needs **B3** only. `{T}: Draw, only if 7+ cards in hand` = trivial (`Draw` +
+   `Restriction::OnlyIf(handsize≥7)`, add a `HandSize`-based Condition if absent). The hard part: **"Lands you control have '{T}: Add
+   two mana of any one color, I/S-only'."** = grant a tap-mana ability to a group. **`producible_colors`/`mana_sources_kind` (mana.rs
+   :120) read ONLY printed `def.abilities`** — a GRANTED mana ability is invisible to enumeration (so it's inert even MANUALLY, worse
+   than option-B). Two sub-parts: **(B3a)** a new `StaticContribution::GrantTapMana{mana: ManaSpec}` read by the mana enumeration
+   (scan printed statics + `continuous_effects` for the contribution affecting each candidate land — replicate `affects_matches`
+   in/for mana.rs); **(B3b)** **multi-mana-per-tap** — `ManaSpec.produces` already carries a count `ValueExpr` but the payment path
+   adds 1/tap; make auto-pay respect the count (the "two of one color"; the TapCreatureForMana bonus is the existing precedent for
+   >1 mana/tap). Keep it ADDITIVE (no change when no grant present; prove with a no-regression test).
+2. **Petrified Hamlet** Land — needs a **name-choice class** + B3. `{T}: Add {C}` = trivial (`mana_ability(Colorless)`). Needs: (a)
+   **`Object.chosen_name: Option<String>`** + an ETB **`DecisionRequest::ChooseCardName`** over land-card names (⚠️ new agent-facing
+   decision → cross-crate exhaustive matches in `mtg-gre-server/options.rs` + `mtg-py/{codec,decision_stats}.rs`, like the
+   `PlayableAction` additions before it); (b) a **name-keyed ability-legality gate** ("abilities of sources named X can't be activated
+   unless mana abilities" — check in `legal_priority_actions`: if any Petrified's `chosen_name == source.name` and the ability isn't
+   `is_mana`, it's illegal); (c) "lands named X have {T}:{C}" = B3a again (grant-tap-mana keyed to a name — nearly always redundant,
+   could ship inert-and-flagged first). Bespoke, negligible in limited — sketch the name-choice + legality-gate to the lead.
+3. **Nita, Forum Conciliator ability 2 rider** (the last tracked-partial) — cost + gy-exile are done; the "**you may cast it this
+   turn, any type of mana, exile-instead-of-gy**" rider needs 3 mechs (spec in the sos-cards-19 block below): **(a)** a cross-player
+   exile-cast permission (`castable_by: Option<PlayerId>` on Object + an offer-loop scan of OTHER players' exile — the impulse offer
+   only scans the caster's own exile), **(b)** a **spend-any-type-of-mana** payment mode (collapse the cast cost to fully-generic in
+   `can_pay`/`pay` — touches the payment core), **(c)** an exile-on-leave-stack flag riding the flashback exile path (CR 702.34d).
+
+**End state target: 271/271 authored, 271 fully-faithful, 0 Natives.** After the 3 above land, announce it LOUDLY with the final
+census. The relay does NOT require one session.
+
+---
+
+## ▶ (superseded — history) sos-cards-19 handoff, 2026-07-05
 
 **▶▶ sos-cards-19 SHIPPED — 8 fully-faithful cards + 1 tracked-partial (Nita) + reusable caps, 854 mtg-core green, whole
 workspace builds, tree clean, LEAD pushes.** Census **257→266/271 authored (98%, 262 faithful · 4 tracked-partial)**, **still 0
