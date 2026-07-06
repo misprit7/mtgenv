@@ -129,6 +129,11 @@ pub enum CardFilter {
     HasCounter(CounterKind),
     /// Matches a specific named card (rare; for the few effects that name a card).
     Named(String),
+    /// Matches iff the candidate is a **stack object with exactly one target** (CR 115.7 — Return the
+    /// Favor's "target spell or ability with a single target"). Read directly off the stack object's
+    /// chosen `targets` (not the underlying card's characteristics), so it's only meaningful for a
+    /// `TargetKind::StackObject`; on a non-stack candidate it never matches (fail-closed).
+    HasSingleTarget,
     /// Matches iff the object's name equals the **chosen name noted on the matcher's SOURCE** (its
     /// [`crate::state::Object::chosen_name`]) — Petrified Hamlet's "Lands with the chosen name have
     /// '{T}: Add {C}'". A dynamic sibling of [`Named`] whose target isn't fixed at authoring; the

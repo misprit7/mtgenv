@@ -27,7 +27,7 @@ use crate::effects::action::{
 };
 use crate::effects::target::{CardFilter, PlayerFilter, SelectSpec, TargetKind, TargetSpec};
 use crate::effects::value::{PlayerRef, ValueExpr};
-use crate::effects::{Effect, EffectTarget};
+use crate::effects::{Effect, EffectTarget, Mode};
 use crate::ids::{ObjId, PlayerId, StackId};
 use crate::mana;
 use crate::replay::{Replay, ReplayFrame, ReplayMeta, ReplaySource};
@@ -1110,7 +1110,11 @@ impl Engine {
                 .as_ref()
                 .map(|c| self.effective_cast_cost(p, card, c, TargetCtx::Optimistic))
                 .is_some_and(|c| {
-                    mana::can_pay_ex(s, p, &c, is_is) && self.additional_costs_payable(p, card, &c, is_is)
+                    mana::can_pay_ex(s, p, &c, is_is)
+                        && self.additional_costs_payable(p, card, &c, is_is)
+                        // Spree (CR 702.163): also require base + ≥1 legal mode's cost to be payable —
+                        // you must choose one mode, so the base cost alone being affordable isn't enough.
+                        && self.spree_affordable(card, p, &c, is_is)
                 })
             {
                 actions.push(PlayableAction::Cast { spell: card, variant: CastVariant::Normal });
@@ -2311,6 +2315,20 @@ impl Engine {
         })
     }
 
+    /// Spree offer gate (CR 702.163): `true` unless `card` is a Spree spell that can't afford `base`
+    /// plus **any** single legal mode's additional cost (you must choose ≥1 mode, so base-alone
+    /// affordability isn't enough). Non-Spree cards return `true` (no constraint). `base` is the
+    /// already-effective base cost the caller found affordable; `is_is` gates I/S-restricted mana.
+    fn spree_affordable(&self, card: ObjId, p: PlayerId, base: &ManaCost, is_is: bool) -> bool {
+        match self.state.def_of(card).and_then(|d| d.spell_effect()) {
+            Some(Effect::Spree { modes }) => modes.iter().any(|m| {
+                self.effect_targets_choosable(&m.effect, p)
+                    && mana::can_pay_ex(&self.state, p, &base.plus(&m.cost), is_is)
+            }),
+            _ => true,
+        }
+    }
+
     fn flashback_cost(&self, card: ObjId) -> Option<Cost> {
         if let Some(cost) = self.state.def_of(card).and_then(|d| {
             d.abilities.iter().find_map(|a| match a {
@@ -2630,17 +2648,53 @@ impl Engine {
         }
 
         // 601.2b: a modal spell chooses its modes BEFORE targets — the mode determines which
-        // targets exist (CR 700.2 / 601.2c). Non-modal spells choose no modes.
+        // targets exist (CR 700.2 / 601.2c). Non-modal spells choose no modes. Spree (CR 702.163) is
+        // a modal *additional-cost* spell: choose ≥1 legal modes, then sum their costs into `spree_extra`
+        // (folded into the payment below) — trimmed to a payable subset (≥1) rather than rewound (§2.6).
+        let mut spree_extra = ManaCost::default();
         let chosen_modes = match &effect {
             Some(Effect::Modal { modes, min, max, allow_repeat }) => {
                 let ctx = ResolutionCtx { controller: Some(p), ..Default::default() };
                 self.choose_modes(&ctx, sid, modes, *min, *max, *allow_repeat)
             }
+            Some(Effect::Spree { modes }) => {
+                let ctx = ResolutionCtx { controller: Some(p), ..Default::default() };
+                let view: Vec<Mode> = modes
+                    .iter()
+                    .map(|m| Mode { label: m.label.clone(), effect: m.effect.clone() })
+                    .collect();
+                let mut chosen = self.choose_modes(&ctx, sid, &view, 1, view.len() as u32, false);
+                // Sum of a chosen-set's additional mode costs (CR 601.2b/f).
+                let spree_cost = |ms: &[u32]| {
+                    ms.iter().filter_map(|&i| modes.get(i as usize)).fold(ManaCost::default(), |a, m| {
+                        a.plus(&m.cost)
+                    })
+                };
+                // Affordability trim (no-rewind, §2.6): drop the last-chosen modes until base + the
+                // remaining modes' costs are payable, never below one mode. The offer gate guaranteed
+                // base + the cheapest legal mode is affordable, so ≥1 mode always survives.
+                while chosen.len() > 1
+                    && !mana::can_pay_ex(&self.state, p, &cost.plus(&spree_cost(&chosen)), is_is)
+                {
+                    chosen.pop();
+                }
+                spree_extra = spree_cost(&chosen);
+                chosen
+            }
             _ => Vec::new(),
         };
-        // 601.2c targets: declared by the CHOSEN modes only (modal), else the whole effect.
+        // 601.2c targets: declared by the CHOSEN modes only (modal / Spree), else the whole effect.
         let mut specs = match &effect {
             Some(Effect::Modal { modes, .. }) => {
+                let mut out = Vec::new();
+                for &m in &chosen_modes {
+                    if let Some(mode) = modes.get(m as usize) {
+                        collect_specs_into(&mode.effect, &mut out);
+                    }
+                }
+                out
+            }
+            Some(Effect::Spree { modes }) => {
                 let mut out = Vec::new();
                 for &m in &chosen_modes {
                     if let Some(mode) = modes.get(m as usize) {
@@ -2795,6 +2849,8 @@ impl Engine {
             phyrexian: cost.phyrexian.clone(),
             x: 0,
         };
+        // Spree (CR 702.163): the chosen modes' additional costs are part of the total cost (601.2f).
+        pay = pay.plus(&spree_extra);
         for opt in &chosen_additional {
             if let Some(m) = &opt.mana {
                 pay = pay.plus(m);
@@ -2925,8 +2981,15 @@ impl Engine {
     /// legally chosen. A mode that declares no targets (e.g. a search) is always legal. Used both to
     /// filter the modes offered at `choose_modes` and to decide a modal spell's castability.
     pub(crate) fn mode_is_legal(&self, mode: &crate::effects::Mode, controller: PlayerId) -> bool {
+        self.effect_targets_choosable(&mode.effect, controller)
+    }
+
+    /// Whether every target `effect` declares (CR 601.2c) has at least a legal candidate for
+    /// `controller` — the shared check behind [`mode_is_legal`] (modal / Spree mode legality) and
+    /// the non-modal `spell_castable_targets` arm. An effect declaring no targets is trivially true.
+    pub(crate) fn effect_targets_choosable(&self, effect: &Effect, controller: PlayerId) -> bool {
         let mut specs = Vec::new();
-        collect_specs_into(&mode.effect, &mut specs);
+        collect_specs_into(effect, &mut specs);
         specs
             .iter()
             .all(|spec| self.target_candidates(spec, controller, None).len() as u32 >= spec.min.max(1))
@@ -2942,6 +3005,12 @@ impl Engine {
         match effect {
             Effect::Modal { modes, min, .. } => {
                 modes.iter().filter(|m| self.mode_is_legal(m, p)).count() as u32 >= *min
+            }
+            // Spree (CR 702.163): you must choose ≥1 mode, so ≥1 mode's targets must be choosable
+            // (an untargeted mode is always legal). Mirrors Modal with min=1. Affordability of the
+            // per-mode cost is checked separately at the offer gate (`spree_affordable`).
+            Effect::Spree { modes } => {
+                modes.iter().any(|m| self.effect_targets_choosable(&m.effect, p))
             }
             _ => collect_target_specs(effect)
                 .iter()
@@ -3097,7 +3166,13 @@ impl Engine {
         // `Zone::Stack`, controlled by its caster). An ability on the stack has no card, so only
         // the trivial `Any` filter matches it.
         if let Target::Stack(sid) = t {
-            let kind = self.state.stack.items.iter().find(|s| s.id == *sid).map(|s| s.kind.clone());
+            let so = self.state.stack.items.iter().find(|s| s.id == *sid);
+            // "with a single target" (CR 115.7) reads the stack object's chosen `targets` directly —
+            // it applies to spells AND abilities alike, so handle it before dispatching to the card.
+            if let CardFilter::HasSingleTarget = filter {
+                return so.is_some_and(|s| s.targets.len() == 1);
+            }
+            let kind = so.map(|s| s.kind.clone());
             return match kind {
                 Some(StackObjectKind::Spell(card)) => {
                     self.target_matches_filter(&Target::Object(card), filter, caster, source)
@@ -4309,6 +4384,78 @@ impl Engine {
         }
     }
 
+    /// Resolve Return the Favor's "change the target of target spell or ability with a single target"
+    /// (CR 115.7). `vsid` is the victim stack object (already chosen as the `ChangeTarget` target);
+    /// `ctx` is the resolving effect's context (its controller picks the new target). The new target
+    /// is validated against the **victim's own** target spec (its filter/zone/legality, evaluated from
+    /// the *victim controller's* perspective — a "you don't control"/hexproof restriction is the
+    /// victim's, not the retargeter's) and must differ from the current one. An **impossible retarget**
+    /// — no legal alternative — leaves the victim's target UNCHANGED (CR 115.7: the spell/ability is
+    /// not countered), so the mode never fizzles. Only *spell* victims are handled (abilities-on-stack
+    /// aren't targetable in the first pass, matching the copy mode).
+    pub(crate) fn change_target(&mut self, vsid: StackId, ctx: &ResolutionCtx) {
+        // Snapshot the victim's current single target + identity (owned, so the stack can be mutated).
+        let (current, victim_controller, victim_source, modes, spell_card) = {
+            let Some(v) = self.state.stack.items.iter().find(|s| s.id == vsid) else {
+                return;
+            };
+            // Only "a single target" spells/abilities qualify (CR — the printed restriction).
+            if v.targets.len() != 1 {
+                return;
+            }
+            let spell_card = match v.kind {
+                StackObjectKind::Spell(c) => Some(c),
+                _ => None,
+            };
+            (v.targets[0], v.controller, v.source, v.modes.clone(), spell_card)
+        };
+        let Some(card) = spell_card else { return };
+        // Recover the spec the victim's single target was chosen against (CR 608.2b order) — its filter
+        // + zone — so the replacement is legal for the VICTIM, not for the retargeting spell.
+        let Some(spec) = self
+            .state
+            .def_of(card)
+            .and_then(|d| d.spell_effect().cloned())
+            .map(|e| target_specs_for(&e, &modes))
+            .and_then(|mut ss| (!ss.is_empty()).then(|| ss.remove(0)))
+        else {
+            return;
+        };
+        // Legal alternatives = the victim spec's candidates (from the victim controller's view), minus
+        // the current target. None ⇒ leave unchanged (CR 115.7).
+        let alternatives: Vec<Target> = self
+            .target_candidates(&spec, victim_controller, victim_source)
+            .into_iter()
+            .filter(|&t| t != current)
+            .collect();
+        if alternatives.is_empty() {
+            return;
+        }
+        let chooser = ctx.controller.unwrap_or(self.state.active_player);
+        let slot = TargetSlot {
+            description: "Choose a new target for the spell or ability".into(),
+            legal: alternatives,
+            min: 1,
+            max: 1,
+        };
+        let resp = self.ask(
+            chooser,
+            &DecisionRequest::ChooseTargets {
+                for_action: ActionRef(vsid),
+                source: victim_source,
+                slots: vec![slot.clone()],
+            },
+        );
+        if let Some(&new_t) = parse_targets(&[slot], &resp).first() {
+            if let Some(vm) = self.state.stack.items.iter_mut().find(|s| s.id == vsid) {
+                vm.targets = vec![new_t];
+            }
+            // CR 603.3d: the new object becomes the target of the victim (its controller "did" it).
+            let targeted = self.targeted_object_ids(&[new_t]);
+            self.fire_targeted(&targeted, victim_controller, vsid);
+        }
+    }
+
     /// Fire (and consume, CR 603.7b) every armed delayed triggered ability watching `obj` whose
     /// event matches its leaving the battlefield. Each fired ability is queued onto the stack
     /// carrying its concrete actions; it then resolves through the normal agenda like any trigger.
@@ -5216,6 +5363,16 @@ pub(crate) fn target_specs_for(effect: &Effect, chosen_modes: &[u32]) -> Vec<Tar
             }
             out
         }
+        // Spree (CR 702.163): the chosen modes' specs, in the order they were collected at cast.
+        Effect::Spree { modes } => {
+            let mut out = Vec::new();
+            for &m in chosen_modes {
+                if let Some(mode) = modes.get(m as usize) {
+                    collect_specs_into(&mode.effect, &mut out);
+                }
+            }
+            out
+        }
         e => collect_target_specs(e),
     }
 }
@@ -5298,6 +5455,9 @@ fn collect_specs_into(effect: &Effect, out: &mut Vec<TargetSpec>) {
         // cast; both are collected here so a real cast picks a target and re-checks it at resolution.
         Effect::Counter { what: EffectTarget::Target(spec) }
         | Effect::CounterUnlessPay { what: EffectTarget::Target(spec), .. } => out.push(spec.clone()),
+        // "Change the target of target spell or ability with a single target" (Return the Favor) —
+        // the victim stack object is a chosen target (its own single target is re-chosen at resolution).
+        Effect::ChangeTarget { what: EffectTarget::Target(spec) } => out.push(spec.clone()),
         // "Return target spell to its owner's hand" (Reprieve) — the stack spell is a chosen target.
         Effect::ReturnSpellToHand { what: EffectTarget::Target(spec) } => out.push(spec.clone()),
         // "Target creature becomes a … Fractal / becomes a 2/4 Wizard" (Fractalize / Great Hall) — the

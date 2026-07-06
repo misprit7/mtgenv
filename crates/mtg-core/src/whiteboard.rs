@@ -171,6 +171,37 @@ impl EngineCore {
                 }
                 any
             }
+            // Spree (CR 702.163) — the modes were chosen (and paid for) at cast; resolve each chosen
+            // mode's effect in order, reading `ctx.chosen_modes` (the same set `choose_modes` reads).
+            // Each mode's targets are ITS OWN (CR 700.2): give every chosen mode a mode-local ctx whose
+            // `chosen_targets`/`target_controllers` are just that mode's slice of the spell's targets,
+            // with a fresh cursor — so a mode's `Target`/`ChosenTarget(n)`/`TargetPlayer` references are
+            // relative to the mode, not to the whole spell (else mode 0's target would shift mode 2's
+            // `ChosenTarget(0)`). Targets were collected in this same chosen-mode order at cast.
+            Effect::Spree { modes } => {
+                let mut any = false;
+                let mut offset = 0usize;
+                for &idx in &ctx.chosen_modes {
+                    if let Some(m) = modes.get(idx as usize) {
+                        let n = crate::priority::collect_target_specs(&m.effect).len();
+                        let sub = ResolutionCtx {
+                            chosen_targets: ctx.chosen_targets.iter().skip(offset).take(n).copied().collect(),
+                            target_controllers: ctx
+                                .target_controllers
+                                .iter()
+                                .skip(offset)
+                                .take(n)
+                                .copied()
+                                .collect(),
+                            ..ctx.clone()
+                        };
+                        let mut sub_cursor = 0usize;
+                        any |= self.interpret(&m.effect, &sub, sid, wb, &mut sub_cursor);
+                        offset += n;
+                    }
+                }
+                any
+            }
             // C5: search a zone (asks the searcher which card(s)), move the picks to `to`, then
             // shuffle a searched library. Done imperatively (search/shuffle aren't whiteboard
             // actions). Flush any deferred actions staged so far FIRST so they take effect before
@@ -356,6 +387,17 @@ impl EngineCore {
                 self.flush_pending(wb);
                 if let Some(Target::Stack(sid)) = self.resolve_target(what, ctx, cursor) {
                     self.interpret_counter(sid);
+                }
+                true
+            }
+            // "Change the target of target spell or ability with a single target" (Return the Favor,
+            // CR 115.7). Imperative (reads/mutates the victim stack object, asks the controller), so it
+            // lives here; the new target is validated against the victim's OWN spec, and an impossible
+            // retarget leaves it unchanged (see `Engine::change_target`). Flush staged actions first.
+            Effect::ChangeTarget { what } => {
+                self.flush_pending(wb);
+                if let Some(Target::Stack(vsid)) = self.resolve_target(what, ctx, cursor) {
+                    self.change_target(vsid, ctx);
                 }
                 true
             }
@@ -2769,6 +2811,8 @@ impl EngineCore {
             // they reach `materialize` only when nested where no interpreter runs (e.g. a
             // `Conditional`/`Sequence` `then`). Inert here — `interpret` handled the top level.
             Effect::Modal { .. }
+            | Effect::Spree { .. }
+            | Effect::ChangeTarget { .. }
             | Effect::Optional { .. }
             | Effect::IfYouDo { .. }
             | Effect::ForEach { .. }
@@ -3890,9 +3934,14 @@ impl EngineCore {
             CardFilter::Not(f) => !self.count_filter_matches(id, f),
             // `ItSelf`/`AttachedHost`/`NamedAsChooser` resolve against the effect's source (its
             // attachment / chosen name), which a bare `Count`/`ForEach` enumeration doesn't carry — no
-            // such filter is used in that context, so treat as no match. Exhaustive by design (no
+            // such filter is used in that context, so treat as no match. `HasSingleTarget` reads a stack
+            // object's targets (only meaningful for a `StackObject` *target* candidate, handled in
+            // `target_matches_filter`), never a battlefield object here. Exhaustive by design (no
             // wildcard): a NEW `CardFilter` without an arm is a compile error here, not a silent `false`.
-            CardFilter::ItSelf | CardFilter::AttachedHost | CardFilter::NamedAsChooser => false,
+            CardFilter::ItSelf
+            | CardFilter::AttachedHost
+            | CardFilter::NamedAsChooser
+            | CardFilter::HasSingleTarget => false,
         }
     }
 

@@ -26,7 +26,7 @@ use self::target::{
     CardFilter, ManaSpec, PlayerFilter, SelectSpec, TargetSpec, TokenCopyMods, TokenSpec,
 };
 use self::value::{PlayerRef, ValueExpr};
-use crate::basics::{Color, CounterKind, DamageKind, Zone, ZoneDest};
+use crate::basics::{Color, CounterKind, DamageKind, ManaCost, Zone, ZoneDest};
 
 /// How an effect leaf refers to the thing(s) it acts on. A leaf either acts on a target locked
 /// at cast (`Target`, CR 601.2c), a set selected at resolution (`Select`), a named player, the
@@ -64,6 +64,16 @@ pub enum EffectTarget {
 /// One mode of a modal spell/ability (CR 700.2): a presented label + the effect it runs.
 #[derive(Debug, Clone)]
 pub struct Mode {
+    pub label: String,
+    pub effect: Effect,
+}
+
+/// One **Spree** mode (CR 702.163): an additional mana `cost` and the `effect` choosing it enables.
+/// Unlike a plain [`Mode`], each Spree mode carries its own additional cost — the chosen modes' costs
+/// are summed into the spell's total cost at cast (CR 601.2b/f). See [`Effect::Spree`].
+#[derive(Debug, Clone)]
+pub struct SpreeMode {
+    pub cost: ManaCost,
     pub label: String,
     pub effect: Effect,
 }
@@ -690,6 +700,32 @@ pub enum Effect {
         min: u32,
         max: u32,
         allow_repeat: bool,
+    },
+    /// **Spree** (CR 702.163) — a modal *additional-cost* spell: "Choose one or more additional
+    /// costs." Each chosen [`SpreeMode`] adds its `cost` to the spell's total (CR 601.2b/f) and its
+    /// `effect` to the resolution; **at least one** mode must be chosen. Distinct from [`Modal`]
+    /// (no per-mode cost, `min` can be 0): the engine handles it in the cast pipeline like a modal
+    /// spell whose modes carry mana — choose ≥1 legal modes at cast, sum their costs into the
+    /// payment, collect their targets, and at resolution run each chosen mode's effect in order
+    /// (reading `ctx.chosen_modes`). The chosen-mode set is trimmed to a payable subset (≥1) rather
+    /// than rewound (WHITEBOARD_MODEL §2.6) — the offer gate guarantees ≥1 affordable single-mode line.
+    Spree {
+        modes: Vec<SpreeMode>,
+    },
+    /// **Change the target of `what`** (CR 115.7 — Return the Favor's Spree mode 2: "Change the
+    /// target of target spell or ability with a single target"). `what` targets a spell/ability on
+    /// the stack that currently has **exactly one** target (enforced at cast by
+    /// [`self::target::CardFilter::HasSingleTarget`]). At resolution the new target is chosen from the
+    /// **victim's own** target spec (its filter + zone + legality, evaluated from the victim's
+    /// controller's perspective — CR 115.7 "the new target must be legal"), excluding the current one;
+    /// the controller of *this* effect picks. **An impossible retarget — no legal alternative — leaves
+    /// the target unchanged** (CR 115.7: the spell/ability is not countered, it just keeps its target),
+    /// so it never fizzles the mode. Only *spell* stack objects are targetable in the first pass
+    /// (abilities-on-stack targeting is out of scope, matching the copy mode), so `what` resolves to a
+    /// spell victim. Imperative (reads/mutates the victim stack object, asks the controller), so it
+    /// lives in `interpret`.
+    ChangeTarget {
+        what: EffectTarget,
     },
     Repeat {
         count: ValueExpr,
