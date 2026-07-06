@@ -840,11 +840,33 @@ impl EngineCore {
                     watching: ctx.source.unwrap_or(ObjId(0)),
                     event: DelayedTriggerEvent::YouCastSpell {
                         filter: filter.clone(),
-                        choose_new_targets: *choose_new_targets,
+                        reaction: crate::effects::action::YouCastSpellReaction::CopySpell {
+                            choose_new_targets: *choose_new_targets,
+                        },
+                        until_end_of_turn: false, // one-shot: "when you NEXT cast …"
                     },
                     controller,
                     source: ctx.source,
                     actions: Vec::new(),
+                });
+                true
+            }
+            // "This turn, whenever you cast a spell matching `filter`, do `effect`" (Glimpse of Nature).
+            // Registers a RECURRING YouCastSpell delayed trigger whose `actions` are `effect` lowered;
+            // it fires for every matching cast this turn and expires at the next turn's start.
+            Effect::WheneverYouCastThisTurn { filter, effect } => {
+                let controller = ctx.controller.unwrap_or(PlayerId(0));
+                let actions = self.lower_effect_to_actions(effect, ctx);
+                wb.push(Action::RegisterDelayedTrigger {
+                    watching: ctx.source.unwrap_or(ObjId(0)),
+                    event: DelayedTriggerEvent::YouCastSpell {
+                        filter: filter.clone(),
+                        reaction: crate::effects::action::YouCastSpellReaction::RunActions,
+                        until_end_of_turn: true,
+                    },
+                    controller,
+                    source: ctx.source,
+                    actions,
                 });
                 true
             }
@@ -1694,6 +1716,28 @@ impl EngineCore {
             }
         }
         picks
+    }
+
+    /// Lower a **simple** player-scoped effect to concrete `Action`s at registration time, for a
+    /// delayed trigger's `actions` (Glimpse of Nature's "draw a card"). Handles the player-targeted
+    /// leaves such a "whenever you cast …" reaction uses; a `Sequence` lowers element-wise. An effect
+    /// with no arm here yields no actions and `debug_assert!`s loudly (extend as new reactions need it).
+    fn lower_effect_to_actions(&self, effect: &Effect, ctx: &ResolutionCtx) -> Vec<Action> {
+        match effect {
+            Effect::Draw { who, count } => vec![Action::Draw {
+                player: self.eval_player(*who, ctx),
+                count: self.eval_value(count, ctx).max(0) as u32,
+            }],
+            Effect::LoseLife { who, amount } => vec![Action::LoseLife {
+                player: self.eval_player(*who, ctx),
+                amount: self.eval_value(amount, ctx).max(0) as u32,
+            }],
+            Effect::Sequence(es) => es.iter().flat_map(|e| self.lower_effect_to_actions(e, ctx)).collect(),
+            other => {
+                debug_assert!(false, "lower_effect_to_actions: unsupported delayed-cast reaction {other:?}");
+                Vec::new()
+            }
+        }
     }
 
     fn interpret_look_and_pick(
@@ -2753,6 +2797,7 @@ impl EngineCore {
             | Effect::Blink { .. }
             | Effect::ExileReturnNextEndStep { .. }
             | Effect::CopyNextSpellCast { .. }
+            | Effect::WheneverYouCastThisTurn { .. }
             | Effect::CopySpellOnStack { .. }
             | Effect::CopySpellAsToken { .. }
             | Effect::Cascade

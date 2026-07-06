@@ -353,6 +353,15 @@ pub enum Effect {
         filter: CardFilter,
         choose_new_targets: bool,
     },
+    /// "This turn, whenever you cast a spell matching `filter`, do `effect`" (Glimpse of Nature's
+    /// "whenever you cast a creature spell this turn, draw a card"). Arms a **recurring** YouCastSpell
+    /// delayed trigger (CR 603.7) whose `effect` is lowered to actions and resolved on each matching
+    /// cast; it expires at the next turn's start. The recurring/effect-running sibling of
+    /// [`CopyNextSpellCast`] (one-shot / copy-the-spell) — both parametrize one delayed-trigger event.
+    WheneverYouCastThisTurn {
+        filter: CardFilter,
+        effect: Box<Effect>,
+    },
     /// "Copy a spell that's on the stack `count` times" (CR 707.10) — the storm / casualty / infusion
     /// engine over the built [`crate::priority::EngineCore::copy_spell_on_stack`]. `what` names which
     /// stack spell to copy: [`EffectTarget::Triggering`] = the spell that fired this "whenever you cast

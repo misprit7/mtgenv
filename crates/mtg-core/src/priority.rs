@@ -4312,9 +4312,11 @@ impl Engine {
             },
             None => return,
         };
+        use crate::effects::action::YouCastSpellReaction;
         // Two-pass (the filter check reads `self`, so it can't run inside a `retain` that mutably
-        // borrows `self.state.delayed_triggers`): find the matching triggers, then consume them.
-        let fired: Vec<(u64, Option<ObjId>, bool)> = self
+        // borrows `self.state.delayed_triggers`): find the matching triggers, then act on them.
+        // Each entry: (trigger id, source, reaction, until_end_of_turn, actions-to-run).
+        let fired: Vec<(u64, Option<ObjId>, YouCastSpellReaction, bool, Vec<crate::effects::action::Action>)> = self
             .state
             .delayed_triggers
             .iter()
@@ -4322,25 +4324,33 @@ impl Engine {
                 if dt.controller != caster {
                     return None;
                 }
-                let DelayedTriggerEvent::YouCastSpell { filter, choose_new_targets } = &dt.event else {
+                let DelayedTriggerEvent::YouCastSpell { filter, reaction, until_end_of_turn } = &dt.event else {
                     return None;
                 };
                 self.enter_filter_matches(card, filter, caster, None)
-                    .then_some((dt.id, dt.source, *choose_new_targets))
+                    .then(|| (dt.id, dt.source, reaction.clone(), *until_end_of_turn, dt.actions.clone()))
             })
             .collect();
         if fired.is_empty() {
             return;
         }
-        let fire_ids: std::collections::BTreeSet<u64> = fired.iter().map(|(id, _, _)| *id).collect();
-        self.state.delayed_triggers.retain(|dt| !fire_ids.contains(&dt.id));
-        for (_, source, choose_new_targets) in fired {
+        // Consume ONE-SHOT triggers; recurring (`until_end_of_turn`) ones stay armed for the next cast.
+        let consume: std::collections::BTreeSet<u64> =
+            fired.iter().filter(|(_, _, _, recurring, _)| !recurring).map(|(id, ..)| *id).collect();
+        self.state.delayed_triggers.retain(|dt| !consume.contains(&dt.id));
+        for (_, source, reaction, _, actions) in fired {
             let id = self.state.mint_stack();
+            let kind = match reaction {
+                YouCastSpellReaction::CopySpell { choose_new_targets } => {
+                    StackObjectKind::SpellCopyTrigger { spell: card, choose_new_targets }
+                }
+                YouCastSpellReaction::RunActions => StackObjectKind::DelayedAbility { actions },
+            };
             self.state.pending_triggers.push(StackObject {
                 id,
                 controller: caster,
                 source,
-                kind: StackObjectKind::SpellCopyTrigger { spell: card, choose_new_targets },
+                kind,
                 targets: Vec::new(),
                 x: None,
                 modes: Vec::new(),

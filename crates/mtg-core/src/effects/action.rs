@@ -183,12 +183,28 @@ pub enum DelayedTriggerEvent {
     /// armed (CR 505 — Mana Sculpt's "add … at the beginning of your next main phase"). Fires once at a
     /// main-phase begin where the active player is the trigger's controller, then is consumed.
     AtBeginningOfYourNextMainPhase,
-    /// The controller's **next** cast of a spell matching `filter`, this turn (CR 603.7 / "when you
-    /// next cast a … spell this turn") — Striking Palette's "when you next cast an instant or sorcery
-    /// spell this turn, copy that spell." One-shot; expires unfired at the next turn's start. When it
-    /// fires the engine mints a [`crate::stack::StackObjectKind::SpellCopyTrigger`] over the just-cast
-    /// spell; `choose_new_targets` rides onto it (707.10c "you may choose new targets for the copy").
-    YouCastSpell { filter: super::target::CardFilter, choose_new_targets: bool },
+    /// The controller casts a spell matching `filter` this turn (CR 603.7). Two axes parametrize it:
+    /// `reaction` (copy the spell — Striking Palette — vs. run the delayed trigger's `actions` — Glimpse
+    /// of Nature's "draw a card"), and `until_end_of_turn` (recurring for EVERY matching cast this turn
+    /// vs. a one-shot consumed on the first fire). Both expire at the next turn's start. When it fires,
+    /// a `CopySpell` reaction mints a [`crate::stack::StackObjectKind::SpellCopyTrigger`] over the spell;
+    /// a `RunActions` reaction mints a [`crate::stack::StackObjectKind::DelayedAbility`] over the trigger's
+    /// `actions`.
+    YouCastSpell {
+        filter: super::target::CardFilter,
+        reaction: YouCastSpellReaction,
+        until_end_of_turn: bool,
+    },
+}
+
+/// What a [`DelayedTriggerEvent::YouCastSpell`] does when a matching spell is cast.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum YouCastSpellReaction {
+    /// Copy the just-cast spell (CR 707.10) — Striking Palette / storm-grant. `choose_new_targets`
+    /// rides onto the copy (707.10c).
+    CopySpell { choose_new_targets: bool },
+    /// Resolve the delayed trigger's own `actions` as a triggered ability (Glimpse of Nature's draw).
+    RunActions,
 }
 
 /// Why an object is changing zones — distinguishes destruction/sacrifice/bounce/etc. so the
