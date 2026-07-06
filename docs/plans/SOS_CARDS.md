@@ -176,7 +176,13 @@ Stargaze; `ManaValueOfTarget` → Feed the Swarm; `HandSize` of opp → Jeska's 
 Cap-then-cards, `git log -S` before scoping any "absent" mechanic (some B caps may already exist — verify).
 
 **Progress log (append per commit):**
-- _(none yet — relay just opened by sos-bonus-1, 2026-07-06)_
+- **sos-bonus-1 (2026-07-06): 25/65 authored (all Bucket A, real-path tested, 908 mtg-core green).**
+  - batch 1 `f…`: Giant Growth, Armageddon, Pyretic Ritual, Brotherhood's End, Hop to It, Empty the Warrens (storm), Smallpox, Disdainful Stroke.
+  - batch 2: Spell Pierce, Fracture, Flusterstorm (storm), Brain Freeze (storm), Feed the Swarm, Big Score, Crop Rotation, Culling the Weak, Zombify, Sleight of Hand, Stock Up.
+  - batch 3: Abrade, Bulk Up (flashback), Duty Beyond Death, Helping Hand, Pick Your Poison, Shared Roots.
+  - **grp_id block = 600+** (max prior real id was 504); each reprint in its first-printing folder (new folders: m11, zen, stx, cmd, scg, znr, snc, exo, ody, hou, lci; Pick Your Poison → mkm since its only-earlier printing is the silver-border `cmb1`).
+  - **Reclassified A→B during authoring (grounded):** Preordain (needs `Effect::Scry` — Surveil bins to gy, not bottom), Vampiric Tutor (`interpret_search` shuffles AFTER placing, so "search→shuffle→top" is unexpressible), Repel Calamity + Shamanic Revelation's Ferocious clause (need `CardFilter::PowerAtLeast`/`ToughnessAtLeast` — only `*AtMost` exists), Sheoldred's Edict (token/nontoken modes need a token-identity marker — `create_token` doesn't stamp `Supertype::Token`).
+  - **Remaining Bucket A to assess:** Jeska's Will, Prismatic Ending, Bring to Light (converge/impulse — verifying they compose over S7 ColorsSpent + S15 impulse).
 
 ---
 
