@@ -4,7 +4,89 @@ Standing workstream: implement the Secrets of Strixhaven set for **limited (40-c
 `mtg-core`, easiest-first, correctness over count. This ledger is the capability index + full
 per-card triage, modeled on `SELESNYA_LANDFALL_CARDS.md`.
 
-## ▶ NEXT AGENT — start here (handoff from sos-cards-20, 2026-07-06)
+## ✅ SET COMPLETE — 271/271 (sos-cards-21 finale, 2026-07-06) — relay CLOSED, this is now a maintenance note
+
+**▶▶ THE SET IS COMPLETE. 271/271 authored · 271 fully-faithful · 0 tracked-partials · 0 Native
+hatches. 871 mtg-core tests green, whole workspace (incl. mtg-py) builds, tree clean.** There is **no
+next-agent queue** — this block supersedes every handoff below. Scryfall-diff verified: every one of
+the 271 `sos` card names (`sqlite: SELECT name FROM cards WHERE set_code='sos'`) resolves to a
+registered `CardDef` — sos cards in `cards/sos/`, reprints/duals/basics in their first-printing folders
+(Ancestral Anger `vow/`, basics `misc/basics.rs`, Terramorphic Expanse `tsp/`, …), DFCs by front-face
+name. `grep -rln '.incomplete()' cards/sos` = **0**; no `Effect::Native`/`Ability::Native` anywhere in
+the pool (the three "Native"-tagged ledger cards — Steal the Show, Mathemagics, Pox Plague — were all
+built pure-IR).
+
+**The sos-cards-21 finale (the last 3 items):**
+- **`71a60ea` Resonating Lute** `{2}{U}{R}` — the granted-mana subsystem (B3). New **`StaticContribution::
+  GrantTapMana{mana}`** (a layer-6 ability grant with no home in `ComputedChars`) + reader **`chars::
+  granted_tap_mana`** (reuses `gather_statics`/`affects_matches`) so a granted `{T}: Add …` is visible to
+  affordability + auto-pay. Mana enumeration carries a per-tap **count**; `select_payment` uses a unit up
+  to `count` times committed to ONE colour ("two mana of any one colour") behind a **one-tap-one-ability
+  source guard**; `auto_pay` adds each tapped source's full count (restricted surplus floats). Additive —
+  a no-op for every existing single-ability source (payment suite green). Plain `{T}` grant ⇒ **auto-pay-
+  usable / trainable**, no option-B caveat.
+- **`0c26308` Petrified Hamlet** — ETB name-choice reusing the existing **`ChooseOption{reason:NameCard}`**
+  decision (zero cross-crate churn). New **`Object.chosen_name`** (reset on zone change) set by
+  **`Effect::ChooseLandName`** over the engine-enumerated land-card names in play. Name-keyed statics read
+  it: the **ability-legality gate** (`name_is_chosen` in `legal_priority_actions` — a non-mana activated
+  ability of any source whose name is a noted `chosen_name` isn't offered; mana abilities exempt) and the
+  **`{T}:{C}` grant** via new **`CardFilter::NamedAsChooser`** on the B3a granted-tap-mana path. Its own
+  `{T}:{C}` is trainable.
+- **`074fff2` Nita, Forum Conciliator ability-2 rider** (the last tracked-partial → cleared). New
+  **`Effect::ExileTargetThenMayCast`** + **`Action::ExileForCastBy`** grant, on the exiled opp-gy I/S:
+  **`Object.castable_by`** (cross-player exile-cast — the offer scans OTHER players' exile),
+  **`spend_any_mana`** (`ManaCost::collapse_to_generic` at the offer gate, the target-affordability
+  pre-filter, AND `cast_spell`'s payment — "mana of any type"), and **`exile_on_leave`** (→ `flashback_cast`
+  so the spell is exiled not graveyard'd when it leaves the stack — on resolve OR counter; the
+  `interpret_counter` graveyard-only gap fixed too). Real-path test: `{2}`+sac exiles P1's bolt, P0 casts
+  it with GREEN mana, hits P1 for 3, exiled on leave.
+
+### ⚠️ Auto-pay-inert (human/manual-only) abilities — 271-faithful ≠ 271-trainable
+
+These cost-bearing mana abilities are **faithful card data** and work via the manual mana path (which
+pays the extra cost through `pay_cost`), but are **inert to auto-pay for agent/RL seats** — the auto-payer
+only taps `{T}` sources (`mana::mana_sources_kind`'s `is_simple_tap_mana` gate), it can't pay a
+sacrifice / pay-life / extra-mana cost. This is the established **"option-B"** convention (faithful, not
+trainable-through-auto-pay); folding them into auto-pay is parked in WHITEBOARD_MODEL §2.6 (B1/B2, with
+the lead's no-suicide-life-gate + single-shared-planner constraints).
+
+| Card / source | Cost-bearing mana ability | Why inert to auto-pay |
+|---|---|---|
+| **Treasure token** (the shared token def) | `{T}, Sacrifice this token: Add one mana of any colour` | non-`{T}` cost (Sacrifice) |
+| **Goblin Glasswright // Craft with Pride** (back) | creates a Treasure → its `{T},Sac` mana ability | (the Treasure above) |
+| **Great Hall of the Biblioplex** | `{T}, Pay 1 life: Add any colour (I/S-only)` | non-`{T}` cost (Pay life) |
+| **Hydro-Channeler** (2nd ability) | `{1}, {T}: Add any-of-5 (I/S-only)` | non-`{T}` cost (extra `{1}`) |
+
+Everything else — including **Resonating Lute's** granted `{T}: Add two of one colour` and **Petrified
+Hamlet's** `{T}:{C}` (own + granted) — is a plain `{T}` ability, **fully auto-pay-usable and trainable**.
+
+### Known faithful-modelling divergences (documented, negligible in limited)
+
+- **Silverquill the Disputant — Casualty timing.** Casualty 1 is modeled as a `Triggered{SpellCast(I/S)}`
+  whose effect copies the spell, rather than the spell entering the stack already-copied at cast (CR
+  702.153). The copy still resolves correctly (spell-copy path); only the exact "copied as it's put on the
+  stack" ordering differs — no observable difference for the pool's interactions.
+- **Rubble Rouser — mana-ability timing.** Its `{T}, Exile-from-gy: Add {R}. When you do, ping each
+  opponent` is modeled as a **non-mana activated ability** (`Sequence[AddMana, DealDamage]`) so an agent
+  seat can select it and the reflexive ping fires — a true mana ability (CR 605, no stack) is never
+  offered to the RL seat. Deliberate: the ping is the card's point.
+- **Resonating Lute — greedy payment tail.** `select_payment` is greedy (as the whole payment path always
+  has been): an exotic cost needing two *different specific* colours from a *single* Lute-granted land
+  (one tap = one colour) is correctly rejected, but greedy can still miss some multi-source colour
+  orderings. The manual-UI `produce_mana` covers granted *unrestricted* multi-mana; granted *restricted*
+  (I/S-only) mana is auto-pay-only (the manual restricted-tap UI is a documented gap, not needed by the
+  agent seat).
+- **Petrified Hamlet — name enumeration.** "Choose a land card name" enumerates the distinct land-card
+  names *present in the game* (deterministic, engine-masked), not the full oracle universe of names — the
+  faithful, tractable index-of-N for a limited pool.
+
+### Trackers
+Ledger below is retained as the full per-card triage + capability index (the S-caps table, ~line 1500+,
+stays the map for future sets). `WORKLOG.md` + `PROJECT_STATE.md` updated to the COMPLETE state.
+
+---
+
+## ▶ (superseded — history) NEXT-AGENT block, handoff from sos-cards-20, 2026-07-06
 
 **▶▶ sos-cards-20 SHIPPED — 2 new cards + 3 tracked-partials cleared + 2 general engine extensions. 864 mtg-core green, whole
 workspace builds, tree clean, LEAD pushes.** Census **266→269/271 authored (99%, 268 fully-faithful · 1 tracked-partial) · 0

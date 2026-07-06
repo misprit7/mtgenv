@@ -3,6 +3,27 @@
 Short, dated entries for future-agent consumption. Newest first. One line or a few bullets
 per unit of meaningful progress. Keep it terse — detail lives in `docs/` and git history.
 
+## 2026-07-06 (SOS COMPLETE — sos-cards-21 finale: 269→271 authored, last partial cleared)
+
+- **✅ THE SET IS COMPLETE: 271/271 authored · 271 fully-faithful · 0 tracked-partials · 0 Native
+  hatches. 871 mtg-core green, whole workspace (incl. mtg-py) builds.** Scryfall-diff verified against
+  `set_code='sos'`. The 3 final items shipped:
+- **`71a60ea` Resonating Lute** — the granted-mana subsystem (B3). New `StaticContribution::GrantTapMana`
+  (+ `chars::granted_tap_mana` reusing `gather_statics`/`affects_matches`) so a granted `{T}: Add …` is
+  visible to affordability/auto-pay; mana enumeration now carries a per-tap **count**, `select_payment`
+  uses a unit up to `count` times committed to one colour with a one-tap-one-ability source guard,
+  `auto_pay` adds the full count (restricted surplus floats). Additive — payment suite green.
+- **`0c26308` Petrified Hamlet** — ETB name-choice reusing `ChooseOption{NameCard}` (zero cross-crate
+  churn); new `Object.chosen_name` + `Effect::ChooseLandName`; name-keyed ability-legality gate
+  (`name_is_chosen`) + name-keyed `{T}:{C}` grant via new `CardFilter::NamedAsChooser` on the B3a path.
+- **`074fff2` Nita ability-2 rider** (last partial cleared) — `Effect::ExileTargetThenMayCast` +
+  `Action::ExileForCastBy`: cross-player exile-cast (`Object.castable_by` + other-players' exile scan),
+  any-type-mana (`spend_any_mana` → `ManaCost::collapse_to_generic` at offer gate + target pre-filter +
+  payment), exile-on-leave (`exile_on_leave` → `flashback_cast`; `interpret_counter` gap fixed too).
+- **Auto-pay-inert (option-B) roster** (faithful data, manual-only, NOT trainable via auto-pay): Treasure
+  token, Goblin Glasswright's Treasure, Great Hall's pay-life mana, Hydro-Channeler's `{1}{T}` — see the
+  census table in `docs/plans/SOS_CARDS.md`. Lute + Hamlet's abilities are plain `{T}` ⇒ fully trainable.
+
 ## 2026-07-06 (SOS ENDGAME — sos-cards-20: 266→269 authored, 4→1 partials)
 
 - **The roadmap items landed; the "empty queue" opened up.** Census **269/271 authored · 268

@@ -3,7 +3,7 @@
 Single source of truth for goals + where things stand. Update this (without being asked)
 whenever meaningful progress changes the picture. Companion: `WORKLOG.md` (chronological).
 
-_Last updated: 2026-07-05_
+_Last updated: 2026-07-06_
 
 ## Vision (one sentence)
 
@@ -69,8 +69,13 @@ MTGA client.
 - **✅ MOBILE WEB CLIENT (2026-07-03).** Game client + lobby fully playable from a phone: mobile
   reflow (sticky prompt sheet, opp-top/you-bottom strips, log toggle), touch previews long-press-only
   (hover gated to real mice), on-screen pass-turn button. Desktop unchanged.
-- **▶ SOS FULL-SET scope: 269/271 authored (99%, 268 faithful · 1 tracked-partial), 864 mtg-core green (2026-07-06,
-  sos-cards-20). ENDGAME — 2 unauthored + 1 partial left.** Cleared 3 partials + shipped 2 new cards + 2 general engine extensions.
+- **✅ SOS FULL-SET COMPLETE: 271/271 authored · 271 fully-faithful · 0 tracked-partials · 0 Native hatches, 871 mtg-core
+  green (2026-07-06, sos-cards-21 finale).** Scryfall-diff verified vs. `set_code='sos'`. Final 3: Resonating Lute
+  (granted-mana subsystem — `StaticContribution::GrantTapMana` + `chars::granted_tap_mana` + per-tap-count payment),
+  Petrified Hamlet (ETB name-choice reusing `ChooseOption{NameCard}` + `Object.chosen_name` + `CardFilter::NamedAsChooser`
+  gate/grant), Nita ab-2 rider (`Effect::ExileTargetThenMayCast`: cross-player exile-cast + any-type-mana collapse +
+  exile-on-leave). Auto-pay-inert (option-B, faithful-not-trainable) roster + divergence notes in `docs/plans/SOS_CARDS.md`.
+  Prior (sos-cards-20): 269/271, 864 green — cleared 3 partials + shipped 2 new cards + 2 general engine extensions.
   **Subsystem A (layer-4 subtype changes) DONE**: new `StaticContribution::AddSubtype`/`SetCreatureSubtypes` + general
   `Effect::Becomes` → Fractalize + Great Hall (`{5}` land animation). Also: granted cast-triggers now fire
   (`queue_watching_spellcast_triggers` scans GrantAbility templates), `Condition::SelfIsCreature`, `Player.skip_next_turns` +
