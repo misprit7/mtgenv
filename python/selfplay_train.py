@@ -205,29 +205,29 @@ def train_selfplay(deck="demo", timesteps=120_000, n_envs=8, pool_dir=DEFAULT_PO
 
     from mtgenv_gym.tracked_stats import TrackedStatsCallback
     from mtgenv_gym.tb_meta import GameLengthCallback, RunMetadataCallback
+    from mtgenv_gym.evalkit import EvalkitCallback
 
     config = dict(deck=deck, timesteps=timesteps, n_envs=n_envs, seed=seed,
                   shaping_coef0=shaping_coef, shaping_anneal_frac=(0.6 if shaping_coef > 0 else None),
                   learning_rate="3e-4 (SB3 default)", n_steps=256, batch_size=256, gamma=0.999,
                   ent_coef=0.01, pool_every=pool_every, eval_every=eval_every, max_pool=12,
                   p_random=0.2, vec_env="BatchedSelfPlayVecEnv")
+    rname = run_name or f"{deck}-{timesteps // 1000}k"
     callbacks = [
         PoolCheckpoint(pool_dir, pool_every, n_envs, max_pool=12, verbose=verbose),
-        SelfPlayEval(deck, ref_path, eval_every, n_envs, verbose=verbose),
-        # %-trained ladder: current policy vs its own 10/25/50/75%-of-budget snapshots (non-saturating
-        # self-relative progress). Historically defined but NOT added here — only export_replays.py
-        # wired it — so plain `selfplay_train` runs logged no `ladder/*`. Wired into the default set now.
-        LadderEval(deck, timesteps, eval_every, n_envs, save_dir=ladder_dir, n_games=40, verbose=verbose),
+        # evalkit's drop-in eval hook unifies the three legacy eval callbacks (SelfPlayEval +
+        # LadderEval + ReplayCheckpoint) behind the algorithm-agnostic Arena — tag-set-identical:
+        # selfplay/winrate_vs_random + _vs_initial (+ the new _sampled variants), the %-trained
+        # 10/25/50/75% ladder (same seed bases), and periodic greedy self-play replays
+        # (replay_every=0 disables). Behaviour stats (stats/*) + game length (game/*) stay owned by
+        # TrackedStats/GameLength on the training rollout stream (no double-logging here).
+        EvalkitCallback(deck, total_timesteps=timesteps, eval_freq=eval_every, n_envs=n_envs,
+                        ref_path=ref_path, ladder_dir=ladder_dir, n_games=40,
+                        replay_every=replay_every, run_name=rname, verbose=verbose),
         TrackedStatsCallback(),  # action-rate summary stats → stats/* (#68)
         GameLengthCallback(),    # game/turns_mean + end-reason mix (batched env bypasses Monitor)
         RunMetadataCallback(config, notes=notes),  # run/notes text + Custom Scalars dashboard
     ]
-    if replay_every > 0:
-        from mtgenv_gym.replays import ReplayCheckpoint
-
-        rname = run_name or f"{deck}-{timesteps // 1000}k"
-        callbacks.append(ReplayCheckpoint(deck, replay_every, n_envs, run_name=rname,
-                                          deterministic=True, verbose=verbose))
     if shaping_coef > 0:
         from mtgenv_gym.batched_selfplay import ShapingAnneal
 

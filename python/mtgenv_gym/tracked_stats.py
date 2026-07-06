@@ -22,7 +22,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable, Iterable
 
-from stable_baselines3.common.callbacks import BaseCallback
+try:  # sb3 is needed only for TrackedStatsCallback; StatDef/StatAccumulator/REGISTRY are sb3-free so
+    from stable_baselines3.common.callbacks import BaseCallback  # this module imports cleanly in an
+except Exception:  # isolated eval venv (e.g. LightZero) that reuses the shared stat definitions.
+    BaseCallback = object
 
 # A per-decision record is a flat dict {field: float}. A stat maps it to (numerator, denominator)
 # deltas; a field absent from this decision contributes 0 (``.get(..., 0.0)``).
