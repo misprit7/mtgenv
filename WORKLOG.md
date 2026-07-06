@@ -3,6 +3,21 @@
 Short, dated entries for future-agent consumption. Newest first. One line or a few bullets
 per unit of meaningful progress. Keep it terse — detail lives in `docs/` and git history.
 
+## 2026-07-06 (SOS bonus sheet — Mystical Archive `soa`, 65 cards)
+
+- **New directive:** SOS *limited* = the 271 main set (COMPLETE) **+ the bonus sheet** = Scryfall set
+  **`soa`** (Secrets of Strixhaven Mystical Archive), **65 distinct booster-legal cards**. Full per-card
+  triage in `docs/plans/SOS_CARDS.md` ★ BONUS SHEET. Reprints live in their first-printing folders;
+  bonus grp_id block = 600+.
+- **39/65 authored** (real-path tested, 925 mtg-core green, whole workspace builds). New engine caps (all
+  additive, card-agnostic): `CardFilter::PowerAtLeast/ToughnessAtLeast`, `Effect::Scry`,
+  `Effect::ReturnSpellToHand`, `Effect::ExileTopForPlay` (multi-card impulse), Clue token def,
+  search→shuffle→place (tutor-to-top). Zero-cap composites incl. storm cards, Bring to Light (converge
+  search+free-cast), Jeska's Will, Subterranean Tremors.
+- **Remaining 26** need moderate leaf caps (Glimpse/Berserk/Crackle/Expressive Iteration/Culling
+  Ritual/Ad Nauseam/Veil of Summer) or lead sign-off (pay-life/Phyrexian, alt-cast, token-identity, and
+  the C subsystems Overload/Spree/Roles/Protection/Infect/Suspend/Convoke/Redirect/Split-second).
+
 ## 2026-07-06 (evalkit — algorithm-agnostic eval/metrics/logging framework, gym/Python)
 
 - **`270b237` New `python/mtgenv_gym/evalkit/` package**: one eval+metrics+logging stack shared by every

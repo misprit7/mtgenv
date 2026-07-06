@@ -195,6 +195,14 @@ Cap-then-cards, `git log -S` before scoping any "absent" mechanic (some B caps m
     - **alt-cast (non-mana instead of mana cost)** (Daze "return an Island", Force of Will "pay 1 life + exile a blue card") — a `CastVariant::Alternative` gated on a payable non-mana cost.
     - **token-identity marker** (Sheoldred's Edict token/nontoken modes; also fixes the latent Lorehold-Charm "nontoken" note) — stamp created tokens with `Supertype::Token` or an `is_token` flag.
     - **C subsystems** (highest yield first): **Overload** (Cyclonic Rift, Winds of Abandon), **Spree** (Requisition Raid, Return the Favor), **Role tokens** (Monstrous Rage, Royal Treatment) = 2 each; then Protection-from (Akroma's Will), Infect (Triumph of the Hordes), Suspend (Living End), Convoke (Return to the Ranks), Redirect (Deflecting Palm), Split-second/can't-lose (Angel's Grace).
+- **sos-bonus-1 continued (2026-07-06): 39/65 authored, 925 mtg-core green, whole workspace builds.** Cleared the rest of the composable/clean-leaf-cap cards:
+  - `Effect::ReturnSpellToHand` (bounce a spell off the stack, not a counter) → **Reprieve**.
+  - **Prismatic Ending** (converge exile via `ManaValueExpr{max:ColorsSpent}` target bound, the sundering_archaic idiom — documents a target-restriction-vs-conditional divergence).
+  - **Bring to Light** (zero new cap: `Search`→exile with dynamic MV bound + `Optional{CastForFree{Searched(0)}}`).
+  - `Effect::ExileTopForPlay{who,count,window}` (multi-card impulse — `ExileForPlay` is single-card & staged so 3× in a Sequence all captured the same top) → **Jeska's Will** (both modes; `HandSize{ChosenTarget(0)}` mana + impulse 3).
+  - **★ REMAINING 26 (each needs a moderate cap OR lead sign-off):**
+    - *moderate leaf caps (1 card each, no sign-off but real work):* **Glimpse of Nature** (recurring-until-EOT cast trigger w/ generic actions — the delayed-trigger `YouCastSpell` path is hardcoded to copy-spell), **Berserk** (delayed destroy-if-attacked + "attacked this turn" + cast-timing), **Crackle with Power** (dynamic-count `up to X` targets), **Expressive Iteration** (3-way look-distribute), **Culling Ritual** (count-destroyed→mana + `ManaSpec` B/G subset choice), **Ad Nauseam** (player-controlled reveal/lose-life repeat loop, `Effect::Repeat` E5 unwired), **Veil of Summer** (qualified hexproof-from-colour + "spells can't be countered this turn" floating grant + opp-cast-colour-this-turn state).
+    - *sign-off-gated:* Dismember/Bitter Triumph (pay-life/Phyrexian), Daze/Force of Will (alt-cast), Sheoldred's Edict (token-identity), + the 12 C-subsystem cards (Overload/Spree/Roles/Protection/Infect/Suspend/Convoke/Redirect/Split-second).
 
 ---
 
