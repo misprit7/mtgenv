@@ -2,8 +2,10 @@
 
 use crate::cards::CardDb;
 
+pub mod preordain;
 pub mod pyretic_ritual;
 
 pub fn register(db: &mut CardDb) {
+    preordain::register(db);
     pyretic_ritual::register(db);
 }

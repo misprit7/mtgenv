@@ -3098,6 +3098,8 @@ impl Engine {
             CardFilter::Multicolored => self.state.computed(*id).colors.len() >= 2,
             CardFilter::PowerAtMost(n) => self.state.computed(*id).power.unwrap_or(0) <= *n,
             CardFilter::ToughnessAtMost(n) => self.state.computed(*id).toughness.unwrap_or(0) <= *n,
+            CardFilter::PowerAtLeast(n) => self.state.computed(*id).power.unwrap_or(0) >= *n,
+            CardFilter::ToughnessAtLeast(n) => self.state.computed(*id).toughness.unwrap_or(0) >= *n,
             CardFilter::Supertype(s) => o.chars.supertypes.contains(s),
             // "target attacking creature" (Living History) — matches a current declared attacker.
             CardFilter::Attacking => {
@@ -4913,6 +4915,8 @@ impl Engine {
             CardFilter::Multicolored => cc.colors.len() >= 2,
             CardFilter::PowerAtMost(n) => cc.power.unwrap_or(0) <= *n,
             CardFilter::ToughnessAtMost(n) => cc.toughness.unwrap_or(0) <= *n,
+            CardFilter::PowerAtLeast(n) => cc.power.unwrap_or(0) >= *n,
+            CardFilter::ToughnessAtLeast(n) => cc.toughness.unwrap_or(0) >= *n,
             // "a creature YOU control" (CR 109.5) — the dead creature's last controller vs the
             // watcher's controller (or an opponent of it).
             CardFilter::ControlledBy(pref) => {

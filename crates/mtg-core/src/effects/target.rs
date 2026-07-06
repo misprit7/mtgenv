@@ -112,6 +112,11 @@ pub enum CardFilter {
     /// Computed toughness at most `n` (CR — "with toughness 1 or less"). Pairs with `PowerAtMost`
     /// under `AnyOf` for "power or toughness N or less" (Arnyn's dies-trigger filter).
     ToughnessAtMost(i32),
+    /// Computed power at least `n` (CR — "creature with power 4 or greater"). Pairs with
+    /// `ToughnessAtLeast` under `AnyOf` for "power or toughness N or greater" (Repel Calamity).
+    PowerAtLeast(i32),
+    /// Computed toughness at least `n` (CR — "creature with toughness 4 or greater").
+    ToughnessAtLeast(i32),
     /// Controlled by the named player.
     ControlledBy(PlayerRef),
     Tapped,

@@ -123,6 +123,12 @@ pub enum Effect {
     Surveil {
         count: ValueExpr,
     },
+    /// Scry N (CR 701.17): look at the top `count` cards of your library, then put any number of them
+    /// on the **bottom** of your library and the rest back on top in any order. The scry twin of
+    /// [`Surveil`] — same controller decision, but the chosen cards go to the bottom, not the graveyard.
+    Scry {
+        count: ValueExpr,
+    },
     /// Flip `coins` coins on the engine's seeded RNG; `who` skips their next (number of heads) turns
     /// (CR 720). Ral Zarek, Guest Lecturer's `−7` ("Flip five coins. Target opponent skips their next
     /// X turns, where X is the number of coins that came up heads"). Reads/advances `state.rng`, so it

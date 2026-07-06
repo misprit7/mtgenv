@@ -867,6 +867,15 @@ impl EngineCore {
                 self.interpret_surveil(player, n);
                 true
             }
+            // Scry N (CR 701.17): look at the top N, put any number on the bottom, keep the rest on
+            // top. Imperative (asks which to bottom). Flush first.
+            Effect::Scry { count } => {
+                self.flush_pending(wb);
+                let player = ctx.controller.unwrap_or(PlayerId(0));
+                let n = self.eval_value(count, ctx).max(0) as usize;
+                self.interpret_scry(player, n);
+                true
+            }
             // Ral Zarek −7: flip `coins` coins on the seeded RNG; `who` skips that many of their next
             // turns (CR 720). Reads `state.rng`, so it's an imperative effect (flush first).
             Effect::FlipCoinsSkipNextTurns { who, coins } => {
@@ -1422,6 +1431,45 @@ impl EngineCore {
             let owner = self.state.object(card).owner;
             self.state.move_object(card, Zone::Graveyard, owner);
             self.broadcast(GameEvent::ObjectMoved { obj: card, to: Zone::Graveyard });
+        }
+    }
+
+    /// Scry N (CR 701.17): show `pl` the top `n` cards of their library (top-first), let them put any
+    /// number on the **bottom** of their library, and leave the rest on top. The scry twin of
+    /// [`Self::interpret_surveil`] — the same `ScryStage` decision, but the chosen cards go to the
+    /// bottom (front of the vec, since the top is the tail) instead of the graveyard.
+    fn interpret_scry(&mut self, pl: PlayerId, n: usize) {
+        let lib = &self.state.player(pl).library;
+        let count = n.min(lib.len());
+        if count == 0 {
+            return;
+        }
+        let top: Vec<ObjId> = lib.iter().rev().take(count).copied().collect();
+        let req = DecisionRequest::SelectCards {
+            reason: SelectReason::ScryStage,
+            from: top.clone(),
+            min: 0,
+            max: count as u32,
+            description: "Scry".into(),
+        };
+        let mut seen = std::collections::BTreeSet::new();
+        let to_bottom: Vec<ObjId> = match self.ask(pl, &req) {
+            DecisionResponse::Indices(idxs) => idxs
+                .iter()
+                .filter_map(|&i| top.get(i as usize).copied())
+                .filter(|o| seen.insert(*o))
+                .collect(),
+            _ => Vec::new(),
+        };
+        if to_bottom.is_empty() {
+            return;
+        }
+        // Bottom = front of the vec (top is the tail). Pull the chosen cards out, then re-insert them
+        // at the front in reverse so the first-chosen ends up deepest (any order is legal for scry).
+        let libv = &mut self.state.player_mut(pl).library;
+        libv.retain(|o| !to_bottom.contains(o));
+        for &c in to_bottom.iter().rev() {
+            libv.insert(0, c);
         }
     }
 
@@ -2516,6 +2564,7 @@ impl EngineCore {
             | Effect::MayPayCost { .. }
             | Effect::Sacrifice { .. }
             | Effect::Surveil { .. }
+            | Effect::Scry { .. }
             | Effect::FlipCoinsSkipNextTurns { .. }
             | Effect::LookAndPick { .. }
             | Effect::LookPickCreaturesLands { .. }
@@ -3561,6 +3610,8 @@ impl EngineCore {
                 .is_some_and(|mc| mc.x > 0),
             CardFilter::PowerAtMost(n) => cc.power.unwrap_or(0) <= *n,
             CardFilter::ToughnessAtMost(n) => cc.toughness.unwrap_or(0) <= *n,
+            CardFilter::PowerAtLeast(n) => cc.power.unwrap_or(0) >= *n,
+            CardFilter::ToughnessAtLeast(n) => cc.toughness.unwrap_or(0) >= *n,
             CardFilter::ManaValue { min, max } => {
                 let mv = self.state.objects.get(&id).map_or(0, |o| o.chars.mana_value());
                 min.is_none_or(|lo| mv >= lo) && max.is_none_or(|hi| mv <= hi)
