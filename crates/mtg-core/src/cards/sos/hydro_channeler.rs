@@ -4,16 +4,14 @@
 //!   "{T}: Add {U}. Spend this mana only to cast an instant or sorcery spell.
 //!    {1}, {T}: Add one mana of any color. Spend this mana only to cast an instant or sorcery spell."
 //!
-//! **Tracked-partial** (`.incomplete()`): the first ability — `{T}: Add {U}`, spendable only on an
-//! instant/sorcery spell — is fully implemented and is the first consumer of the **S13 restricted-mana
-//! cap** (`ManaSpec.restriction = InstantSorceryOnly` → the pool's `restricted` bucket; the payment
-//! path counts it toward an I/S cast only, never a creature spell or an ability cost).
-//!
-//! The **second** ability (`{1}, {T}: Add one mana of any color`, restricted) is **deferred**: it's a
-//! mana ability with a *mana activation cost*, which the auto-pay source model doesn't yet handle
-//! (`mana_sources` treats a source as free-to-tap). Authoring it naively would make the engine offer
-//! its rainbow mana for free — so it's omitted here rather than shipped broken. Needs a
-//! mana-ability-with-activation-cost cap (also blocks filter lands generally).
+//! **Fully implemented.** Both restricted-mana abilities are authored:
+//! - `{T}: Add {U}` — the first consumer of the restricted-mana cap (`ManaSpec.restriction =
+//!   InstantSorceryOnly` → the pool's `restricted` bucket; counted toward an I/S cast only).
+//! - `{1}, {T}: Add one mana of any color` (I/S-only) — a **cost-bearing** mana ability (the `{1}`).
+//!   Per the engine's established convention it functions via the manual mana path (which pays the
+//!   `{1}` through `pay_cost` and floats the rainbow mana) and is **auto-pay-inert** for agent seats —
+//!   the same "option-B" treatment as Great Hall's pay-life and Treasures, pending the transactional-
+//!   cast payment work (WHITEBOARD_MODEL §2.6). Faithful as card data.
 
 use crate::basics::Color;
 use crate::cards::{creature, mana_cost, CardDb};
@@ -35,24 +33,41 @@ pub fn register(db: &mut CardDb) {
         mana_cost(1, &[(Color::Blue, 1)]),
         1,
         3,
-        vec![Ability::Activated {
-            cost: Cost { mana: None, components: vec![CostComponent::TapSelf] },
-            effect: Effect::AddMana {
-                who: PlayerRef::Controller,
-                mana: ManaSpec {
-                    produces: vec![(Color::Blue, ValueExpr::Fixed(1))],
-                    any_color: None,
-                    // "Spend this mana only to cast an instant or sorcery spell." (CR 106.6)
-                    restriction: Some(SpendRestriction::InstantSorceryOnly),
+        vec![
+            // "{T}: Add {U}. Spend this mana only to cast an instant or sorcery spell." (CR 106.6)
+            Ability::Activated {
+                cost: Cost { mana: None, components: vec![CostComponent::TapSelf] },
+                effect: Effect::AddMana {
+                    who: PlayerRef::Controller,
+                    mana: ManaSpec {
+                        produces: vec![(Color::Blue, ValueExpr::Fixed(1))],
+                        any_color: None,
+                        restriction: Some(SpendRestriction::InstantSorceryOnly),
+                    },
                 },
+                timing: Timing::Instant,
+                restriction: None,
+                is_mana: true,
             },
-            timing: Timing::Instant,
-            restriction: None,
-            is_mana: true,
-        }],
+            // "{1}, {T}: Add one mana of any color. (I/S-only.)" — a cost-bearing mana ability (option-B).
+            Ability::Activated {
+                cost: Cost { mana: Some(mana_cost(1, &[])), components: vec![CostComponent::TapSelf] },
+                effect: Effect::AddMana {
+                    who: PlayerRef::Controller,
+                    mana: ManaSpec {
+                        produces: vec![],
+                        any_color: Some(ValueExpr::Fixed(1)),
+                        restriction: Some(SpendRestriction::InstantSorceryOnly),
+                    },
+                },
+                timing: Timing::Instant,
+                restriction: None,
+                is_mana: true,
+            },
+        ],
     );
     def.text = "{T}: Add {U}. Spend this mana only to cast an instant or sorcery spell.\n{1}, {T}: Add one mana of any color. Spend this mana only to cast an instant or sorcery spell.".to_string();
-    db.insert(def.incomplete());
+    db.insert(def);
 }
 
 #[cfg(test)]
@@ -67,12 +82,15 @@ mod tests {
         let def = db.get(HYDRO_CHANNELER).unwrap();
         assert_eq!(def.chars.colors, vec![Color::Blue]);
         assert_eq!(def.chars.mana_value(), 2);
-        // Tracked-partial: the second (mana-cost) ability is deferred.
-        assert!(!def.fully_implemented);
-        // The one shipped ability is a restricted-mana `{T}: Add {U}`.
-        let restricted = matches!(&def.abilities[0], Ability::Activated { effect: Effect::AddMana { mana, .. }, is_mana: true, .. }
-            if mana.restriction == Some(SpendRestriction::InstantSorceryOnly));
-        assert!(restricted, "ability 0 adds instant/sorcery-restricted mana");
+        assert!(def.fully_implemented, "both restricted-mana abilities authored");
+        // Both abilities add instant/sorcery-restricted mana.
+        for i in 0..2 {
+            let restricted = matches!(&def.abilities[i], Ability::Activated { effect: Effect::AddMana { mana, .. }, is_mana: true, .. }
+                if mana.restriction == Some(SpendRestriction::InstantSorceryOnly));
+            assert!(restricted, "ability {i} adds instant/sorcery-restricted mana");
+        }
+        // The second ability is cost-bearing ({1},{T}).
+        assert!(matches!(&def.abilities[1], Ability::Activated { cost, .. } if cost.mana.is_some()));
     }
 
     #[test]
@@ -101,6 +119,39 @@ mod tests {
                                 ),
                             ],
                             any_color: None,
+                            restriction: Some(
+                                InstantSorceryOnly,
+                            ),
+                        },
+                    },
+                    timing: Instant,
+                    restriction: None,
+                    is_mana: true,
+                },
+                Activated {
+                    cost: Cost {
+                        mana: Some(
+                            ManaCost {
+                                generic: 1,
+                                colored: {},
+                                x: 0,
+                                hybrid: [],
+                                mono_hybrid: [],
+                            },
+                        ),
+                        components: [
+                            TapSelf,
+                        ],
+                    },
+                    effect: AddMana {
+                        who: Controller,
+                        mana: ManaSpec {
+                            produces: [],
+                            any_color: Some(
+                                Fixed(
+                                    1,
+                                ),
+                            ),
                             restriction: Some(
                                 InstantSorceryOnly,
                             ),
