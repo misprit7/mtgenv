@@ -625,6 +625,41 @@ fn spend_from_pool(state: &mut GameState, p: PlayerId, cost: &ManaCost, allow_re
         }
         take_color(&mut state.player_mut(p).mana_pool.amounts, *color, left);
     }
+    // Hybrid pips (CR 107.4e): each `{c1/c2}` cost one mana of either colour — deduct it, c1
+    // preferred to mirror `select_payment`. (Omitting these leaked one floating mana per hybrid
+    // pip: the "cast 6 mana off 5 lands" bug.)
+    for &(c1, c2) in &cost.hybrid {
+        let mut left = 1u32;
+        for color in [c1, c2] {
+            if left == 0 {
+                break;
+            }
+            if allow_restricted {
+                left = take_color(&mut state.player_mut(p).mana_pool.restricted, color, left);
+            }
+            if left > 0 {
+                left = take_color(&mut state.player_mut(p).mana_pool.amounts, color, left);
+            }
+        }
+    }
+    // Monocolour hybrid pips (CR 107.4f): `{n/c}` cost one `c`, else `n` generic — colour-first,
+    // mirroring `select_payment`.
+    for &(n, col) in &cost.mono_hybrid {
+        let mut left = 1u32;
+        if allow_restricted {
+            left = take_color(&mut state.player_mut(p).mana_pool.restricted, col, left);
+        }
+        if left > 0 {
+            left = take_color(&mut state.player_mut(p).mana_pool.amounts, col, left);
+        }
+        if left > 0 {
+            let mut gen_left = n;
+            if allow_restricted {
+                gen_left = take_any(&mut state.player_mut(p).mana_pool.restricted, gen_left);
+            }
+            take_any(&mut state.player_mut(p).mana_pool.amounts, gen_left);
+        }
+    }
     let mut generic_left = cost.generic;
     if allow_restricted {
         generic_left = take_any(&mut state.player_mut(p).mana_pool.restricted, generic_left);

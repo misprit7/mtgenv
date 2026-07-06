@@ -141,3 +141,66 @@ mod tests {
         assert_eq!(run(false), 0, "no creature died → intervening-if fails → no draw");
     }
 }
+
+#[cfg(test)]
+mod repro_tests {
+    use super::*;
+    use crate::agent::{CastVariant, RandomAgent};
+    use crate::basics::{CardType, Phase, Zone};
+    use crate::cards::grp;
+    use crate::ids::PlayerId;
+    use crate::priority::Engine;
+    use crate::state::GameState;
+    use std::sync::Arc;
+
+    // User bug report: Essenceknit Scholar ({B}{B/G}{G}) AND Foolish Fate ({2}{B}) cast in one
+    // turn off 5 lands (6 mana total). Repro: 2 Swamp + 3 Forest, cast Scholar, count taps and
+    // check whether Foolish Fate is still payable.
+    #[test]
+    fn five_lands_cannot_cast_both_scholar_and_foolish_fate() {
+        let mut db = crate::cards::starter_db();
+        register(&mut db);
+        crate::cards::sos::foolish_fate::register(&mut db);
+        let mut state = GameState::new(2, 7);
+        state.set_card_db(Arc::new(db));
+        let scholar = {
+            let c = state.card_db().get(ESSENCEKNIT_SCHOLAR).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, Zone::Hand)
+        };
+        let fate = {
+            let c = state.card_db().get(crate::cards::sos::foolish_fate::FOOLISH_FATE).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, Zone::Hand)
+        };
+        for _ in 0..2 {
+            let s = state.card_db().get(grp::SWAMP).unwrap().chars.clone();
+            state.add_card(PlayerId(0), s, Zone::Battlefield);
+        }
+        for _ in 0..3 {
+            let f = state.card_db().get(grp::FOREST).unwrap().chars.clone();
+            state.add_card(PlayerId(0), f, Zone::Battlefield);
+        }
+        // An opposing creature so Foolish Fate has a target.
+        let bear = state.card_db().get(grp::GRIZZLY_BEARS).unwrap().chars.clone();
+        state.add_card(PlayerId(1), bear, Zone::Battlefield);
+
+        let mut e = Engine::new(state, vec![Box::new(RandomAgent::new(0)), Box::new(RandomAgent::new(1))]);
+        e.state.phase = Phase::PrecombatMain;
+
+        e.cast_spell(PlayerId(0), scholar, CastVariant::Normal);
+        let tapped: usize = e.state.player(PlayerId(0)).battlefield.iter()
+            .filter(|&&o| { let x = e.state.object(o); x.status.tapped && x.chars.card_types.contains(&CardType::Land) })
+            .count();
+        assert_eq!(tapped, 3, "Scholar costs 3 — exactly 3 lands must be tapped, got {tapped}");
+        e.resolve_top();
+        assert!(
+            e.state.player(PlayerId(0)).mana_pool.amounts.is_empty(),
+            "no mana may float after an exact-cost hybrid cast: {:?}",
+            e.state.player(PlayerId(0)).mana_pool
+        );
+
+        // Now only 2 untapped lands remain (both Forests at best): {2}{B} must NOT be payable.
+        let cost = e.state.object(fate).chars.mana_cost.clone().unwrap();
+        let can = crate::mana::can_pay(&e.state, PlayerId(0), &cost);
+        assert!(!can, "Foolish Fate ({{2}}{{B}}) must NOT be payable off 2 untapped lands");
+    }
+}
