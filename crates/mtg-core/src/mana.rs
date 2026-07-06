@@ -12,39 +12,46 @@ use crate::basics::{Color, ManaCost};
 use crate::conditions;
 use crate::effects::ability::{Ability, EventPattern, Keyword, Restriction};
 use crate::effects::target::ManaSpec;
+use crate::effects::value::ValueExpr;
 use crate::effects::Effect;
 use crate::ids::{ObjId, PlayerId};
 use crate::state::GameState;
 use crate::subtypes::{LandType, Subtype};
 
-/// The untapped mana sources `p` controls: `(permanent, colours it can tap for right now)`.
-/// Colours come from two places, unioned: each source's `{T}`-cost IR mana abilities
-/// (`Ability::Activated{is_mana}`, condition-aware), and the **intrinsic** basic-land-type mana
-/// derived from the permanent's COMPUTED subtypes (CR 305.6 — see [`basic_land_type_color`]).
-fn mana_sources(state: &GameState, p: PlayerId) -> Vec<(ObjId, Vec<Color>)> {
+/// The untapped mana sources `p` controls: `(permanent, colours it can tap for right now, mana per
+/// tap)`. Colours come from three places, unioned: each source's `{T}`-cost IR mana abilities
+/// (`Ability::Activated{is_mana}`, condition-aware), the **intrinsic** basic-land-type mana derived
+/// from the permanent's COMPUTED subtypes (CR 305.6 — see [`basic_land_type_color`]), and any
+/// **granted** tap-mana ability (Resonating Lute — [`crate::chars::granted_tap_mana`]). The third
+/// element is how much mana one tap yields (CR — "add two mana"; 1 for a normal source).
+fn mana_sources(state: &GameState, p: PlayerId) -> Vec<(ObjId, Vec<Color>, u32)> {
     // Auto-pay: only simple `{T}` sources (cost-bearing mana abilities are excluded — the auto-payer
     // can't pay a sacrifice/mana activation cost, so a Treasure never enters the auto-pay pool).
     mana_sources_kind(state, p, false, false)
 }
 
 /// The untapped mana sources `p` controls that produce **restricted** mana (CR 106.6, "spend only to
-/// cast instant and sorcery spells" — SoS Hydro-Channeler). Intrinsic basic-land-type mana is never
-/// restricted, so only authored `AddMana` abilities carrying a `SpendRestriction` contribute here.
-fn restricted_mana_sources(state: &GameState, p: PlayerId) -> Vec<(ObjId, Vec<Color>)> {
+/// cast instant and sorcery spells" — SoS Hydro-Channeler, Resonating Lute). Intrinsic basic-land-type
+/// mana is never restricted, so only authored/granted `AddMana` abilities carrying a `SpendRestriction`
+/// contribute here.
+fn restricted_mana_sources(state: &GameState, p: PlayerId) -> Vec<(ObjId, Vec<Color>, u32)> {
     mana_sources_kind(state, p, true, false)
 }
 
 /// Shared source enumeration. `restricted == false` yields each source's *unrestricted* colours
-/// (unrestricted `AddMana` abilities + intrinsic basic-land-type mana); `restricted == true` yields
-/// only colours from `AddMana` abilities carrying a `SpendRestriction` (no intrinsic mana).
-/// `include_cost_bearing == false` (the auto-pay path) skips mana abilities with a non-`{T}` cost
-/// (Treasure's `{T},Sacrifice`) — those are usable only via manual activation (CR 605.3a).
+/// (unrestricted `AddMana` abilities + intrinsic basic-land-type mana + unrestricted granted
+/// tap-mana); `restricted == true` yields only colours from `AddMana`/granted abilities carrying a
+/// `SpendRestriction` (no intrinsic mana). `include_cost_bearing == false` (the auto-pay path) skips
+/// printed mana abilities with a non-`{T}` cost (Treasure's `{T},Sacrifice`) — usable only via manual
+/// activation (CR 605.3a). Granted tap-mana abilities are plain `{T}`, so they're always included.
+/// The `u32` is the representative mana-per-tap for this pass (the max produced count among the
+/// abilities that contributed; intrinsic mana is 1) — see [`mana_spec_count`].
 fn mana_sources_kind(
     state: &GameState,
     p: PlayerId,
     restricted: bool,
     include_cost_bearing: bool,
-) -> Vec<(ObjId, Vec<Color>)> {
+) -> Vec<(ObjId, Vec<Color>, u32)> {
     state
         .player(p)
         .battlefield
@@ -62,25 +69,42 @@ fn mana_sources_kind(
                 return None;
             }
             let def = state.card_db.get(o.chars.grp_id)?;
-            let mut colors = producible_colors(state, def, p, restricted, include_cost_bearing);
+            let (mut colors, mut count) =
+                producible_mana(state, def, p, restricted, include_cost_bearing);
+            // Granted tap-mana abilities (CR 613.1f — Resonating Lute "Lands you control have '{T}: Add
+            // two mana of any one colour…'"). These have no home in `ComputedChars`, so read them
+            // directly; fold in each grant whose spend-restriction matches this pass. A granted ability
+            // is a plain `{T}` (no extra cost) so `include_cost_bearing` doesn't gate it.
+            for mana in crate::chars::granted_tap_mana(state, id) {
+                if mana.restriction.is_some() != restricted {
+                    continue;
+                }
+                for c in mana_spec_colors(&mana) {
+                    if !colors.contains(&c) {
+                        colors.push(c);
+                    }
+                }
+                count = count.max(mana_spec_count(&mana));
+            }
             // CR 305.6: any land with a basic land type has an intrinsic `{T}: Add <colour>`
             // ability per type, NOT authored on the card. We read the COMPUTED subtypes
             // (post-layer-system) so type-changing effects flow through for free — an animated
             // land keeps its mana, Spreading Seas / Urborg-style subtype changes are honoured.
-            // Intrinsic mana is always unrestricted.
+            // Intrinsic mana is always unrestricted, one per tap.
             if !restricted {
                 for st in &computed.subtypes {
                     if let Some(c) = basic_land_type_color(st) {
                         if !colors.contains(&c) {
                             colors.push(c);
                         }
+                        count = count.max(1);
                     }
                 }
             }
             if colors.is_empty() {
                 None
             } else {
-                Some((id, colors))
+                Some((id, colors, count.max(1)))
             }
         })
         .collect()
@@ -101,22 +125,18 @@ fn basic_land_type_color(subtype: &Subtype) -> Option<Color> {
     }
 }
 
-/// The colours `def` can currently produce for controller `p` — from its IR mana abilities whose
-/// activation restriction/condition holds. (Intrinsic basic-land-type mana is added by the caller
-/// from the permanent's computed subtypes; see [`mana_sources`].)
-fn producible_colors(
+/// The colours `def` can currently produce for controller `p` (unioned) and the max mana its
+/// abilities yield per tap — from its IR mana abilities whose activation restriction/condition holds.
+/// (Intrinsic basic-land-type mana and granted tap-mana are added by the caller; see [`mana_sources`].)
+fn producible_mana(
     state: &GameState,
     def: &crate::cards::CardDef,
     p: PlayerId,
     restricted: bool,
     include_cost_bearing: bool,
-) -> Vec<Color> {
+) -> (Vec<Color>, u32) {
     let mut colors: Vec<Color> = Vec::new();
-    let push = |c: Color, v: &mut Vec<Color>| {
-        if !v.contains(&c) {
-            v.push(c);
-        }
-    };
+    let mut count: u32 = 0;
     for ab in &def.abilities {
         if let Ability::Activated {
             cost,
@@ -141,12 +161,30 @@ fn producible_colors(
                 .is_none_or(|r| restriction_holds(state, r, p));
             if legal {
                 for c in mana_spec_colors(mana) {
-                    push(c, &mut colors);
+                    if !colors.contains(&c) {
+                        colors.push(c);
+                    }
                 }
+                count = count.max(mana_spec_count(mana));
             }
         }
     }
-    colors
+    (colors, count)
+}
+
+/// How many mana a `ManaSpec` yields per tap (CR — Resonating Lute "add **two** mana of any one
+/// colour"). `any_color` carries the count directly; otherwise it's the sum of the per-colour
+/// produced amounts. Amounts are `Fixed` for every tap mana ability in the pool; a non-constant
+/// amount reads as 1 (conservative — no tap mana ability produces a dynamic count today).
+fn mana_spec_count(mana: &ManaSpec) -> u32 {
+    let fixed = |v: &ValueExpr| match v {
+        ValueExpr::Fixed(n) => (*n).max(0) as u32,
+        _ => 1,
+    };
+    if let Some(n) = &mana.any_color {
+        return fixed(n).max(1);
+    }
+    mana.produces.iter().map(|(_, v)| fixed(v)).sum::<u32>().max(1)
 }
 
 /// Which activation restrictions gate a mana ability's availability (CR 605). `OncePerTurn`
@@ -181,6 +219,10 @@ struct ManaUnit {
     /// Spend-restricted mana (CR 106.6) — from the pool's `restricted` bucket or a restricted source.
     /// Only offered as a payment unit when the cost being paid allows it (an instant/sorcery cast).
     restricted: bool,
+    /// How many mana this unit yields — i.e. how many pips it may cover, **all of one committed
+    /// colour** (CR — Resonating Lute's "two mana of any one colour"; 1 for a normal source). See
+    /// [`select_payment`], which uses a unit up to `count` times and locks it to a single colour.
+    count: u32,
 }
 
 /// The colours every `TapCreatureForMana` (Badgermole-type) ability on `p`'s battlefield grants per
@@ -227,37 +269,37 @@ fn payment_units(
     // Floating pool mana — spent first (CR 106.4: it stays in the pool until end of step).
     for (color, n) in &state.player(p).mana_pool.amounts {
         for _ in 0..*n {
-            units.push(ManaUnit { source: None, colors: vec![*color], bonus: false, restricted: false });
+            units.push(ManaUnit { source: None, colors: vec![*color], bonus: false, restricted: false, count: 1 });
         }
     }
     // Floating RESTRICTED pool mana (only when the cost allows it).
     if allow_restricted {
         for (color, n) in &state.player(p).mana_pool.restricted {
             for _ in 0..*n {
-                units.push(ManaUnit { source: None, colors: vec![*color], bonus: false, restricted: true });
+                units.push(ManaUnit { source: None, colors: vec![*color], bonus: false, restricted: true, count: 1 });
             }
         }
     }
     let sources = mana_sources(state, p);
     let bonus_colors = tap_bonus_colors(state, p);
-    for (id, colors) in &sources {
+    for (id, colors, count) in &sources {
         if !excluded.contains(id) {
-            units.push(ManaUnit { source: Some(*id), colors: colors.clone(), bonus: false, restricted: false });
+            units.push(ManaUnit { source: Some(*id), colors: colors.clone(), bonus: false, restricted: false, count: *count });
         }
     }
-    // Restricted mana sources (Hydro-Channeler) — tappable only for an instant/sorcery cast.
+    // Restricted mana sources (Hydro-Channeler, Resonating Lute) — tappable only for an I/S cast.
     if allow_restricted {
-        for (id, colors) in restricted_mana_sources(state, p) {
+        for (id, colors, count) in restricted_mana_sources(state, p) {
             if !excluded.contains(&id) {
-                units.push(ManaUnit { source: Some(id), colors, bonus: false, restricted: true });
+                units.push(ManaUnit { source: Some(id), colors, bonus: false, restricted: true, count });
             }
         }
     }
     if !bonus_colors.is_empty() {
-        for (id, _) in &sources {
+        for (id, _, _) in &sources {
             if !excluded.contains(id) && state.computed(*id).is_creature() {
                 for c in &bonus_colors {
-                    units.push(ManaUnit { source: Some(*id), colors: vec![*c], bonus: true, restricted: false });
+                    units.push(ManaUnit { source: Some(*id), colors: vec![*c], bonus: true, restricted: false, count: 1 });
                 }
             }
         }
@@ -265,85 +307,117 @@ fn payment_units(
     units
 }
 
+/// The mutable state of a payment plan-in-progress (see [`select_payment`]): each unit's remaining
+/// capacity (its `count`), its committed colour (a multi-mana unit locks to ONE colour, CR — "two
+/// mana of any one colour"), the set of sources already tapped (the one-tap-one-ability guard), and
+/// the pip→(unit, colour) assignments accumulated so far.
+struct Claim {
+    remaining: Vec<u32>,
+    committed: Vec<Option<Color>>,
+    used_source: std::collections::BTreeSet<ObjId>,
+    plan: Vec<(usize, Color)>,
+}
+
+impl Claim {
+    fn new(units: &[ManaUnit]) -> Self {
+        Claim {
+            remaining: units.iter().map(|u| u.count).collect(),
+            committed: vec![None; units.len()],
+            used_source: std::collections::BTreeSet::new(),
+            plan: Vec::new(),
+        }
+    }
+
+    /// Whether unit `i` can supply one more mana of `color` right now: it has capacity, produces the
+    /// colour, isn't already committed to a different colour, and — for a base (non-bonus) unit that
+    /// taps a source — that source isn't already tapped for a *different* mana ability (CR 605.3a).
+    fn can_claim(&self, units: &[ManaUnit], i: usize, color: Color) -> bool {
+        let u = &units[i];
+        self.remaining[i] > 0
+            && u.colors.contains(&color)
+            && self.committed[i].is_none_or(|c| c == color)
+            && match u.source {
+                Some(src) if !u.bonus => self.committed[i].is_some() || !self.used_source.contains(&src),
+                _ => true,
+            }
+    }
+
+    fn claim(&mut self, units: &[ManaUnit], i: usize, color: Color) {
+        self.remaining[i] -= 1;
+        self.committed[i] = Some(color);
+        if let (Some(src), false) = (units[i].source, units[i].bonus) {
+            self.used_source.insert(src);
+        }
+        self.plan.push((i, color));
+    }
+
+    /// Claim one mana of any colour for a generic pip (CR 202.1): the first usable unit, contributing
+    /// its committed colour if set, else its first producible colour. Returns false if none is usable.
+    fn claim_generic(&mut self, units: &[ManaUnit]) -> bool {
+        for i in 0..units.len() {
+            let color = self.committed[i].or_else(|| units[i].colors.first().copied());
+            if let Some(color) = color {
+                if self.can_claim(units, i, color) {
+                    self.claim(units, i, color);
+                    return true;
+                }
+            }
+        }
+        false
+    }
+}
+
 /// Greedily assign mana units to `cost`: coloured pips first (each from a unit producing that
-/// colour), then generic from any remaining unit. Returns the chosen units paired with the colour
-/// each contributes (so payment knows what to add to / spend from the pool), or `None` if unpayable.
+/// colour), then hybrid/mono-hybrid, then generic from any remaining unit. A unit may cover up to
+/// `count` pips, all of one committed colour (Resonating Lute's "two mana of any one colour"), and a
+/// source is tapped for at most one mana ability (the one-tap guard in [`Claim`]). Returns the pip
+/// assignments as `(unit, colour)` pairs (a unit index may repeat, once per pip it covers), or `None`
+/// if unpayable.
 fn select_payment(units: &[ManaUnit], cost: &ManaCost) -> Option<Vec<(usize, Color)>> {
-    let mut assigned: Vec<Option<Color>> = vec![None; units.len()];
+    let mut c = Claim::new(units);
     // Coloured requirements (CR 202.1): each pip needs a matching-colour unit.
     for (color, need) in &cost.colored {
-        let mut got = 0;
-        for (i, u) in units.iter().enumerate() {
-            if got == *need {
-                break;
-            }
-            if assigned[i].is_none() && u.colors.contains(color) {
-                assigned[i] = Some(*color);
-                got += 1;
-            }
-        }
-        if got < *need {
-            return None;
+        for _ in 0..*need {
+            let i = (0..units.len()).find(|&i| c.can_claim(units, i, *color))?;
+            c.claim(units, i, *color);
         }
     }
-    // Hybrid pips (CR 107.4e): each `{c1/c2}` is paid by a remaining unit that produces *either*
-    // colour (prefer `c1`). Done after fixed colour pips so those aren't starved.
+    // Hybrid pips (CR 107.4e): each `{c1/c2}` is paid by a unit producing *either* colour (prefer
+    // `c1`). Done after fixed colour pips so those aren't starved.
     for &(c1, c2) in &cost.hybrid {
-        let mut done = false;
-        for (i, u) in units.iter().enumerate() {
-            if assigned[i].is_none() && (u.colors.contains(&c1) || u.colors.contains(&c2)) {
-                assigned[i] = Some(if u.colors.contains(&c1) { c1 } else { c2 });
-                done = true;
-                break;
-            }
-        }
-        if !done {
-            return None;
-        }
+        let (i, color) = (0..units.len())
+            .find_map(|i| {
+                if c.can_claim(units, i, c1) {
+                    Some((i, c1))
+                } else if c.can_claim(units, i, c2) {
+                    Some((i, c2))
+                } else {
+                    None
+                }
+            })?;
+        c.claim(units, i, color);
     }
-    // Monocolour hybrid pips (CR 107.4f): each `{n/c}` is paid by ONE remaining unit producing `c`,
-    // else by `n` remaining units of any colour. Prefer the colour side (uses fewer units, so it
-    // never starves a later requirement). Done after the fixed/two-colour pips so those come first.
-    for &(n, c) in &cost.mono_hybrid {
-        if let Some(i) = units
-            .iter()
-            .enumerate()
-            .find(|&(i, u)| assigned[i].is_none() && u.colors.contains(&c))
-            .map(|(i, _)| i)
-        {
-            assigned[i] = Some(c);
+    // Monocolour hybrid pips (CR 107.4f): each `{n/c}` is paid by ONE unit producing `c`, else by `n`
+    // generic units. Prefer the colour side (uses fewer units, so it never starves a later
+    // requirement). Done after the fixed/two-colour pips so those come first.
+    for &(n, col) in &cost.mono_hybrid {
+        if let Some(i) = (0..units.len()).find(|&i| c.can_claim(units, i, col)) {
+            c.claim(units, i, col);
             continue;
         }
-        // Fall back to `n` generic units (each contributes its own colour, for Converge).
-        let mut got = 0;
-        for (i, u) in units.iter().enumerate() {
-            if got == n {
-                break;
-            }
-            if assigned[i].is_none() {
-                assigned[i] = Some(u.colors[0]);
-                got += 1;
+        for _ in 0..n {
+            if !c.claim_generic(units) {
+                return None;
             }
         }
-        if got < n {
+    }
+    // Generic: any remaining unit, contributing its committed/first colour (CR 202.1, generic = any).
+    for _ in 0..cost.generic {
+        if !c.claim_generic(units) {
             return None;
         }
     }
-    // Generic: any remaining unit, contributing its first colour (CR 202.1, generic = any mana).
-    let mut generic_left = cost.generic;
-    for (i, u) in units.iter().enumerate() {
-        if generic_left == 0 {
-            break;
-        }
-        if assigned[i].is_none() {
-            assigned[i] = Some(u.colors[0]);
-            generic_left -= 1;
-        }
-    }
-    if generic_left > 0 {
-        return None;
-    }
-    Some(assigned.iter().enumerate().filter_map(|(i, c)| c.map(|col| (i, col))).collect())
+    Some(c.plan)
 }
 
 /// Whether `p` can pay `cost` from floating mana + untapped sources (CR 118.3), counting the
@@ -375,10 +449,11 @@ pub fn can_pay_excluding(
 }
 
 /// The total mana `p` could put toward a cost right now — floating pool + every untapped source's
-/// base + each creature's TapCreatureForMana bonus. A loose upper bound for the `{X}` choice.
-/// (Excludes restricted mana — a conservative under-count; no `{X}` spell in the pool spends it.)
+/// base output (respecting a multi-mana source's per-tap count) + each creature's TapCreatureForMana
+/// bonus. A loose upper bound for the `{X}` choice. (Excludes restricted mana — a conservative
+/// under-count; no `{X}` spell in the pool spends it.)
 pub fn available_mana(state: &GameState, p: PlayerId) -> u32 {
-    payment_units(state, p, &[], false).len() as u32
+    payment_units(state, p, &[], false).iter().map(|u| u.count).sum()
 }
 
 /// The untapped mana sources `p` controls right now, each paired with the colours it can tap for —
@@ -387,28 +462,32 @@ pub fn available_mana(state: &GameState, p: PlayerId) -> u32 {
 /// floating pool mana is NOT included (it isn't produced by a tap).
 pub fn usable_mana_sources(state: &GameState, p: PlayerId) -> Vec<(ObjId, Vec<Color>)> {
     // The manual (UI) path INCLUDES cost-bearing mana abilities (a Treasure's `{T},Sacrifice`), which
-    // the auto-pay pool excludes — a human can choose to activate them (paying the extra cost).
-    mana_sources_kind(state, p, false, true)
+    // the auto-pay pool excludes — a human can choose to activate them (paying the extra cost). The
+    // per-tap count is dropped here (the UI offers colours; `produce_mana` re-derives the count).
+    mana_sources_kind(state, p, false, true).into_iter().map(|(id, cs, _)| (id, cs)).collect()
 }
 
-/// Manually activate `source`'s mana ability for one mana of `color` (CR 605.3 — a mana ability, no
-/// stack): tap it, add `color` to `p`'s pool, plus any `TapCreatureForMana` bonus when `source` is a
-/// creature (Badgermole, CR 605.1b). Returns false (changing nothing) if `source` isn't a current
-/// untapped usable mana source of `p` able to produce `color`. The caller floats this in the pool
-/// (CR 106.4) and spends it on the next cost — letting a human pick which sources fund a spell (#36).
+/// Manually activate `source`'s mana ability for `color` (CR 605.3 — a mana ability, no stack): tap
+/// it, add its full per-tap output of `color` to `p`'s pool (respecting a multi-mana source's count —
+/// Resonating Lute's "add two"), plus any `TapCreatureForMana` bonus when `source` is a creature
+/// (Badgermole, CR 605.1b). Returns false (changing nothing) if `source` isn't a current untapped
+/// usable *unrestricted* mana source of `p` able to produce `color`. The caller floats this in the
+/// pool (CR 106.4) and spends it on the next cost — letting a human pick which sources fund a spell
+/// (#36). (Restricted granted mana is auto-pay-only for now — see the module note on `produce_mana`.)
 pub fn produce_mana(state: &mut GameState, p: PlayerId, source: ObjId, color: Color) -> bool {
     use std::collections::BTreeMap;
     // Validate against the live source set so a stale/illegal request is a no-op (the engine only
-    // ever offers legal sources, but this keeps the primitive safe in isolation).
-    match usable_mana_sources(state, p).into_iter().find(|(id, _)| *id == source) {
-        Some((_, cs)) if cs.contains(&color) => {}
+    // ever offers legal sources, but this keeps the primitive safe in isolation). The count is this
+    // source's per-tap output for the requested colour (1 for a normal source).
+    let count = match mana_sources_kind(state, p, false, true).into_iter().find(|(id, _, _)| *id == source) {
+        Some((_, cs, n)) if cs.contains(&color) => n,
         _ => return false,
-    }
+    };
     if let Some(o) = state.objects.get_mut(&source) {
         o.status.tapped = true;
     }
     let mut additions: BTreeMap<Color, u32> = BTreeMap::new();
-    *additions.entry(color).or_insert(0) += 1;
+    *additions.entry(color).or_insert(0) += count;
     // Tapping a creature for mana fires every TapCreatureForMana bonus (CR 605.1b), exactly as the
     // auto-payer does — so manual taps and auto-pay agree on the Badgermole-style bonus.
     let bonus_colors = tap_bonus_colors(state, p);
@@ -454,26 +533,28 @@ pub fn auto_pay_ex(
     // The distinct colours of the mana this plan spends (CR 702.75 Converge).
     let colors_spent: Vec<Color> =
         chosen.iter().map(|&(_, c)| c).collect::<BTreeSet<Color>>().into_iter().collect();
-    // The colour the plan assigned each chosen BASE source-unit (so we add the right colour), and
-    // every source's base colours (to colour a creature tapped only for its bonus). Captured BEFORE
-    // tapping, since tapping removes the source from `mana_sources`.
-    let base_color_of: BTreeMap<ObjId, Color> = chosen
-        .iter()
-        .filter_map(|&(i, c)| {
-            let u = &units[i];
-            u.source.filter(|_| !u.bonus).map(|id| (id, c))
-        })
-        .collect();
-    let source_base_colors: BTreeMap<ObjId, Vec<Color>> = units
-        .iter()
-        .filter(|u| u.source.is_some() && !u.bonus)
-        .map(|u| (u.source.unwrap(), u.colors.clone()))
-        .collect();
-    // Sources whose chosen unit is restricted (their output funds the `restricted` bucket).
-    let restricted_taps: BTreeSet<ObjId> = chosen
-        .iter()
-        .filter_map(|&(i, _)| units[i].source.filter(|_| units[i].restricted))
-        .collect();
+    // Per tapped source, the chosen BASE unit's committed colour, FULL per-tap output count, and
+    // restricted flag (the one-tap-one-ability guard ⇒ at most one base unit per source is chosen).
+    // Captured BEFORE tapping, since tapping removes the source from `mana_sources`.
+    let mut base_plan: BTreeMap<ObjId, (Color, u32, bool)> = BTreeMap::new();
+    for &(i, c) in &chosen {
+        let u = &units[i];
+        if let Some(src) = u.source.filter(|_| !u.bonus) {
+            base_plan.entry(src).or_insert((c, u.count, u.restricted));
+        }
+    }
+    // Fallback for a creature tapped ONLY for its TapCreatureForMana bonus (its base mana is still
+    // produced): the source's first base unit's colour/count/restriction.
+    let mut base_fallback: BTreeMap<ObjId, (Color, u32, bool)> = BTreeMap::new();
+    for u in &units {
+        if let Some(src) = u.source.filter(|_| !u.bonus) {
+            base_fallback.entry(src).or_insert((
+                u.colors.first().copied().unwrap_or(Color::Colorless),
+                u.count,
+                u.restricted,
+            ));
+        }
+    }
     // Tap every distinct source backing a chosen produced unit.
     let taps: BTreeSet<ObjId> = chosen.iter().filter_map(|&(i, _)| units[i].source).collect();
     for &id in &taps {
@@ -481,23 +562,18 @@ pub fn auto_pay_ex(
             o.status.tapped = true;
         }
     }
-    // Add each tapped source's FULL real output to the pool: its base mana (in the colour the plan
-    // assigned it, else its first colour for a bonus-only tap), plus the bonus per creature tapped.
-    // A restricted source's base mana goes to the `restricted` bucket; bonus mana is unrestricted.
+    // Add each tapped source's FULL real output to the pool: its base mana (`count` × the committed
+    // colour, into the `restricted` bucket for a restricted ability, so surplus floats there — CR
+    // 106.4), plus the TapCreatureForMana bonus per creature tapped (always unrestricted).
     let bonus_colors = tap_bonus_colors(state, p);
     let mut additions: BTreeMap<Color, u32> = BTreeMap::new();
     let mut restricted_additions: BTreeMap<Color, u32> = BTreeMap::new();
     for &id in &taps {
-        let base = base_color_of
-            .get(&id)
-            .copied()
-            .or_else(|| source_base_colors.get(&id).and_then(|cs| cs.first().copied()));
-        if let Some(c) = base {
-            if restricted_taps.contains(&id) {
-                *restricted_additions.entry(c).or_insert(0) += 1;
-            } else {
-                *additions.entry(c).or_insert(0) += 1;
-            }
+        if let Some((color, count, restricted)) =
+            base_plan.get(&id).or_else(|| base_fallback.get(&id)).copied()
+        {
+            let bucket = if restricted { &mut restricted_additions } else { &mut additions };
+            *bucket.entry(color).or_insert(0) += count;
         }
         if !bonus_colors.is_empty() && state.computed(id).is_creature() {
             for c in &bonus_colors {

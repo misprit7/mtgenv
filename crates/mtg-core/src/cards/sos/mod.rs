@@ -192,6 +192,7 @@ pub mod rancorous_archaic;
 pub mod ral_zarek_guest_lecturer;
 pub mod root_manipulation;
 pub mod rubble_rouser;
+pub mod resonating_lute;
 pub mod restoration_seminar;
 pub mod run_behind;
 pub mod rearing_embermare;
@@ -457,6 +458,7 @@ pub fn register(db: &mut CardDb) {
     rancorous_archaic::register(db);
     ral_zarek_guest_lecturer::register(db);
     rubble_rouser::register(db);
+    resonating_lute::register(db);
     root_manipulation::register(db);
     restoration_seminar::register(db);
     run_behind::register(db);

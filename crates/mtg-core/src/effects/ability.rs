@@ -4,7 +4,7 @@
 //! continuous/static (which contribute to layers + qualifications).
 
 use super::condition::{Condition, Duration};
-use super::target::{CardFilter, SelectSpec};
+use super::target::{CardFilter, ManaSpec, SelectSpec};
 use super::value::ValueExpr;
 use super::Effect;
 use crate::basics::{CardType, Color, CounterKind, DamageKind, ManaCost, Zone};
@@ -276,6 +276,14 @@ pub enum StaticContribution {
     /// tokens/emblems/prepare-backs — so the layer/continuous state stays serde-safe (an `Ability`/
     /// `Effect` isn't). Read by the granted-ability scan in `queue_self_triggers`.
     GrantAbility { template_grp: u32 },
+    /// Layer 6: grant an **activated mana ability** `{T}: Add …` to each affected object (CR 613.1f —
+    /// Resonating Lute "Lands you control have '{T}: Add two mana of any one color…'"). Unlike keyword
+    /// grants this can't live in [`ComputedChars`] (a mana ability isn't a keyword/type/color), so it
+    /// is NOT painted there; instead the mana-payment enumeration reads it directly via
+    /// [`crate::chars::granted_tap_mana`] so a granted tap-mana ability is visible to affordability and
+    /// auto-pay (the `mana.produces`/`any_color` count is honoured — multi-mana-per-tap). The cost is a
+    /// plain `{T}`, so it is auto-pay-usable (no cost-bearing "option-B" caveat).
+    GrantTapMana { mana: ManaSpec },
     /// Layer 6: remove a keyword ability.
     RemoveKeyword(Keyword),
     /// Layer 4: add a card type.

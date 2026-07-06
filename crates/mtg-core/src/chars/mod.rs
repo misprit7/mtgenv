@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 use crate::basics::{CardType, Color, Zone};
 use crate::effects::ability::{Ability, Keyword, Qualification, StaticContribution};
 use crate::effects::condition::Duration;
-use crate::effects::target::CardFilter;
+use crate::effects::target::{CardFilter, ManaSpec};
 use crate::effects::value::{PlayerRef, ValueExpr};
 use crate::ids::{ObjId, PlayerId, Timestamp};
 use crate::state::{Characteristics, GameState};
@@ -417,6 +417,26 @@ fn affects_matches(
             matches_filter(state, filter, o, target, target_types, e.src_id, e.src_controller)
         }
     }
+}
+
+/// The mana specs a `GrantTapMana` static (CR 613.1f layer-6 ability grant — Resonating Lute)
+/// currently grants to `id`. Reads the SAME battlefield/stack printed statics + floating
+/// `continuous_effects` that [`compute`] folds in (via [`gather_statics`]/[`affects_matches`]),
+/// matched against `id`'s computed card types — so "Lands you control have '{T}: Add …'" sees a
+/// land that became a creature, etc. Consumed by the mana-payment enumeration ([`crate::mana`]),
+/// because a granted *activated* mana ability has no home in [`ComputedChars`] (it isn't a keyword
+/// or characteristic). Returns each granted [`ManaSpec`]; the count / restriction ride along.
+pub fn granted_tap_mana(state: &GameState, id: ObjId) -> Vec<ManaSpec> {
+    let computed_types = compute(state, id).card_types;
+    let mut out = Vec::new();
+    for e in gather_statics(state) {
+        if let StaticContribution::GrantTapMana { mana } = e.contribution {
+            if affects_matches(state, &e, id, &computed_types) {
+                out.push(mana.clone());
+            }
+        }
+    }
+    out
 }
 
 /// Evaluate a `CardFilter`. `HasCardType` reads `target_types` (the computed-so-far type set);
