@@ -100,4 +100,19 @@ Random-vs-random baseline (evalkit): heralds **0.550**, swine **0.525**.
 
 ### 2026-07-06 — Track-A launch (heralds A/B)  *(in progress)*
 
-- (throughput probe + launch details / 100k-gate numbers / curves to be recorded here)
+**Throughput probe → tuning.** First probe at `sims=50, reanalyze_ratio=0.5` was too slow (reanalyze
+MCTS dominates; ~2 collects/3min → 500k would blow the 6h cap). Each run is CPU-serial-bound at ~1.2
+cores (2 runs = 2.4/32 cores → parallelism is FREE; GPU ~9%). Retuned to **`sims=25,
+reanalyze_ratio=0.25, gumbel max_considered=8`** — aligns with the Gumbel thesis (designed for low
+sims), still fully reanalyze-on. Measured **~31 env-steps/sec** → 500k ≈ **4.4h** (under the 6h cap).
+
+**Launched (both heralds, 500k, tuned):**
+- `3.4-gumbel-heralds` (Gumbel) — PID logged in `3.4-gumbel-heralds.log`.
+- `3.5-muzero-reanalyze-heralds` (plain MuZero) — `3.5-muzero-reanalyze-heralds.log`.
+- Shared board: LightZero internals symlinked as `…-train` runs (loss / collector `reward_mean` /
+  `eval_episode_return`); evalkit watchers (`mz_policy.py --watch`, 40 games, sims 25, poll 420s) write
+  the canonical `selfplay/winrate_vs_random(_sampled)` + `stats/*` curve to `/tmp/mtgenv_tb/3.4…` / `3.5…`.
+- iteration_0 (untrained, post-random-collect) evalkit: gumbel greedy/sampled 0.00/0.00; muzero
+  0.00/0.40. Baseline random-v-random 0.535.
+
+- (100k-gate numbers + curves + verdict to be recorded here)
