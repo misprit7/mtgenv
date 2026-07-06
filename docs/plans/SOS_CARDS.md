@@ -200,7 +200,8 @@ Cap-then-cards, `git log -S` before scoping any "absent" mechanic (some B caps m
   - **Prismatic Ending** (converge exile via `ManaValueExpr{max:ColorsSpent}` target bound, the sundering_archaic idiom — documents a target-restriction-vs-conditional divergence).
   - **Bring to Light** (zero new cap: `Search`→exile with dynamic MV bound + `Optional{CastForFree{Searched(0)}}`).
   - `Effect::ExileTopForPlay{who,count,window}` (multi-card impulse — `ExileForPlay` is single-card & staged so 3× in a Sequence all captured the same top) → **Jeska's Will** (both modes; `HandSize{ChosenTarget(0)}` mana + impulse 3).
-  - **★ REMAINING 26 (each needs a moderate cap OR lead sign-off):**
+  - **Crackle with Power** (zero new cap: `ForEachTarget{ slot max=TARGET_COUNT_X }` + `DealDamage XTimes(5)` — "up to X" was already supported).
+  - **★ REMAINING 25 (each needs a moderate cap OR lead sign-off):**
     - *moderate leaf caps (1 card each, no sign-off but real work):* **Glimpse of Nature** (recurring-until-EOT cast trigger w/ generic actions — the delayed-trigger `YouCastSpell` path is hardcoded to copy-spell), **Berserk** (delayed destroy-if-attacked + "attacked this turn" + cast-timing), **Crackle with Power** (dynamic-count `up to X` targets), **Expressive Iteration** (3-way look-distribute), **Culling Ritual** (count-destroyed→mana + `ManaSpec` B/G subset choice), **Ad Nauseam** (player-controlled reveal/lose-life repeat loop, `Effect::Repeat` E5 unwired), **Veil of Summer** (qualified hexproof-from-colour + "spells can't be countered this turn" floating grant + opp-cast-colour-this-turn state).
     - *sign-off-gated:* Dismember/Bitter Triumph (pay-life/Phyrexian), Daze/Force of Will (alt-cast), Sheoldred's Edict (token-identity), + the 12 C-subsystem cards (Overload/Spree/Roles/Protection/Infect/Suspend/Convoke/Redirect/Split-second).
 
