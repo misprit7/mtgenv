@@ -77,7 +77,7 @@ MTGA client.
 - **✅ MOBILE WEB CLIENT (2026-07-03).** Game client + lobby fully playable from a phone: mobile
   reflow (sticky prompt sheet, opp-top/you-bottom strips, log toggle), touch previews long-press-only
   (hover gated to real mice), on-screen pass-turn button. Desktop unchanged.
-- **▶ SOS BONUS SHEET in progress: `soa` (Secrets of Strixhaven Mystical Archive), 65 cards — 46/65 authored (71%), 943
+- **▶ SOS BONUS SHEET in progress: `soa` (Secrets of Strixhaven Mystical Archive), 65 cards — 48/65 authored (74%), 948
   mtg-core green, whole workspace builds (2026-07-06, sos-bonus-1).** SOS *limited* = the 271 main set + this 65-card bonus
   sheet; directive: "everything playable in SOS limited must be in the engine." Reprints in first-printing folders (grp
   600+). Engine caps added (all additive/card-agnostic): `PowerAtLeast/ToughnessAtLeast`, `Effect::Scry`,
