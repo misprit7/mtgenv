@@ -64,6 +64,7 @@ pub mod m11;
 pub mod m12;
 pub mod m13;
 pub mod mgb;
+pub mod mh2;
 pub mod mir;
 pub mod mkm;
 pub mod mrd;
@@ -664,6 +665,7 @@ pub fn starter_db() -> CardDb {
     hou::register(&mut db);
     lci::register(&mut db);
     ltr::register(&mut db);
+    mh2::register(&mut db);
     ody::register(&mut db);
     plc::register(&mut db);
     scg::register(&mut db);
@@ -817,7 +819,7 @@ mod tests {
         let db = starter_db();
         // 359 base pool + the `soa` bonus-sheet reprints authored into their first-printing folders
         // (+ the registered Clue token def for Investigate).
-        assert_eq!(db.len(), 396);
+        assert_eq!(db.len(), 397);
         // Forest is "type line only": a Basic Land with subtype Forest. Mana is intrinsic
         // (CR 305.6) — the engine derives {T}: Add {G} from the subtype, so the CardDef carries
         // no explicit mana ability (and `is_mana_source` only sees authored abilities).
