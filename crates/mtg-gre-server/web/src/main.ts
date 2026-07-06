@@ -283,12 +283,23 @@ function setReplayControlsEnabled(on: boolean): void {
   });
   const pl = document.getElementById("rbPlay"); if (pl) pl.textContent = on ? "▶" : "…";
 }
-function showFrame(i: number): void {
+// At high playback rates the full DOM render is the thread hog (full-set boards are heavy), so
+// fast playback COALESCES renders: every tick advances the frame + cheap bar text, but the board
+// repaints at most every RENDER_GAP_MS (and always on the final/paused/stepped frame). Skipped
+// repaints are invisible at speed and keep the event loop idle enough that Pause lands instantly.
+const RENDER_GAP_MS = 100;
+let lastHeavyRender = 0;
+function showFrame(i: number, coalesceOk?: boolean): void {
   const n = frameCount(); if (!n) return;
   frameIdx = Math.max(0, Math.min(i, n - 1));
   const fr = replay.frames[frameIdx];
-  view = godToView(fr.state, 0);
-  render();
+  const now = performance.now();
+  const skipHeavy = !!coalesceOk && playing && frameIdx < n - 1 && (now - lastHeavyRender) < RENDER_GAP_MS;
+  if (!skipHeavy) {
+    lastHeavyRender = now;
+    view = godToView(fr.state, 0);
+    render();
+  }
   $("rbFrame").textContent = `${frameIdx + 1} / ${n}`;
   $("rbLabel").textContent = fr.label || "";
   ($("rbBack") as HTMLButtonElement).disabled = frameIdx === 0;
@@ -306,12 +317,17 @@ function playReplay(): void {
   // per-frame render outruns the interval (at high rates) back-to-backs the ticks and starves the
   // thread — the Pause tap then never lands. This is the real fix for "Pause dead at >10 fps".
   const tick = (): void => {
-    showFrame(frameIdx + 1);                       // may hit the end → showFrame() calls pauseReplay()
+    showFrame(frameIdx + 1, true);                 // coalesced render; end → showFrame() pauses
     if (playing) playTimer = setTimeout(tick, Math.max(16, Math.round(1000 / frameRate)));
   };
   playTimer = setTimeout(tick, Math.max(16, Math.round(1000 / frameRate)));
 }
-function pauseReplay(): void { playing = false; $("rbPlay").textContent = "▶"; if (playTimer) { clearTimeout(playTimer); playTimer = null; } }
+function pauseReplay(): void {
+  const was = playing;
+  playing = false; $("rbPlay").textContent = "▶";
+  if (playTimer) { clearTimeout(playTimer); playTimer = null; }
+  if (was) showFrame(frameIdx); // repaint the frame we paused on (its tick may have coalesced away)
+}
 function togglePlay(): void { playing ? pauseReplay() : playReplay(); }
 // Bind bar controls on pointerdown (fires before the click, so Pause registers instantly even while a
 // heavy render is in flight) directly on the stable #replaybar buttons — the bar is never rebuilt per
