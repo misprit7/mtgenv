@@ -1237,6 +1237,36 @@ impl EngineCore {
                 .take(max as usize)
                 .collect()
         };
+        // Tutor back into your own library at a fixed end — "shuffle, THEN put on top/bottom" (CR
+        // 701.19, Vampiric Tutor). The picks are already in the library; pull them out, shuffle the
+        // rest, then place them at the chosen end, so the shuffle can't scatter the tutored card.
+        let into_library_pos = zone == Zone::Library
+            && to.zone == Zone::Library
+            && matches!(to.pos, ZonePos::Top | ZonePos::Bottom);
+        if into_library_pos {
+            {
+                let libv = &mut self.state.player_mut(searcher).library;
+                libv.retain(|o| !picks.contains(o));
+            }
+            self.state.shuffle_library(searcher);
+            let libv = &mut self.state.player_mut(searcher).library;
+            match to.pos {
+                // Top = the vec's tail; push in pick order so the last pick sits on top.
+                ZonePos::Top => libv.extend(picks.iter().copied()),
+                // Bottom = the vec's front; insert in reverse so the first pick sits deepest.
+                ZonePos::Bottom => {
+                    for &c in picks.iter().rev() {
+                        libv.insert(0, c);
+                    }
+                }
+                _ => {}
+            }
+            for &c in &picks {
+                self.searched_this_resolution.push(c);
+                self.broadcast(GameEvent::ObjectMoved { obj: c, to: Zone::Library });
+            }
+            return;
+        }
         for card in &picks {
             if self.state.move_object(*card, to.zone, searcher) {
                 // Fetch lands enter tapped (CR — Fabled Passage / Escape Tunnel).
