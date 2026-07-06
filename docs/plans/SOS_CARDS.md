@@ -126,12 +126,14 @@ their-choice)/Counter/CounterUnlessPay(soft)/Attach; **Storm** (`CopySpellOnStac
 `ConvokeImprovise` decision stub), Suspend, Split-second, Infect, Protection-from, Role tokens, alt-cast
 "pay non-mana instead of mana cost", damage **Redirect** (`Rewrite::Redirect` = "future work"), change-target.
 
-**Bucket A — pure IR, no new cap (~34 cards; author these first):**
+**Bucket A — pure IR, no new cap (~33 cards; author these first):**
 Abrade · Armageddon · Big Score · Brain Freeze · Bring to Light · Brotherhood's End · Bulk Up · Crop Rotation ·
 Culling the Weak · Disdainful Stroke · Duty Beyond Death · Empty the Warrens · Feed the Swarm · Flusterstorm ·
 Fracture · Giant Growth · Helping Hand · Hop to It · Jeska's Will · Locust Spray · Pick Your Poison ·
-Preordain · Prismatic Ending · Pyretic Ritual · Repel Calamity · Shamanic Revelation · Shared Roots ·
+Prismatic Ending · Pyretic Ritual · Repel Calamity · Shamanic Revelation · Shared Roots ·
 Sheoldred's Edict · Sleight of Hand · Smallpox · Spell Pierce · Stock Up · Vampiric Tutor · Zombify.
+(`LookAndPick{rest_to:Library}` = "look top N, K to hand, rest to bottom" → Sleight of Hand / Stock Up /
+Stargaze; `ManaValueOfTarget` → Feed the Swarm; `HandSize` of opp → Jeska's Will mode 1.)
 
 **Bucket B — one small card-agnostic cap each (~19 cards; each cap unlocks 1–2):**
 - *alt-cast (pay non-mana instead of mana cost)* → **Daze** (return an Island), **Force of Will** (pay 1 life +
@@ -140,6 +142,8 @@ Sheoldred's Edict · Sleight of Hand · Smallpox · Spell Pierce · Stock Up · 
 - *Kicker* (optional additional cost + "if kicked" cond) → **Burst Lightning**.
 - *Clue token def* (like the existing Treasure def) → **Deduce**.
 - *repeat-until-you-stop loop* (`Effect::Repeat` E5 is unwired) → **Ad Nauseam**.
+- *true scry* (`Effect::Scry{count}` — mirror `Effect::Surveil` but bin the rest to **bottom** of library,
+  not graveyard; reuses the `SelectReason::ScryStage` decision) → **Preordain** (Surveil bins to gy; only 1 soa card scrys).
 - *land-creature token* (Land+Creature types on one `TokenSpec`, X count) → **Awaken the Woods**.
 - *delayed "destroy if it attacked this turn" + cast-timing restriction* → **Berserk**.
 - *modal / pay-life additional cost* (`CostComponent::PayLife` arm) → **Bitter Triumph**.
