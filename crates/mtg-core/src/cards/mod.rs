@@ -53,6 +53,7 @@ pub mod isd;
 pub mod ktk;
 pub mod lea;
 pub mod m10;
+pub mod m11;
 pub mod m12;
 pub mod m13;
 pub mod mgb;
@@ -619,6 +620,7 @@ pub fn starter_db() -> CardDb {
     isd::register(&mut db);
     ktk::register(&mut db);
     m10::register(&mut db);
+    m11::register(&mut db);
     m12::register(&mut db);
     m13::register(&mut db);
     mgb::register(&mut db);
@@ -779,7 +781,8 @@ mod tests {
     #[test]
     fn starter_db_has_expected_cards() {
         let db = starter_db();
-        assert_eq!(db.len(), 359);
+        // 359 base pool + the `soa` bonus-sheet reprints authored into their first-printing folders.
+        assert_eq!(db.len(), 367);
         // Forest is "type line only": a Basic Land with subtype Forest. Mana is intrinsic
         // (CR 305.6) — the engine derives {T}: Add {G} from the subtype, so the CardDef carries
         // no explicit mana ability (and `is_mana_source` only sees authored abilities).
