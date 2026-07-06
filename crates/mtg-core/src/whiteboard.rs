@@ -3385,6 +3385,10 @@ impl EngineCore {
             name: spec.name.clone(),
             card_types: spec.card_types.clone(),
             subtypes: spec.subtypes.clone(),
+            // Every created token IS a token (CR 111.1) — stamp the Token supertype so filters can tell
+            // token from nontoken (Sheoldred's Edict, Lorehold Charm's "nontoken artifact", and the
+            // "tokens you control enter" trigger class all depend on this).
+            supertypes: vec![crate::subtypes::Supertype::Token],
             colors: spec.colors.clone(),
             power: is_creature_spec.then_some(spec.power),
             toughness: is_creature_spec.then_some(spec.toughness),

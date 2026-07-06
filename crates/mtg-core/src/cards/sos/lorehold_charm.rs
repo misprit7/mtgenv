@@ -9,8 +9,8 @@
 //! **Fully implemented** — a `Modal` "choose one": (1) each opponent sacrifices an artifact they
 //! choose (`Sacrifice { who: EachOpponent }`); (2) reanimate a MV-2-or-less artifact/creature from your
 //! graveyard (`MoveZone` of a `CardInZone{Graveyard}` target scoped `ControlledBy(Controller)`); (3) a
-//! `ForEach` mass +1/+1 and trample on your creatures until end of turn. Simplification: "nontoken" in
-//! mode 1 isn't enforced (the engine doesn't tag token objects) — negligible in the current pool.
+//! `ForEach` mass +1/+1 and trample on your creatures until end of turn. Mode 1 enforces **nontoken**
+//! via `Not(Supertype(Token))` (created tokens carry the Token supertype, CR 111.1).
 
 use crate::basics::{CardType, Color, Zone, ZoneDest, ZonePos};
 use crate::cards::{mana_cost, spell, CardDb};
@@ -19,6 +19,7 @@ use crate::effects::condition::Duration;
 use crate::effects::target::{CardFilter, SelectSpec, TargetKind, TargetSpec};
 use crate::effects::value::{PlayerRef, ValueExpr};
 use crate::effects::{Effect, EffectTarget, Mode};
+use crate::subtypes::Supertype;
 
 /// grp id (per-set ids live near their cards).
 pub const LOREHOLD_CHARM: u32 = 317;
@@ -27,12 +28,15 @@ pub fn register(db: &mut CardDb) {
     let effect = Effect::Modal {
         modes: vec![
             Mode {
-                label: "Each opponent sacrifices an artifact of their choice".to_string(),
+                label: "Each opponent sacrifices a nontoken artifact of their choice".to_string(),
                 effect: Effect::Sacrifice {
                     who: PlayerRef::EachOpponent,
                     what: SelectSpec {
                         zone: Zone::Battlefield,
-                        filter: CardFilter::HasCardType(CardType::Artifact),
+                        filter: CardFilter::All(vec![
+                            CardFilter::HasCardType(CardType::Artifact),
+                            CardFilter::Not(Box::new(CardFilter::Supertype(Supertype::Token))),
+                        ]),
                         chooser: PlayerRef::Opponent,
                         min: ValueExpr::Fixed(1),
                         max: ValueExpr::Fixed(1),
@@ -159,5 +163,52 @@ mod tests {
         );
         assert!(e.state.player(PlayerId(0)).battlefield.contains(&dead), "reanimated onto the battlefield");
         assert!(!e.state.player(PlayerId(0)).graveyard.contains(&dead), "no longer in the graveyard");
+    }
+
+    /// Mode 1 regression: "nontoken artifact" spares a Treasure token — with only a token artifact and
+    /// a real artifact, the opponent must sacrifice the real one; a lone token artifact is untouchable.
+    #[test]
+    fn lorehold_charm_mode1_spares_token_artifacts() {
+        use crate::agent::{Agent, DecisionRequest, DecisionResponse, PlayerView};
+        use crate::basics::Zone;
+        use crate::cards::{build_game, grp};
+        use crate::effects::action::{ResolutionCtx, WbReason};
+        use crate::ids::{PlayerId, StackId};
+        use crate::priority::Engine;
+        use crate::state::Characteristics;
+        #[derive(Clone)]
+        struct SacFirst;
+        impl Agent for SacFirst {
+            fn decide(&mut self, _v: &PlayerView, req: &DecisionRequest) -> DecisionResponse {
+                match req {
+                    DecisionRequest::SelectCards { min, max, from, .. } => {
+                        let n = (*min).max(1).min(*max).min(from.len() as u32);
+                        DecisionResponse::Indices((0..n).collect())
+                    }
+                    _ => DecisionResponse::Pass,
+                }
+            }
+        }
+        let mut state = build_game(1, &[&[], &[]]);
+        // A real (nontoken) artifact and a Treasure TOKEN, both P1's.
+        let real = state.add_card(
+            PlayerId(1),
+            Characteristics { name: "Widget".to_string(), card_types: vec![CardType::Artifact], grp_id: 8060, ..Default::default() },
+            Zone::Battlefield,
+        );
+        let token = state.add_card(
+            PlayerId(1),
+            state.card_db().get(grp::TREASURE_TOKEN).unwrap().chars.clone(), // its def carries Supertype::Token
+            Zone::Battlefield,
+        );
+        let effect = state.card_db().get(LOREHOLD_CHARM).unwrap().spell_effect().unwrap().clone();
+        let mut e = Engine::new(state, vec![Box::new(SacFirst), Box::new(SacFirst)]);
+        e.resolve_effect(
+            &effect,
+            &ResolutionCtx { controller: Some(PlayerId(0)), chosen_modes: vec![0], ..Default::default() },
+            WbReason::Resolve(StackId(0)),
+        );
+        assert!(!e.state.player(PlayerId(1)).battlefield.contains(&real), "the nontoken artifact was sacrificed");
+        assert!(e.state.player(PlayerId(1)).battlefield.contains(&token), "the Treasure token was spared (nontoken only)");
     }
 }
