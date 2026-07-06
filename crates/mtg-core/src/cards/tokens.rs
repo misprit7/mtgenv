@@ -69,6 +69,32 @@ pub fn register(db: &mut CardDb) {
         text: "{T}, Sacrifice this token: Add one mana of any color.".to_string(),
         fully_implemented: true,
     });
+
+    // Clue — colourless artifact token: "{2}, Sacrifice this token: Draw a card." (CR 111.3 / Clue,
+    // Investigate). A non-mana activated ability offered at priority like any other.
+    db.insert(CardDef {
+        chars: Characteristics {
+            name: "Clue".to_string(),
+            card_types: vec![CardType::Artifact],
+            subtypes: vec![ArtifactType::Clue.into()],
+            supertypes: vec![Supertype::Token],
+            colors: vec![], // colourless
+            grp_id: grp::CLUE_TOKEN,
+            ..Default::default()
+        },
+        abilities: vec![Ability::Activated {
+            cost: Cost {
+                mana: Some(crate::cards::mana_cost(2, &[])),
+                components: vec![CostComponent::Sacrifice(sacrifice_self())],
+            },
+            effect: Effect::Draw { who: PlayerRef::Controller, count: ValueExpr::Fixed(1) },
+            timing: Timing::Instant,
+            restriction: None,
+            is_mana: false,
+        }],
+        text: "{2}, Sacrifice this token: Draw a card.".to_string(),
+        fully_implemented: true,
+    });
 }
 
 #[cfg(test)]

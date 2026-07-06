@@ -67,6 +67,7 @@ pub mod mkm;
 pub mod mrd;
 pub mod ody;
 pub mod p02;
+pub mod plc;
 pub mod pls;
 pub mod por;
 pub mod rav;
@@ -140,6 +141,9 @@ pub mod grp {
     /// ability is cost-bearing (a sacrifice), so it's usable only via manual mana activation, never
     /// the auto-payer (see `mana::mana_sources_kind` / `Engine::activate_mana_ability`).
     pub const TREASURE_TOKEN: u32 = 9002;
+    /// Clue artifact token (CR 111.3) — "{2}, Sacrifice this token: Draw a card." A non-mana activated
+    /// ability offered like any other at priority (Investigate — Deduce and friends).
+    pub const CLUE_TOKEN: u32 = 9003;
 
     // ── Reserved emblem-def block (9500+) ─────────────────────────────────────────────────────
     // Registered *emblem* defs (CR 114) live here — objects that sit in the command zone carrying a
@@ -655,6 +659,7 @@ pub fn starter_db() -> CardDb {
     hou::register(&mut db);
     lci::register(&mut db);
     ody::register(&mut db);
+    plc::register(&mut db);
     scg::register(&mut db);
     snc::register(&mut db);
     stx::register(&mut db);
@@ -804,8 +809,9 @@ mod tests {
     #[test]
     fn starter_db_has_expected_cards() {
         let db = starter_db();
-        // 359 base pool + the `soa` bonus-sheet reprints authored into their first-printing folders.
-        assert_eq!(db.len(), 387);
+        // 359 base pool + the `soa` bonus-sheet reprints authored into their first-printing folders
+        // (+ the registered Clue token def for Investigate).
+        assert_eq!(db.len(), 392);
         // Forest is "type line only": a Basic Land with subtype Forest. Mana is intrinsic
         // (CR 305.6) — the engine derives {T}: Add {G} from the subtype, so the CardDef carries
         // no explicit mana ability (and `is_mana_source` only sees authored abilities).

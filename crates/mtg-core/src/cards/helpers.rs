@@ -293,6 +293,22 @@ pub(crate) fn treasure_token() -> TokenSpec {
     }
 }
 
+/// The Clue token (CR 111.3): a colourless artifact with "{2}, Sacrifice this token: Draw a card."
+/// (created by Investigate). Its ability lives on the registered `grp::CLUE_TOKEN` def.
+pub(crate) fn clue_token() -> TokenSpec {
+    TokenSpec {
+        grp_id: crate::cards::grp::CLUE_TOKEN,
+        name: "Clue".to_string(),
+        card_types: vec![CardType::Artifact],
+        subtypes: vec![crate::subtypes::ArtifactType::Clue.into()],
+        colors: vec![],
+        power: 0,
+        toughness: 0,
+        keywords: vec![],
+        counters: vec![],
+    }
+}
+
 /// The "Elemental" token (CR 111.3): a 3/3 blue-and-red Elemental with flying. Shared by every
 /// Elemental-maker (Muse's Encouragement, Artistic Process, Visionary's Dance, …).
 pub(crate) fn elemental_token() -> TokenSpec {
