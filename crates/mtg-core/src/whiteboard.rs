@@ -345,6 +345,13 @@ impl EngineCore {
             // so it lives here. A spell with the `CantBeCountered` qualification (CR 701.5f) is left
             // on the stack — the counterspell still resolved, it just did nothing to that spell.
             // Flush first so any earlier staged actions apply before the stack changes.
+            Effect::ReturnSpellToHand { what } => {
+                self.flush_pending(wb);
+                if let Some(Target::Stack(sid)) = self.resolve_target(what, ctx, cursor) {
+                    self.interpret_return_spell_to_hand(sid);
+                }
+                true
+            }
             Effect::Counter { what } => {
                 self.flush_pending(wb);
                 if let Some(Target::Stack(sid)) = self.resolve_target(what, ctx, cursor) {
@@ -1749,6 +1756,25 @@ impl EngineCore {
     /// exist. A spell that "can't be countered" (`CantBeCountered`, CR 701.5f — read from its
     /// computed characteristics, which now include stack-zone statics like Surrak's) is left on the
     /// stack untouched, so it will still resolve.
+    /// Return a target spell on the stack to its owner's hand (CR 701 — Reprieve). The spell leaves
+    /// the stack without resolving; a copy ceases to exist instead. Not a counter, so it isn't stopped
+    /// by can't-be-countered.
+    fn interpret_return_spell_to_hand(&mut self, sid: StackId) {
+        let Some(so) = self.state.stack.items.iter().find(|s| s.id == sid).cloned() else {
+            return;
+        };
+        self.state.stack.items.retain(|s| s.id != sid);
+        if let crate::stack::StackObjectKind::Spell(card) = so.kind {
+            if self.state.object(card).is_copy {
+                self.state.cease_to_exist(card); // a copy (CR 707.10a) can't go to hand.
+            } else {
+                let owner = self.state.object(card).owner;
+                self.state.move_object(card, Zone::Hand, owner);
+                self.broadcast(GameEvent::ObjectMoved { obj: card, to: Zone::Hand });
+            }
+        }
+    }
+
     fn interpret_counter(&mut self, sid: StackId) {
         let Some(so) = self.state.stack.items.iter().find(|s| s.id == sid).cloned() else {
             return;
@@ -2574,6 +2600,7 @@ impl EngineCore {
             | Effect::SetNoMaxHandSize { .. }
             | Effect::GrantChosenKeyword { .. }
             | Effect::Counter { .. }
+            | Effect::ReturnSpellToHand { .. }
             | Effect::CounterUnlessPay { .. }
             | Effect::CastCopy { .. }
             | Effect::CastForFree { .. }

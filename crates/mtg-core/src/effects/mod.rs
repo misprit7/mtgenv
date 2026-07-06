@@ -465,6 +465,12 @@ pub enum Effect {
     Counter {
         what: EffectTarget,
     },
+    /// Return a target **spell** on the stack to its owner's hand (CR 701 — Reprieve). The spell
+    /// leaves the stack without resolving; unlike [`Counter`] this is NOT a counter, so a
+    /// can't-be-countered spell is still returned. A copy on the stack ceases to exist instead.
+    ReturnSpellToHand {
+        what: EffectTarget,
+    },
     /// "Counter `what` unless that spell/ability's controller pays `cost`" (CR 701.5 / 702.21) —
     /// the Ward soft-counter. `what` is typically `EffectTarget::Triggering` (the spell or ability
     /// that targeted the Ward permanent). The *targeting player* (not the Ward controller) decides

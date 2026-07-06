@@ -5155,6 +5155,8 @@ fn collect_specs_into(effect: &Effect, out: &mut Vec<TargetSpec>) {
         // cast; both are collected here so a real cast picks a target and re-checks it at resolution.
         Effect::Counter { what: EffectTarget::Target(spec) }
         | Effect::CounterUnlessPay { what: EffectTarget::Target(spec), .. } => out.push(spec.clone()),
+        // "Return target spell to its owner's hand" (Reprieve) — the stack spell is a chosen target.
+        Effect::ReturnSpellToHand { what: EffectTarget::Target(spec) } => out.push(spec.clone()),
         // "Target creature becomes a … Fractal / becomes a 2/4 Wizard" (Fractalize / Great Hall) — the
         // object that becomes something is a chosen target.
         Effect::Becomes { what: EffectTarget::Target(spec), .. } => out.push(spec.clone()),
