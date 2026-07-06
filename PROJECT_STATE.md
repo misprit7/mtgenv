@@ -83,10 +83,12 @@ MTGA client.
   600+). Engine caps added (all additive/card-agnostic): `PowerAtLeast/ToughnessAtLeast`, `Effect::Scry`,
   `ReturnSpellToHand`, `ExileTopForPlay`, `RevealTopLoseLifeMayRepeat`, `LookDistribute`, Clue token, search→shuffle→place,
   **token-identity** (created objects stamped `Supertype::Token`), **phyrexian pip class** (one `resolve_phyrexian` seam,
-  no-suicide auto-pay gate), **parametrized YouCastSpell delayed trigger** (reaction + recurring). Remaining 19: Berserk
-  (attacked-this-turn — deferred), Culling Ritual (ManaSpec churn — deferred), Veil of Summer, Daze/Force of Will (alt-cast
-  subsystem), + 12 C-subsystem cards (Overload/Spree/Roles sketched to lead, awaiting sign-off; then Protection/Infect/
-  Suspend/Convoke/Redirect/Split-second). Full triage + progress in `docs/plans/SOS_CARDS.md` ★ BONUS SHEET.
+  no-suicide auto-pay gate), **parametrized YouCastSpell delayed trigger** (reaction + recurring), **OVERLOAD subsystem**
+  (`Ability::Overload` + `CastVariant::Overload` + `overload_rewrite` target→each → Cyclonic Rift/Winds of Abandon). Lead
+  approved all remaining (3 architecture notes captured in ledger). Remaining 17: **Spree** (bespoke `SpreeMode` +
+  cast-pipeline, `Effect::ChangeTarget`), **Roles** (`Effect::CreateRoleToken` aura tokens), singles (Protection/Infect/
+  Suspend/Convoke/Redirect/Split-second), + deferred Berserk/Veil/Culling Ritual/Daze/Force of Will. **Every remaining card
+  has a build-spec in `docs/plans/SOS_CARDS.md` ★ BONUS SHEET** for the next relay agent.
 - **✅ SOS FULL-SET COMPLETE: 271/271 authored · 271 fully-faithful · 0 tracked-partials · 0 Native hatches, 871 mtg-core
   green (2026-07-06, sos-cards-21 finale).** Scryfall-diff verified vs. `set_code='sos'`. Final 3: Resonating Lute
   (granted-mana subsystem — `StaticContribution::GrantTapMana` + `chars::granted_tap_mana` + per-tap-count payment),
