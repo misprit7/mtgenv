@@ -183,6 +183,18 @@ Cap-then-cards, `git log -S` before scoping any "absent" mechanic (some B caps m
   - **grp_id block = 600+** (max prior real id was 504); each reprint in its first-printing folder (new folders: m11, zen, stx, cmd, scg, znr, snc, exo, ody, hou, lci; Pick Your Poison → mkm since its only-earlier printing is the silver-border `cmb1`).
   - **Reclassified A→B during authoring (grounded):** Preordain (needs `Effect::Scry` — Surveil bins to gy, not bottom), Vampiric Tutor (`interpret_search` shuffles AFTER placing, so "search→shuffle→top" is unexpressible), Repel Calamity + Shamanic Revelation's Ferocious clause (need `CardFilter::PowerAtLeast`/`ToughnessAtLeast` — only `*AtMost` exists), Sheoldred's Edict (token/nontoken modes need a token-identity marker — `create_token` doesn't stamp `Supertype::Token`).
   - **Remaining Bucket A to assess:** Jeska's Will, Prismatic Ending, Bring to Light (converge/impulse — verifying they compose over S7 ColorsSpent + S15 impulse).
+- **sos-bonus-1 continued (2026-07-06): 35/65 authored, 918 mtg-core green.** Since batch 3:
+  - **`CardFilter::PowerAtLeast`/`ToughnessAtLeast`** cap (3 match sites) → Repel Calamity, Shamanic Revelation (Ferocious via `ForEach{power≥4, GainLife 4}`).
+  - **`Effect::Scry`** cap (twin of `Surveil`, bins to bottom) → Preordain.
+  - **Clue token def** (`grp::CLUE_TOKEN=9003` + `helpers::clue_token`) → Deduce.
+  - **search→shuffle→place** cap in `interpret_search` (library-position tutors shuffle first) → Vampiric Tutor.
+  - Zero-cap composites: Stargaze (`XTimes(2)`/`take X`), Knockout Maneuver (`SourcedDamage`+counter-then-`PowerOfTarget`), Pongify (`ControllerOfTarget` token), Subterranean Tremors (X-threshold `Conditional`s), Awaken the Woods (Land+Creature `TokenSpec`).
+  - **Assess-cards → B/C (grounded):** Prismatic Ending (`collect_specs_into` doesn't walk `Conditional` → a cast-time target can't gate an exile cleanly), Jeska's Will (`TopOfLibrary` is single-card → multi-card impulse cap), Bring to Light (search dynamic-MV + free-cast).
+  - **★ Needs LEAD sign-off before building (touch load-bearing infra / new subsystems):**
+    - **pay-life / Phyrexian mana** (Dismember `{B/P}{B/P}`, Bitter Triumph "pay 3 life") — `ManaCost` has no phyrexian field and `pay_cost` has no `PayLife` arm; also gated by the lead's no-suicide-life constraint (ledger §"option-B"). Cluster also unlocks the parked Ward—Pay-life.
+    - **alt-cast (non-mana instead of mana cost)** (Daze "return an Island", Force of Will "pay 1 life + exile a blue card") — a `CastVariant::Alternative` gated on a payable non-mana cost.
+    - **token-identity marker** (Sheoldred's Edict token/nontoken modes; also fixes the latent Lorehold-Charm "nontoken" note) — stamp created tokens with `Supertype::Token` or an `is_token` flag.
+    - **C subsystems** (highest yield first): **Overload** (Cyclonic Rift, Winds of Abandon), **Spree** (Requisition Raid, Return the Favor), **Role tokens** (Monstrous Rage, Royal Treatment) = 2 each; then Protection-from (Akroma's Will), Infect (Triumph of the Hordes), Suspend (Living End), Convoke (Return to the Ranks), Redirect (Deflecting Palm), Split-second/can't-lose (Angel's Grace).
 
 ---
 
