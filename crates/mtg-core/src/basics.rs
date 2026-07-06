@@ -146,6 +146,11 @@ pub struct ManaCost {
     /// Archaic's `{2/R}{2/R}{2/R}` is `[(2,Red),(2,Red),(2,Red)]`, mana value 6. serde-default.
     #[serde(default)]
     pub mono_hybrid: Vec<(u32, Color)>,
+    /// **Phyrexian** pips (CR 107.4f/4c) — `{B/P}` etc. Each `color` is payable by EITHER one mana of
+    /// `color` OR **2 life**. Each counts 1 toward mana value (CR 202.3f). e.g. Dismember's `{1}{B/P}{B/P}`
+    /// is `phyrexian: [Black, Black]` with `generic: 1`, mana value 3. serde-default.
+    #[serde(default)]
+    pub phyrexian: Vec<Color>,
 }
 
 impl ManaCost {
@@ -161,6 +166,7 @@ impl ManaCost {
         }
         out.hybrid.extend_from_slice(&other.hybrid);
         out.mono_hybrid.extend_from_slice(&other.mono_hybrid);
+        out.phyrexian.extend_from_slice(&other.phyrexian);
         out
     }
 
@@ -172,11 +178,12 @@ impl ManaCost {
         let colored_pips: u32 = self.colored.values().sum();
         let mono: u32 = self.mono_hybrid.iter().map(|&(n, _)| n).sum();
         ManaCost {
-            generic: self.generic + colored_pips + self.hybrid.len() as u32 + mono,
+            generic: self.generic + colored_pips + self.hybrid.len() as u32 + mono + self.phyrexian.len() as u32,
             colored: BTreeMap::new(),
             x: self.x,
             hybrid: Vec::new(),
             mono_hybrid: Vec::new(),
+            phyrexian: Vec::new(),
         }
     }
 }

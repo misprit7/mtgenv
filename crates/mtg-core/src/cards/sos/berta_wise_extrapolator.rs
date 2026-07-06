@@ -117,6 +117,7 @@ mod tests {
                             x: 1,
                             hybrid: [],
                             mono_hybrid: [],
+                            phyrexian: [],
                         },
                     ),
                     components: [

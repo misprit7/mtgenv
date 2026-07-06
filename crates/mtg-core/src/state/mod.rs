@@ -81,6 +81,7 @@ impl Characteristics {
                     + c.colored.values().copied().sum::<u32>()
                     + c.hybrid.len() as u32
                     + c.mono_hybrid.iter().map(|&(n, _)| n).sum::<u32>()
+                    + c.phyrexian.len() as u32
             }
             None => 0,
         }

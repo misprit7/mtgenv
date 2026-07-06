@@ -2761,6 +2761,7 @@ impl Engine {
             colored: cost.colored.clone(),
             hybrid: cost.hybrid.clone(),
             mono_hybrid: cost.mono_hybrid.clone(),
+            phyrexian: cost.phyrexian.clone(),
             x: 0,
         };
         for opt in &chosen_additional {

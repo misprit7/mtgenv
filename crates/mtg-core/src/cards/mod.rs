@@ -70,6 +70,7 @@ pub mod mh2;
 pub mod mir;
 pub mod mkm;
 pub mod mrd;
+pub mod nph;
 pub mod ody;
 pub mod one;
 pub mod p02;
@@ -311,6 +312,19 @@ pub(crate) fn mana_cost_mono_hybrid(
 ) -> ManaCost {
     let mut cost = mana_cost(generic, pips);
     cost.mono_hybrid = mono_hybrid.to_vec();
+    cost
+}
+
+/// As [`mana_cost`] but with **phyrexian** pips (CR 107.4c) — e.g. Dismember's `{1}{B/P}{B/P}` is
+/// `mana_cost_phyrexian(1, &[], &[Black, Black])`. Each `{C/P}` pip is payable by one mana of `C` OR
+/// 2 life; its mana value is 1.
+pub(crate) fn mana_cost_phyrexian(
+    generic: u32,
+    pips: &[(Color, u32)],
+    phyrexian: &[Color],
+) -> ManaCost {
+    let mut cost = mana_cost(generic, pips);
+    cost.phyrexian = phyrexian.to_vec();
     cost
 }
 
@@ -672,6 +686,7 @@ pub fn starter_db() -> CardDb {
     ltr::register(&mut db);
     mh2::register(&mut db);
     ody::register(&mut db);
+    nph::register(&mut db);
     one::register(&mut db);
     plc::register(&mut db);
     scg::register(&mut db);
@@ -825,7 +840,7 @@ mod tests {
         let db = starter_db();
         // 359 base pool + the `soa` bonus-sheet reprints authored into their first-printing folders
         // (+ the registered Clue token def for Investigate).
-        assert_eq!(db.len(), 401);
+        assert_eq!(db.len(), 402);
         // Forest is "type line only": a Basic Land with subtype Forest. Mana is intrinsic
         // (CR 305.6) — the engine derives {T}: Add {G} from the subtype, so the CardDef carries
         // no explicit mana ability (and `is_mana_source` only sees authored abilities).

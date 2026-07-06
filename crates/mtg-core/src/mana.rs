@@ -420,6 +420,43 @@ fn select_payment(units: &[ManaUnit], cost: &ManaCost) -> Option<Vec<(usize, Col
     Some(c.plan)
 }
 
+/// Resolve a cost's **phyrexian** pips (CR 107.4c — `{C/P}` = one mana of `C` OR 2 life) into a
+/// phyrexian-free cost + a life total to pay, given the available mana `units` and `life`. Each pip is
+/// paid by mana when a spare unit can still cover it after the rest of the cost (mana is **preferred**,
+/// CR-agnostic here but the auto-pay convention), added as a coloured requirement; otherwise it's paid
+/// by 2 life. The `auto` (auto-pay seat) flag applies the **no-suicide gate**: a life-payment is only
+/// allowed if the resulting life stays `> 0` (a manual/UI seat may pay to `0`). Returns `None` if a pip
+/// can be paid neither way, or if the phyrexian-free base still isn't mana-payable. The returned base
+/// cost carries the mana-paid pips as ordinary coloured pips, so `select_payment`/`spend_from_pool`
+/// need no phyrexian awareness — the whole feature funnels through this one resolver.
+fn resolve_phyrexian(units: &[ManaUnit], cost: &ManaCost, life: i32, auto: bool) -> Option<(ManaCost, u32)> {
+    if cost.phyrexian.is_empty() {
+        return Some((cost.clone(), 0));
+    }
+    let mut base = cost.clone();
+    let phy = std::mem::take(&mut base.phyrexian);
+    let mut life_to_pay: u32 = 0;
+    for &c in &phy {
+        // Prefer mana: does adding this pip as a coloured requirement still select_payment-pay?
+        let mut trial = base.clone();
+        *trial.colored.entry(c).or_insert(0) += 1;
+        if select_payment(units, &trial).is_some() {
+            base = trial;
+        } else {
+            // Else pay 2 life, gated so an auto-pay seat never pays itself to ≤ 0.
+            let after = life - (life_to_pay as i32 + 2);
+            let ok = if auto { after > 0 } else { after >= 0 };
+            if ok {
+                life_to_pay += 2;
+            } else {
+                return None;
+            }
+        }
+    }
+    // The base (non-phyrexian requirements + mana-paid pips) must be fully mana-payable.
+    select_payment(units, &base).map(|_| (base, life_to_pay))
+}
+
 /// Whether `p` can pay `cost` from floating mana + untapped sources (CR 118.3), counting the
 /// TapCreatureForMana bonus. Restricted mana is **excluded** (CR 106.6) — use [`can_pay_ex`] with
 /// `allow_restricted = true` for an instant/sorcery cast. See [`can_pay_excluding`] to omit a
@@ -445,7 +482,13 @@ pub fn can_pay_excluding(
     excluded: &[ObjId],
     allow_restricted: bool,
 ) -> bool {
-    select_payment(&payment_units(state, p, excluded, allow_restricted), cost).is_some()
+    let units = payment_units(state, p, excluded, allow_restricted);
+    if cost.phyrexian.is_empty() {
+        return select_payment(&units, cost).is_some();
+    }
+    // Phyrexian costs are affordable if every pip can be covered by mana or a no-suicide life payment
+    // (the offer gate uses the auto-pay/no-suicide rule so an RL seat is never offered a lethal cast).
+    resolve_phyrexian(&units, cost, state.player(p).life, true).is_some()
 }
 
 /// The total mana `p` could put toward a cost right now — floating pool + every untapped source's
@@ -526,6 +569,10 @@ pub fn auto_pay_ex(
 ) -> Option<Vec<Color>> {
     use std::collections::{BTreeMap, BTreeSet};
     let units = payment_units(state, p, &[], allow_restricted);
+    // Resolve phyrexian pips (CR 107.4c) into a phyrexian-free base cost + life to pay: mana-paid pips
+    // become coloured requirements, life-paid pips are deducted below (no-suicide gate for this seat).
+    let (cost, life_to_pay) = resolve_phyrexian(&units, cost, state.player(p).life, true)?;
+    let cost = &cost;
     let chosen = match select_payment(&units, cost) {
         Some(c) => c,
         None => return None,
@@ -588,6 +635,11 @@ pub fn auto_pay_ex(
         *state.player_mut(p).mana_pool.restricted.entry(c).or_insert(0) += n;
     }
     spend_from_pool(state, p, cost, allow_restricted);
+    // Phyrexian pips paid with life (CR 107.4c): deduct 2 life each. The mana-paid pips were folded
+    // into `cost`'s coloured requirements above and spent from the pool.
+    if life_to_pay > 0 {
+        state.player_mut(p).life -= life_to_pay as i32;
+    }
     Some(colors_spent)
 }
 
@@ -1021,6 +1073,89 @@ mod tests {
             PlayerId(0),
             &ManaCost { mono_hybrid: vec![(2, Color::Red), (2, Color::Red), (2, Color::Red)], ..Default::default() }
         ));
+    }
+
+    /// Add `n` Swamps (black sources) to P0's battlefield.
+    fn add_swamps(state: &mut GameState, n: usize) {
+        let db = state.card_db();
+        for _ in 0..n {
+            let c = db.get(grp::SWAMP).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, Zone::Battlefield);
+        }
+    }
+
+    fn pool_is_empty(state: &GameState, p: PlayerId) -> bool {
+        let pool = &state.player(p).mana_pool;
+        pool.amounts.values().all(|&v| v == 0) && pool.restricted.values().all(|&v| v == 0)
+    }
+
+    #[test]
+    fn phyrexian_affordable_by_color_or_life() {
+        // CR 107.4c: `{B/P}` is payable by one black mana OR 2 life.
+        let bp = ManaCost { phyrexian: vec![Color::Black], ..Default::default() };
+        // A Swamp covers the colour side.
+        let mut with_swamp = game_with_lands(0, 0);
+        add_swamps(&mut with_swamp, 1);
+        assert!(can_pay(&with_swamp, PlayerId(0), &bp));
+        // No black source but plenty of life → payable via 2 life.
+        assert!(can_pay(&game_with_lands(0, 0), PlayerId(0), &bp));
+        // No black source and only 1 life → the no-suicide gate blocks the life payment.
+        let mut broke = game_with_lands(0, 0);
+        broke.players[0].life = 1;
+        assert!(!can_pay(&broke, PlayerId(0), &bp), "can't pay 2 life from 1 (would go ≤ 0)");
+    }
+
+    #[test]
+    fn phyrexian_mana_paid_empties_pool_and_keeps_life() {
+        // Dismember {1}{B/P}{B/P} paid entirely with mana: 1 Forest ({1}) + 2 Swamps (the two {B/P}).
+        let mut state = game_with_lands(1, 0);
+        add_swamps(&mut state, 2);
+        let life_before = state.players[0].life;
+        let cost = crate::cards::mana_cost_phyrexian(1, &[], &[Color::Black, Color::Black]);
+        assert!(can_pay(&state, PlayerId(0), &cost));
+        assert!(auto_pay(&mut state, PlayerId(0), &cost).is_some());
+        assert!(pool_is_empty(&state, PlayerId(0)), "no floating mana leaks after an exact-cost phyrexian cast");
+        assert_eq!(state.players[0].life, life_before, "mana-paid phyrexian costs no life");
+    }
+
+    #[test]
+    fn phyrexian_life_paid_empties_pool_and_deducts_life() {
+        // Same cost, but no black source: 1 Forest pays {1}; the two {B/P} are paid with 2 life each.
+        let mut state = game_with_lands(1, 0);
+        let life_before = state.players[0].life;
+        let cost = crate::cards::mana_cost_phyrexian(1, &[], &[Color::Black, Color::Black]);
+        assert!(can_pay(&state, PlayerId(0), &cost));
+        assert!(auto_pay(&mut state, PlayerId(0), &cost).is_some());
+        assert!(pool_is_empty(&state, PlayerId(0)), "no floating mana leaks when phyrexian pips are life-paid");
+        assert_eq!(state.players[0].life, life_before - 4, "two {{B/P}} paid with 4 life total");
+    }
+
+    #[test]
+    fn phyrexian_prefers_mana_then_life_for_the_shortfall() {
+        // {B/P}{B/P} with a single Swamp: one pip is mana-paid, the other life-paid (2 life).
+        let mut state = game_with_lands(0, 0);
+        add_swamps(&mut state, 1);
+        let life_before = state.players[0].life;
+        let cost = ManaCost { phyrexian: vec![Color::Black, Color::Black], ..Default::default() };
+        assert!(auto_pay(&mut state, PlayerId(0), &cost).is_some());
+        assert!(pool_is_empty(&state, PlayerId(0)), "the mana-paid pip's Swamp mana is fully spent");
+        assert_eq!(state.players[0].life, life_before - 2, "only the uncovered pip cost life");
+    }
+
+    #[test]
+    fn phyrexian_no_suicide_gate_at_exactly_lethal_life() {
+        // {B/P}{B/P} with no black source costs 4 life. At 4 life that's lethal → not offered/payable;
+        // at 5 life it's fine (5 − 4 = 1 > 0).
+        let cost = ManaCost { phyrexian: vec![Color::Black, Color::Black], ..Default::default() };
+        let mut lethal = game_with_lands(0, 0);
+        lethal.players[0].life = 4;
+        assert!(!can_pay(&lethal, PlayerId(0), &cost), "paying yourself to exactly 0 is not auto-offered");
+        assert!(auto_pay(&mut lethal, PlayerId(0), &cost).is_none());
+        let mut ok = game_with_lands(0, 0);
+        ok.players[0].life = 5;
+        assert!(can_pay(&ok, PlayerId(0), &cost));
+        assert!(auto_pay(&mut ok, PlayerId(0), &cost).is_some());
+        assert_eq!(ok.players[0].life, 1, "5 − 4 life = 1");
     }
 
     #[test]
