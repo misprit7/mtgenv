@@ -410,6 +410,19 @@ pub enum Effect {
     ExileIfWouldDie {
         what: EffectTarget,
     },
+    /// Arm a one-shot floating replacement so that `what` (a spell on the stack) **enters the
+    /// battlefield with `n` extra counters** of `kind` (CR 614.1e). Unlike the printed
+    /// [`crate::effects::ability::Rewrite::EntersWithCounters`] (which a permanent carries for its
+    /// OWN ETB), this is created at resolution and scoped to ANOTHER object — Wildgrowth Archaic's
+    /// "whenever you cast a creature spell, that creature enters with X additional +1/+1 counters."
+    /// `n` is evaluated now (typically against `EffectTarget::Triggering`, the just-cast spell, via
+    /// `ColorsSpentOnTrigger`), so it's fixed when armed. Rides the same `floating_replacements`
+    /// rails as [`ExileIfWouldDie`]; auto-expires at turn end / on first use if the spell never enters.
+    EntersWithCountersRider {
+        what: EffectTarget,
+        kind: CounterKind,
+        n: ValueExpr,
+    },
     /// Counter a target spell or ability (CR 701.6).
     Counter {
         what: EffectTarget,

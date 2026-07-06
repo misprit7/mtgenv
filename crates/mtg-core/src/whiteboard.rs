@@ -2277,6 +2277,42 @@ impl EngineCore {
                     });
                 }
             }
+            // "That [cast] creature enters with N extra counters" (CR 614.1e) — arm a one-shot floating
+            // replacement scoped to the (still-on-stack) spell; `n` is fixed now (Wildgrowth Archaic).
+            // `Triggering` names the "whenever you cast …" spell via `ctx.triggering_spell` directly
+            // (like CopySpellOnStack — `resolve_target(Triggering)` is the Ward targeting-source, not
+            // this); a resolved Target/Stack naming a spell also works.
+            Effect::EntersWithCountersRider { what, kind, n } => {
+                let spell = match what {
+                    EffectTarget::Triggering => ctx.triggering_spell,
+                    _ => match self.resolve_target(what, ctx, cursor) {
+                        Some(Target::Object(o)) => Some(o),
+                        Some(Target::Stack(sid)) => self
+                            .state
+                            .stack
+                            .items
+                            .iter()
+                            .find(|it| it.id == sid)
+                            .and_then(|it| match it.kind {
+                                crate::stack::StackObjectKind::Spell(o) => Some(o),
+                                _ => None,
+                            }),
+                        _ => None,
+                    },
+                };
+                if let Some(obj) = spell {
+                    let count = self.eval_value(n, ctx).max(0) as u32;
+                    if count > 0 {
+                        wb.push(Action::AddFloatingReplacement {
+                            scope: obj,
+                            pattern: ActionPattern::WouldEnterBattlefield(CardFilter::ItSelf),
+                            rewrite: FloatingRewrite::EntersWithCounters { kind: kind.clone(), n: count },
+                            until_turn: self.state.turn_number,
+                            one_shot: true,
+                        });
+                    }
+                }
+            }
             // C6-copy: create a token that's a copy of a permanent (CR 707.9e / 111.3). Snapshot the
             // source's copiable characteristics (its base `chars` — NOT counters/damage/auras/other
             // continuous effects, CR 707.2) into a `TokenSpec` (abilities ride along via the copied
@@ -2500,8 +2536,11 @@ impl EngineCore {
             }
             // The scope IS the source for filter/`ItSelf` purposes.
             if self.pattern_matches(&fr.pattern, action, affected, fr.scope) {
-                let rewrite = match fr.rewrite {
+                let rewrite = match &fr.rewrite {
                     FloatingRewrite::ExileInstead => Rewrite::ExileInstead,
+                    FloatingRewrite::EntersWithCounters { kind, n } => {
+                        Rewrite::EntersWithCounters { kind: kind.clone(), n: *n }
+                    }
                 };
                 out.push(Applicable {
                     source: fr.scope,

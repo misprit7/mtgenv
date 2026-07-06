@@ -4,19 +4,23 @@
 //! color of mana spent to cast it. / Whenever you cast a creature spell, that creature enters with
 //! X additional +1/+1 counters on it, where X is the number of colors of mana spent to cast it."
 //!
-//! **Tracked-partial** (`.incomplete()`): the monocolour-hybrid cost (`{2/G}` pips) + Trample/Reach +
-//! the Converge enters-with (a `ColorsSpent` self-replacement, so the 0/0 enters as an X/X and
-//! survives the toughness SBA) are implemented. The second clause — "that [other] creature enters
-//! with X additional +1/+1 counters" — is **deferred**: it needs a *delayed enters-with-counters
-//! replacement keyed to another spell still on the stack* (the cast creature hasn't entered when the
-//! trigger resolves), a mechanism the engine doesn't have yet. Omitted rather than shipped as a no-op
-//! husk.
+//! **Fully implemented.** The monocolour-hybrid cost (`{2/G}` pips), Trample/Reach, and both
+//! clauses:
+//! - Converge enters-with — a `ColorsSpent` self-replacement (CR 614.1e / 702.75), so the 0/0 enters
+//!   as an X/X and survives the toughness SBA.
+//! - "Whenever you cast a creature spell, that creature enters with X additional +1/+1 counters" — a
+//!   [`Effect::EntersWithCountersRider`] arming a one-shot floating enters-with-counters replacement
+//!   (CR 614) scoped to the just-cast spell (still on the stack when the trigger resolves), with
+//!   `n = ColorsSpentOnTrigger` fixed at that moment. The rider fires when that spell resolves onto
+//!   the battlefield — a Stack→Battlefield move doesn't invalidate the scope (only leaving the
+//!   battlefield does), so the counters land as it enters.
 
-use crate::basics::{Color, CounterKind};
+use crate::basics::{CardType, Color, CounterKind};
 use crate::cards::{creature, mana_cost_mono_hybrid, CardDb};
-use crate::effects::ability::{Ability, ActionPattern, Keyword, Rewrite};
+use crate::effects::ability::{Ability, ActionPattern, EventPattern, Keyword, Rewrite};
 use crate::effects::target::CardFilter;
 use crate::effects::value::ValueExpr;
+use crate::effects::{Effect, EffectTarget};
 use crate::subtypes::CreatureType;
 
 /// grp id (per-set ids live near their cards).
@@ -41,14 +45,26 @@ pub fn register(db: &mut CardDb) {
                     n: ValueExpr::ColorsSpent,
                 },
             },
-            // deferred: "Whenever you cast a creature spell, that creature enters with X additional
-            // +1/+1 counters, where X = colours of mana spent to cast it." Needs a delayed enters-with
-            // replacement targeting the cast spell — omitted (see module doc).
+            // "Whenever you cast a creature spell, that creature enters with X additional +1/+1
+            // counters, where X = colours of mana spent to cast it." The trigger (you cast a creature
+            // spell) arms a one-shot floating enters-with-counters rider on the just-cast spell, with
+            // X = the colours spent on it, fixed now. Casting Wildgrowth itself doesn't trigger it —
+            // it isn't a permanent (its ability isn't active) while on the stack.
+            Ability::Triggered {
+                event: EventPattern::SpellCast(CardFilter::HasCardType(CardType::Creature)),
+                condition: None,
+                intervening_if: false,
+                effect: Effect::EntersWithCountersRider {
+                    what: EffectTarget::Triggering,
+                    kind: CounterKind::PlusOnePlusOne,
+                    n: ValueExpr::ColorsSpentOnTrigger,
+                },
+            },
         ],
     );
     def.chars.keywords = vec![Keyword::Trample, Keyword::Reach];
     def.text = "Trample, reach\nConverge — This creature enters with a +1/+1 counter on it for each color of mana spent to cast it.\nWhenever you cast a creature spell, that creature enters with X additional +1/+1 counters on it, where X is the number of colors of mana spent to cast it.".to_string();
-    db.insert(def.incomplete());
+    db.insert(def);
 }
 
 #[cfg(test)]
@@ -68,7 +84,7 @@ mod tests {
             vec![(2, Color::Green), (2, Color::Green)]
         );
         assert_eq!(def.chars.mana_value(), 4, "{{2/G}}x2 = MV 4 (CR 202.3g)");
-        assert!(!def.fully_implemented, "creature-cast counter-injection trigger deferred");
+        assert!(def.fully_implemented, "both clauses implemented");
         expect![[r#"
             [
                 Replacement {
@@ -78,6 +94,20 @@ mod tests {
                     rewrite: EntersWithCountersValue {
                         kind: PlusOnePlusOne,
                         n: ColorsSpent,
+                    },
+                },
+                Triggered {
+                    event: SpellCast(
+                        HasCardType(
+                            Creature,
+                        ),
+                    ),
+                    condition: None,
+                    intervening_if: false,
+                    effect: EntersWithCountersRider {
+                        what: Triggering,
+                        kind: PlusOnePlusOne,
+                        n: ColorsSpentOnTrigger,
                     },
                 },
             ]"#]]
@@ -126,5 +156,63 @@ mod tests {
         );
         assert_eq!(e.state.computed(wild).power, Some(1), "0/0 base + one +1/+1 = 1/1");
         assert!(e.state.player(PlayerId(0)).battlefield.contains(&wild), "survives the 0/0 SBA");
+    }
+
+    /// Behaviour (clause 2): with Wildgrowth on the battlefield, casting a creature spell paid with two
+    /// colours makes THAT creature enter with two additional +1/+1 counters (the arming rider) on top
+    /// of any of its own. Grizzly Bears (`{1}{G}`) paid with a Forest (the `{G}` pip) + a Mountain (the
+    /// `{1}` generic, `{R}`) spends `{G,R}` = 2 colours → the 2/2 Bears enters as a 4/4.
+    #[test]
+    fn wildgrowth_cast_creature_enters_with_extra_counters() {
+        use crate::agent::{Agent, CastVariant, DecisionRequest, DecisionResponse, PlayerView};
+        use crate::basics::{CounterKind, Zone};
+        use crate::cards::{grp, starter_db};
+        use crate::ids::PlayerId;
+        use crate::priority::Engine;
+        use crate::state::GameState;
+        use std::sync::Arc;
+
+        #[derive(Clone)]
+        struct PassiveAgent;
+        impl Agent for PassiveAgent {
+            fn decide(&mut self, _v: &PlayerView, _req: &DecisionRequest) -> DecisionResponse {
+                DecisionResponse::Pass
+            }
+        }
+
+        let mut state = GameState::new(2, 1);
+        state.set_card_db(Arc::new(starter_db()));
+        // Wildgrowth on the battlefield, given one +1/+1 counter so the 0/0 survives the SBA in-test.
+        let wild = {
+            let c = state.card_db().get(WILDGROWTH_ARCHAIC).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, Zone::Battlefield)
+        };
+        state.objects.get_mut(&wild).unwrap().counters.counts.insert(CounterKind::PlusOnePlusOne, 1);
+        // Grizzly Bears ({1}{G}) in hand + a Forest (G) and a Mountain (R) to pay across two colours.
+        let bears = {
+            let c = state.card_db().get(grp::GRIZZLY_BEARS).unwrap().chars.clone();
+            state.add_card(PlayerId(0), c, Zone::Hand)
+        };
+        for grp_id in [grp::FOREST, grp::MOUNTAIN] {
+            let land = state.card_db().get(grp_id).unwrap().chars.clone();
+            state.add_card(PlayerId(0), land, Zone::Battlefield);
+        }
+        state.active_player = PlayerId(0);
+        state.phase = crate::basics::Phase::PrecombatMain;
+        let mut e = Engine::new(state, vec![Box::new(PassiveAgent), Box::new(PassiveAgent)]);
+        e.cast_spell(PlayerId(0), bears, CastVariant::Normal);
+        // The "you cast a creature spell" trigger goes on the stack above the Bears; resolving it arms
+        // the rider, then resolving the Bears enters it and fires the rider.
+        e.run_agenda();
+        while !e.state.stack.items.is_empty() {
+            e.resolve_top();
+            e.run_agenda();
+        }
+        assert_eq!(
+            e.state.object(bears).counters.get(&CounterKind::PlusOnePlusOne),
+            2,
+            "two colours spent (G,R) → two additional +1/+1 counters on the cast creature"
+        );
+        assert_eq!(e.state.computed(bears).power, Some(4), "2/2 base + two +1/+1 = 4/4");
     }
 }

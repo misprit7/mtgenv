@@ -210,6 +210,12 @@ pub enum ActionPattern {
 pub enum FloatingRewrite {
     /// Exile the object instead of it dying (CR 614 — the death zone-move is redirected to exile).
     ExileInstead,
+    /// The object enters the battlefield with `n` extra counters of `kind` (CR 614.1e) — a
+    /// resolution-created ETB rider scoped to a *specific* object, unlike the printed
+    /// [`Rewrite::EntersWithCounters`] a permanent carries for its OWN ETB. Wildgrowth Archaic:
+    /// "whenever you cast a creature spell, that creature enters with X additional +1/+1 counters."
+    /// `n` is fixed when the rider is armed (the colours spent were determined at cast).
+    EntersWithCounters { kind: CounterKind, n: u32 },
 }
 
 /// How a matched action is rewritten (CR 614.1). Contains an `Effect` in the "instead" case, so
