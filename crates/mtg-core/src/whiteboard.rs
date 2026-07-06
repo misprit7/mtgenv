@@ -3927,6 +3927,12 @@ impl EngineCore {
                 .copied()
                 .flatten()
                 .unwrap_or(controller),
+            // "Its controller", per `ForEach` iteration — the current object's controller (overloaded
+            // Winds of Abandon's per-exiled-creature land search). Falls back outside a loop.
+            PlayerRef::ControllerOfEach => match self.foreach_current {
+                Some(Target::Object(obj)) => self.state.objects.get(&obj).map(|o| o.controller).unwrap_or(controller),
+                _ => controller,
+            },
         }
     }
 

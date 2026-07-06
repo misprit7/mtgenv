@@ -397,6 +397,12 @@ pub enum Ability {
     /// `cost` is a full [`Cost`] so a flashback cost can be non-mana (Group Project — "Flashback—Tap
     /// three untapped creatures you control"), paid through the real cost machinery alongside any mana.
     Flashback { cost: Cost },
+    /// Overload (CR 702.96): "You may cast this spell for its overload `cost`. If you do, change 'target'
+    /// in its text to 'each'." A static casting-permission ability read at the hand-cast offer; an
+    /// overloaded cast pays this alternative mana cost, chooses NO targets (702.96b replaces the word),
+    /// and the engine derives the "each" effect by rewriting every `Target(spec)` into a `ForEach` over
+    /// the spec's matching objects (`overload_rewrite`).
+    Overload { cost: ManaCost },
     /// Miracle (CR 702.94): "You may cast this card for its miracle `cost` when you draw it if it's
     /// the first card you drew this turn." A static ability that functions from the HAND: when the
     /// owner draws their first card of the turn and it's this card, a reveal trigger

@@ -1087,13 +1087,21 @@ impl Engine {
             if !timing_ok {
                 continue;
             }
+            // Restricted (I/S-only) mana (CR 106.6) counts toward affordability iff casting an I/S.
+            let is_is = chars.has_type(CardType::Instant) || chars.has_type(CardType::Sorcery);
+            // Overload (CR 702.96): an alternative cast cost; the spell affects "each" matching object,
+            // so it chooses no targets — offered independent of the single-target legality gate below
+            // (you may overload even when the normal cast would have no legal target).
+            if let Some(ocost) = self.overload_cost(card) {
+                if mana::can_pay_ex(s, p, &ocost, is_is) {
+                    actions.push(PlayableAction::Cast { spell: card, variant: CastVariant::Overload });
+                }
+            }
             // Must be able to choose legal targets (CR 601.2c) — modal-aware, and Aura-aware (an
             // Aura needs a legal permanent to enchant, else it deadlocks the target decision).
             if !self.card_castable_targets(card, p) {
                 continue;
             }
-            // Restricted (I/S-only) mana (CR 106.6) counts toward affordability iff casting an I/S.
-            let is_is = chars.has_type(CardType::Instant) || chars.has_type(CardType::Sorcery);
             // Normal cast for the mana cost, after cost-reduction statics (CR 601.2f / 118), plus
             // any spell-level additional cast cost (CR 601.2b/f) must be payable — no post-payment
             // rewind exists, so an unaffordable additional cost means we don't offer the cast.
@@ -2293,6 +2301,16 @@ impl Engine {
     /// [`Cost`] (mana + any non-mana components, e.g. Group Project's "tap three creatures"). Also honors
     /// a **granted** flashback (Flashback the card): while `flashback_until_turn` is set and this turn is
     /// within it, the flashback cost equals the card's own mana cost.
+    /// The overload cost a card declares via [`Ability::Overload`] (CR 702.96), if any.
+    fn overload_cost(&self, card: ObjId) -> Option<ManaCost> {
+        self.state.def_of(card).and_then(|d| {
+            d.abilities.iter().find_map(|a| match a {
+                Ability::Overload { cost } => Some(cost.clone()),
+                _ => None,
+            })
+        })
+    }
+
     fn flashback_cost(&self, card: ObjId) -> Option<Cost> {
         if let Some(cost) = self.state.def_of(card).and_then(|d| {
             d.abilities.iter().find_map(|a| match a {
@@ -2515,6 +2533,8 @@ impl Engine {
         let cost = match variant {
             CastVariant::Warp => self.warp_cost(card),
             CastVariant::Flashback => self.flashback_cost(card).map(|c| c.mana.unwrap_or_default()),
+            // Overload (CR 702.96): a fixed alternative mana cost; the effect is broadened to "each".
+            CastVariant::Overload => self.overload_cost(card),
             // Miracle (CR 702.94): a fixed alternative cast cost — printed or granted (`miracle_cost`).
             CastVariant::Miracle => self.miracle_cost(card, p),
             // "Cast without paying its mana cost" (CR 601.2f / 707.12a): the total cost is {0}, and
@@ -2554,7 +2574,13 @@ impl Engine {
         // cost equals the printed cost the offer gate already found affordable, so it's a no-op.
         // (Warp/Flashback pay a fixed alternative cost, not `effective_cast_cost`, so skip them.)
         let cost_varies_by_target = variant == CastVariant::Normal;
-        let effect = self.state.def_of(card).and_then(|d| d.spell_effect().cloned());
+        // Overload (CR 702.96b): the cast uses the "each" version of the effect, so no targets are
+        // enumerated at 601.2c — the same rewrite the resolver applies.
+        let effect = self
+            .state
+            .def_of(card)
+            .and_then(|d| d.spell_effect().cloned())
+            .map(|e| if variant == CastVariant::Overload { overload_rewrite(&e) } else { e });
 
         // Spell-level additional cast costs (CR 601.2b/f) — cloned now so they survive the mutable
         // borrows during payment below. An additional cost that pays `X` (e.g. "pay X life") gives
@@ -2596,6 +2622,11 @@ impl Engine {
             if let Some(o) = self.state.objects.get_mut(&card) {
                 o.flashback_cast = true;
             }
+        }
+        // Flag an overloaded cast (CR 702.96) so the resolver applies the target→each rewrite; set
+        // explicitly (incl. `false` for a normal cast) so a re-cast of the same object is never stale.
+        if let Some(o) = self.state.objects.get_mut(&card) {
+            o.overloaded = variant == CastVariant::Overload;
         }
 
         // 601.2b: a modal spell chooses its modes BEFORE targets — the mode determines which
@@ -3297,7 +3328,14 @@ impl Engine {
                 } else {
                     // Instant/sorcery: recheck targets (608.2b), run the effect (608.2c),
                     // then put it into its owner's graveyard (608.2n).
-                    let effect = self.state.def_of(id).and_then(|d| d.spell_effect().cloned());
+                    // An overloaded spell (CR 702.96) resolves the "each" version — its printed
+                    // single-target effect broadened via `overload_rewrite`.
+                    let overloaded = self.state.object(id).overloaded;
+                    let effect = self
+                        .state
+                        .def_of(id)
+                        .and_then(|d| d.spell_effect().cloned())
+                        .map(|e| if overloaded { overload_rewrite(&e) } else { e });
                     if let Some(effect) = effect {
                         if self.targets_still_legal(&obj.targets, &target_specs_for(&effect, &obj.modes)) {
                             let ctx = ResolutionCtx {
@@ -5050,6 +5088,100 @@ pub(crate) fn collect_target_specs(effect: &Effect) -> Vec<TargetSpec> {
     let mut out = Vec::new();
     collect_specs_into(effect, &mut out);
     out
+}
+
+/// Overload (CR 702.96b): mechanize "change every 'target' to 'each'." Takes a printed single-target
+/// effect and returns the "each" version: a `ForEach` over every object matching the (single) target
+/// spec's kind, whose body is the SAME effect with each `EffectTarget::Target` rewritten to
+/// `EffectTarget::Each` (so a per-target rider — Winds of Abandon's land-search — runs per object). The
+/// object's controller is reachable in the body via `PlayerRef::ControllerOfEach`. If the effect has no
+/// single-object target (nothing to broaden), it's returned unchanged.
+pub(crate) fn overload_rewrite(effect: &Effect) -> Effect {
+    use crate::effects::value::ValueExpr;
+    let specs = collect_target_specs(effect);
+    let Some(spec) = specs.into_iter().next() else {
+        return effect.clone();
+    };
+    let (zone, filter) = match &spec.kind {
+        TargetKind::Creature(f) => (
+            crate::basics::Zone::Battlefield,
+            CardFilter::All(vec![CardFilter::HasCardType(crate::basics::CardType::Creature), f.clone()]),
+        ),
+        TargetKind::Permanent(f) => (crate::basics::Zone::Battlefield, f.clone()),
+        TargetKind::CardInZone { zone, filter } => (*zone, filter.clone()),
+        // Player / StackObject / Any targets have no "each permanent" broadening in this pool.
+        _ => return effect.clone(),
+    };
+    // `select_for_each`'s span (its `chooser`) does the controller restriction — `count_filter_matches`
+    // can't evaluate a controller-relative `ControlledBy` (ctx-free ⇒ always true). So map the target
+    // filter's "you (don't) control" into the selector's chooser: "you don't control" → each opponent,
+    // "you control" → controller, unrestricted → each player.
+    let selector = SelectSpec {
+        zone,
+        chooser: chooser_from_control_filter(&filter),
+        filter,
+        min: ValueExpr::Fixed(0),
+        max: ValueExpr::Fixed(999),
+    };
+    Effect::ForEach { selector, body: Box::new(retarget_to_each(effect)) }
+}
+
+/// Derive a `ForEach` span (chooser) from a target filter's controller restriction (see `overload_rewrite`).
+fn chooser_from_control_filter(filter: &CardFilter) -> PlayerRef {
+    fn find(f: &CardFilter) -> Option<PlayerRef> {
+        match f {
+            CardFilter::ControlledBy(pr) => Some(*pr),
+            // "you don't control" = Not(ControlledBy(Controller)).
+            CardFilter::Not(inner) => match inner.as_ref() {
+                CardFilter::ControlledBy(PlayerRef::Controller) => Some(PlayerRef::Opponent),
+                _ => None,
+            },
+            CardFilter::All(fs) | CardFilter::AnyOf(fs) => fs.iter().find_map(find),
+            _ => None,
+        }
+    }
+    match find(filter) {
+        Some(PlayerRef::Controller) => PlayerRef::Controller,
+        Some(PlayerRef::Opponent) | Some(PlayerRef::EachOpponent) => PlayerRef::EachOpponent,
+        _ => PlayerRef::EachPlayer,
+    }
+}
+
+/// Rewrite every `EffectTarget::Target(_)` in `effect` to `EffectTarget::Each`, and every
+/// `PlayerRef::ControllerOfTarget(_)` to `PlayerRef::ControllerOfEach` (a per-target rider's "its
+/// controller" becomes "the current object's controller"). Used by [`overload_rewrite`]; recurses
+/// through the effect combinators.
+fn retarget_to_each(effect: &Effect) -> Effect {
+    use crate::effects::EffectTarget;
+    fn et(t: &EffectTarget) -> EffectTarget {
+        match t {
+            EffectTarget::Target(_) => EffectTarget::Each,
+            other => other.clone(),
+        }
+    }
+    fn pr(p: &PlayerRef) -> PlayerRef {
+        match p {
+            PlayerRef::ControllerOfTarget(_) => PlayerRef::ControllerOfEach,
+            other => *other,
+        }
+    }
+    match effect {
+        Effect::MoveZone { what, to, tapped } => Effect::MoveZone { what: et(what), to: to.clone(), tapped: *tapped },
+        Effect::Exile { what } => Effect::Exile { what: et(what) },
+        Effect::Destroy { what } => Effect::Destroy { what: et(what) },
+        Effect::DealDamage { amount, to, kind } => Effect::DealDamage { amount: amount.clone(), to: et(to), kind: *kind },
+        Effect::PumpPT { what, power, toughness, duration } => Effect::PumpPT { what: et(what), power: power.clone(), toughness: toughness.clone(), duration: *duration },
+        Effect::Search { who, zone, filter, min, max, to, tapped } => {
+            Effect::Search { who: pr(who), zone: *zone, filter: filter.clone(), min: *min, max: *max, to: to.clone(), tapped: *tapped }
+        }
+        Effect::Sequence(es) => Effect::Sequence(es.iter().map(retarget_to_each).collect()),
+        Effect::Conditional { cond, then, otherwise } => Effect::Conditional {
+            cond: cond.clone(),
+            then: Box::new(retarget_to_each(then)),
+            otherwise: otherwise.as_ref().map(|e| Box::new(retarget_to_each(e))),
+        },
+        other => other.clone(),
+    }
 }
 
 /// Whether `name` is noted as the **chosen name** on any object (CR 201.4 — Petrified Hamlet's "choose

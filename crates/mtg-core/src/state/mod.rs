@@ -159,6 +159,10 @@ pub struct Object {
     /// leaves the stack the engine exiles it instead of putting it in the graveyard. Reset on every
     /// zone change.
     pub flashback_cast: bool,
+    /// Set while this object is a spell cast for its **overload** cost (CR 702.96) — so the resolver
+    /// applies the `Target`→`ForEach` "each" rewrite instead of the printed single-target effect. Set
+    /// explicitly at cast (`= variant == Overload`), so a later normal recast clears it.
+    pub overloaded: bool,
     /// Set on a card warp-exiled at its end step (CR 702.x) — it may be cast from exile on a later
     /// turn (for its normal cost). Reset on any zone change (cast it, or it leaves exile).
     pub castable_from_exile: bool,
@@ -745,6 +749,7 @@ impl GameState {
             exiled_with: None,
             warp_cast: false,
             flashback_cast: false,
+            overloaded: false,
             castable_from_exile: false,
             playable_from_graveyard: false,
             play_until_turn: None,

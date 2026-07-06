@@ -445,6 +445,10 @@ pub enum CastVariant {
     /// granted [`crate::effects::ability::Ability::GrantMiracle`]). Offered only during the miracle
     /// reveal window ([`crate::stack::StackObjectKind::MiracleWindow`]).
     Miracle,
+    /// Cast for the card's **overload cost** (CR 702.96, [`crate::effects::ability::Ability::Overload`]):
+    /// the spell chooses no targets and every "target …" in its effect becomes "each …" (an engine-side
+    /// `Target(spec)`→`ForEach` rewrite). Offered from the hand alongside the normal cast.
+    Overload,
 }
 
 /// A special action (CR 116) — no stack, no response.

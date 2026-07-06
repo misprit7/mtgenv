@@ -32,6 +32,11 @@ pub enum PlayerRef {
     /// "Destroy target creature. Its controller may search…", where "its controller" is read
     /// before the destroy moves it to the graveyard). CR 608.2 (info read as the effect resolves).
     ControllerOfTarget(u32),
+    /// The controller of the object currently bound by an enclosing `ForEach` (CR "its controller",
+    /// per-iteration) — the object analogue of [`Each`]. Used by an overloaded spell's per-object rider
+    /// (Winds of Abandon: "for each creature exiled this way, its controller searches …"). Falls back to
+    /// the effect's controller outside a `ForEach` or if the current binding isn't an object.
+    ControllerOfEach,
 }
 
 /// A number that may be fixed or computed from game state. Kept small; grows with the IR.
