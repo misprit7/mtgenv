@@ -2185,6 +2185,28 @@ impl EngineCore {
                     });
                 }
             }
+            // "[target] becomes …" (CR 611.2 / 613) — grant a bag of layer contributions plus an
+            // optional concrete base P/T (its `ValueExpr`s resolved now — Fractalize's X+1) as one
+            // continuous effect. Fractalize; Great Hall's {5} animation.
+            Effect::Becomes { what, contributions, base_pt, duration } => {
+                if let Some(Target::Object(obj)) = self.resolve_target(what, ctx, cursor) {
+                    let controller = ctx.controller.unwrap_or(PlayerId(0));
+                    let mut contribs = contributions.clone();
+                    if let Some((p, t)) = base_pt {
+                        contribs.push(StaticContribution::SetBasePT {
+                            power: self.eval_value(p, ctx) as i32,
+                            toughness: self.eval_value(t, ctx) as i32,
+                        });
+                    }
+                    wb.push(Action::GrantContinuous {
+                        source: ctx.source,
+                        controller,
+                        affected: vec![obj],
+                        contributions: contribs,
+                        duration: *duration,
+                    });
+                }
+            }
             // Set the target's base P/T for a duration (CR 613 layer 7b) — "base power and toughness
             // 5/5 until end of turn" (Quandrix Charm).
             Effect::SetBasePT { what, power, toughness, duration } => {

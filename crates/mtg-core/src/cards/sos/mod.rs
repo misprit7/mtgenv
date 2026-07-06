@@ -94,6 +94,7 @@ pub mod expressive_firedancer;
 pub mod fractal_anomaly;
 pub mod fractal_mascot;
 pub mod fractal_tender;
+pub mod fractalize;
 pub mod flow_state;
 pub mod fields_of_strife;
 pub mod follow_the_lumarets;
@@ -359,6 +360,7 @@ pub fn register(db: &mut CardDb) {
     fractal_anomaly::register(db);
     fractal_mascot::register(db);
     fractal_tender::register(db);
+    fractalize::register(db);
     flow_state::register(db);
     fields_of_strife::register(db);
     follow_the_lumarets::register(db);

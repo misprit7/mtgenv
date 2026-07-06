@@ -124,6 +124,30 @@ pub fn compute(state: &GameState, id: ObjId) -> ComputedChars {
     }
     // From here on, `c.card_types` is the post-layer-4 type set: subsequent layers read it
     // (this is the "affects reads computed, not base" fix).
+    // Layer 4 — subtypes (CR 613.1c): add a subtype (keeping others) or replace the creature-subtype
+    // set (keeping non-creature subtypes). Same layer as AddType, timestamp-ordered; `affects` reads
+    // base types (intra-layer-4 dependency deferred, exactly as for AddType above). Great Hall adds
+    // Wizard; Fractalize sets [Fractal] and drops all other creature types.
+    for e in &effects {
+        match e.contribution {
+            StaticContribution::AddSubtype(s) => {
+                if affects_matches(state, e, id, &base_types) && !c.subtypes.contains(s) {
+                    c.subtypes.push(*s);
+                }
+            }
+            StaticContribution::SetCreatureSubtypes(subs) => {
+                if affects_matches(state, e, id, &base_types) {
+                    c.subtypes.retain(|s| !matches!(s, Subtype::Creature(_)));
+                    for s in subs {
+                        if !c.subtypes.contains(s) {
+                            c.subtypes.push(*s);
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
     // Layer 5 — color.
     for e in &effects {
         match e.contribution {

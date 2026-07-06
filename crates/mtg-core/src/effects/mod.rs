@@ -19,7 +19,7 @@ pub mod native;
 pub mod target;
 pub mod value;
 
-use self::ability::{Cost, Keyword};
+use self::ability::{Cost, Keyword, StaticContribution};
 use self::condition::{Condition, Duration};
 use self::native::NativeFn;
 use self::target::{
@@ -189,6 +189,19 @@ pub enum Effect {
     /// P/T comes from its own characteristics/CDA; it's already an artifact).
     BecomeCreature {
         what: EffectTarget,
+        duration: Duration,
+    },
+    /// The target **becomes** a new set of characteristics for a duration (CR 611.2 / 613): a bag of
+    /// layer contributions (type/subtype/color/keyword/granted-ability changes) plus an optional base
+    /// P/T whose `ValueExpr`s are resolved to concrete values NOW (so a cast-`{X}` base P/T bakes in —
+    /// a later static recompute has no cast-X). Grants ONE `ContinuousEffect` over `what` via
+    /// `Action::GrantContinuous`. Fractalize ("becomes a green and blue Fractal, base P/T X+1, loses
+    /// other colors/creature types"); Great Hall's `{5}` animation ("becomes a 2/4 Wizard, still a
+    /// land, with an I/S-cast pump"). General — any "target/this becomes …" rides it.
+    Becomes {
+        what: EffectTarget,
+        contributions: Vec<StaticContribution>,
+        base_pt: Option<(ValueExpr, ValueExpr)>,
         duration: Duration,
     },
     /// The target's **base** power/toughness become the given values for a duration (CR 613 layer

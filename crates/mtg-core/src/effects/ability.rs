@@ -8,6 +8,7 @@ use super::target::{CardFilter, SelectSpec};
 use super::value::ValueExpr;
 use super::Effect;
 use crate::basics::{CardType, Color, CounterKind, DamageKind, ManaCost, Zone};
+use crate::subtypes::Subtype;
 use serde::{Deserialize, Serialize};
 
 /// A cost to be paid (CR 118): an optional mana component plus any number of non-mana
@@ -279,6 +280,13 @@ pub enum StaticContribution {
     RemoveKeyword(Keyword),
     /// Layer 4: add a card type.
     AddType(CardType),
+    /// Layer 4: add a subtype, keeping existing ones (CR 613.1c) — Great Hall of the Biblioplex
+    /// "becomes a … Wizard" while staying a land. Timestamp-ordered with the other layer-4 effects.
+    AddSubtype(Subtype),
+    /// Layer 4: replace the object's **creature** subtypes (`Subtype::Creature(_)`) with exactly the
+    /// given set, keeping non-creature subtypes (CR 613.1c) — Fractalize "becomes a Fractal … loses
+    /// all other creature types." Later timestamp wins.
+    SetCreatureSubtypes(Vec<Subtype>),
     /// Layer 5: set/add color.
     AddColor(Color),
     SetColor(Vec<Color>),
