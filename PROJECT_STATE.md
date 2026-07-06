@@ -66,6 +66,14 @@ MTGA client.
   (0.5·tanh(Δlife/10)+0.3·tanh(Δpower/6)+0.2·tanh(Δcards/4), 60% anneal) now defaults to coef 0.5;
   eval stays raw ±1. Per-window cast/playland_rate cap <1.0 for optimal play (mutual-exclusion
   artifact) — use `productive_rate` as the convergence gauge. TB served from /tmp/mtgenv_tb/.
+- **✅ evalkit — algorithm-agnostic eval/metrics/logging (2026-07-06, `python/mtgenv_gym/evalkit/`).**
+  One eval+metrics+logging stack every RL algorithm shares; a new algorithm plugs in via a thin
+  `Policy` adapter (`act(obs_batch, mask_batch, *, mode)`, batched, greedy+sample). `Arena` (batched
+  N-game A-vs-B → win-rate+Wilson-CI/avg-turns/decision-stat-ratios/end-reasons), `Ladder` (%-trained
+  snapshots via algo hooks), canonical TB schema (backward-compat w/ 2.x) + JSON artifacts, per-deck
+  analyzers (swine), `EvalkitCallback`/`evaluate_checkpoint()`/offline CLI. `selfplay_train` migrated
+  (tag-set-clean, +`_sampled` variants); Arena greedy-vs-random bit-identical to legacy `play_winrate`.
+  Core torch/sb3-free (imports in the LightZero venv). Generalizes the muzero parity harness.
 - **✅ MOBILE WEB CLIENT (2026-07-03).** Game client + lobby fully playable from a phone: mobile
   reflow (sticky prompt sheet, opp-top/you-bottom strips, log toggle), touch previews long-press-only
   (hover gated to real mice), on-screen pass-turn button. Desktop unchanged.

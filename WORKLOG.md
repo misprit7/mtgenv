@@ -3,6 +3,23 @@
 Short, dated entries for future-agent consumption. Newest first. One line or a few bullets
 per unit of meaningful progress. Keep it terse — detail lives in `docs/` and git history.
 
+## 2026-07-06 (evalkit — algorithm-agnostic eval/metrics/logging framework, gym/Python)
+
+- **`270b237` New `python/mtgenv_gym/evalkit/` package**: one eval+metrics+logging stack shared by every
+  RL algorithm (PPO today; MCTS/AZ/DMC/MuZero later). Integrating a new algorithm = writing a thin
+  `Policy` adapter (`act(obs_batch, mask_batch, *, mode) -> actions`, batched-first, greedy+sample).
+  Generalizes the ad-hoc `experiments/stochastic_muzero/muzero_{metrics,observability}.py` parity harness.
+- **Pieces:** `Arena` (batched lockstep pump, N seeded games A-vs-B → `EvalResult` = win-rate + Wilson CI,
+  avg turns, decision-stat ratios reusing `tracked_stats` **exactly**, end-reason mix); `Ladder`
+  (framework-managed %-trained snapshots via algo-supplied snapshot/load hooks); canonical TB tag schema
+  (backward-compat with 2.x runs) + JSON artifacts; per-deck analyzers (swine chump/gang) auto-run on match;
+  `EvalkitCallback` (drop-in for SelfPlayEval+LadderEval+ReplayCheckpoint), `evaluate_checkpoint()` for
+  custom loops, offline CLI `python -m mtgenv_gym.evalkit` with a pluggable adapter registry.
+- **Migrated `selfplay_train.py`** to `EvalkitCallback` — proven tag-set-clean (legacy ⊆ new; additions =
+  the intended `_sampled` win-rate variants). Arena greedy-vs-random is **bit-identical** to the legacy
+  `play_winrate` (test-guarded). Core is torch/sb3-free (imports in the isolated LightZero venv) — made
+  `tracked_stats`' sb3 import optional. 7 evalkit tests + full related suite green.
+
 ## 2026-07-06 (SOS COMPLETE — sos-cards-21 finale: 269→271 authored, last partial cleared)
 
 - **✅ THE SET IS COMPLETE: 271/271 authored · 271 fully-faithful · 0 tracked-partials · 0 Native
