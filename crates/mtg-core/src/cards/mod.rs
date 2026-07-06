@@ -42,11 +42,13 @@ pub mod aer;
 pub mod ala;
 pub mod blb;
 pub mod bro;
+pub mod cmd;
 pub mod dft;
 pub mod dsk;
 pub mod eld;
 pub mod emn;
 pub mod eoe;
+pub mod exo;
 pub mod fdn;
 pub mod fin;
 pub mod isd;
@@ -60,15 +62,19 @@ pub mod mgb;
 pub mod mir;
 pub mod mkm;
 pub mod mrd;
+pub mod ody;
 pub mod p02;
 pub mod pls;
 pub mod por;
 pub mod rav;
 pub mod rix;
 pub mod rtr;
+pub mod scg;
+pub mod snc;
 pub mod som;
 pub mod sos;
 pub mod sth;
+pub mod stx;
 pub mod tdm;
 pub mod tla;
 pub mod tmp;
@@ -77,6 +83,8 @@ pub mod ulg;
 pub mod usg;
 pub mod vow;
 pub mod woe;
+pub mod zen;
+pub mod znr;
 
 /// Oracle/printing ids (the `grp_id` linking an object to its [`CardDef`]). Per-set card ids move
 /// near their cards in the `<setcode>/` folders; the prototype/starter ids stay here.
@@ -637,6 +645,15 @@ pub fn starter_db() -> CardDb {
     tsp::register(&mut db);
     ulg::register(&mut db);
     usg::register(&mut db);
+    // `soa` bonus-sheet first-printing folders.
+    cmd::register(&mut db);
+    exo::register(&mut db);
+    ody::register(&mut db);
+    scg::register(&mut db);
+    snc::register(&mut db);
+    stx::register(&mut db);
+    zen::register(&mut db);
+    znr::register(&mut db);
     db
 }
 
@@ -782,7 +799,7 @@ mod tests {
     fn starter_db_has_expected_cards() {
         let db = starter_db();
         // 359 base pool + the `soa` bonus-sheet reprints authored into their first-printing folders.
-        assert_eq!(db.len(), 367);
+        assert_eq!(db.len(), 378);
         // Forest is "type line only": a Basic Land with subtype Forest. Mana is intrinsic
         // (CR 305.6) — the engine derives {T}: Add {G} from the subtype, so the CardDef carries
         // no explicit mana ability (and `is_mana_source` only sees authored abilities).
