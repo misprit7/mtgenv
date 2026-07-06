@@ -220,6 +220,27 @@ Cap-then-cards, `git log -S` before scoping any "absent" mechanic (some B caps m
     - **Deferred moderate:** Berserk (needs `Object.attacked_this_turn` flag set at attacker declaration + reset at cleanup, + a conditional delayed destroy), Veil of Summer (qualified hexproof-from-colour + can't-be-countered grant + opp-cast-colour-this-turn state), Culling Ritual (`ManaSpec` subset-choice — batch into a dedicated refactor or take an any-color divergence), Daze/Force of Will (`CastVariant::Alternative` alt-cast — mirror Overload/Flashback offer+cost; Daze also needs a `CostComponent::ReturnToHand`).
     - *moderate leaf caps (1 card each, no sign-off but real work):* **Glimpse of Nature** (recurring-until-EOT cast trigger w/ generic actions — the delayed-trigger `YouCastSpell` path is hardcoded to copy-spell), **Berserk** (delayed destroy-if-attacked + "attacked this turn" + cast-timing), **Crackle with Power** (dynamic-count `up to X` targets), **Expressive Iteration** (3-way look-distribute), **Culling Ritual** (count-destroyed→mana + `ManaSpec` B/G subset choice), **Ad Nauseam** (player-controlled reveal/lose-life repeat loop, `Effect::Repeat` E5 unwired), **Veil of Summer** (qualified hexproof-from-colour + "spells can't be countered this turn" floating grant + opp-cast-colour-this-turn state).
     - *sign-off-gated:* Dismember/Bitter Triumph (pay-life/Phyrexian), Daze/Force of Will (alt-cast), Sheoldred's Edict (token-identity), + the 12 C-subsystem cards (Overload/Spree/Roles/Protection/Infect/Suspend/Convoke/Redirect/Split-second).
+- **sos-bonus-2 (2026-07-06): 50/65, 955 mtg-core green, whole workspace builds.** `611bedd` **SPREE subsystem**
+  → **Requisition Raid, Return the Favor** (new `otj/` folder, grp 648–649).
+  - **`Effect::Spree{ modes: Vec<SpreeMode{ cost: ManaCost, label, effect }> }`** (new struct, ZERO `Mode`-literal
+    churn per the ledger). Cast-pipeline integration mirrors Modal+Overload: at cast choose ≥1 **legal** modes
+    (`choose_modes` over a `Mode` view, min=1), sum their `cost` into `spree_extra` folded into the mana payment
+    (CR 601.2b/f), collect targets from the chosen modes, and at resolution run each chosen mode's effect. Offer gate
+    `spree_affordable` requires base + ≥1 legal mode's cost payable; the chosen set is **trimmed** to a payable subset
+    (≥1) rather than rewound (§2.6 no-rewind — offer guarantees ≥1 affordable single-mode line).
+  - **Mode targets are mode-RELATIVE** (CR 700.2): the Spree interpret arm gives each chosen mode a mode-local ctx
+    (its own `chosen_targets`/`target_controllers` slice + fresh cursor), so mode 2's `ChosenTarget(0)`/`TargetPlayer`
+    isn't shifted by mode 0's target (the bug the two-mode test caught). Requisition Raid mode 3 = `TargetPlayer` +
+    per-player `ForEach` counters.
+  - **`Effect::ChangeTarget{ what }`** (Return the Favor mode 2, CR 115.7) + **`CardFilter::HasSingleTarget`** (reads a
+    stack object's `targets.len()==1`, handled in `target_matches_filter`'s Stack branch). Resolution
+    (`Engine::change_target`) recovers the **victim's own** `TargetSpec` (via `target_specs_for`), enumerates legal
+    alternatives from the victim controller's view minus the current target, and the retargeter picks one; **no legal
+    alternative ⇒ target unchanged** (no fizzle, per lead note ②). Mode 1 = `CopySpellOnStack{ choose_new_targets }`.
+    Divergence: only *spell* stack objects are targetable in first pass (abilities-on-stack out of scope — matches the
+    copy mode), documented in both leaves.
+  - Tests (real-path cast→modes→pay→target→resolve): 1-mode counters + mana tapped, 2-mode destroy-artifact+counters +
+    3 mana, offer gate (base+mode affordability), copy-doubles-a-Bolt, change-target redirects a Bolt.
 
 ---
 
