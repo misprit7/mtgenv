@@ -158,6 +158,9 @@ pub mod grp {
     pub const GRANT_DIES_DRAW: u32 = 9800;
     /// "Whenever this creature attacks, you gain 1 life." (Root Manipulation.)
     pub const GRANT_ATTACKS_GAIN_LIFE: u32 = 9801;
+    /// "Whenever you cast an instant or sorcery spell, this creature gets +1/+0 until end of turn."
+    /// (Great Hall of the Biblioplex's `{5}` animation grants this to itself.)
+    pub const GRANT_ISCAST_PUMP: u32 = 9802;
 }
 
 /// A card definition: its printed characteristics + abilities (the Effect IR). Card *data*, not
@@ -776,7 +779,7 @@ mod tests {
     #[test]
     fn starter_db_has_expected_cards() {
         let db = starter_db();
-        assert_eq!(db.len(), 355);
+        assert_eq!(db.len(), 357);
         // Forest is "type line only": a Basic Land with subtype Forest. Mana is intrinsic
         // (CR 305.6) — the engine derives {T}: Add {G} from the subtype, so the CardDef carries
         // no explicit mana ability (and `is_mana_source` only sees authored abilities).

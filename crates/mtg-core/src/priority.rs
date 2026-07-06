@@ -4576,8 +4576,9 @@ impl Engine {
         });
         let watchers: Vec<ObjId> = self.state.player(caster).battlefield.clone();
         for watcher in watchers {
-            // (index, filter, needs_creature_target, condition, intervening_if)
-            let candidates: Vec<(u32, CardFilter, bool, Option<crate::effects::condition::Condition>, bool)> =
+            // (index, filter, needs_creature_target, condition, intervening_if, source_grp). `source_grp`
+            // is `None` for a printed ability, `Some(template)` for one GRANTED by a continuous effect.
+            let mut candidates: Vec<(u32, CardFilter, bool, Option<crate::effects::condition::Condition>, bool, Option<u32>)> =
                 match self.state.def_of(watcher) {
                     Some(def) => def
                         .abilities
@@ -4586,19 +4587,38 @@ impl Engine {
                         .filter_map(|(i, a)| match a {
                             Ability::Triggered {
                                 event: EventPattern::SpellCast(f), condition, intervening_if, ..
-                            } => Some((i as u32, f.clone(), false, condition.clone(), *intervening_if)),
+                            } => Some((i as u32, f.clone(), false, condition.clone(), *intervening_if, None)),
                             Ability::Triggered {
                                 event: EventPattern::SpellCastTargetingCreature(f),
                                 condition,
                                 intervening_if,
                                 ..
-                            } => Some((i as u32, f.clone(), true, condition.clone(), *intervening_if)),
+                            } => Some((i as u32, f.clone(), true, condition.clone(), *intervening_if, None)),
                             _ => None,
                         })
                         .collect(),
-                    None => continue,
+                    None => Vec::new(),
                 };
-            for (index, filter, needs_creature_target, condition, intervening_if) in candidates {
+            // Granted cast-triggers (a `GrantAbility` continuous effect — Great Hall's animated
+            // "whenever you cast an instant or sorcery spell, this creature gets +1/+0"): each granted
+            // template's single `Triggered` (index 0), source_grp = the template. Mirrors the granted
+            // scan in `queue_self_triggers`, so granted "whenever you cast …" abilities fire like printed.
+            for tg in self.granted_ability_templates(watcher) {
+                if let Some(Ability::Triggered { event, condition, intervening_if, .. }) =
+                    self.state.def_by_grp(tg).and_then(|d| d.abilities.first())
+                {
+                    match event {
+                        EventPattern::SpellCast(f) => {
+                            candidates.push((0, f.clone(), false, condition.clone(), *intervening_if, Some(tg)));
+                        }
+                        EventPattern::SpellCastTargetingCreature(f) => {
+                            candidates.push((0, f.clone(), true, condition.clone(), *intervening_if, Some(tg)));
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            for (index, filter, needs_creature_target, condition, intervening_if, source_grp) in candidates {
                 if (!needs_creature_target || targets_a_creature)
                     && self.enter_filter_matches(card, &filter, caster, None)
                     && self.trigger_queues(&condition, intervening_if, caster, Some(watcher))
@@ -4608,7 +4628,7 @@ impl Engine {
                         id,
                         controller: caster,
                         source: Some(watcher),
-                        kind: StackObjectKind::Ability { index, source_grp: None },
+                        kind: StackObjectKind::Ability { index, source_grp },
                         targets: Vec::new(),
                         x: None,
                         modes: Vec::new(),

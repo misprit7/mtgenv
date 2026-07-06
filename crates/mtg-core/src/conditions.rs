@@ -34,6 +34,11 @@ pub(crate) fn holds_for_source(
         Condition::All(cs) => cs.iter().all(|c| holds_for_source(state, c, source_controller, source)),
         Condition::AnyOf(cs) => cs.iter().any(|c| holds_for_source(state, c, source_controller, source)),
         Condition::YourTurn => state.active_player == source_controller,
+        // The source is a creature by its COMPUTED characteristics (CR 613) — reads through the layer
+        // system so an already-animated land counts (Great Hall's re-animation guard).
+        Condition::SelfIsCreature => {
+            source.is_some_and(|s| crate::chars::compute(state, s).is_creature())
+        }
         Condition::CountAtLeast { zone, filter, controller, n } => {
             let want = controller.map(|r| resolve_player(state, r, source_controller));
             let count = state

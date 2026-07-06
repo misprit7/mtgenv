@@ -10,10 +10,12 @@
 //! granting card's effect. These are not real cards (no card_types); the `/api/cards` catalog already
 //! excludes everything ≥ 9700. Card-agnostic law: the granted behaviour is *data* (this def's ability).
 
+use crate::cards::helpers::instant_or_sorcery;
 use crate::cards::{grp, CardDb, CardDef};
 use crate::effects::ability::{Ability, EventPattern};
+use crate::effects::condition::Duration;
 use crate::effects::value::{PlayerRef, ValueExpr};
-use crate::effects::Effect;
+use crate::effects::{Effect, EffectTarget};
 use crate::state::Characteristics;
 
 /// Build a template def carrying a single triggered ability.
@@ -42,6 +44,20 @@ pub fn register(db: &mut CardDb) {
         EventPattern::SelfAttacks,
         Effect::GainLife { who: PlayerRef::Controller, amount: ValueExpr::Fixed(1) },
         "Whenever this creature attacks, you gain 1 life.",
+    ));
+    // "Whenever you cast an instant or sorcery spell, this creature gets +1/+0 until end of turn."
+    // (Great Hall of the Biblioplex's {5} animation grants this to the animated land.)
+    db.insert(template(
+        grp::GRANT_ISCAST_PUMP,
+        "Granted — Whenever you cast an I/S, this gets +1/+0",
+        EventPattern::SpellCast(instant_or_sorcery()),
+        Effect::PumpPT {
+            what: EffectTarget::SourceSelf,
+            power: ValueExpr::Fixed(1),
+            toughness: ValueExpr::Fixed(0),
+            duration: Duration::UntilEndOfTurn,
+        },
+        "Whenever you cast an instant or sorcery spell, this creature gets +1/+0 until end of turn.",
     ));
 }
 

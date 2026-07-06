@@ -8,6 +8,7 @@ pub mod joined_researchers;
 pub mod jadzi_steward_of_fate;
 pub mod harmonized_trio;
 pub mod grave_researcher;
+pub mod great_hall_of_the_biblioplex;
 pub mod leech_collector;
 pub mod goblin_glasswright;
 pub mod group_project;
@@ -274,6 +275,7 @@ pub fn register(db: &mut CardDb) {
     grave_researcher::register(db);
     leech_collector::register(db);
     goblin_glasswright::register(db);
+    great_hall_of_the_biblioplex::register(db);
     group_project::register(db);
     elite_interceptor::register(db);
     end_of_the_hunt::register(db);
