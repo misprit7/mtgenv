@@ -86,6 +86,96 @@ stays the map for future sets). `WORKLOG.md` + `PROJECT_STATE.md` updated to the
 
 ---
 
+## ★ BONUS SHEET — Secrets of Strixhaven Mystical Archive (`soa`, 65 distinct cards) — OPEN RELAY
+
+**New user directive (2026-07-06): everything playable in SOS *limited* must be in the engine.** The SOS
+limited environment = the 271 `sos` main set (COMPLETE) **+ the bonus sheet**, which is the **Secrets of
+Strixhaven Mystical Archive** — Scryfall set **`soa`** (the SOS analog of real-Strixhaven's `sta`). It is a
+"greatest-hits of iconic spells" sheet: 15 mythic / 25 rare / 25 uncommon = **65 distinct booster-legal
+cards** (Scryfall lists 195 rows for `soa`; the extra 130 are foil/alt-art variants of the same 65 names).
+
+- **Set identified (Step 0):** `sqlite: SELECT DISTINCT name FROM cards WHERE set_code='soa'` → 65 names.
+  Cross-checked against `../mtg-ai` (friend's engine, READ-ONLY): all 65 `soa` names appear in their
+  `src/mtg/cards/definitions/` — confirms the exact list. (Their "346 = 271+75" over-counts; the distinct
+  bonus card list is 65.) **None of the 65 are currently authored in our `cards/`** — clean slate.
+- **Folder placement:** first-printing-set rule (unchanged). These are reprints, so most land in *older* set
+  folders keyed by first printing (e.g. Giant Growth → `lea/`, Preordain → `m11/`, Force of Will → `all/` …),
+  NOT a `soa/` folder. Look up each card's earliest printing in sqlite before creating a file.
+- **oracle text = OUR sqlite** always (`soa` rows); friend's engine is a *list* cross-check only, never a
+  behaviour oracle.
+
+> **PROCESS RULES (inherited, non-negotiable):** `git log -S "<name>"` + read the code before believing any
+> capability claim — beliefs in this ledger have been overturned ~15×. Flip a status cell in the SAME commit
+> that lands the change, with the hash. `cargo test -p mtg-core` green every commit; real-path integration
+> tests (cast→pay→target→resolve), expect-test snapshots; short human commit messages, no AI attribution;
+> `git commit --only <your paths>` on the SHARED tree (never plain commit / -a / stash; never touch
+> `experiments/`, `/tmp/mtgenv_tb`, GPU, or the :8080 server). The LEAD pushes. Design-sketch to the lead
+> before any architecture-level subsystem. New cards ride `/api/cards` via `CardDb::iter` automatically —
+> verify they appear; art-manifest regen is the lead's job.
+
+### Triage (grounded against the CURRENT engine — every mechanic below was grep-verified in `mtg-core/src`, not assumed)
+
+Engine reality that shapes the buckets (all **confirmed present**): Modal/Sequence/Optional/IfYouDo/ForEach,
+DealDamage/Destroy/Exile/Draw/Mill/GainLife/LoseLife/PumpPT/Counters/AddMana/CreateToken/Search(→ any
+ZoneDest incl. top-of-lib + `tapped`)/MoveZone(gy→bf `tapped`)/Sacrifice(Controller/EachPlayer/EachOpponent,
+their-choice)/Counter/CounterUnlessPay(soft)/Attach; **Storm** (`CopySpellOnStack{count:SpellsCastThisTurn−1}`),
+**Cascade**, **Miracle**, **CopySpellOnStack** (copy target spell), **Treasure token**, **scry** staging,
+**Flashback**, **Cycling** (`CostComponent::DiscardSelfFromHand`), Phyrexian/Hybrid pips in `ManaCost`,
+**poison counters** + SBA, rich `ValueExpr` (`ManaValueOfTarget`, `PowerOfTarget`, `HandSize`,
+`SpellsCastThisTurn`, `Count`, …). **Genuinely absent** (grep = 0): Overload, Spree, Kicker, Convoke (only a
+`ConvokeImprovise` decision stub), Suspend, Split-second, Infect, Protection-from, Role tokens, alt-cast
+"pay non-mana instead of mana cost", damage **Redirect** (`Rewrite::Redirect` = "future work"), change-target.
+
+**Bucket A — pure IR, no new cap (~34 cards; author these first):**
+Abrade · Armageddon · Big Score · Brain Freeze · Bring to Light · Brotherhood's End · Bulk Up · Crop Rotation ·
+Culling the Weak · Disdainful Stroke · Duty Beyond Death · Empty the Warrens · Feed the Swarm · Flusterstorm ·
+Fracture · Giant Growth · Helping Hand · Hop to It · Jeska's Will · Locust Spray · Pick Your Poison ·
+Preordain · Prismatic Ending · Pyretic Ritual · Repel Calamity · Shamanic Revelation · Shared Roots ·
+Sheoldred's Edict · Sleight of Hand · Smallpox · Spell Pierce · Stock Up · Vampiric Tutor · Zombify.
+
+**Bucket B — one small card-agnostic cap each (~19 cards; each cap unlocks 1–2):**
+- *alt-cast (pay non-mana instead of mana cost)* → **Daze** (return an Island), **Force of Will** (pay 1 life +
+  exile a blue card). Shared cap = a `CastVariant::Alternative`/free-cast gated by a payable non-mana cost.
+- *Phyrexian mana* `{B/P}` (pay {B} or 2 life) → **Dismember**.
+- *Kicker* (optional additional cost + "if kicked" cond) → **Burst Lightning**.
+- *Clue token def* (like the existing Treasure def) → **Deduce**.
+- *repeat-until-you-stop loop* (`Effect::Repeat` E5 is unwired) → **Ad Nauseam**.
+- *land-creature token* (Land+Creature types on one `TokenSpec`, X count) → **Awaken the Woods**.
+- *delayed "destroy if it attacked this turn" + cast-timing restriction* → **Berserk**.
+- *modal / pay-life additional cost* (`CostComponent::PayLife` arm) → **Bitter Triumph**.
+- *up-to-X targets + `5×X` value* → **Crackle with Power**.
+- *mana-per-permanent-destroyed (colour choice)* → **Culling Ritual**.
+- *3-way top-look with distinct destinations (hand/bottom/exile-impulse)* → **Expressive Iteration**.
+- *until-EOT "whenever you cast a creature spell, draw"* delayed static → **Glimpse of Nature**.
+- *one-way fight (deal damage = power, no back-damage)* → **Knockout Maneuver**.
+- *CreateToken under another player's control* → **Pongify**.
+- *bounce a spell off the stack to hand* → **Reprieve**.
+- *2X look, X→hand rest→gy* → **Stargaze**.
+- *X-threshold conditionals in one resolution* → **Subterranean Tremors**.
+- *qualified hexproof-from-colour + "opp cast blue/black this turn" state + can't-be-countered grant* →
+  **Veil of Summer** (borderline B/C — the hexproof-from-colour is the real cap).
+
+**Bucket C — subsystem, DESIGN-SKETCH TO LEAD FIRST (~12 cards; grouped by yield):**
+- **Overload** (2) — Cyclonic Rift, Winds of Abandon. Alt-cast variant + "target"→"each" text rewrite.
+- **Spree** (2) — Requisition Raid, Return the Favor (+ *change-target* cap for its mode-2). Modal additional costs.
+- **Role tokens** (2) — Monstrous Rage (Monster Role), Royal Treatment (Royal Role). Aura enchantment tokens
+  with a Static P/T+keyword grant, attach-on-create, and the "sac the older Role on the same creature" rule.
+- **Protection-from** (1) — Akroma's Will (mode 2 = protection from each colour; mode 1 is pure IR).
+- **Infect** (1) — Triumph of the Hordes (grant infect: combat damage as −1/−1 counters / poison; poison SBA exists).
+- **Suspend** (1) — Living End (time counters, cast when last counter removed; Warp-analogue).
+- **Convoke** (1) — Return to the Ranks (tap creatures to pay generic/coloured; `ConvokeImprovise` stub exists).
+- **Prevent-and-reflect / Redirect** (1) — Deflecting Palm (`Rewrite::Redirect` is stubbed "future work").
+- **Split-second + can't-lose-the-game** (1) — Angel's Grace (hardest; two rules corners — likely last).
+
+**Yield order for the relay:** Bucket A (34) sweep first → then B caps by count (alt-cast unlocks 2; the rest
+1 each) → then C subsystems by yield (Overload/Spree/Role each = 2). Honest `fully_implemented` throughout.
+Cap-then-cards, `git log -S` before scoping any "absent" mechanic (some B caps may already exist — verify).
+
+**Progress log (append per commit):**
+- _(none yet — relay just opened by sos-bonus-1, 2026-07-06)_
+
+---
+
 ## ▶ (superseded — history) NEXT-AGENT block, handoff from sos-cards-20, 2026-07-06
 
 **▶▶ sos-cards-20 SHIPPED — 2 new cards + 3 tracked-partials cleared + 2 general engine extensions. 864 mtg-core green, whole
