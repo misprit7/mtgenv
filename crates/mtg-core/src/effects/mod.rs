@@ -267,6 +267,18 @@ pub enum Effect {
         /// for fixed-counter / no-counter tokens (which use `spec.counters` directly).
         dynamic_counters: Vec<(CounterKind, ValueExpr)>,
     },
+    /// "Create a `role` token attached to `attach_to`" (CR 111 / the Role subsystem — Monstrous Rage,
+    /// Royal Treatment). Mints the registered **Role Aura token** def `role` (in the reserved 9000+
+    /// token block) onto the controller's battlefield, already attached to `attach_to` (a creature the
+    /// spell targeted, usually `EffectTarget::ChosenIndex`). Enforces the "one Role per controller"
+    /// rule (CR 303.4k, reminder "If you control another Role on it, put that one into the graveyard"):
+    /// any Role token the controller already controls attached to that creature is put into the
+    /// graveyard first — where it ceases to exist as a token via the SBA (CR 111.7). Imperative (mints
+    /// an object, attaches it, moves the prior Role), so it lives in `interpret`.
+    CreateRoleToken {
+        role: u32,
+        attach_to: EffectTarget,
+    },
     /// Create a token that's a **copy** of a permanent (CR 707.9e / 111.3). The copy snapshots the
     /// `source`'s copiable characteristics (its base `chars` — name, types, colours, P/T, and its
     /// abilities via `grp_id`; **not** counters, damage, auras, or other continuous effects, CR 707.2),

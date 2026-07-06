@@ -155,6 +155,12 @@ pub mod grp {
     /// Clue artifact token (CR 111.3) — "{2}, Sacrifice this token: Draw a card." A non-mana activated
     /// ability offered like any other at priority (Investigate — Deduce and friends).
     pub const CLUE_TOKEN: u32 = 9003;
+    /// Monster Role — an Enchantment — Aura Role token: "Enchanted creature gets +1/+1 and has
+    /// trample." (Monstrous Rage.)
+    pub const MONSTER_ROLE_TOKEN: u32 = 9004;
+    /// Royal Role — an Enchantment — Aura Role token: "Enchanted creature gets +1/+1 and has ward {1}."
+    /// (Royal Treatment.) Ward is a printed `BecomesTargeted{AttachedHost}` trigger on the token def.
+    pub const ROYAL_ROLE_TOKEN: u32 = 9005;
 
     // ── Reserved emblem-def block (9500+) ─────────────────────────────────────────────────────
     // Registered *emblem* defs (CR 114) live here — objects that sit in the command zone carrying a
@@ -845,8 +851,8 @@ mod tests {
     fn starter_db_has_expected_cards() {
         let db = starter_db();
         // 359 base pool + the `soa` bonus-sheet reprints authored into their first-printing folders
-        // (+ the registered Clue token def for Investigate).
-        assert_eq!(db.len(), 410);
+        // (+ the registered Clue token def for Investigate + the two Role Aura token defs).
+        assert_eq!(db.len(), 414);
         // Forest is "type line only": a Basic Land with subtype Forest. Mana is intrinsic
         // (CR 305.6) — the engine derives {T}: Add {G} from the subtype, so the CardDef carries
         // no explicit mana ability (and `is_mana_source` only sees authored abilities).

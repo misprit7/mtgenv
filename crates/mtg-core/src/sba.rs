@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use crate::basics::{CardType, CounterKind, Zone};
 use crate::ids::{ObjId, PlayerId};
 use crate::state::GameState;
-use crate::subtypes::{ArtifactType, EnchantmentType, Subtype};
+use crate::subtypes::{ArtifactType, EnchantmentType, Subtype, Supertype};
 
 /// Why a player loses the game (CR 704.5a–c). Serde-able because the engine records the
 /// game's ending reason in `GameState` for the `Outcome` (a snapshot field).
@@ -66,6 +66,13 @@ pub enum StateBasedAction {
     /// CR 704.5i: a planeswalker with 0 loyalty is put into its owner's graveyard.
     PlaneswalkerDies {
         pw: ObjId,
+    },
+    /// CR 111.7 / 704.5d: a **token** in a zone other than the battlefield ceases to exist. A token
+    /// that dies / falls off / is sacrificed first moves to its owner's graveyard (so "dies"-triggers
+    /// and last-known-information see it), then this SBA removes it. Detected by the `Supertype::Token`
+    /// stamp; the stack is excluded (a resolving token spell-copy is handled by `is_copy` cease-to-exist).
+    TokenCeasesToExist {
+        token: ObjId,
     },
 }
 
@@ -186,6 +193,18 @@ pub fn collect(state: &GameState) -> Vec<StateBasedAction> {
         }
         if o.counters.get(&CounterKind::Loyalty) == 0 {
             out.push(StateBasedAction::PlaneswalkerDies { pw: o.id });
+        }
+    }
+    // Token cease-to-exist SBA (CR 111.7 / 704.5d): a token that has left the battlefield (to a
+    // graveyard, exile, hand, or library) ceases to exist. Excludes the stack — a resolving token
+    // spell-copy is removed via its `is_copy` flag, not here. The `Supertype::Token` stamp
+    // (`whiteboard::create_token`) is the detector.
+    for o in state.objects.values() {
+        if o.zone == Zone::Battlefield || o.zone == Zone::Stack {
+            continue;
+        }
+        if o.chars.supertypes.contains(&Supertype::Token) {
+            out.push(StateBasedAction::TokenCeasesToExist { token: o.id });
         }
     }
     out

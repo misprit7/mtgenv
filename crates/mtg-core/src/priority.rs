@@ -3723,6 +3723,11 @@ impl Engine {
                         });
                     }
                 }
+                // CR 111.7: a token that left the battlefield ceases to exist (removed outright — it
+                // never really occupies its new zone; its "dies"/LTB event already fired on the move).
+                StateBasedAction::TokenCeasesToExist { token } => {
+                    self.state.cease_to_exist(*token);
+                }
             }
         }
         self.check_game_end();

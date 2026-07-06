@@ -401,6 +401,18 @@ impl EngineCore {
                 }
                 true
             }
+            // "Create a Role token attached to `attach_to`" (Monstrous Rage, Royal Treatment). Imperative
+            // (mints an object, attaches it, moves any prior Role) — so it lives here. Flush staged
+            // actions first so the target's pump/hexproof (earlier in the sequence) is committed before
+            // the Role enters and its statics recompute.
+            Effect::CreateRoleToken { role, attach_to } => {
+                self.flush_pending(wb);
+                if let Some(Target::Object(host)) = self.resolve_target(attach_to, ctx, cursor) {
+                    let controller = ctx.controller.unwrap_or(self.state.active_player);
+                    self.create_role_token(*role, host, controller);
+                }
+                true
+            }
             // Cast a copy of `source` without paying its mana cost (CR 707.12). Mint a fresh object
             // from the source's copiable characteristics (CR 707.2 — grp_id carries abilities/effect/
             // mana cost), put it on the stack marked `is_copy` (so it ceases to exist off the stack,
@@ -2813,6 +2825,7 @@ impl EngineCore {
             Effect::Modal { .. }
             | Effect::Spree { .. }
             | Effect::ChangeTarget { .. }
+            | Effect::CreateRoleToken { .. }
             | Effect::Optional { .. }
             | Effect::IfYouDo { .. }
             | Effect::ForEach { .. }
@@ -3607,6 +3620,48 @@ impl EngineCore {
             for (kind, n) in &spec.counters {
                 *o.counters.counts.entry(kind.clone()).or_insert(0) += n;
             }
+        }
+        self.state.mark_chars_dirty();
+        self.broadcast(GameEvent::ObjectMoved { obj: id, to: Zone::Battlefield });
+    }
+
+    /// Create a **Role Aura token** (`role_grp`, a registered def in the 9000+ token block) attached to
+    /// `host`, under `controller` (CR 111 / the Role subsystem). First enforces the "one Role per
+    /// controller on a permanent" rule (CR 303.4k reminder): any Role token `controller` already
+    /// controls attached to `host` is put into its owner's graveyard (where the token cease-to-exist SBA
+    /// removes it, CR 111.7) — newest survives. The new token enters the battlefield already attached.
+    ///
+    /// ⚠️ Timing approximation: the prior Role is moved to the graveyard **immediately** at attach, not
+    /// via the general CR 303.4k "put the one entering the graveyard as an SBA after both are on the
+    /// battlefield" batch. Observationally identical in the SoS pool (no card cares about the interstitial
+    /// two-Roles state), and it keeps the "newest survives" outcome exact.
+    fn create_role_token(&mut self, role_grp: u32, host: ObjId, controller: PlayerId) {
+        use crate::subtypes::{EnchantmentType, Subtype};
+        // "If you control another Role on it, put that one into the graveyard." A Role is any token
+        // carrying the Role enchantment subtype; scope to this controller + this host.
+        let priors: Vec<ObjId> = self
+            .state
+            .objects
+            .values()
+            .filter(|o| {
+                o.controller == controller
+                    && o.attached_to == Some(host)
+                    && o.chars.subtypes.contains(&Subtype::Enchantment(EnchantmentType::Role))
+            })
+            .map(|o| o.id)
+            .collect();
+        for role in priors {
+            let owner = self.state.object(role).owner;
+            if self.state.move_object(role, Zone::Graveyard, owner) {
+                self.broadcast(GameEvent::ObjectMoved { obj: role, to: Zone::Graveyard });
+            }
+        }
+        // Mint the new Role from its registered def's copiable characteristics (grp_id carries its
+        // statics via `def_of`, like a token/emblem) and attach it to the host.
+        let Some(chars) = self.state.def_by_grp(role_grp).map(|d| d.chars.clone()) else { return };
+        let id = self.state.add_card(controller, chars, Zone::Battlefield);
+        if let Some(o) = self.state.objects.get_mut(&id) {
+            o.attached_to = Some(host);
         }
         self.state.mark_chars_dirty();
         self.broadcast(GameEvent::ObjectMoved { obj: id, to: Zone::Battlefield });
