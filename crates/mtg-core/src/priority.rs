@@ -756,11 +756,21 @@ impl Engine {
 
     /// Move to the next player's turn (CR 500.1 wrap-around). In two-player this just
     /// alternates seats.
-    fn advance_turn(&mut self) {
+    pub(crate) fn advance_turn(&mut self) {
         self.empty_mana_pools();
         let n = self.state.players.len();
         let cur = self.state.active_player.0 as usize;
-        let next = (cur + 1) % n;
+        let mut next = (cur + 1) % n;
+        // Skip queued turns (CR 720 — Ral Zarek's "skips their next N turns"): consume one skip per
+        // seat whose turn would begin. Capped at `n` so an all-skip state still hands someone a turn
+        // (never an infinite loop).
+        for _ in 0..n {
+            if self.state.players[next].skip_next_turns == 0 {
+                break;
+            }
+            self.state.players[next].skip_next_turns -= 1;
+            next = (next + 1) % n;
+        }
         self.state.active_player = self.state.players[next].id;
         self.state.turn_number += 1;
         self.state.phase = Phase::Untap;

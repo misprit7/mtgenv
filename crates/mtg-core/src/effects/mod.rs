@@ -123,6 +123,15 @@ pub enum Effect {
     Surveil {
         count: ValueExpr,
     },
+    /// Flip `coins` coins on the engine's seeded RNG; `who` skips their next (number of heads) turns
+    /// (CR 720). Ral Zarek, Guest Lecturer's `−7` ("Flip five coins. Target opponent skips their next
+    /// X turns, where X is the number of coins that came up heads"). Reads/advances `state.rng`, so it
+    /// lives at the effect layer (not a `ValueExpr`, which is a pure read). `who` = `PlayerRef::Opponent`
+    /// is the "target opponent" in the 2-player scope.
+    FlipCoinsSkipNextTurns {
+        who: PlayerRef,
+        coins: u32,
+    },
     GainLife {
         who: PlayerRef,
         amount: ValueExpr,

@@ -820,6 +820,20 @@ impl EngineCore {
                 self.interpret_surveil(player, n);
                 true
             }
+            // Ral Zarek −7: flip `coins` coins on the seeded RNG; `who` skips that many of their next
+            // turns (CR 720). Reads `state.rng`, so it's an imperative effect (flush first).
+            Effect::FlipCoinsSkipNextTurns { who, coins } => {
+                self.flush_pending(wb);
+                let target = self.eval_player(*who, ctx);
+                let mut heads = 0u32;
+                for _ in 0..*coins {
+                    if self.state.rng.below(2) == 1 {
+                        heads += 1;
+                    }
+                }
+                self.state.player_mut(target).skip_next_turns += heads;
+                true
+            }
             // "Look at the top `count`, put `take` into `take_to`, the rest into `rest_to`." Imperative
             // (asks which to take). Flush first.
             Effect::LookAndPick { count, take, take_to, rest_to, take_filter } => {
@@ -2433,6 +2447,7 @@ impl EngineCore {
             | Effect::MayPayCost { .. }
             | Effect::Sacrifice { .. }
             | Effect::Surveil { .. }
+            | Effect::FlipCoinsSkipNextTurns { .. }
             | Effect::LookAndPick { .. }
             | Effect::LookPickCreaturesLands { .. }
             | Effect::DirectedDiscard { .. }

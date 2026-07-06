@@ -287,6 +287,11 @@ pub struct Player {
     /// Set when a draw is attempted from an empty library; the SBA (CR 704.5b) reads it on
     /// the next check, then the player loses.
     pub drew_from_empty: bool,
+    /// How many of this player's upcoming turns to skip (CR 720) — "skips their next N turns" (Ral
+    /// Zarek, Guest Lecturer's `−7`). Decremented by one each time `advance_turn` would hand this
+    /// player a turn (that turn simply doesn't happen); reaches 0 and they take turns normally again.
+    #[serde(default)]
+    pub skip_next_turns: u32,
 }
 
 impl Player {
@@ -315,6 +320,7 @@ impl Player {
             hand_size_limit: DEFAULT_HAND_SIZE,
             has_lost: false,
             drew_from_empty: false,
+            skip_next_turns: 0,
         }
     }
 
