@@ -675,6 +675,27 @@ impl EngineCore {
                 true
             }
             // "Reveal from the top until you reveal a `filter` card; put it into hand, rest on the bottom
+            // "Reveal the top card, put it into your hand, lose life = its mana value; you may repeat
+            // any number of times" (Ad Nauseam). Ask before each iteration (so it may run 0+ times).
+            Effect::RevealTopLoseLifeMayRepeat => {
+                self.flush_pending(wb);
+                let player = ctx.controller.unwrap_or(self.state.active_player);
+                loop {
+                    let Some(top) = self.state.player(player).library.last().copied() else { break };
+                    let yes = matches!(
+                        self.ask(player, &DecisionRequest::Confirm { kind: ConfirmKind::MayEffect }),
+                        DecisionResponse::Bool(true)
+                    );
+                    if !yes {
+                        break;
+                    }
+                    let mv = self.state.object(top).chars.mana_value() as i32;
+                    self.state.move_object(top, Zone::Hand, player);
+                    self.broadcast(GameEvent::ObjectMoved { obj: top, to: Zone::Hand });
+                    self.change_life(player, -mv);
+                }
+                true
+            }
             // in random order" (Page, Loose Leaf's Grandeur). Reveal-until analogue of Cascade. Imperative
             // (library scan + rng), so it lives here. Flush staged actions first.
             Effect::RevealFromTopUntilToHand { filter } => {
@@ -2637,6 +2658,7 @@ impl EngineCore {
             | Effect::ExileTopUntilManaValueMayCastFree { .. }
             | Effect::MillThenPutCreatureOntoBattlefield { .. }
             | Effect::RevealFromTopUntilToHand { .. }
+            | Effect::RevealTopLoseLifeMayRepeat
             | Effect::GrantFlashbackUntilEndOfTurn { .. }
             | Effect::ReanimateUnderControl { .. }
             | Effect::Blink { .. }

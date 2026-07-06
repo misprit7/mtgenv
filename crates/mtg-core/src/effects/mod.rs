@@ -413,6 +413,11 @@ pub enum Effect {
     RevealFromTopUntilToHand {
         filter: CardFilter,
     },
+    /// "Reveal the top card of your library and put that card into your hand. You lose life equal to
+    /// its mana value. You may repeat this process any number of times" (Ad Nauseam). Imperative: ask
+    /// the controller before each iteration (so it may run zero or more times) — reveal the top card,
+    /// move it to hand, lose life equal to its mana value; stop when they decline or the library empties.
+    RevealTopLoseLifeMayRepeat,
     /// "This creature becomes prepared" (SoS "Prepare" DFCs). Sets the `prepared` status on the
     /// ability's source (`ctx.source`) — every "becomes prepared" clause (enters-prepared,
     /// at-the-beginning-of-your-first-main, whenever-this-attacks, landfall, an activated ability, …)
