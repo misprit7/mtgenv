@@ -57,15 +57,24 @@ def build_policy(algo: str, deck: str, ckpt_path: str, device: str = "cuda",
 class MuZeroLzPolicy(BasePolicy):
     """Batched evalkit adapter over a LightZero MuZero/Gumbel policy's eval-mode MCTS.
 
-    Stateless across ``act`` calls (each MCTS forward builds fresh roots), so ``env_indices`` is
-    ignored. ``mode='greedy'`` = fair-greedy (argmax visits, tie-break by prior); ``mode='sample'`` =
-    visits^(1/temp)."""
+    Stateless across ``act`` calls (each MCTS forward builds fresh roots), so ``env_indices`` is ignored.
 
-    def __init__(self, policy, device: str = "cuda", temp: float = 0.25):
+    **Algo-aware action selection (critical).** Gumbel-MuZero's eval action is NOT argmax visit counts —
+    its ``_forward_eval`` returns ``action = argmax(improved_policy_probs)`` (completed-Q improved policy),
+    which at low sims routinely differs from argmax visits (e.g. it picks a 3-visit action over a
+    22-visit one). Re-deriving from visit counts inverts Gumbel's decisions → a passive/losing eval even
+    when collection wins. So:
+      * ``gumbel``: greedy = the framework's ``action``; sample = softmax(policy-head logits) — the head
+        is trained toward the improved policy, so it is the honest stochastic learning-signal curve.
+      * ``muzero``: greedy = fair-greedy (argmax visits, ties broken by the network prior, not lowest
+        index); sample = visits^(1/temp). (Plain MuZero's visit counts DO reflect its policy.)"""
+
+    def __init__(self, policy, device: str = "cuda", temp: float = 0.25, algo: str = "gumbel"):
         self._eval = policy.eval_mode
         self._model = getattr(policy, "_eval_model", None) or getattr(policy, "_learn_model")
         self._device = device
         self._temp = float(temp)
+        self._algo = algo
         self._keys = None  # obs concat order, captured from the first obs (stable across the run)
 
     def _flatten_batch(self, obs_batch):
@@ -81,23 +90,31 @@ class MuZeroLzPolicy(BasePolicy):
         masks_i = [np.asarray(m, dtype=np.int64) for m in mask_batch]
         out = self._eval.forward(data, masks_i, [-1] * B)
 
-        # network prior over the full action space (for the greedy tie-break) — one batched forward.
-        if mode == "greedy":
-            with torch.no_grad():
-                logits = self._model.initial_inference(data).policy_logits.detach().cpu().numpy()
+        # network policy-head prior over the full action space — one batched forward (used for the muzero
+        # greedy tie-break and the gumbel sampled policy).
+        with torch.no_grad():
+            logits = self._model.initial_inference(data).policy_logits.detach().cpu().numpy()
 
         acts = np.empty(B, dtype=np.int64)
         for i in range(B):
-            dist = np.asarray(out[i]['visit_count_distributions'], dtype=np.float64)  # over legal, in-order
             legal = np.flatnonzero(masks_i[i])
-            if mode == "greedy":
-                lg = logits[i][legal]
-                prior = np.exp(lg - lg.max()); prior /= prior.sum()
-                acts[i] = int(legal[int(np.argmax(dist + 1e-6 * prior))])  # visits dominate; prior breaks ties
-            else:
-                p = np.power(np.maximum(dist, 0.0), 1.0 / self._temp)
-                p = np.ones_like(p) if p.sum() <= 0 else p / p.sum()
-                acts[i] = int(legal[int(np.random.choice(len(legal), p=p))])
+            if self._algo == "gumbel":
+                if mode == "greedy":
+                    acts[i] = int(out[i]['action'])          # framework improved-policy argmax
+                else:
+                    lg = logits[i][legal]
+                    p = np.exp((lg - lg.max()) / max(self._temp, 1e-6)); p /= p.sum()
+                    acts[i] = int(legal[int(np.random.choice(len(legal), p=p))])
+            else:  # muzero — visit counts reflect the policy
+                dist = np.asarray(out[i]['visit_count_distributions'], dtype=np.float64)  # over legal, in-order
+                if mode == "greedy":
+                    lg = logits[i][legal]
+                    prior = np.exp(lg - lg.max()); prior /= prior.sum()
+                    acts[i] = int(legal[int(np.argmax(dist + 1e-6 * prior))])  # visits dominate; prior breaks ties
+                else:
+                    p = np.power(np.maximum(dist, 0.0), 1.0 / self._temp)
+                    p = np.ones_like(p) if p.sum() <= 0 else p / p.sum()
+                    acts[i] = int(legal[int(np.random.choice(len(legal), p=p))])
         return acts
 
 
@@ -130,7 +147,7 @@ def eval_one(algo, deck, ckpt, step, run_dir, run_name, device, games, latent, s
              writer=None, head=(64,)):
     from mtgenv_gym.evalkit import evaluate_checkpoint
     policy = build_policy(algo, deck, ckpt, device=device, latent=latent, sims=sims, head_hidden=head)
-    adapter = MuZeroLzPolicy(policy, device=device, temp=temp)
+    adapter = MuZeroLzPolicy(policy, device=device, temp=temp, algo=algo)
     res = evaluate_checkpoint(adapter, step=int(step), run_dir=run_dir, deck=deck, games=games,
                               run_name=run_name, algo=f"{algo}-mz", writer=writer)
     r = res["selfplay/winrate_vs_random"]

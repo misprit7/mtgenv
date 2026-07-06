@@ -115,4 +115,29 @@ sims), still fully reanalyze-on. Measured **~31 env-steps/sec** → 500k ≈ **4
 - iteration_0 (untrained, post-random-collect) evalkit: gumbel greedy/sampled 0.00/0.00; muzero
   0.00/0.40. Baseline random-v-random 0.535.
 
-- (100k-gate numbers + curves + verdict to be recorded here)
+**A/B forced SEQUENTIAL** (lead directive): concurrent GPU jobs on this box have a documented
+nondeterminism gotcha + halve throughput, so each run gets the GPU alone. Order: A (Gumbel) → gate → B.
+
+**Run A (Gumbel) — FAILED the 100k gate.** @ ~96k, evalkit (200 games): greedy **0.035** (95%
+0.02–0.07), sampled 0.000, prod 0.22, atk 0.46 — **worse than random (0.535)**. Collector `reward_mean`
+oscillates around ~−0.4 (collection is losing, not just eval). Decoupled check: a manual greedy loop
+straight through `MtgEnv(opponent="random")` = 0.04 (matches evalkit → not an Arena artifact).
+**Sims-invariant**: greedy @25/50/100 sims = 0.05/0.05/0.00 → mis-trained model, NOT search-starvation.
+
+- **Adapter bug found + fixed (important).** Gumbel's eval action is `argmax(improved_policy_probs)`
+  (completed-Q), NOT argmax visit counts — at low sims they routinely differ (observed: it picks a
+  3-visit action over a 22-visit one). The first watcher curve (flat 0.000, identical turns=17.6) was
+  this bug. `mz_policy.MuZeroLzPolicy` is now algo-aware: gumbel greedy = framework `action`, gumbel
+  sample = policy-head softmax; muzero greedy = fair-greedy (visits + prior tie-break), sample =
+  visits^(1/temp). Even after the fix Gumbel is genuinely ~0.04 (moved from "passive" to "acts but
+  loses"), so the failure is real.
+- **Read:** Gumbel's completed-Q improved policy is unreliable under our sparse+shaped reward at low
+  sims and trains the policy head toward bad actions. Plain MuZero (visit-count targets + Dirichlet
+  root exploration) is more robust — hence Run B.
+
+**Run B (plain MuZero) — in progress** (`3.5-muzero-heralds`). De-risked to the prior's PROVEN heralds
+recipe (**sims 50, td 40, unroll 5, up 20, latent 256, shaping 0.5**) + the two cheap mandate levers
+(**reanalyze 0.25, random_collect 32**). Highest-probability path to reproduce ~0.9 while still testing
+reanalyze/buffer-seeding. Fallback if B is also worse-than-random: reanalyze-off control (prime suspect).
+
+- (Run B 100k-gate numbers + curves + verdict to be recorded here)
