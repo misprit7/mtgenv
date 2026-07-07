@@ -3,6 +3,19 @@
 Short, dated entries for future-agent consumption. Newest first. One line or a few bullets
 per unit of meaningful progress. Keep it terse — detail lives in `docs/` and git history.
 
+## 2026-07-07 (experiment tracking: TensorBoard → Aim)
+
+- **Aim is now the main experiment view** (user request — TB's smoothing/clipping defaults, no
+  freeform run notes, no grouping). `scripts/tb2aim.py` mirrors every TB run dir (recursing into
+  SB3's `MaskablePPO_1/` nesting and LightZero `log/serial` symlinks) into a persistent Aim repo at
+  `data/aim/` — idempotent via per-(run,tag) high-water marks in `tb2aim_state.json`. TB event files
+  stay the write format (no training-code changes; works from any venv); Aim is the view. Initial
+  import: 26 runs / ~72k points, grouped into experiments (ppo-selfplay, muzero2, muzero-v1-failed,
+  muzero2-train-internals, verification, smoke-and-probes) with descriptions on the load-bearing
+  runs (3.5 winner recipe, verification numbers, 2.9 PPO chump-block baseline). Running detached:
+  `aim up --repo data/aim --host 0.0.0.0 --port 43800` (UI at :43800) + `tb2aim.py --watch 120`
+  (future runs auto-appear). Aim 3.29.1 lives in the muzero2 py3.11 venv (no dep changes; lzero OK).
+
 ## 2026-07-06 (SOS bonus sheet — Mystical Archive `soa`, 65 cards)
 
 - **✅ BONUS SHEET COMPLETE — 65/65 (sos-bonus-3 finale).** 1001 mtg-core green, whole workspace builds
