@@ -333,6 +333,9 @@ pub enum Keyword {
     Haste,
     Hexproof,
     Indestructible,
+    /// Infect (CR 702.90): this creature deals combat/noncombat damage to creatures as −1/−1 counters
+    /// and to players as poison counters. Read in `apply_damage`.
+    Infect,
     Lifelink,
     Menace,
     Reach,

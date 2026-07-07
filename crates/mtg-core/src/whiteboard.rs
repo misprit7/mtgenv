@@ -3496,6 +3496,8 @@ impl EngineCore {
         let src = crate::chars::compute(&self.state, source);
         let deathtouch = src.has_keyword(crate::effects::ability::Keyword::Deathtouch);
         let lifelink = src.has_keyword(crate::effects::ability::Keyword::Lifelink);
+        // Infect (CR 702.90): damage to players → poison counters, to creatures → −1/−1 counters.
+        let infect = src.has_keyword(crate::effects::ability::Keyword::Infect);
 
         match target {
             Target::Player(p) => {
@@ -3504,7 +3506,13 @@ impl EngineCore {
                     amount,
                     source,
                 });
-                self.change_life(p, -(amount as i32));
+                if infect {
+                    // CR 702.90c: the player gets that many poison counters instead of losing life
+                    // (the 10-poison loss SBA, 704.5c, then applies).
+                    self.state.player_mut(p).poison += amount;
+                } else {
+                    self.change_life(p, -(amount as i32));
+                }
             }
             Target::Object(o) => {
                 let (is_bf_creature, is_bf_pw) = self
@@ -3521,10 +3529,19 @@ impl EngineCore {
                     .unwrap_or((false, false));
                 if is_bf_creature {
                     if let Some(x) = self.state.objects.get_mut(&o) {
-                        x.damage_marked += amount;
+                        if infect {
+                            // CR 702.90b: −1/−1 counters instead of marked damage (the toughness-0 SBA
+                            // 704.5f then handles death). Deathtouch still flags lethal in parallel.
+                            *x.counters.counts.entry(CounterKind::MinusOneMinusOne).or_insert(0) += amount;
+                        } else {
+                            x.damage_marked += amount;
+                        }
                         if deathtouch {
                             x.dealt_deathtouch = true; // CR 702.2 / 704.5h
                         }
+                    }
+                    if infect {
+                        self.state.mark_chars_dirty(); // −1/−1 counters change P/T (layer 7c)
                     }
                     self.broadcast(GameEvent::DamageDealt {
                         target,
