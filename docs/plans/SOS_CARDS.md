@@ -86,9 +86,66 @@ stays the map for future sets). `WORKLOG.md` + `PROJECT_STATE.md` updated to the
 
 ---
 
-## ★ BONUS SHEET — Secrets of Strixhaven Mystical Archive (`soa`, 65 distinct cards) — OPEN RELAY
+## ★ BONUS SHEET — Secrets of Strixhaven Mystical Archive (`soa`, 65 distinct cards) — ✅ COMPLETE 65/65
 
-## ▶▶ NEXT-AGENT HANDOFF (sos-bonus-2 retiring at 58/65, 2026-07-06) — the REMAINING 7, all lead-APPROVED
+## ✅ BONUS SHEET COMPLETE — 65/65 (sos-bonus-3 finale, 2026-07-06) — relay CLOSED
+
+**▶▶ ALL 65 `soa` bonus-sheet cards are authored.** Census: every one of the 65 distinct `soa` names
+(`sqlite: SELECT DISTINCT name FROM cards WHERE set_code='soa'`) resolves to a registered `CardDef`
+(cross-checked by name against `cards/`, and each new card's shape test does `db.get(GRP).unwrap()`).
+**1001 mtg-core tests green, whole workspace builds (incl. mtg-py), tree clean.** `db.len()` = 427.
+
+**sos-bonus-3 finale — the last 7 (each its own commit, real-path tests):**
+- **`20ab30d` + `494a71e` Culling Ritual** `{2}{B}{G}` — the batched **`ManaSpec.one_of`** subset-choice
+  refactor ("add {B} or {G} for each …"; all 42 ManaSpec literals migrated in one atomic commit) +
+  new **`ValueExpr::DestroyedThisResolution`** (per-resolution destroy scratch) for "for each permanent
+  destroyed this way".
+- **`4ee5f54` + `3b92b84` Protection/hexproof-from-COLOUR + Akroma's Will** `{3}{W}` — `ComputedChars.
+  {protection_from,hexproof_from}` painted at layer 6 by new `StaticContribution::{ProtectionFromColor,
+  HexproofFromColor}`; 3 seams: **`targetable_by` signature change** (threads the source's colours;
+  isolated no-card infra commit, full-suite-gated), `apply_damage` prevention, `can_block`. Akroma mode 2
+  grants protection-from-each-colour.
+- **`e97f451` Deflecting Palm** `{R}{W}` — damage **prevent+redirect**: `Effect::DeflectDamage` arms a
+  one-shot `FloatingReplacement` scoped to a chosen source; `affected_object` routes player-damage by its
+  source; dedicated `applicable_replacements` arm + `Rewrite::PreventAndRedirect` redirects to the
+  source's controller.
+- **`e1e3858` Living End** (Suspend 3—`{2}{B}{B}`) — **Suspend** subsystem: `CounterKind::Time`,
+  `Ability::Suspend`, `CastVariant::Suspend` (diverts in `cast_spell` to exile-with-counters), per-upkeep
+  sweep + free-cast at 0 (a real cast — cast triggers fire). Body via new `Effect::ReturnExiledThisResolution`
+  + a per-resolution exile scratch (exile-park shields the returners from the board wipe).
+- **`3022310` Angel's Grace** `{W}` — **Split second** (`Keyword::SplitSecond` gates `legal_priority_actions`
+  to mana-only) + **can't-lose / opps-can't-win** (per-turn `Player` flags in `sba::collect` +
+  `check_game_end`) + **life floor** (`change_life` clamp). Tested: lethal-at-1-life survives.
+- **`8273abf` Return to the Ranks** `{X}{W}{W}` — **Convoke**: `Ability::Convoke`, the offer gate and
+  payment share ONE greedy planner (`convoke_reduce`) folded before `auto_pay`. Also fixed
+  `CardFilter::OwnedBy` in `target_matches_filter` (was fail-closed) so "your graveyard" works. X-target
+  reanimation body via `ForEachTarget` + `TARGET_COUNT_X`.
+- **`019609e` Veil of Summer** `{G}` — rides hexproof-from-colour (permanents) + player-level hexproof-from
+  (`Player.hexproof_from_this_turn` in the player-target path) + spells-can't-be-countered (flag at the
+  counter choke) + `Condition::OpponentCastColorThisTurn` (cast-colour tracker) → conditional draw.
+
+### ⚠️ Pool-scoped omissions ledgered (faithful in limited; documented divergences)
+- **CR 702.16 protection enchant/equip/attach clause** — targeting/damage/blocking suffice for Akroma's
+  Will + Veil of Summer (no Aura/Equipment of a protected colour interaction in the pool).
+- **Akroma's Will "choose both if you control a commander"** — no commanders in a limited environment;
+  modelled as choose-one.
+- **Angel's Grace life floor** — modelled as a general "life can't drop below 1 this turn" clamp in
+  `change_life` (a negligible over-approximation of the printed *damage-specific* replacement).
+- **Deflecting Palm source choice** — enumerates battlefield permanents (the common case: deflect an
+  attacker / a permanent's ability); stack-spell / other-zone sources are omitted.
+- **Suspend creature-haste** — a creature cast off the last time counter gains haste; no creature suspend
+  cards in the pool (Living End is a sorcery), so deferred.
+- **Convoke × {X} sizing** — convoke reduces the fixed pips; sizing the *chosen X* against convoke (vs mana
+  alone) is the deferred §2.6 pending-cast-rollback milestone. Hybrid/Phyrexian pips aren't convoke-reduced
+  (Return to the Ranks is plain `{X}{W}{W}`).
+- **Return to the Ranks target gate** — the offer requires ≥1 legal reanimation target (engine's
+  `min.max(1)`); casting with an empty graveyard (X=0, does nothing) isn't offered — never relevant in play.
+
+The ledger below is retained as the full per-card triage + capability index.
+
+---
+
+## ▶▶ (HISTORICAL) NEXT-AGENT HANDOFF (sos-bonus-2 retiring at 58/65, 2026-07-06) — the REMAINING 7, all lead-APPROVED
 
 **State: 58/65 authored, 977 mtg-core green, whole workspace builds, tree clean, LEAD pushes.** sos-bonus-2
 shipped 10 cards + 7 caps/subsystems (Spree, Roles+token-SBA, alt-cast, Infect, Kicker, Berserk, + Locust Spray).

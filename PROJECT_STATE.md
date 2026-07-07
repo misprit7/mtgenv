@@ -77,20 +77,21 @@ MTGA client.
 - **✅ MOBILE WEB CLIENT (2026-07-03).** Game client + lobby fully playable from a phone: mobile
   reflow (sticky prompt sheet, opp-top/you-bottom strips, log toggle), touch previews long-press-only
   (hover gated to real mice), on-screen pass-turn button. Desktop unchanged.
-- **▶ SOS BONUS SHEET in progress: `soa` (Secrets of Strixhaven Mystical Archive), 65 cards — 58/65 authored (89%), 977
-  mtg-core green, whole workspace builds (2026-07-06, sos-bonus-2).** SOS *limited* = the 271 main set + this 65-card bonus
-  sheet; directive: "everything playable in SOS limited must be in the engine." Reprints in first-printing folders (grp
-  600+). Subsystems/caps shipped: **Overload**, **Spree** (`Effect::Spree`/`SpreeMode` + `Effect::ChangeTarget` +
-  `CardFilter::HasSingleTarget`), **Roles** (`Effect::CreateRoleToken` + Role Aura tokens + **`StateBasedAction::Token
-  CeasesToExist`** — CR 111.7 was unimplemented; a real phantom-graveyard fix), **alt-cast** (`CastVariant::Alternative`
-  + `Ability::AlternativeCast` + `CostComponent::ReturnToHand`), **Infect** (`Keyword::Infect`), **Kicker** (`Ability::
-  Kicker`+`Object.kicked`+`ValueExpr::IfKicked`), **Berserk** (`Object.attacked_this_turn` + `Effect::DestroyAtEndStepIf
-  Attacked`), + phyrexian / YouCastSpell / token-identity / Scry / etc. from sos-bonus-1. **Remaining 7 are all
-  architecture-level, lead-APPROVED with sketches** — protection/hexproof-from-colour (Akroma's Will + Veil of Summer),
-  redirect (Deflecting Palm), suspend (Living End), split-second/can't-lose (Angel's Grace), convoke (Return to the
-  Ranks — greedy pre-payment tap-selection per §2.6), Culling Ritual (batched `ManaSpec` subset-choice refactor).
-  **Full build-specs + lead's binding notes in the ▶▶ NEXT-AGENT HANDOFF block atop `docs/plans/SOS_CARDS.md` ★ BONUS
-  SHEET** for the next relay agent.
+- **✅ SOS BONUS SHEET COMPLETE: `soa` (Secrets of Strixhaven Mystical Archive), 65/65 authored (100%), 1001 mtg-core
+  green, whole workspace builds (2026-07-06, sos-bonus-3 finale).** SOS *limited* = the 271 main set (COMPLETE) + this
+  65-card bonus sheet — directive "everything playable in SOS limited must be in the engine" is now FULLY MET. `db.len()`
+  = 427; census: every one of the 65 distinct `soa` names resolves to a registered `CardDef`. Reprints live in first-
+  printing folders (grp 600+). Subsystems/caps shipped across the relay: **Overload**, **Spree**, **Roles**
+  (+`StateBasedAction::TokenCeasesToExist` — CR 111.7 phantom-graveyard fix), **alt-cast**, **Infect**, **Kicker**,
+  **Berserk**, and the sos-bonus-3 finale — **`ManaSpec.one_of`** subset-choice + **`ValueExpr::DestroyedThisResolution`**
+  (Culling Ritual); **protection/hexproof-from-COLOUR** (`ComputedChars.{protection_from,hexproof_from}` at layer 6 via
+  `StaticContribution::{ProtectionFromColor,HexproofFromColor}`, a `targetable_by` signature change + damage/blocking
+  seams — Akroma's Will + Veil of Summer); **damage prevent+redirect** (`FloatingRewrite::PreventAndRedirectToSource
+  Controller` — Deflecting Palm); **Suspend** (`CounterKind::Time`/`Ability::Suspend`/`CastVariant::Suspend` +
+  per-upkeep sweep + `Effect::ReturnExiledThisResolution` — Living End); **split-second** (`Keyword::SplitSecond`) +
+  **can't-lose**/life-floor Player flags (Angel's Grace); **Convoke** (shared `convoke_reduce` planner + `CardFilter::
+  OwnedBy` fix — Return to the Ranks); **can't-be-countered** + `Condition::OpponentCastColorThisTurn` (Veil of Summer).
+  Pool-scoped omissions ledgered in the `docs/plans/SOS_CARDS.md` ★ BONUS SHEET COMPLETE block.
 - **✅ SOS FULL-SET COMPLETE: 271/271 authored · 271 fully-faithful · 0 tracked-partials · 0 Native hatches, 871 mtg-core
   green (2026-07-06, sos-cards-21 finale).** Scryfall-diff verified vs. `set_code='sos'`. Final 3: Resonating Lute
   (granted-mana subsystem — `StaticContribution::GrantTapMana` + `chars::granted_tap_mana` + per-tap-count payment),

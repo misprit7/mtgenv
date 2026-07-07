@@ -5,6 +5,23 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
 
 ## 2026-07-06 (SOS bonus sheet — Mystical Archive `soa`, 65 cards)
 
+- **✅ BONUS SHEET COMPLETE — 65/65 (sos-bonus-3 finale).** 1001 mtg-core green, whole workspace builds
+  (incl. mtg-py), tree clean; `db.len()` = 427. Census: every one of the 65 distinct `soa` names resolves
+  to a registered `CardDef`. The last 7 (each its own commit, real-path tests):
+  **Culling Ritual** (`ManaSpec.one_of` subset-choice refactor — all 42 literals migrated atomically —
+  + `ValueExpr::DestroyedThisResolution`); **Akroma's Will** + the **protection/hexproof-from-COLOUR**
+  subsystem (`ComputedChars.{protection_from,hexproof_from}` at layer 6; **`targetable_by` signature
+  change** as an isolated full-suite-gated no-card commit; damage-prevention + can't-be-blocked seams);
+  **Deflecting Palm** (damage **prevent+redirect** via a source-scoped `FloatingReplacement` +
+  `Rewrite::PreventAndRedirect`; `affected_object` routes player-damage by source); **Living End**
+  (**Suspend** — `CounterKind::Time`/`Ability::Suspend`/`CastVariant::Suspend`, exile-with-counters special
+  action, per-upkeep sweep + free-cast at 0, body via `Effect::ReturnExiledThisResolution` + exile scratch);
+  **Angel's Grace** (**split-second** `Keyword::SplitSecond` gate + **can't-lose**/opps-can't-win Player
+  flags + **life-floor** `change_life` clamp; lethal-at-1-life survives); **Return to the Ranks**
+  (**Convoke** — offer gate + payment share the `convoke_reduce` planner folded before `auto_pay`; fixed
+  `CardFilter::OwnedBy` in `target_matches_filter`; X-target reanimation); **Veil of Summer** (rides
+  hexproof-from-colour + player-level hexproof-from + spells-uncounterable flag + `Condition::
+  OpponentCastColorThisTurn` → conditional draw). Pool-scoped omissions ledgered in `SOS_CARDS.md`.
 - **New directive:** SOS *limited* = the 271 main set (COMPLETE) **+ the bonus sheet** = Scryfall set
   **`soa`** (Secrets of Strixhaven Mystical Archive), **65 distinct booster-legal cards**. Full per-card
   triage in `docs/plans/SOS_CARDS.md` ★ BONUS SHEET. Reprints live in their first-printing folders;
