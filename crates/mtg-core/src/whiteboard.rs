@@ -390,6 +390,23 @@ impl EngineCore {
                 }
                 true
             }
+            // "At the beginning of the next end step, destroy that creature if it attacked this turn"
+            // (Berserk) — arm a delayed trigger carrying the conditional destroy. Flush staged actions
+            // first so the earlier pump/trample grant is committed before the trigger is registered.
+            Effect::DestroyAtEndStepIfAttacked { what } => {
+                self.flush_pending(wb);
+                if let Some(Target::Object(obj)) = self.resolve_target(what, ctx, cursor) {
+                    let controller = ctx.controller.unwrap_or(self.state.active_player);
+                    self.state.register_delayed_trigger(
+                        obj,
+                        crate::effects::action::DelayedTriggerEvent::AtBeginningOfNextEndStep,
+                        controller,
+                        ctx.source,
+                        vec![Action::DestroyIfAttackedThisTurn { obj }],
+                    );
+                }
+                true
+            }
             // "Change the target of target spell or ability with a single target" (Return the Favor,
             // CR 115.7). Imperative (reads/mutates the victim stack object, asks the controller), so it
             // lives here; the new target is validated against the victim's OWN spec, and an impossible
@@ -2825,6 +2842,7 @@ impl EngineCore {
             Effect::Modal { .. }
             | Effect::Spree { .. }
             | Effect::ChangeTarget { .. }
+            | Effect::DestroyAtEndStepIfAttacked { .. }
             | Effect::CreateRoleToken { .. }
             | Effect::Optional { .. }
             | Effect::IfYouDo { .. }
@@ -3323,6 +3341,13 @@ impl EngineCore {
                         obj,
                         to: Zone::Graveyard,
                     });
+                }
+            }
+            // "Destroy that creature if it attacked this turn" (Berserk's delayed end-step trigger) —
+            // a conditional Destroy: no-op unless the object is still around and attacked this turn.
+            Action::DestroyIfAttackedThisTurn { obj } => {
+                if self.state.objects.get(&obj).is_some_and(|o| o.attacked_this_turn) {
+                    self.apply_action(Action::Destroy { obj, source: None });
                 }
             }
             // Sacrifice a permanent as an applied action (CR 701.16) — the effect-side analogue of

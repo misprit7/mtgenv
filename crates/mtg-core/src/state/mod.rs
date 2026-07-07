@@ -168,6 +168,11 @@ pub struct Object {
     /// explicitly at cast; reset on every zone change (CR 400.7).
     #[serde(default)]
     pub kicked: bool,
+    /// Set when this creature is declared as an attacker (CR 508.1); read at the end step by Berserk's
+    /// delayed "destroy that creature if it attacked this turn." Reset at the start of each turn (and on
+    /// any zone change — a returned creature is a new object, CR 400.7).
+    #[serde(default)]
+    pub attacked_this_turn: bool,
     /// Set on a card warp-exiled at its end step (CR 702.x) — it may be cast from exile on a later
     /// turn (for its normal cost). Reset on any zone change (cast it, or it leaves exile).
     pub castable_from_exile: bool,
@@ -756,6 +761,7 @@ impl GameState {
             flashback_cast: false,
             overloaded: false,
             kicked: false,
+            attacked_this_turn: false,
             castable_from_exile: false,
             playable_from_graveyard: false,
             play_until_turn: None,
@@ -876,6 +882,7 @@ impl GameState {
             o.warp_cast = false; // a fresh object identity (CR 400.7)
             o.flashback_cast = false; // a fresh object identity (CR 400.7)
             o.kicked = false; // re-recorded only by a fresh kicked cast (CR 400.7)
+            o.attacked_this_turn = false; // a returned creature is a new object (CR 400.7)
             o.castable_from_exile = false; // re-granted only by a fresh warp-exile (400.7)
             o.playable_from_graveyard = false; // re-granted only by a fresh mill-then-play (400.7)
             o.play_until_turn = None; // impulse-play window drops on any zone change (400.7)

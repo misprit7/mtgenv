@@ -17,6 +17,11 @@ pub enum Action {
         obj: ObjId,
         source: Option<ObjId>,
     },
+    /// Destroy `obj` **only if** it attacked this turn (CR — Berserk's delayed end-step destroy). A
+    /// conditional [`Destroy`] evaluated when the delayed trigger fires (reads `Object::attacked_this_turn`).
+    DestroyIfAttackedThisTurn {
+        obj: ObjId,
+    },
     Sacrifice {
         obj: ObjId,
         by: PlayerId,

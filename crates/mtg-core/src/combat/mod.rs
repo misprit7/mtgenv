@@ -190,6 +190,11 @@ impl EngineCore {
             }
         }
         let attacker_ids: Vec<ObjId> = attacks.iter().map(|a| a.attacker).collect();
+        for &id in &attacker_ids {
+            if let Some(o) = self.state.objects.get_mut(&id) {
+                o.attacked_this_turn = true; // CR 508.1 — read at the end step (Berserk).
+            }
+        }
         self.state.combat = Some(CombatState {
             attackers: attacks,
             blocks: Vec::new(),
@@ -225,6 +230,11 @@ impl EngineCore {
             }
         }
         let attacker_ids: Vec<ObjId> = attacks.iter().map(|a| a.attacker).collect();
+        for &id in &attacker_ids {
+            if let Some(o) = self.state.objects.get_mut(&id) {
+                o.attacked_this_turn = true; // CR 508.1 — read at the end step (Berserk).
+            }
+        }
         self.state.combat = Some(CombatState { attackers: attacks, blocks: Vec::new() });
         self.broadcast(GameEvent::AttackersDeclared { attackers: attacker_ids, by: ap });
     }

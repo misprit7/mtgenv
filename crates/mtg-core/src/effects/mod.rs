@@ -497,6 +497,16 @@ pub enum Effect {
         kind: CounterKind,
         n: ValueExpr,
     },
+    /// "At the beginning of the next end step, destroy `what` if it attacked this turn" (Berserk) —
+    /// arms a delayed triggered ability (CR 603.7,
+    /// [`crate::effects::action::DelayedTriggerEvent::AtBeginningOfNextEndStep`]) carrying an
+    /// [`crate::effects::action::Action::DestroyIfAttackedThisTurn`]. The condition is re-checked when
+    /// the trigger fires (the creature must still have `attacked_this_turn` set). `what` is the
+    /// cast-locked target (usually `ChosenIndex`). Imperative (registers a delayed trigger), so it
+    /// lives in `interpret`.
+    DestroyAtEndStepIfAttacked {
+        what: EffectTarget,
+    },
     /// Counter a target spell or ability (CR 701.6).
     Counter {
         what: EffectTarget,

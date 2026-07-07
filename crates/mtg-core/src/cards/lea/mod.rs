@@ -3,6 +3,7 @@
 use crate::cards::CardDb;
 
 pub mod armageddon;
+pub mod berserk;
 pub mod elvish_archers;
 pub mod giant_growth;
 pub mod grizzly_bears;
@@ -13,6 +14,7 @@ pub mod wall_of_stone;
 
 pub fn register(db: &mut CardDb) {
     armageddon::register(db);
+    berserk::register(db);
     elvish_archers::register(db);
     giant_growth::register(db);
     grizzly_bears::register(db);

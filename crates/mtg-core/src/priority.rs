@@ -743,6 +743,7 @@ impl Engine {
         for id in all {
             if let Some(o) = self.state.objects.get_mut(&id) {
                 o.counter_added_this_turn = false;
+                o.attacked_this_turn = false; // "attacked this turn" is per-turn (Berserk)
             }
         }
         let perms = self.state.player(ap).battlefield.clone();
