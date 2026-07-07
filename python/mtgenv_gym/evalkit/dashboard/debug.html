@@ -1,0 +1,32 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>debug</title></head>
+<body style="font:14px monospace">
+<pre id="o">booting…</pre>
+<div style="width:400px;height:200px"><canvas id="c"></canvas></div>
+<script src="/chart.umd.min.js"></script>
+<script>
+(async () => {
+  const o = document.getElementById("o");
+  const log = (s) => { o.textContent += "\n" + s; };
+  o.textContent = "start";
+  try {
+    log("Chart typeof: " + typeof Chart);
+    const idx = await (await fetch("/data/index.json")).json();
+    log("index runs: " + idx.runs.length);
+    const r = await fetch("/data/runs/" + encodeURIComponent("3.5-muzero-heralds") + ".json");
+    log("run fetch status: " + r.status);
+    const j = await r.json();
+    log("metrics tags: " + Object.keys(j.metrics).length);
+    const pts = j.metrics["selfplay/winrate_vs_random"];
+    log("winrate pts: " + pts.length + " first=" + JSON.stringify(pts[0]));
+    const ch = new Chart(document.getElementById("c"), {
+      type: "line",
+      data: { datasets: [{ label: "t", data: pts.map(([x, y]) => ({ x, y })), borderColor: "#0f7fbf", pointRadius: 0, borderWidth: 2 }] },
+      options: { animation: false, responsive: true, maintainAspectRatio: false,
+                 scales: { x: { type: "linear" }, y: { min: 0, max: 1 } } },
+    });
+    log("chart created: " + !!ch);
+  } catch (e) { log("ERR: " + (e && e.stack || e)); }
+})();
+</script>
+</body></html>

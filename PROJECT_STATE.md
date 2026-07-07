@@ -67,8 +67,9 @@ MTGA client.
   annealed to 0 across 50%→80% (PPO); muzero2 uses the same Φ at CONSTANT coef 0.5. Eval stays raw
   ±1 everywhere. Per-window cast/playland_rate cap <1.0 for optimal play (mutual-exclusion
   artifact) — use `productive_rate` as the convergence gauge. TB event files under /tmp/mtgenv_tb/
-  are the write format; **Aim is the view** (`data/aim/`, UI on :43800, `scripts/tb2aim.py --watch`
-  mirrors continuously — see WORKLOG 2026-07-07).
+  are the write format; **evaldash is the main view** (`scripts/evaldash.py`, mobile-first, :8060,
+  syncs to `data/dash/`) with Aim (:43800, `data/aim/`, `scripts/tb2aim.py --watch`) and TB (:6006)
+  still served — see WORKLOG 2026-07-07.
 - **✅ evalkit — algorithm-agnostic eval/metrics/logging (2026-07-06, `python/mtgenv_gym/evalkit/`).**
   One eval+metrics+logging stack every RL algorithm shares; a new algorithm plugs in via a thin
   `Policy` adapter (`act(obs_batch, mask_batch, *, mode)`, batched, greedy+sample). `Arena` (batched

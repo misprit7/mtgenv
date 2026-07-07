@@ -3,6 +3,23 @@
 Short, dated entries for future-agent consumption. Newest first. One line or a few bullets
 per unit of meaningful progress. Keep it terse — detail lives in `docs/` and git history.
 
+## 2026-07-07 (evaldash — custom mobile-first training dashboard)
+
+- **evaldash is the main experiment view** (user bounced off TB defaults, then Aim's mobile UI;
+  picked "custom evalkit dashboard" from the alternatives). `scripts/evaldash.py` = one stdlib
+  daemon: syncs every TB run into compact JSON at `data/dash/` (reuses tb2aim readers — recursion,
+  descriptions, experiment grouping; decimation cap 2500 pts/series) and serves the static page
+  `python/mtgenv_gym/evalkit/dashboard/` on **:8060**. Page: hand-rolled, CMYK-misregistration
+  identity shared with the game client, vendored Chart.js, phone-first layout (charts before the
+  run picker), collapsible experiment sections, per-run markdown notes (ⓘ), global legend chips,
+  persistent smoothing (default OFF/raw), rate axes locked 0–1, "all metrics" toggle for the long
+  tail, light/dark themes, 90 s auto-resync, lobby link. Run palette validated with the dataviz
+  six-checks (light + dark). Screenshot-verified at 390 px and 1440 px in both themes.
+- Gotcha fixed en route: python `json.dump` emits bare `NaN` (invalid JSON — JS `JSON.parse`
+  rejects, python round-trips silently); evaldash filters non-finite scalars + `allow_nan=False`.
+  Single-point series (verification runs) get visible dots (`pointRadius` fallback).
+- TB (:6006) and Aim (:43800) both still up; TB event files remain the sole write format.
+
 ## 2026-07-07 (experiment tracking: TensorBoard → Aim)
 
 - **Aim is now the main experiment view** (user request — TB's smoothing/clipping defaults, no

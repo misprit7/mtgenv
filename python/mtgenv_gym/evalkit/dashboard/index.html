@@ -1,0 +1,456 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#faf7ef" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#14172a" media="(prefers-color-scheme: dark)">
+<title>mtgenv · training</title>
+<script>
+/* Stamp the saved theme before first paint (same pattern as the game client). */
+(function () {
+  var t = new URLSearchParams(location.search).get("theme") || localStorage.getItem("evaldash.theme");
+  if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
+})();
+</script>
+<style>
+/* ══ evaldash — same CMYK-misregistration identity as the game client ══════════════ */
+:root {
+  --cyan:#29b6d8; --magenta:#ec4f9d; --yellow:#f5c528; --green:#37a86a;
+  --paper:#faf7ef; --panel:#fffdf6; --surface:#f1ead9; --ink:#232a4d; --muted:#5c6187;
+  --line:#232a4d; --hair:rgba(35,42,77,.20); --shadowc:var(--cyan);
+  /* categorical run palette — validated (dataviz six-checks) for the light surface */
+  --s0:#0f7fbf; --s1:#c94f2e; --s2:#8250c4; --s3:#2e8540;
+  --s4:#b3266e; --s5:#946200; --s6:#3b5bdb; --s7:#00997f;
+  --condensed:"Avenir Next Condensed","Avenir Next",Futura,"Trebuchet MS",system-ui,sans-serif;
+}
+:root[data-theme="dark"] {
+  --paper:#14172a; --panel:#1d2138; --surface:#191d31; --ink:#e9e3d4; --muted:#a29d8b;
+  --line:#e9e3d4; --hair:rgba(233,227,212,.18);
+  --s0:#3f9ad0; --s1:#e06a42; --s2:#9a6fd8; --s3:#46a45c;
+  --s4:#d4508f; --s5:#b3831a; --s6:#6f83e8; --s7:#10a78d;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]):not([data-theme="dark"]) {
+    --paper:#14172a; --panel:#1d2138; --surface:#191d31; --ink:#e9e3d4; --muted:#a29d8b;
+    --line:#e9e3d4; --hair:rgba(233,227,212,.18);
+    --s0:#3f9ad0; --s1:#e06a42; --s2:#9a6fd8; --s3:#46a45c;
+    --s4:#d4508f; --s5:#b3831a; --s6:#6f83e8; --s7:#10a78d;
+  }
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { touch-action: manipulation; }
+body {
+  margin: 0; background: var(--paper); color: var(--ink);
+  font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+a { color: inherit; }
+
+/* ── top bar ── */
+.topbar {
+  position: sticky; top: 0; z-index: 50; display: flex; align-items: center; gap: 10px;
+  padding: 8px 12px; background: var(--paper); border-bottom: 2.5px solid var(--line);
+}
+.topbar h1 {
+  margin: 0; font-family: var(--condensed); font-size: 19px; letter-spacing: .04em;
+  text-transform: uppercase; white-space: nowrap;
+}
+.topbar h1 .spot { color: var(--cyan); }
+.topbar .sub { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.topbar .grow { flex: 1; }
+.iconbtn {
+  min-width: 40px; min-height: 36px; padding: 4px 10px; cursor: pointer;
+  background: var(--panel); color: var(--ink); border: 2.5px solid var(--line);
+  border-radius: 7px 5px 8px 5px; box-shadow: 2px 2px 0 var(--shadowc);
+  font: inherit; font-weight: 700;
+}
+.iconbtn:active { transform: translate(2px, 2px); box-shadow: none; }
+a.iconbtn { text-decoration: none; display: inline-flex; align-items: center; }
+
+/* ── layout: charts first on phone (legend chips say what's shown; the picker is a
+       scroll away), charts + right-hand runs pane on wide screens ── */
+.wrap { display: grid; gap: 12px; padding: 12px; max-width: 1500px; margin: 0 auto; }
+@media (min-width: 1000px) { .wrap { grid-template-columns: minmax(0, 1fr) 320px; align-items: start; } }
+@media (max-width: 560px) { .topbar .sub { display: none; } .topbar h1 { font-size: 16px; } }
+
+/* ── runs pane ── */
+.runs { display: flex; flex-direction: column; gap: 8px; }
+@media (min-width: 1000px) { .runs { position: sticky; top: 62px; max-height: calc(100vh - 74px); overflow-y: auto; } }
+details.section {
+  background: var(--panel); border: 2.5px solid var(--line); border-radius: 8px 5px 7px 6px;
+  box-shadow: 3px 3px 0 var(--shadowc);
+}
+details.section > summary {
+  cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px;
+  padding: 9px 12px; font-family: var(--condensed); font-size: 15px; letter-spacing: .05em;
+  text-transform: uppercase; user-select: none; min-height: 40px;
+}
+details.section > summary::-webkit-details-marker { display: none; }
+details.section > summary::before { content: "▸"; color: var(--magenta); transition: transform .12s; }
+details.section[open] > summary::before { transform: rotate(90deg); }
+details.section > summary .count { margin-left: auto; color: var(--muted); font-size: 12px; font-family: ui-sans-serif, system-ui, sans-serif; text-transform: none; letter-spacing: 0; }
+.runrow { border-top: 1.5px solid var(--hair); }
+.runrow > label {
+  display: flex; align-items: center; gap: 8px; padding: 8px 12px; cursor: pointer; min-height: 42px;
+}
+.runrow input[type="checkbox"] { width: 17px; height: 17px; accent-color: var(--cyan); flex: none; }
+.runrow .name { font-weight: 600; font-size: 13px; word-break: break-all; }
+.runrow .step { margin-left: auto; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.runrow .infobtn {
+  flex: none; border: none; background: none; color: var(--muted); cursor: pointer;
+  font-size: 15px; min-width: 34px; min-height: 34px; border-radius: 6px;
+}
+.runrow .infobtn:hover, .runrow .infobtn[aria-expanded="true"] { color: var(--ink); background: var(--surface); }
+.desc {
+  margin: 0 12px 10px; padding: 8px 10px; background: var(--surface);
+  border-left: 3px solid var(--yellow); border-radius: 4px; font-size: 12.5px; overflow-x: auto;
+}
+.desc :is(h1,h2,h3,h4) { margin: 4px 0; font-size: 13px; font-family: var(--condensed); letter-spacing: .04em; text-transform: uppercase; }
+.desc p { margin: 5px 0; }
+.desc code { background: var(--paper); padding: 0 4px; border-radius: 3px; font-size: 11.5px; }
+.desc a { color: var(--cyan); }
+.desc table { border-collapse: collapse; margin: 5px 0; font-size: 11.5px; }
+.desc td, .desc th { border: 1px solid var(--hair); padding: 2px 7px; text-align: left; }
+.desc th { font-weight: 700; }
+
+/* ── charts pane ── */
+.main { min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+.controls {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 9px 12px;
+  background: var(--panel); border: 2.5px solid var(--line); border-radius: 6px 8px 5px 7px;
+  box-shadow: 3px 3px 0 var(--magenta);
+}
+.controls label { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted); min-height: 30px; }
+.controls input[type="range"] { width: 110px; accent-color: var(--cyan); }
+.controls input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--cyan); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; cursor: pointer;
+  border: 1.5px solid var(--hair); border-radius: 99px; background: var(--panel);
+  font-size: 12px; font-weight: 600; min-height: 30px; user-select: none;
+}
+.chip .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.chip.off { opacity: .38; text-decoration: line-through; }
+.grid { display: grid; gap: 12px; grid-template-columns: 1fr; }
+@media (min-width: 700px) { .grid { grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); } }
+.card {
+  background: var(--panel); border: 2.5px solid var(--line); border-radius: 7px 5px 8px 6px;
+  box-shadow: 3px 3px 0 var(--shadowc); padding: 8px 10px 6px; min-width: 0;
+}
+.card h3 {
+  margin: 0 0 2px; font-size: 12.5px; font-weight: 700; color: var(--muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.card .plot { position: relative; height: 205px; }
+.empty { padding: 30px 16px; text-align: center; color: var(--muted); }
+.footer { padding: 4px 12px 18px; color: var(--muted); font-size: 11.5px; text-align: center; }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <h1>mtgenv <span class="spot">·</span> training</h1>
+  <span class="sub" id="synced"></span>
+  <span class="grow"></span>
+  <a class="iconbtn" id="lobbylink" title="game lobby (replays)">▶ lobby</a>
+  <button class="iconbtn" id="themebtn" title="theme">◐</button>
+</header>
+
+<div class="wrap">
+  <main class="main">
+    <div class="controls">
+      <div class="legend" id="legend"></div>
+      <span style="flex:1"></span>
+      <label>smooth <input type="range" id="smooth" min="0" max="0.9" step="0.05" value="0">
+        <span id="smoothval" style="font-variant-numeric:tabular-nums">off</span></label>
+      <label><input type="checkbox" id="ratelock" checked> rates 0–1</label>
+      <label><input type="checkbox" id="allmetrics"> all metrics</label>
+    </div>
+    <div class="grid" id="charts"></div>
+    <div class="empty" id="empty" hidden>No runs selected — pick some from the run list.</div>
+  </main>
+  <aside class="runs" id="runs"></aside>
+</div>
+<div class="footer">evalkit dashboard · TB events are the source of truth · re-syncs every 90 s</div>
+
+<script src="/chart.umd.min.js"></script>
+<script>
+"use strict";
+/* Self-hosted tool: surface failures on the page instead of a silent blank. */
+window.addEventListener("error", (e) => {
+  const el = document.getElementById("empty");
+  if (el) { el.hidden = false; el.textContent = `error: ${e.message} (${(e.filename || "").split("/").pop()}:${e.lineno})`; }
+});
+window.addEventListener("unhandledrejection", (e) => {
+  const el = document.getElementById("empty");
+  if (el) { el.hidden = false; el.textContent = "error: " + (e.reason && e.reason.message || e.reason); }
+});
+/* ══ state ═══════════════════════════════════════════════════════════════════════ */
+const LS = {
+  get(k, d) { try { const v = JSON.parse(localStorage.getItem("evaldash." + k)); return v === null ? d : v; } catch { return d; } },
+  set(k, v) { localStorage.setItem("evaldash." + k, JSON.stringify(v)); },
+};
+const SECTION_ORDER = ["muzero2", "verification", "ppo-selfplay", "muzero2-train-internals",
+                       "muzero-v1-failed", "smoke-and-probes", "misc"];
+let index = null;                      // /data/index.json payload
+let selected = LS.get("sel", null);    // run names (null until defaulted from index)
+let colorOf = LS.get("colors", {});    // run name -> palette slot (stable while selected)
+let hiddenRuns = new Set();            // legend-toggled off (session only)
+const runData = {};                    // name -> metrics payload
+let charts = [];                       // live Chart.js instances
+
+/* ══ helpers ═════════════════════════════════════════════════════════════════════ */
+const $ = (id) => document.getElementById(id);
+const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const PALETTE_VARS = ["--s0","--s1","--s2","--s3","--s4","--s5","--s6","--s7"];
+const kfmt = (v) => Math.abs(v) >= 1e6 ? (v / 1e6) + "M" : Math.abs(v) >= 1000 ? (v / 1000) + "k" : "" + v;
+
+function assignColor(name) {
+  if (colorOf[name] !== undefined) return colorOf[name];
+  const used = new Set(Object.entries(colorOf).filter(([n]) => selected.includes(n)).map(([, i]) => i));
+  let slot = 0; while (used.has(slot) && slot < PALETTE_VARS.length - 1) slot++;
+  colorOf[name] = slot; LS.set("colors", colorOf);
+  return slot;
+}
+const runColor = (name) => css(PALETTE_VARS[colorOf[name] % PALETTE_VARS.length]);
+
+/* metric ordering: curated first, long tail behind the "all metrics" toggle */
+function tagOrder(t) {
+  const exact = {
+    "selfplay/winrate_vs_random": 0, "selfplay/winrate_vs_random_sampled": 1,
+    "selfplay/winrate_vs_initial": 2, "selfplay/winrate_vs_initial_sampled": 3,
+    "stats/productive_rate": 20, "stats/attack_rate": 21, "stats/block_rate": 22,
+    "stats/cast_rate": 23, "stats/playland_rate": 24, "stats/block_double_rate": 25,
+    "game/turns_mean": 30, "train/shaping_coef": 50,
+  };
+  if (t in exact) return exact[t];
+  if (t.startsWith("ladder/")) return 10;
+  if (t.startsWith("game/end_")) return 31;
+  if (t.startsWith("swine/")) return 40;          // per-deck analyzers
+  return 100;                                      // internals / rollout / everything else
+}
+const isRateTag = (t) => t.includes("winrate") || t.endsWith("_rate") || t.includes("/end_") || t.startsWith("ladder/");
+
+function ema(points, a) {
+  if (!a) return points;
+  let prev = null;
+  return points.map(([x, y]) => {
+    prev = prev === null ? y : a * prev + (1 - a) * y;
+    return [x, prev];
+  });
+}
+
+/* minimal, escaped markdown: headings/bold/code/links/bullets/tables */
+function md(text) {
+  const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const inline = (s) => esc(s)
+    .replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>")
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
+    .replace(/(^|\s)(https?:\/\/[^\s<]+)/g, '$1<a href="$2" target="_blank" rel="noopener">$2</a>');
+  const out = []; let table = null, list = null;
+  const flush = () => {
+    if (table) { out.push("<table>" + table.map(r => "<tr>" + r.map(c => "<td>" + inline(c) + "</td>").join("") + "</tr>").join("") + "</table>"); table = null; }
+    if (list) { out.push("<ul>" + list.map(li => "<li>" + inline(li) + "</li>").join("") + "</ul>"); list = null; }
+  };
+  for (const raw of (text || "").split("\n")) {
+    const line = raw.trimEnd();
+    if (/^\|.*\|$/.test(line.trim())) {
+      const cells = line.trim().slice(1, -1).split("|").map(c => c.trim());
+      if (cells.every(c => /^:?-{2,}:?$/.test(c))) continue;         // separator row
+      (table = table || []).push(cells); continue;
+    }
+    if (/^[-*] /.test(line.trim())) { flush(); (list = list || []).push(line.trim().slice(2)); continue; }
+    flush();
+    const h = line.match(/^(#{1,4}) +(.*)/);
+    if (h) out.push("<h4>" + inline(h[2]) + "</h4>");
+    else if (line.trim()) out.push("<p>" + inline(line) + "</p>");
+  }
+  flush();
+  return out.join("");
+}
+
+/* ══ runs pane ═══════════════════════════════════════════════════════════════════ */
+function renderRuns() {
+  const bySection = {};
+  for (const r of index.runs) (bySection[r.experiment] = bySection[r.experiment] || []).push(r);
+  const root = $("runs");
+  root.textContent = "";
+  const sections = SECTION_ORDER.filter(s => bySection[s]).concat(Object.keys(bySection).filter(s => !SECTION_ORDER.includes(s)));
+  for (const sec of sections) {
+    const runs = bySection[sec].slice().sort((a, b) => b.name.localeCompare(a.name, undefined, { numeric: true }));
+    const det = document.createElement("details");
+    det.className = "section";
+    det.open = runs.some(r => selected.includes(r.name));
+    const nsel = runs.filter(r => selected.includes(r.name)).length;
+    det.innerHTML = `<summary>${sec}<span class="count">${nsel ? nsel + " of " : ""}${runs.length}</span></summary>`;
+    for (const r of runs) {
+      const row = document.createElement("div");
+      row.className = "runrow";
+      const checked = selected.includes(r.name) ? "checked" : "";
+      row.innerHTML =
+        `<label><input type="checkbox" ${checked} data-run="${r.name}">
+           <span class="name">${r.name}</span>
+           <span class="step">${kfmt(r.max_step)}</span>
+           ${r.description ? `<button class="infobtn" aria-expanded="false" title="notes">ⓘ</button>` : ""}
+         </label>
+         ${r.description ? `<div class="desc" hidden>${md(r.description)}</div>` : ""}`;
+      row.querySelector("input").addEventListener("change", (e) => toggleRun(r.name, e.target.checked));
+      const info = row.querySelector(".infobtn");
+      if (info) info.addEventListener("click", (e) => {
+        e.preventDefault();
+        const d = row.querySelector(".desc");
+        d.hidden = !d.hidden;
+        info.setAttribute("aria-expanded", String(!d.hidden));
+      });
+      det.appendChild(row);
+    }
+    root.appendChild(det);
+  }
+}
+
+async function toggleRun(name, on) {
+  if (on && !selected.includes(name)) { selected.push(name); assignColor(name); }
+  if (!on) selected = selected.filter(n => n !== name);
+  LS.set("sel", selected);
+  await loadSelected();
+  renderRuns(); renderLegend(); renderCharts();
+}
+
+/* ══ legend ══════════════════════════════════════════════════════════════════════ */
+function renderLegend() {
+  const el = $("legend");
+  el.textContent = "";
+  for (const name of selected) {
+    const chip = document.createElement("span");
+    chip.className = "chip" + (hiddenRuns.has(name) ? " off" : "");
+    chip.innerHTML = `<span class="dot" style="background:${runColor(name)}"></span>${name}`;
+    chip.addEventListener("click", () => {
+      hiddenRuns.has(name) ? hiddenRuns.delete(name) : hiddenRuns.add(name);
+      renderLegend(); renderCharts();
+    });
+    el.appendChild(chip);
+  }
+}
+
+/* ══ charts ══════════════════════════════════════════════════════════════════════ */
+function renderCharts() {
+  charts.forEach(c => c.destroy()); charts = [];
+  const grid = $("charts");
+  grid.textContent = "";
+  const visible = selected.filter(n => !hiddenRuns.has(n) && runData[n]);
+  $("empty").hidden = selected.length > 0;
+  if (!visible.length) return;
+
+  const showAll = $("allmetrics").checked;
+  const tags = [...new Set(visible.flatMap(n => Object.keys(runData[n].metrics)))]
+    .filter(t => showAll || tagOrder(t) < 100)
+    .sort((a, b) => tagOrder(a) - tagOrder(b) || a.localeCompare(b));
+  const a = parseFloat($("smooth").value);
+  const lockRates = $("ratelock").checked;
+  const ink = css("--ink"), mutedC = css("--muted"), hair = css("--hair"), panel = css("--panel");
+
+  for (const tag of tags) {
+    const datasets = [];
+    for (const name of visible) {
+      const pts = runData[name].metrics[tag];
+      if (!pts) continue;
+      datasets.push({
+        label: name,
+        data: ema(pts, a).map(([x, y]) => ({ x, y })),
+        borderColor: runColor(name), backgroundColor: runColor(name),
+        borderWidth: 2, pointHitRadius: 12, tension: 0, spanGaps: true,
+        pointRadius: pts.length < 3 ? 3.5 : 0,   // one-shot evals (verification runs) must stay visible
+      });
+    }
+    if (!datasets.length) continue;
+    const card = document.createElement("div");
+    card.className = "card";
+    card.innerHTML = `<h3>${tag}</h3><div class="plot"><canvas></canvas></div>`;
+    grid.appendChild(card);
+    const rate = lockRates && isRateTag(tag);
+    charts.push(new Chart(card.querySelector("canvas"), {
+      type: "line",
+      data: { datasets },
+      options: {
+        animation: false, responsive: true, maintainAspectRatio: false, normalized: true,
+        interaction: { mode: "nearest", axis: "x", intersect: false },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: panel, titleColor: mutedC, bodyColor: ink, borderColor: ink,
+            borderWidth: 1.5, cornerRadius: 6, padding: 8,
+            callbacks: {
+              title: (items) => items.length ? "step " + kfmt(items[0].parsed.x) : "",
+              label: (item) => ` ${item.dataset.label}: ${item.parsed.y.toFixed(3)}`,
+            },
+          },
+        },
+        scales: {
+          x: { type: "linear", grid: { color: hair }, border: { color: ink },
+               ticks: { color: mutedC, maxTicksLimit: 6, callback: kfmt, font: { size: 10.5 } } },
+          y: { grid: { color: hair }, border: { color: ink },
+               ticks: { color: mutedC, maxTicksLimit: 6, font: { size: 10.5 } },
+               ...(rate ? { min: 0, max: 1 } : {}) },
+        },
+      },
+    }));
+  }
+}
+
+/* ══ data flow ═══════════════════════════════════════════════════════════════════ */
+async function loadSelected() {
+  await Promise.all(selected.filter(n => !runData[n]).map(async (n) => {
+    try {
+      const r = await fetch(`/data/runs/${encodeURIComponent(n)}.json`);
+      if (r.ok) runData[n] = await r.json();
+    } catch { /* run may have vanished; chip simply renders nothing */ }
+  }));
+}
+
+async function refresh(force) {
+  const r = await fetch("/data/index.json", { cache: "no-store" });
+  const next = await r.json();
+  const changed = !index || next.generated_at !== index.generated_at;
+  index = next;
+  $("synced").textContent = "synced " + new Date(index.generated_at * 1000).toLocaleTimeString();
+  if (selected === null) {   // first visit: interesting sections, newest first, no dead stubs
+    selected = index.runs
+      .filter(x => (x.experiment === "muzero2" || x.experiment === "verification") && x.max_step >= 1000)
+      .sort((x, y) => y.name.localeCompare(x.name, undefined, { numeric: true }))
+      .slice(0, 5).map(x => x.name);
+    selected.forEach(assignColor);
+    LS.set("sel", selected);
+  }
+  selected = selected.filter(n => index.runs.some(x => x.name === n));
+  if (changed || force) {
+    for (const n of selected) delete runData[n];   // refetch: series may have grown
+    await loadSelected();
+    renderRuns(); renderLegend(); renderCharts();
+  }
+}
+
+/* ══ controls ════════════════════════════════════════════════════════════════════ */
+$("smooth").value = LS.get("smooth", 0);
+$("ratelock").checked = LS.get("ratelock", true);
+$("allmetrics").checked = LS.get("allmetrics", false);
+const smoothLabel = () => { const v = parseFloat($("smooth").value); $("smoothval").textContent = v ? v.toFixed(2) : "off"; };
+smoothLabel();
+$("smooth").addEventListener("input", () => { smoothLabel(); LS.set("smooth", parseFloat($("smooth").value)); renderCharts(); });
+$("ratelock").addEventListener("change", () => { LS.set("ratelock", $("ratelock").checked); renderCharts(); });
+$("allmetrics").addEventListener("change", () => { LS.set("allmetrics", $("allmetrics").checked); renderCharts(); });
+$("themebtn").addEventListener("click", () => {
+  const cur = document.documentElement.dataset.theme ||
+    (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+  const next = cur === "dark" ? "light" : "dark";
+  document.documentElement.dataset.theme = next;
+  localStorage.setItem("evaldash.theme", next);
+  renderLegend(); renderCharts();   // charts read CSS vars at build time
+});
+$("lobbylink").href = `http://${location.hostname}:8080/`;
+
+refresh(true);
+setInterval(() => refresh(false).catch(() => {}), 90_000);
+</script>
+</body>
+</html>
