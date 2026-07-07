@@ -2,8 +2,10 @@
 
 use crate::cards::CardDb;
 
+pub mod akromas_will;
 pub mod jeskas_will;
 
 pub fn register(db: &mut CardDb) {
+    akromas_will::register(db);
     jeskas_will::register(db);
 }
