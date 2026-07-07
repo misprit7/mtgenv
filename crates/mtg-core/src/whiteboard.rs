@@ -50,6 +50,10 @@ fn affected_object(action: &Action) -> Option<ObjId> {
     match action {
         Action::MoveZone { obj, to: Zone::Battlefield, .. } => Some(*obj),
         Action::Damage { target: Target::Object(o), .. } => Some(*o),
+        // Damage to a PLAYER has no affected object; route it by its SOURCE so a floating rider
+        // scoped to that source (Deflecting Palm) is consulted. No printed replacement patterns on
+        // player-damage exist in the pool, so this only reaches the dedicated redirect arm below.
+        Action::Damage { target: Target::Player(_), source, .. } => Some(*source),
         Action::AddCounters { obj, .. } => Some(*obj),
         // Death actions (CR 700.4 — battlefield→graveyard): destruction, sacrifice, and a direct
         // "put into its owner's graveyard" move. The `WouldDie` pattern (which enforces that the
@@ -70,6 +74,7 @@ fn describe_rewrite(rw: &Rewrite) -> String {
         Rewrite::ScaleAmount { numerator, denominator } => format!("scale {numerator}/{denominator}"),
         Rewrite::AddAmount(n) => format!("add {n}"),
         Rewrite::Redirect => "redirect".to_string(),
+        Rewrite::PreventAndRedirect { .. } => "prevent and redirect to source's controller".to_string(),
         Rewrite::EntersWithCounters { kind, n } => format!("enters with {n} {kind:?}"),
         Rewrite::EntersWithCountersValue { kind, .. } => format!("enters with N {kind:?}"),
         Rewrite::EntersTapped => "enters tapped".to_string(),
@@ -220,6 +225,47 @@ impl EngineCore {
                 self.flush_pending(wb);
                 let player = self.eval_player(*who, ctx);
                 self.add_mana(player, mana, ctx);
+                true
+            }
+            // "The next time a source of your choice would deal damage to you this turn, prevent it;
+            // then deal that much to that source's controller" (CR 615 — Deflecting Palm). Imperative
+            // (asks the controller to choose a source), so it lives here: pick a battlefield permanent,
+            // then arm a one-shot floating replacement scoped to it for the rest of the turn.
+            Effect::DeflectDamage { who } => {
+                let protected = self.eval_player(*who, ctx);
+                let candidates: Vec<ObjId> = self
+                    .state
+                    .players
+                    .iter()
+                    .flat_map(|p| p.battlefield.iter().copied())
+                    .collect();
+                if let (Some(deflect_source), false) = (ctx.source, candidates.is_empty()) {
+                    let chooser = ctx.controller.unwrap_or(protected);
+                    let req = DecisionRequest::SelectCards {
+                        reason: SelectReason::Generic,
+                        from: candidates.clone(),
+                        min: 1,
+                        max: 1,
+                        description: "choose a source to deflect".into(),
+                    };
+                    let chosen = match self.ask(chooser, &req) {
+                        DecisionResponse::Indices(v) => {
+                            v.first().and_then(|&i| candidates.get(i as usize)).copied()
+                        }
+                        _ => None,
+                    }
+                    .unwrap_or(candidates[0]);
+                    wb.push(Action::AddFloatingReplacement {
+                        scope: chosen,
+                        pattern: ActionPattern::WouldBeDealtDamage { to: CardFilter::Any, kind: None },
+                        rewrite: FloatingRewrite::PreventAndRedirectToSourceController {
+                            protected,
+                            deflect_source,
+                        },
+                        until_turn: self.state.turn_number,
+                        one_shot: true,
+                    });
+                }
                 true
             }
             // Discard N cards (CR 701.8): the discarding player chooses which. Imperative + asks the
@@ -2882,6 +2928,7 @@ impl EngineCore {
             | Effect::ExileTopForPlay { .. }
             | Effect::Search { .. }
             | Effect::AddMana { .. }
+            | Effect::DeflectDamage { .. }
             | Effect::Discard { .. }
             | Effect::DiscardChosen { .. }
             | Effect::PutDiscardedOntoBattlefield { .. }
@@ -3038,6 +3085,31 @@ impl EngineCore {
             if fr.scope != affected {
                 continue;
             }
+            // Player-damage redirect (Deflecting Palm) — handled directly (the generic
+            // `WouldBeDealtDamage` pattern only covers Target::Object). Matches iff the damaging
+            // action's source is the scoped source AND its recipient is the protected player; the
+            // `kind` gate honours the pattern's optional DamageKind (CR 615).
+            if let FloatingRewrite::PreventAndRedirectToSourceController { protected, deflect_source } =
+                &fr.rewrite
+            {
+                if let Action::Damage { target: Target::Player(p), source: s, kind, .. } = action {
+                    let kind_ok = match &fr.pattern {
+                        ActionPattern::WouldBeDealtDamage { kind: Some(k), .. } => k == kind,
+                        _ => true,
+                    };
+                    if *s == affected && p == protected && kind_ok {
+                        let rewrite = Rewrite::PreventAndRedirect { deflect_source: *deflect_source };
+                        out.push(Applicable {
+                            source: fr.scope,
+                            idx: usize::MAX,
+                            description: describe_rewrite(&rewrite),
+                            rewrite,
+                            floating_idx: Some(fi),
+                        });
+                    }
+                }
+                continue;
+            }
             // The scope IS the source for filter/`ItSelf` purposes.
             if self.pattern_matches(&fr.pattern, action, affected, fr.scope) {
                 let rewrite = match &fr.rewrite {
@@ -3045,6 +3117,9 @@ impl EngineCore {
                     FloatingRewrite::EntersWithCounters { kind, n } => {
                         Rewrite::EntersWithCounters { kind: kind.clone(), n: *n }
                     }
+                    // The player-damage redirect is handled by the dedicated arm above (which
+                    // `continue`s), so it never reaches this object-pattern mapping.
+                    FloatingRewrite::PreventAndRedirectToSourceController { .. } => continue,
                 };
                 out.push(Applicable {
                     source: fr.scope,
@@ -3255,6 +3330,29 @@ impl EngineCore {
                     _ => None,
                 };
                 wb.actions[ai] = Action::Exile { obj, source };
+            }
+            // "Prevent that damage; deal that much to that source's controller" (CR 615 — Deflecting
+            // Palm). Delete the damage-to-player action and, in its place, stage new damage from
+            // `deflect_source` to the damaging source's controller for the same amount.
+            Rewrite::PreventAndRedirect { deflect_source } => {
+                if let Action::Damage { amount, source: dmg_source, .. } = wb.actions[ai] {
+                    wb.actions.remove(ai);
+                    let src_controller =
+                        self.state.objects.get(&dmg_source).map(|o| o.controller);
+                    if amount > 0 {
+                        if let Some(pc) = src_controller {
+                            wb.actions.insert(
+                                ai,
+                                Action::Damage {
+                                    target: Target::Player(pc),
+                                    amount,
+                                    source: *deflect_source,
+                                    kind: DamageKind::Noncombat,
+                                },
+                            );
+                        }
+                    }
+                }
             }
             // ReplaceWith / Redirect: future work.
             _ => {}

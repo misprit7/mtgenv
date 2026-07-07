@@ -252,6 +252,14 @@ pub enum Effect {
         who: PlayerRef,
         mana: ManaSpec,
     },
+    /// "The next time a source of your choice would deal damage to `who` this turn, prevent that
+    /// damage; then this spell deals that much damage to that source's controller" (CR 615 —
+    /// Deflecting Palm). At resolution the controller chooses a source (a battlefield permanent) and
+    /// arms a one-shot floating replacement scoped to it. Sources on the stack / in other zones are a
+    /// pool-scoped omission (the common case — deflecting an attacker — is a battlefield permanent).
+    DeflectDamage {
+        who: PlayerRef,
+    },
     PutCounters {
         what: EffectTarget,
         kind: CounterKind,

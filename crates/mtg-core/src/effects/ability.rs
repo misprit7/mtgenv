@@ -8,6 +8,7 @@ use super::target::{CardFilter, ManaSpec, SelectSpec};
 use super::value::ValueExpr;
 use super::Effect;
 use crate::basics::{CardType, Color, CounterKind, DamageKind, ManaCost, Zone};
+use crate::ids::{ObjId, PlayerId};
 use crate::subtypes::Subtype;
 use serde::{Deserialize, Serialize};
 
@@ -221,6 +222,11 @@ pub enum FloatingRewrite {
     /// "whenever you cast a creature spell, that creature enters with X additional +1/+1 counters."
     /// `n` is fixed when the rider is armed (the colours spent were determined at cast).
     EntersWithCounters { kind: CounterKind, n: u32 },
+    /// "The next time the scoped SOURCE would deal damage to `protected` this turn, prevent that
+    /// damage; then `deflect_source` deals that much damage to that source's controller" (CR 615 —
+    /// Deflecting Palm). One-shot. The scoped object (`FloatingReplacement.scope`) is the chosen
+    /// damage source; `deflect_source` is the spell dealing the redirected damage.
+    PreventAndRedirectToSourceController { protected: PlayerId, deflect_source: ObjId },
 }
 
 /// How a matched action is rewritten (CR 614.1). Contains an `Effect` in the "instead" case, so
@@ -239,6 +245,10 @@ pub enum Rewrite {
     AddAmount(i64),
     /// Redirect damage/effect to a different recipient (the controller chooses if ambiguous).
     Redirect,
+    /// Prevent the damage a player would be dealt and deal that much to the damaging source's
+    /// controller (CR 615 — Deflecting Palm). `deflect_source` is the spell that deals the redirected
+    /// damage. The runtime mapping of [`FloatingRewrite::PreventAndRedirectToSourceController`].
+    PreventAndRedirect { deflect_source: ObjId },
     /// Enter with N extra counters of a kind (the common ETB replacement, CR 614.1e).
     EntersWithCounters { kind: CounterKind, n: u32 },
     /// Enter with a **dynamic** number of counters — `n` is evaluated as the object enters, against
