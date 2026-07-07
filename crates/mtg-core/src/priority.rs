@@ -1141,7 +1141,9 @@ impl Engine {
                 .as_ref()
                 .map(|c| self.effective_cast_cost(p, card, c, TargetCtx::Optimistic))
                 .is_some_and(|c| {
-                    mana::can_pay_ex(s, p, &c, is_is)
+                    // Convoke (CR 702.51): affordable if mana alone OR mana + convoking creatures can
+                    // pay — the shared planner keeps this gate and the payment in lockstep.
+                    (mana::can_pay_ex(s, p, &c, is_is) || self.convoke_affordable(p, card, &c, is_is))
                         && self.additional_costs_payable(p, card, &c, is_is)
                         // Spree (CR 702.163): also require base + ≥1 legal mode's cost to be payable —
                         // you must choose one mode, so the base cost alone being affordable isn't enough.
@@ -2376,6 +2378,91 @@ impl Engine {
         })
     }
 
+    /// Ask `p` which creatures to tap for convoke, tap them, and return them (CR 702.51b). Shares the
+    /// planner with the offer gate: after the player's picks, greedily top up with more tappable
+    /// creatures until the convoke-reduced cost is payable by mana (the B2 lesson — the gate offered
+    /// the cast on convoke affordability, so the payment must convoke enough to honour it).
+    fn convoke_choose_and_tap(&mut self, p: PlayerId, pay: &ManaCost, is_is: bool) -> Vec<ObjId> {
+        let candidates = self.convoke_tappable(p);
+        if candidates.is_empty() {
+            return Vec::new();
+        }
+        let picks = match self.ask(
+            p,
+            &DecisionRequest::SelectCards {
+                reason: SelectReason::ConvokeImprovise,
+                from: candidates.clone(),
+                min: 0,
+                max: candidates.len() as u32,
+                description: "tap creatures for convoke".into(),
+            },
+        ) {
+            DecisionResponse::Indices(i) => i
+                .iter()
+                .filter_map(|&x| candidates.get(x as usize).copied())
+                .collect::<Vec<_>>(),
+            _ => Vec::new(),
+        };
+        let mut chosen: Vec<ObjId> = Vec::new();
+        for id in picks {
+            if !chosen.contains(&id) {
+                chosen.push(id);
+            }
+        }
+        // Greedy top-up until the reduced cost is payable by mana (or no creatures remain).
+        loop {
+            let colors: Vec<Vec<Color>> =
+                chosen.iter().map(|&id| self.state.computed(id).colors.clone()).collect();
+            if mana::can_pay_ex(&self.state, p, &convoke_reduce(pay, &colors), is_is) {
+                break;
+            }
+            match candidates.iter().copied().find(|id| !chosen.contains(id)) {
+                Some(id) => chosen.push(id),
+                None => break,
+            }
+        }
+        for &id in &chosen {
+            if let Some(o) = self.state.objects.get_mut(&id) {
+                o.status.tapped = true;
+            }
+        }
+        chosen
+    }
+
+    /// Whether `card` has Convoke (CR 702.51).
+    fn has_convoke(&self, card: ObjId) -> bool {
+        self.state
+            .def_of(card)
+            .is_some_and(|d| d.abilities.iter().any(|a| matches!(a, Ability::Convoke)))
+    }
+
+    /// The untapped creatures `p` controls — the creatures available to convoke (CR 702.51b).
+    fn convoke_tappable(&self, p: PlayerId) -> Vec<ObjId> {
+        self.state
+            .player(p)
+            .battlefield
+            .iter()
+            .copied()
+            .filter(|&id| {
+                self.state.objects.get(&id).is_some_and(|o| !o.status.tapped)
+                    && self.state.computed(id).is_creature()
+            })
+            .collect()
+    }
+
+    /// Whether `p` could pay `cost` for `card` using convoke — the offer-gate half of the shared
+    /// convoke planner (CR 702.51): reduce the cost by convoking EVERY tappable creature (the max
+    /// reduction), then check the remainder is payable by mana. Kept identical to the payment path so
+    /// the gate and payment never diverge.
+    fn convoke_affordable(&self, p: PlayerId, card: ObjId, cost: &ManaCost, is_is: bool) -> bool {
+        if !self.has_convoke(card) {
+            return false;
+        }
+        let colors: Vec<Vec<Color>> =
+            self.convoke_tappable(p).iter().map(|&id| self.state.computed(id).colors.clone()).collect();
+        mana::can_pay_ex(&self.state, p, &convoke_reduce(cost, &colors), is_is)
+    }
+
     /// The suspend `(n, cost)` a card declares via `Ability::Suspend`, if any (CR 702.62).
     fn suspend_ability(&self, card: ObjId) -> Option<(u32, ManaCost)> {
         self.state.def_of(card).and_then(|d| {
@@ -3094,6 +3181,16 @@ impl Engine {
         if spend_any {
             pay = pay.collapse_to_generic();
         }
+        // Convoke (CR 702.51): before paying mana, the caster may tap creatures — each pays for {1} or
+        // one pip of its colour, reducing `pay`. GREEDY pre-payment tap-selection; the offer gate used
+        // the same `convoke_reduce` planner to size affordability. Convoke-tapped creatures are now
+        // tapped, so they're excluded from attacking / other tap-costs this turn.
+        if self.has_convoke(card) {
+            let tapped = self.convoke_choose_and_tap(p, &pay, is_is);
+            let colors: Vec<Vec<Color>> =
+                tapped.iter().map(|&id| self.state.computed(id).colors.clone()).collect();
+            pay = convoke_reduce(&pay, &colors);
+        }
         let colors_spent = mana::auto_pay_ex(&mut self.state, p, &pay, is_is).unwrap_or_default();
         // Pay the non-mana additional-cost components (CR 601.2f–h) — with `chosen_x` in a resolution
         // ctx so a "pay X life" reads the same X. The mana was folded into `pay` above.
@@ -3479,6 +3576,21 @@ impl Engine {
                 let lo = min.as_ref().map(|e| self.eval_value(e, &ctx).max(0) as u32);
                 let hi = max.as_ref().map(|e| self.eval_value(e, &ctx).max(0) as u32);
                 lo.map_or(true, |l| mv >= l) && hi.map_or(true, |h| mv <= h)
+            }
+            // "owned by <player>" (CR 108.3) — reads the object's owner. "from your graveyard" =
+            // `OwnedBy(Controller)` (Return to the Ranks); `Opponent` resolves relative to the caster.
+            CardFilter::OwnedBy(pref) => {
+                let want = match pref {
+                    PlayerRef::Opponent | PlayerRef::EachOpponent => self
+                        .state
+                        .players
+                        .iter()
+                        .map(|q| q.id)
+                        .find(|&q| q != caster)
+                        .unwrap_or(caster),
+                    _ => caster,
+                };
+                o.owner == want
             }
             CardFilter::All(fs) => fs.iter().all(|f| self.target_matches_filter(t, f, caster, source)),
             CardFilter::AnyOf(fs) => fs.iter().any(|f| self.target_matches_filter(t, f, caster, source)),
@@ -5497,6 +5609,29 @@ fn component_uses_x(c: &CostComponent) -> bool {
         c,
         CostComponent::PayLife(v) | CostComponent::RemoveCounters { n: v, .. } if value_uses_x(v)
     )
+}
+
+/// The shared convoke planner (CR 702.51b): reduce `cost` by tapping the given creatures, each
+/// paying for **one** matching coloured pip (preferred) or, failing that, one generic pip {1}. A
+/// creature whose colours match no remaining coloured pip and with no generic left contributes
+/// nothing. Greedy (colour-first) — the same reduction used by both the offer gate and payment so
+/// they never diverge. Hybrid/Phyrexian pips aren't reduced by convoke here (a pool-scoped omission;
+/// Return to the Ranks is plain `{X}{W}{W}`).
+fn convoke_reduce(cost: &ManaCost, creatures: &[Vec<Color>]) -> ManaCost {
+    let mut c = cost.clone();
+    for colors in creatures {
+        // Prefer a coloured pip this creature's colour matches (CR 702.51b).
+        if let Some(&col) = colors.iter().find(|col| c.colored.get(col).copied().unwrap_or(0) > 0) {
+            let n = c.colored.entry(col).or_insert(0);
+            *n -= 1;
+            if *n == 0 {
+                c.colored.remove(&col);
+            }
+        } else if c.generic > 0 {
+            c.generic -= 1;
+        }
+    }
+    c
 }
 
 /// Collect the `TargetSpec`s an `Effect` requires, in declaration order (CR 601.2c). The

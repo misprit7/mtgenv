@@ -420,6 +420,11 @@ pub enum Ability {
     /// casting-permission ability — `legal_priority_actions` scans for it to offer the alternative
     /// cast; the engine handles the exile-at-end-step + cast-from-exile mechanics.
     Warp { cost: ManaCost },
+    /// Convoke (CR 702.51): "Your creatures can help cast this spell. Each creature you tap while
+    /// casting it pays for {1} or one mana of that creature's colour." A marker read by the cast path
+    /// (`has_convoke`): the offer gate sizes affordability with the convoke planner, and payment taps
+    /// chosen creatures to reduce the mana cost before `auto_pay`.
+    Convoke,
     /// Suspend N—[cost] (CR 702.62): "Rather than cast this card from your hand, you may pay `cost`
     /// and exile it with `n` time counters on it." A time counter is removed at the beginning of the
     /// card's owner's upkeep; when the last is removed, its owner casts it without paying its mana
