@@ -159,4 +159,24 @@ visit-count targets + Dirichlet root exploration) + reanalyze 0.25 + random_coll
 where Gumbel collapsed worse-than-random. Both new mandate levers (reanalyze, buffer-seeding) are
 compatible/working — not a poison. Letting B climb toward the ≥0.9 success bar, then SWINE (same recipe).
 
-- (Run B climb to 0.9 + swine results to be recorded here)
+**Run B — HERALDS SOLVED (≥0.9 bar cleared).** The true peak checkpoint `iteration_7000` (120k env
+steps), 200-game evalkit: **greedy 0.930 (95% 0.89–0.96), sampled 0.920**, prod 0.98, atk 0.68 —
+clears the ≥0.9 success bar, approaching PPO's 0.97. `iteration_6000` (102k) = 0.895/0.895. Trajectory
+0 → 0.93 by 120k, then over-training drift to ~0.65–0.72 by 176k (so B was stopped at 200k — no longer
+rising; heralds banked). **Gotcha:** LightZero's `ckpt_best` (chosen by its 3-game internal evaluator)
+was a mis-pick — 200-game eval of `ckpt_best` = 0.635, far below the true best `iteration_7000` (0.93).
+**⇒ trust the watcher's 200-game iteration evals, not `ckpt_best`, to pick the deployable checkpoint.**
+
+**VERDICT (heralds):** the retry works. Plain MuZero + reanalyze 0.25 + random_collect 32 + the proven
+recipe learns heralds to **0.93** (0 → competent), decisively beating the prior arc's stall (~0.4–0.5)
+and clearing the bar. The prior "MuZero can't do our gym" was an algorithm/recipe artifact (Gumbel's
+fragile low-sim completed-Q), not fundamental. Both never-tried mandate levers (reanalyze, buffer-seed)
+are working and compatible.
+
+### 2026-07-06 — SWINE (the headline combat-judgment question)  *(in progress)*
+
+`3.6-muzero-swine` — same validated recipe (plain MuZero, sims 50, td 40, unroll 5, up 20, latent 256,
+shaping 0.5, reanalyze 0.25, random_collect 32), 500k / 6h cap. deck obs=2650. evalkit's
+`SwineBlockAnalyzer` auto-runs (chump/gang at high life — the PPO failure the whole experiment targets:
+PPO chump-blocks the 3/3 trampler 94–97% at life ≥15). Watching for: win-vs-random climbing above the
+0.535 baseline AND the chump/gang judgment tags. (numbers + verdict to be recorded.)
