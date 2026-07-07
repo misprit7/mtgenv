@@ -276,6 +276,24 @@ Cap-then-cards, `git log -S` before scoping any "absent" mechanic (some B caps m
   - Tests: alt-cast offered with only an Island / with 1 life + a blue card (and NOT offered with no other blue card
     or no mana for Normal); real-path alt-cast returns the Island / pays 1 life + exiles the blue card, counters the
     target spell.
+- **sos-bonus-2 (2026-07-06): 58/65, 976 mtg-core green, whole workspace builds.** Four singles/caps (each own commit):
+  - **`3040429` INFECT** (`Keyword::Infect` + `apply_damage` branch: damage to players → `player.poison`, to creatures →
+    `MinusOneMinusOne` counters + `mark_chars_dirty`; both feed existing SBAs) → **Triumph of the Hordes** (`nph/`, grp 654;
+    `ForEach` your creatures → `Becomes{ +1/+1, Trample, Infect }` until EOT). Tests: 3/3+trample+infect, poison-not-life,
+    −1/−1-counters-kill.
+  - **`ad47760` Locust Spray** (`dft/`, grp 655) — pure IR: −1/−1 `PumpPT` + Cycling {B} (`DiscardSelfFromHand`). No cap.
+  - **`f72cd05` KICKER** (`Ability::Kicker` + `Object.kicked` + `ValueExpr::IfKicked`; optional additional cost offered via a
+    Confirm in the cast pipeline, folded into `pay`) → **Burst Lightning** (`zen/`, grp 656; `IfKicked{4,2}` damage). Tests:
+    unkicked-2 / kicked-4 / affordable-but-declined-2.
+  - **`435e378` BERSERK** (`Object.attacked_this_turn` set at attacker declaration [both `declare_attackers` paths] + reset in
+    `begin_turn`/zone-change; `Effect::DestroyAtEndStepIfAttacked` → delayed `AtBeginningOfNextEndStep` trigger carrying
+    `Action::DestroyIfAttackedThisTurn`) → **Berserk** (`lea/`, grp 657; PumpPT `PowerOfTarget(0)` doubles power + trample).
+    ⚠️ Documented divergence: the "cast only before the combat damage step" restriction is NOT enforced (no spell-level
+    step-timing seam; negligible in limited). Tests: doubles+trample, destroyed-at-end-if-attacked, survives-if-didn't.
+  - **★ REMAINING 7 — all architecture-level or lead-gated (sketched to lead):** Akroma's Will (protection-from-colour),
+    Veil of Summer (hexproof-from-colour + can't-be-countered grant + opp-cast-colour state), Deflecting Palm (`Rewrite::Redirect`
+    stub + player-target damage prevention), Living End (suspend), Angel's Grace (split-second + can't-lose), Return to the Ranks
+    (convoke — §2.6 pending-cast), Culling Ritual (batched `ManaSpec` subset-choice refactor, lead ruling).
 
 ---
 
