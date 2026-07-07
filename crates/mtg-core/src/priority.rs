@@ -16,7 +16,7 @@ use crate::agent::{
     GameEvent, NumberReason, ObjView, PlayableAction, PlayerView, SelectReason, StopStateView,
     TargetSlot,
 };
-use crate::basics::{CardType, CounterKind, ManaCost, Phase, Target, Zone, ZonePos};
+use crate::basics::{CardType, Color, CounterKind, ManaCost, Phase, Target, Zone, ZonePos};
 use crate::subtypes::{EnchantmentType, Subtype};
 use crate::effects::ability::{
     Ability, AdditionalCost, Cost, CostComponent, CostReductionAmount, CostReductionCondition,
@@ -3188,6 +3188,12 @@ impl Engine {
         caster: PlayerId,
         source: Option<ObjId>,
     ) -> Vec<Target> {
+        // The colours of the source doing the targeting (CR 702.16/702.11 — protection/hexproof
+        // from a colour reject a source of that colour). For a spell being cast this is the spell
+        // card's colours (base off-battlefield); for an ability it's the source permanent's computed
+        // colours. `None` source ⇒ colourless (prechecks): protection/hexproof-from never rejects.
+        let source_colors: Vec<Color> =
+            source.map(|s| self.state.computed(s).colors.clone()).unwrap_or_default();
         let creatures = || {
             self.state
                 .objects
@@ -3195,7 +3201,7 @@ impl Engine {
                 .filter(|o| {
                     o.zone == Zone::Battlefield
                         && self.state.computed(o.id).is_creature()
-                        && self.targetable_by(o.id, caster)
+                        && self.targetable_by(o.id, caster, &source_colors)
                 })
                 .map(|o| Target::Object(o.id))
         };
@@ -3205,7 +3211,7 @@ impl Engine {
             self.state
                 .objects
                 .values()
-                .filter(|o| o.zone == Zone::Battlefield && self.targetable_by(o.id, caster))
+                .filter(|o| o.zone == Zone::Battlefield && self.targetable_by(o.id, caster, &source_colors))
                 .map(|o| Target::Object(o.id))
         };
         let players = || {
@@ -3370,11 +3376,31 @@ impl Engine {
     /// Whether `obj` may be targeted by a spell/ability `caster` controls (CR 115 + hexproof,
     /// CR 702.11): hexproof can't be targeted by the controller's opponents. (Shroud/ward are
     /// deferred — niche / need a cost.)
-    fn targetable_by(&self, obj: ObjId, caster: PlayerId) -> bool {
+    /// Whether `obj` can be legally targeted by a source controlled by `caster` whose colours are
+    /// `source_colors` (CR 115.6). Rejects on Hexproof (any-colour, opponent source), protection from
+    /// one of the source's colours (CR 702.16 — any controller), and hexproof from one of the
+    /// source's colours (CR 702.11 — opponent source only).
+    fn targetable_by(&self, obj: ObjId, caster: PlayerId, source_colors: &[Color]) -> bool {
         let Some(o) = self.state.objects.get(&obj) else {
             return false;
         };
-        if self.state.computed(obj).has_keyword(Keyword::Hexproof) && o.controller != caster {
+        let opponent_source = o.controller != caster;
+        let cc = self.state.computed(obj);
+        // Hexproof (CR 702.11b): can't be targeted by spells/abilities an opponent controls.
+        if cc.has_keyword(Keyword::Hexproof) && opponent_source {
+            return false;
+        }
+        // Protection from a colour (CR 702.16e): can't be targeted by a source of that colour,
+        // regardless of who controls it.
+        if !cc.protection_from.is_empty() && source_colors.iter().any(|c| cc.protection_from.contains(c)) {
+            return false;
+        }
+        // Hexproof from a colour (CR 702.11e, qualified): can't be targeted by a source of that
+        // colour that an OPPONENT controls.
+        if opponent_source
+            && !cc.hexproof_from.is_empty()
+            && source_colors.iter().any(|c| cc.hexproof_from.contains(c))
+        {
             return false;
         }
         true

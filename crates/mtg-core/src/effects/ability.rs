@@ -290,6 +290,15 @@ pub enum StaticContribution {
     GrantTapMana { mana: ManaSpec },
     /// Layer 6: remove a keyword ability.
     RemoveKeyword(Keyword),
+    /// Layer 6: grant "protection from [colour]" (CR 702.16). Painted into
+    /// [`crate::chars::ComputedChars::protection_from`]; read by the targeting, damage-prevention,
+    /// and can't-be-blocked-by seams. Akroma's Will mode 2 grants one per colour ("protection from
+    /// each color"). (The CR 702.16 enchant/equip/attach clause is a pool-scoped omission.)
+    ProtectionFromColor(Color),
+    /// Layer 6: grant "hexproof from [colour]" (CR 702.11, qualified) — targeting-only, opponent-
+    /// scoped. Painted into [`crate::chars::ComputedChars::hexproof_from`]. Veil of Summer grants
+    /// hexproof from blue and from black to the caster's permanents.
+    HexproofFromColor(Color),
     /// Layer 4: add a card type.
     AddType(CardType),
     /// Layer 4: add a subtype, keeping existing ones (CR 613.1c) — Great Hall of the Biblioplex

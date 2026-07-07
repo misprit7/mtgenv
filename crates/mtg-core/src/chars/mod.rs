@@ -41,6 +41,16 @@ pub struct ComputedChars {
     /// Qualification markers painted by static abilities (CR 613 layer 6 / §2.4) — the
     /// "can't"/status flags the structural machinery reads (e.g. Pacifism's CantAttack/CantBlock).
     pub qualifications: BTreeSet<Qualification>,
+    /// Protection from these colours (CR 702.16) — the object can't be targeted by a source of that
+    /// colour (any controller), can't be dealt damage by such a source, and can't be blocked by a
+    /// creature of that colour. Painted at layer 6 by [`StaticContribution::ProtectionFromColor`].
+    /// (The CR 702.16 enchant/equip/attach clause is a pool-scoped omission — see the SOA ledger.)
+    pub protection_from: Vec<Color>,
+    /// Hexproof from these colours (CR 702.11, qualified) — the object can't be targeted by a source
+    /// of that colour that an OPPONENT of its controller controls. Narrower than
+    /// [`protection_from`](Self::protection_from) (targeting only, opponent-scoped). Painted at layer
+    /// 6 by [`StaticContribution::HexproofFromColor`].
+    pub hexproof_from: Vec<Color>,
 }
 
 impl ComputedChars {
@@ -104,6 +114,9 @@ pub fn compute(state: &GameState, id: ObjId) -> ComputedChars {
         // Seed from printed keywords (CR 702); layer 6 grants/removes on top.
         keywords: base.keywords.iter().copied().collect(),
         qualifications: BTreeSet::new(),
+        // Protection/hexproof-from-colour are grant-only (no printed sources in the pool); layer 6 paints.
+        protection_from: Vec::new(),
+        hexproof_from: Vec::new(),
     };
 
     // Every static continuous effect on the battlefield, in timestamp order (CR 613.7). We do
@@ -181,6 +194,17 @@ pub fn compute(state: &GameState, id: ObjId) -> ComputedChars {
             StaticContribution::Qualification(q) => {
                 if affects_matches(state, e, id, &c.card_types) {
                     c.qualifications.insert(*q);
+                }
+            }
+            // Protection / hexproof from a colour (CR 702.16 / 702.11) — painted here at layer 6.
+            StaticContribution::ProtectionFromColor(col) => {
+                if affects_matches(state, e, id, &c.card_types) && !c.protection_from.contains(col) {
+                    c.protection_from.push(*col);
+                }
+            }
+            StaticContribution::HexproofFromColor(col) => {
+                if affects_matches(state, e, id, &c.card_types) && !c.hexproof_from.contains(col) {
+                    c.hexproof_from.push(*col);
                 }
             }
             _ => {}

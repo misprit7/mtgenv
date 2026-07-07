@@ -3556,6 +3556,15 @@ impl EngineCore {
         // Infect (CR 702.90): damage to players → poison counters, to creatures → −1/−1 counters.
         let infect = src.has_keyword(crate::effects::ability::Keyword::Infect);
 
+        // Protection from a colour (CR 702.16d): prevent all damage a permanent would be dealt by a
+        // source of a colour it has protection from. Prevention ⇒ no damage dealt ⇒ no lifelink.
+        if let Target::Object(o) = target {
+            let tgt = crate::chars::compute(&self.state, o);
+            if !tgt.protection_from.is_empty() && src.colors.iter().any(|c| tgt.protection_from.contains(c)) {
+                return;
+            }
+        }
+
         match target {
             Target::Player(p) => {
                 self.broadcast(GameEvent::DamageDealt {

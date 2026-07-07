@@ -102,6 +102,15 @@ impl EngineCore {
         if self.state.computed(attacker).has_qualification(Qualification::CantBeBlocked) {
             return false;
         }
+        // Protection from a colour (CR 702.16c): an attacker with protection from a colour can't be
+        // blocked by a creature of that colour.
+        let atk = self.state.computed(attacker);
+        if !atk.protection_from.is_empty() {
+            let bk_colors = self.state.computed(blocker).colors;
+            if bk_colors.iter().any(|c| atk.protection_from.contains(c)) {
+                return false;
+            }
+        }
         if self.state.computed(attacker).has_keyword(Keyword::Flying) {
             let bk = self.state.computed(blocker);
             bk.has_keyword(Keyword::Flying) || bk.has_keyword(Keyword::Reach)
