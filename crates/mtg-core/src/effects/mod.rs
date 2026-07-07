@@ -260,6 +260,18 @@ pub enum Effect {
     DeflectDamage {
         who: PlayerRef,
     },
+    /// "`who` can't lose the game this turn and their opponents can't win the game this turn" (CR
+    /// 720.6 — Angel's Grace). Sets `who`'s `cant_lose_this_turn` and every opponent's
+    /// `cant_win_this_turn` (reset at turn start). Imperative (mutates player state).
+    CantLoseThisTurn {
+        who: PlayerRef,
+    },
+    /// "Until end of turn, `who`'s life total can't be reduced below `min`" (Angel's Grace — `min`
+    /// = 1). Sets `who`'s `min_life_this_turn`, read by `change_life`. Imperative.
+    SetMinLifeThisTurn {
+        who: PlayerRef,
+        min: i32,
+    },
     PutCounters {
         what: EffectTarget,
         kind: CounterKind,

@@ -269,6 +269,25 @@ impl EngineCore {
                 }
                 true
             }
+            // "You can't lose the game this turn and your opponents can't win" (CR 720.6 — Angel's
+            // Grace). Set the caster's can't-lose flag and every opponent's can't-win flag.
+            Effect::CantLoseThisTurn { who } => {
+                let player = self.eval_player(*who, ctx);
+                self.state.player_mut(player).cant_lose_this_turn = true;
+                let n = self.state.players.len() as u32;
+                for i in 0..n {
+                    if PlayerId(i) != player {
+                        self.state.player_mut(PlayerId(i)).cant_win_this_turn = true;
+                    }
+                }
+                true
+            }
+            // "Until end of turn, your life total can't be reduced below `min`" (Angel's Grace).
+            Effect::SetMinLifeThisTurn { who, min } => {
+                let player = self.eval_player(*who, ctx);
+                self.state.player_mut(player).min_life_this_turn = Some(*min);
+                true
+            }
             // Discard N cards (CR 701.8): the discarding player chooses which. Imperative + asks the
             // agent, so it lives here (not `materialize`). Flush staged actions FIRST so a loot's
             // "draw two, then discard a card" chooses from the post-draw hand. Performed iff at least
@@ -2955,6 +2974,8 @@ impl EngineCore {
             | Effect::Search { .. }
             | Effect::AddMana { .. }
             | Effect::DeflectDamage { .. }
+            | Effect::CantLoseThisTurn { .. }
+            | Effect::SetMinLifeThisTurn { .. }
             | Effect::Discard { .. }
             | Effect::DiscardChosen { .. }
             | Effect::PutDiscardedOntoBattlefield { .. }
@@ -3771,14 +3792,26 @@ impl EngineCore {
         if delta == 0 {
             return;
         }
-        let new_total = {
+        let (new_total, actual_delta) = {
             let pl = self.state.player_mut(p);
-            pl.life += delta;
-            pl.life
+            let old = pl.life;
+            let raw = old + delta;
+            // "Your life total can't be reduced below N this turn" (Angel's Grace, CR 615) — clamp a
+            // reduction to the floor. (Modelled as a general life-loss floor, a negligible over-
+            // approximation of the printed "damage that would reduce you below 1" for the pool.)
+            let clamped = match pl.min_life_this_turn {
+                Some(m) if delta < 0 && raw < m => m,
+                _ => raw,
+            };
+            pl.life = clamped;
+            (clamped, clamped - old)
         };
+        if actual_delta == 0 {
+            return; // fully clamped (already at the floor) — no observable change
+        }
         self.broadcast(GameEvent::LifeChanged {
             player: p,
-            delta,
+            delta: actual_delta,
             new_total,
         });
     }

@@ -358,6 +358,9 @@ pub enum Keyword {
     Lifelink,
     Menace,
     Reach,
+    /// Split second (CR 702.61): while a spell with split second is on the stack, players can't cast
+    /// spells or activate abilities that aren't mana abilities. Read by `legal_priority_actions`.
+    SplitSecond,
     Trample,
     Vigilance,
     Ward,

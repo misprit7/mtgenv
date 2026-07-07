@@ -84,6 +84,11 @@ pub fn collect(state: &GameState) -> Vec<StateBasedAction> {
         if p.has_lost {
             continue;
         }
+        // "You can't lose the game this turn" (CR 720.6 — Angel's Grace): suppress this player's loss
+        // SBAs (704.5a/b/c) entirely while the flag is set.
+        if p.cant_lose_this_turn {
+            continue;
+        }
         // A single player can satisfy several loss conditions at once; each is reported,
         // but they collapse to the same result (that player loses).
         if p.life <= 0 {

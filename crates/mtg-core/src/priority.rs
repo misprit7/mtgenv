@@ -739,6 +739,10 @@ impl Engine {
             self.state.players[i].cards_drawn_this_turn = 0;
             self.state.players[i].instants_sorceries_cast_this_turn = 0;
             self.state.players[i].spells_cast_this_turn = 0;
+            // "this turn" can't-lose / can't-win / life-floor (Angel's Grace) expire at turn start.
+            self.state.players[i].cant_lose_this_turn = false;
+            self.state.players[i].cant_win_this_turn = false;
+            self.state.players[i].min_life_this_turn = None;
         }
         // Expire "this turn" floating replacements (CR 614 / 514 cleanup): a rider created on turn N
         // (until_turn = N) is gone once a later turn begins.
@@ -1530,7 +1534,23 @@ impl Engine {
                 actions.push(PlayableAction::ActivateMana { source, ability });
             }
         }
+        // Split second (CR 702.61): while a spell with split second is on the stack, players can't
+        // cast spells or activate abilities that aren't mana abilities (or play lands). Keep only mana
+        // abilities; the player may still pass priority or make mana.
+        if self.split_second_on_stack() {
+            actions.retain(|a| matches!(a, PlayableAction::ActivateMana { .. }));
+        }
         actions
+    }
+
+    /// Whether a spell with split second (CR 702.61, `Keyword::SplitSecond`) is on the stack right now.
+    fn split_second_on_stack(&self) -> bool {
+        self.state.stack.items.iter().any(|it| match it.kind {
+            StackObjectKind::Spell(obj) => {
+                self.state.computed(obj).has_keyword(Keyword::SplitSecond)
+            }
+            _ => false,
+        })
     }
 
     /// Whether `p` can pay `cost` to activate an ability of `source`. Handles the components the
@@ -4102,6 +4122,12 @@ impl Engine {
     /// End the game if ≤1 player remains (CR 104.2a). The sole survivor wins.
     fn check_game_end(&mut self) {
         let living = self.state.living_players();
+        // "Your opponents can't win the game this turn" (Angel's Grace): a sole survivor who can't win
+        // doesn't end the game — it keeps going (CR 104.3a / 720.6). (An empty `living` set is still a
+        // draw.)
+        if living.len() == 1 && self.state.player(living[0]).cant_win_this_turn {
+            return;
+        }
         if living.len() <= 1 {
             self.state.game_over = true;
             self.state.winner = living.first().copied();

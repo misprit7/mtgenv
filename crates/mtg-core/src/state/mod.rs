@@ -334,6 +334,18 @@ pub struct Player {
     /// player a turn (that turn simply doesn't happen); reaches 0 and they take turns normally again.
     #[serde(default)]
     pub skip_next_turns: u32,
+    /// "You can't lose the game this turn" (CR 720.6 — Angel's Grace) — set at resolution, reset each
+    /// turn; the loss SBAs (CR 704.5a/b/c) for this player are suppressed while it's set.
+    #[serde(default)]
+    pub cant_lose_this_turn: bool,
+    /// "This player can't win the game this turn" (the opponent side of Angel's Grace) — reset each
+    /// turn; `check_game_end` won't declare this player the winner while it's set.
+    #[serde(default)]
+    pub cant_win_this_turn: bool,
+    /// "Your life total can't be reduced below N this turn" (Angel's Grace — `Some(1)`) — a life-loss
+    /// floor consulted by `change_life`, reset each turn.
+    #[serde(default)]
+    pub min_life_this_turn: Option<i32>,
 }
 
 impl Player {
@@ -363,6 +375,9 @@ impl Player {
             has_lost: false,
             drew_from_empty: false,
             skip_next_turns: 0,
+            cant_lose_this_turn: false,
+            cant_win_this_turn: false,
+            min_life_this_turn: None,
         }
     }
 
