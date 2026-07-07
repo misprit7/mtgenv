@@ -41,6 +41,10 @@ pub enum Condition {
     /// you've cast an instant or sorcery spell this turn" (Potioner's Trove). Reads
     /// `Player.instants_sorceries_cast_this_turn`.
     CastInstantOrSorceryThisTurn { who: PlayerRef },
+    /// An **opponent** of the source's controller has cast a spell of one of these colours this turn
+    /// (CR 105) — "draw a card if an opponent has cast a blue or black spell this turn" (Veil of
+    /// Summer). Reads each opponent's `Player.colors_cast_this_turn`.
+    OpponentCastColorThisTurn(Vec<crate::basics::Color>),
     /// Compare two values.
     ValueAtLeast(ValueExpr, ValueExpr),
     /// The source spell was cast from **anywhere other than its owner's hand** (CR 601 / flashback

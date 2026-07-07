@@ -346,6 +346,20 @@ pub struct Player {
     /// floor consulted by `change_life`, reset each turn.
     #[serde(default)]
     pub min_life_this_turn: Option<i32>,
+    /// Colours this player has **hexproof from** until end of turn (CR 702.11 — Veil of Summer: "you …
+    /// gain hexproof from blue and from black"): they can't be targeted by a source of that colour an
+    /// opponent controls. The player-level analogue of `ComputedChars.hexproof_from`; reset each turn.
+    #[serde(default)]
+    pub hexproof_from_this_turn: Vec<Color>,
+    /// "Spells you control can't be countered this turn" (Veil of Summer) — consulted at the counter
+    /// choke (`interpret_counter`), reset each turn.
+    #[serde(default)]
+    pub spells_uncounterable_this_turn: bool,
+    /// The distinct colours of spells this player has cast this turn (CR 105) — set in `cast_spell`,
+    /// reset each turn. Read by "if an opponent has cast a blue or black spell this turn" (Veil of
+    /// Summer) via `Condition::OpponentCastColorThisTurn`.
+    #[serde(default)]
+    pub colors_cast_this_turn: Vec<Color>,
 }
 
 impl Player {
@@ -378,6 +392,9 @@ impl Player {
             cant_lose_this_turn: false,
             cant_win_this_turn: false,
             min_life_this_turn: None,
+            hexproof_from_this_turn: Vec::new(),
+            spells_uncounterable_this_turn: false,
+            colors_cast_this_turn: Vec::new(),
         }
     }
 

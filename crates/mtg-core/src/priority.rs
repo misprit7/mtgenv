@@ -743,6 +743,10 @@ impl Engine {
             self.state.players[i].cant_lose_this_turn = false;
             self.state.players[i].cant_win_this_turn = false;
             self.state.players[i].min_life_this_turn = None;
+            // "this turn" Veil of Summer grants + the cast-colour tracker reset at turn start.
+            self.state.players[i].hexproof_from_this_turn.clear();
+            self.state.players[i].spells_uncounterable_this_turn = false;
+            self.state.players[i].colors_cast_this_turn.clear();
         }
         // Expire "this turn" floating replacements (CR 614 / 514 cleanup): a rider created on turn N
         // (until_turn = N) is gone once a later turn begins.
@@ -3231,6 +3235,17 @@ impl Engine {
         // "your Nth spell each turn" (Emeritus of Conflict) — count every spell at cast, before the
         // SpellCast broadcast so a watching trigger's intervening-if sees the updated count.
         self.state.player_mut(p).spells_cast_this_turn += 1;
+        // Record the spell's colours (CR 105) — "if an opponent has cast a blue or black spell this
+        // turn" (Veil of Summer). The spell is on the stack; read its computed colours.
+        let spell_colors = self.state.computed(card).colors.clone();
+        {
+            let cast = &mut self.state.player_mut(p).colors_cast_this_turn;
+            for c in spell_colors {
+                if !cast.contains(&c) {
+                    cast.push(c);
+                }
+            }
+        }
 
         // 601.2i: the spell has been cast.
         self.broadcast(GameEvent::SpellCast {
@@ -3432,6 +3447,12 @@ impl Engine {
                 .players
                 .iter()
                 .filter(|p| !p.has_lost)
+                // Player-level hexproof from a colour (CR 702.11 — Veil of Summer): a player can't be
+                // targeted by a source of that colour an OPPONENT of theirs controls (here the caster).
+                .filter(|pl| {
+                    !(pl.id != caster
+                        && pl.hexproof_from_this_turn.iter().any(|c| source_colors.contains(c)))
+                })
                 .map(|p| Target::Player(p.id))
         };
         match &spec.kind {

@@ -288,6 +288,23 @@ impl EngineCore {
                 self.state.player_mut(player).min_life_this_turn = Some(*min);
                 true
             }
+            // "You gain hexproof from `colors` until end of turn" (Veil of Summer — the player half).
+            Effect::GrantPlayerHexproofFromThisTurn { who, colors } => {
+                let player = self.eval_player(*who, ctx);
+                let hp = &mut self.state.player_mut(player).hexproof_from_this_turn;
+                for c in colors {
+                    if !hp.contains(c) {
+                        hp.push(*c);
+                    }
+                }
+                true
+            }
+            // "Spells you control can't be countered this turn" (Veil of Summer).
+            Effect::SetSpellsUncounterableThisTurn { who } => {
+                let player = self.eval_player(*who, ctx);
+                self.state.player_mut(player).spells_uncounterable_this_turn = true;
+                true
+            }
             // Discard N cards (CR 701.8): the discarding player chooses which. Imperative + asks the
             // agent, so it lives here (not `materialize`). Flush staged actions FIRST so a loot's
             // "draw two, then discard a card" chooses from the post-draw hand. Performed iff at least
@@ -2126,12 +2143,16 @@ impl EngineCore {
             return;
         };
         if let crate::stack::StackObjectKind::Spell(card) = so.kind {
+            // CR 701.5f — a spell that can't be countered stays on the stack: a printed
+            // `CantBeCountered` qualification OR its controller's "spells you control can't be
+            // countered this turn" (Veil of Summer).
             if self
                 .state
                 .computed(card)
                 .has_qualification(crate::effects::ability::Qualification::CantBeCountered)
+                || self.state.player(so.controller).spells_uncounterable_this_turn
             {
-                return; // CR 701.5f — unaffected; stays on the stack.
+                return;
             }
             self.state.stack.items.retain(|s| s.id != sid);
             // A countered copy ceases to exist (CR 707.10a) rather than going to a graveyard.
@@ -2976,6 +2997,8 @@ impl EngineCore {
             | Effect::DeflectDamage { .. }
             | Effect::CantLoseThisTurn { .. }
             | Effect::SetMinLifeThisTurn { .. }
+            | Effect::GrantPlayerHexproofFromThisTurn { .. }
+            | Effect::SetSpellsUncounterableThisTurn { .. }
             | Effect::Discard { .. }
             | Effect::DiscardChosen { .. }
             | Effect::PutDiscardedOntoBattlefield { .. }

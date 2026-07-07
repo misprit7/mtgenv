@@ -94,6 +94,12 @@ pub(crate) fn holds_for_source(
                 .get(p.0 as usize)
                 .is_some_and(|pl| pl.instants_sorceries_cast_this_turn > 0)
         }
+        // "if an opponent has cast a blue or black spell this turn" (Veil of Summer) — any player
+        // other than the source's controller whose cast-colours this turn include one of `colors`.
+        Condition::OpponentCastColorThisTurn(colors) => state.players.iter().any(|pl| {
+            pl.id != source_controller
+                && pl.colors_cast_this_turn.iter().any(|c| colors.contains(c))
+        }),
         Condition::ValueAtLeast(a, b) => {
             eval_value(state, a, source_controller, source)
                 >= eval_value(state, b, source_controller, source)

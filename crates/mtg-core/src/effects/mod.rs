@@ -272,6 +272,18 @@ pub enum Effect {
         who: PlayerRef,
         min: i32,
     },
+    /// "`who` gains hexproof from `colors` until end of turn" (CR 702.11 — Veil of Summer's "you …
+    /// gain hexproof from blue and from black"). Sets `who`'s per-turn player-level hexproof-from
+    /// (the "you" half; permanents you control are handled by a separate `Becomes` grant). Imperative.
+    GrantPlayerHexproofFromThisTurn {
+        who: PlayerRef,
+        colors: Vec<Color>,
+    },
+    /// "Spells `who` controls can't be countered this turn" (Veil of Summer). Sets `who`'s
+    /// `spells_uncounterable_this_turn`, read at the counter choke. Imperative.
+    SetSpellsUncounterableThisTurn {
+        who: PlayerRef,
+    },
     PutCounters {
         what: EffectTarget,
         kind: CounterKind,
