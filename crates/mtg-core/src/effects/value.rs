@@ -44,6 +44,9 @@ pub enum PlayerRef {
 pub enum ValueExpr {
     /// A literal amount.
     Fixed(i64),
+    /// `yes` if the resolving spell was **kicked** (CR 702.33, [`crate::state::Object::kicked`] on
+    /// `ctx.source`), else `no` — Burst Lightning's "deals 2 damage; if kicked, 4 instead."
+    IfKicked { yes: Box<ValueExpr>, no: Box<ValueExpr> },
     /// The value of X chosen at cast/activation (CR 107.3).
     X,
     /// A fixed multiple of X (e.g. "twice X").

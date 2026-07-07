@@ -2372,6 +2372,16 @@ impl Engine {
         })
     }
 
+    /// The kicker cost a card declares via [`Ability::Kicker`] (CR 702.33 — Burst Lightning), if any.
+    fn kicker_cost(&self, card: ObjId) -> Option<ManaCost> {
+        self.state.def_of(card).and_then(|d| {
+            d.abilities.iter().find_map(|a| match a {
+                Ability::Kicker { cost } => Some(cost.clone()),
+                _ => None,
+            })
+        })
+    }
+
     /// The alternative cast cost a card declares via [`Ability::AlternativeCast`] (CR 118.9 — Daze,
     /// Force of Will), if any. Paid "rather than pay this spell's mana cost."
     fn alternative_cost(&self, card: ObjId) -> Option<Cost> {
@@ -2939,6 +2949,21 @@ impl Engine {
         for opt in &chosen_additional {
             if let Some(m) = &opt.mana {
                 pay = pay.plus(m);
+            }
+        }
+        // Kicker (CR 702.33): an OPTIONAL additional cost. When affordable on top of the cost so far,
+        // ask the caster whether to pay it; if so, fold it in and flag `kicked` for `ValueExpr::IfKicked`.
+        if let Some(kcost) = self.kicker_cost(card) {
+            let kicked = mana::can_pay_ex(&self.state, p, &pay.plus(&kcost), is_is)
+                && matches!(
+                    self.ask(p, &DecisionRequest::Confirm { kind: ConfirmKind::Generic }),
+                    DecisionResponse::Bool(true)
+                );
+            if kicked {
+                pay = pay.plus(&kcost);
+            }
+            if let Some(o) = self.state.objects.get_mut(&card) {
+                o.kicked = kicked;
             }
         }
         // "Mana of any type can be spent to cast that spell" (Nita): collapse the colour requirements

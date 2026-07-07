@@ -163,6 +163,11 @@ pub struct Object {
     /// applies the `Target`→`ForEach` "each" rewrite instead of the printed single-target effect. Set
     /// explicitly at cast (`= variant == Overload`), so a later normal recast clears it.
     pub overloaded: bool,
+    /// Set while this spell was cast with its **kicker** additional cost paid (CR 702.33) — read by
+    /// [`crate::effects::value::ValueExpr::IfKicked`] so a "does more if kicked" effect scales. Set
+    /// explicitly at cast; reset on every zone change (CR 400.7).
+    #[serde(default)]
+    pub kicked: bool,
     /// Set on a card warp-exiled at its end step (CR 702.x) — it may be cast from exile on a later
     /// turn (for its normal cost). Reset on any zone change (cast it, or it leaves exile).
     pub castable_from_exile: bool,
@@ -750,6 +755,7 @@ impl GameState {
             warp_cast: false,
             flashback_cast: false,
             overloaded: false,
+            kicked: false,
             castable_from_exile: false,
             playable_from_graveyard: false,
             play_until_turn: None,
@@ -869,6 +875,7 @@ impl GameState {
             o.exiled_with = None; // the exile-association is dropped on any zone change (400.7)
             o.warp_cast = false; // a fresh object identity (CR 400.7)
             o.flashback_cast = false; // a fresh object identity (CR 400.7)
+            o.kicked = false; // re-recorded only by a fresh kicked cast (CR 400.7)
             o.castable_from_exile = false; // re-granted only by a fresh warp-exile (400.7)
             o.playable_from_graveyard = false; // re-granted only by a fresh mill-then-play (400.7)
             o.play_until_turn = None; // impulse-play window drops on any zone change (400.7)

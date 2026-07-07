@@ -3721,6 +3721,11 @@ impl EngineCore {
     pub(crate) fn eval_value(&self, v: &ValueExpr, ctx: &ResolutionCtx) -> i64 {
         match v {
             ValueExpr::Fixed(n) => *n,
+            // Kicked? (CR 702.33) — read the resolving spell's `kicked` flag off `ctx.source`.
+            ValueExpr::IfKicked { yes, no } => {
+                let kicked = ctx.source.and_then(|s| self.state.objects.get(&s)).is_some_and(|o| o.kicked);
+                self.eval_value(if kicked { yes } else { no }, ctx)
+            }
             ValueExpr::X => ctx.x.unwrap_or(0) as i64,
             ValueExpr::XTimes(k) => k * ctx.x.unwrap_or(0) as i64,
             ValueExpr::NumTargets => ctx.chosen_targets.len() as i64,

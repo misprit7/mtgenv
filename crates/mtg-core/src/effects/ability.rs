@@ -404,6 +404,12 @@ pub enum Ability {
     /// `cost` is a full [`Cost`] so a flashback cost can be non-mana (Group Project — "Flashback—Tap
     /// three untapped creatures you control"), paid through the real cost machinery alongside any mana.
     Flashback { cost: Cost },
+    /// Kicker (CR 702.33): "You may pay an additional `cost` as you cast this spell." An **optional**
+    /// additional cost — a marker read in the cast pipeline, which offers the caster (when affordable)
+    /// to pay it and records [`crate::state::Object::kicked`]. A "does more if kicked" effect reads that
+    /// via [`crate::effects::value::ValueExpr::IfKicked`]. Distinct from the mandatory
+    /// [`Ability::AdditionalCost`].
+    Kicker { cost: ManaCost },
     /// Alternative cast cost (CR 118.9): "You may [pay `cost`] rather than pay this spell's mana cost."
     /// A static casting-permission ability read at the hand-cast offer (like [`Overload`]); an
     /// alternative cast pays this non-mana [`Cost`] (Daze — return an Island; Force of Will — pay 1 life
