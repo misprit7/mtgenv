@@ -42,8 +42,11 @@
   /* Belt-and-suspenders on the directly-tappable surfaces so double-tap-zoom is reliably suppressed on
      iOS regardless of ancestor-combination quirks (pinch-zoom + scroll still work). */
   .card, button, a, .pile, .step .sdotrow, .dlrow { touch-action: manipulation; }
+  /* auto, not hidden: when the window is shorter than the desktop column's min content (e.g. god-mode
+     hands during replay, or a tiled/half-height window), the grid overflows 100vh — the page must be
+     able to scroll or everything below the fold (replay bar, hand) is unreachable. */
   body { margin: 0; background: var(--paper); color: var(--ink);
-    font: 13px/1.4 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; overflow: hidden; }
+    font: 13px/1.4 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; overflow: auto; }
 
   .app { display: grid; grid-template-columns: 172px 1fr 264px; grid-template-rows: 40px 1fr; height: 100vh; }
   .topbar { grid-column: 1 / 4; grid-row: 1; display: flex; align-items: center; gap: 14px;
@@ -314,7 +317,10 @@
   /* Replay playback bar. */
   .replaybar { display: flex; align-items: center; gap: 10px; padding: 6px 10px; margin: 4px 0;
     background: var(--panel); border: 2.5px solid var(--ink); border-radius: 8px 5px 7px 6px; flex-wrap: wrap;
-    box-shadow: 3px 3px 0 var(--cyan); }
+    box-shadow: 3px 3px 0 var(--cyan);
+    /* When the window is too short for the whole column, pin the controls to the viewport bottom
+       instead of letting them drop below the fold. Inert when everything fits. */
+    position: sticky; bottom: 0; z-index: 40; }
   .replaybar .rbtn { background: var(--cyan); color: #08202a; border: 2.5px solid var(--ink); border-radius: 6px;
     padding: 4px 10px; font-weight: 800; cursor: pointer; font-size: 13px; }
   .replaybar .rbtn:hover { box-shadow: 2px 2px 0 var(--magenta); }
@@ -410,7 +416,7 @@
 
     /* Replay bar: pin to the very top during replay (the client also re-parents it to the app root) so
        board reflow between frames can't shove the controls — Pause stays under your thumb. */
-    .replaybar { order: -1; position: sticky; top: 0; z-index: 45; margin: 0; border-radius: 0;
+    .replaybar { order: -1; position: sticky; top: 0; bottom: auto; z-index: 45; margin: 0; border-radius: 0;
       border: none; border-bottom: 3px solid var(--ink); box-shadow: none; }
     /* Damp the jumping: hold the board block at a stable height during replay so frame-to-frame content
        changes reflow the page far less. */
