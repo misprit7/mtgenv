@@ -808,6 +808,20 @@ impl GameState {
     /// it goes to no zone. A stack object lives only in `objects` (its `zone` is `Zone::Stack`, never
     /// in a player zone vec — see `zone_vec_mut`), so removing it from the arena fully deletes it.
     pub(crate) fn cease_to_exist(&mut self, id: ObjId) {
+        // Also remove the id from its holding public zone-vec, else it dangles there after the object is
+        // gone — a token that died sits in its owner's graveyard-vec (a phantom in graveyard-count reads),
+        // and only the `objects` map removal isn't enough. Keyed like `move_object`: a battlefield/stack
+        // object lives in its CONTROLLER's vec, any other zone in its OWNER's. Done with a direct
+        // `zone_vec_mut` retain (NOT `move_object`), so the cease is *not* counted as "a card left the
+        // graveyard" (CR 111.7 is a removal, not a zone change — Kirol/Ark-class leave-gy watchers stay
+        // silent). A spell copy lives in `stack.items` (`zone_vec_mut(Stack)` = None), popped separately.
+        if let Some(o) = self.objects.get(&id) {
+            let (zone, owner, controller) = (o.zone, o.owner, o.controller);
+            let holder = if zone == Zone::Battlefield || zone == Zone::Stack { controller } else { owner };
+            if let Some(v) = self.player_mut(holder).zone_vec_mut(zone) {
+                v.retain(|&x| x != id);
+            }
+        }
         self.objects.remove(&id);
     }
 

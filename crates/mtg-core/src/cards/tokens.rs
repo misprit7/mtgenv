@@ -174,4 +174,56 @@ mod tests {
         assert!(def.chars.supertypes.contains(&Supertype::Token), "Token supertype → excluded from the catalog");
         assert!(matches!(def.abilities[0], Ability::Triggered { event: EventPattern::SelfAttacks, .. }));
     }
+
+    /// CR 111.7 token cease-to-exist, verified end-to-end (the three lead requirements):
+    /// (1) a token's death still fires "when a creature you control dies" watchers, reading the dead
+    ///     token's LKI (Cauldron of Essence drains 1 — an Essenceknit-class watcher);
+    /// (2) the cease reuses `cease_to_exist` (not a second removal), so the token is GONE (phantom-gy
+    ///     regression: a dead token does NOT linger in the graveyard);
+    /// (3) the cease does NOT register as "a card left the graveyard" — Kirol/Ark-class leave-gy
+    ///     watchers must NOT fire (`cards_left_graveyard_this_turn` stays 0), the inverse of the bug.
+    #[test]
+    fn dead_token_fires_dies_triggers_then_ceases_without_a_leave_graveyard() {
+        use crate::agent::{Agent, DecisionRequest, DecisionResponse, PlayerView};
+        use crate::basics::{DamageKind, Target, Zone};
+        use crate::cards::{build_game, grp};
+        use crate::ids::PlayerId;
+        use crate::priority::Engine;
+
+        #[derive(Clone)]
+        struct Passive;
+        impl Agent for Passive {
+            fn decide(&mut self, _v: &PlayerView, _r: &DecisionRequest) -> DecisionResponse {
+                DecisionResponse::Pass
+            }
+        }
+
+        let mut state = build_game(1, &[&[], &[]]);
+        // P0 controls a Cauldron of Essence (dies-drain watcher) and a Pest TOKEN (1/1).
+        let cauldron_grp = crate::cards::sos::cauldron_of_essence::CAULDRON_OF_ESSENCE;
+        let cauldron = state.add_card(PlayerId(0), state.card_db().get(cauldron_grp).unwrap().chars.clone(), Zone::Battlefield);
+        let pest = state.add_card(PlayerId(0), state.card_db().get(grp::PEST_TOKEN).unwrap().chars.clone(), Zone::Battlefield);
+        assert!(state.object(pest).chars.supertypes.contains(&Supertype::Token));
+        let life0 = state.player(PlayerId(0)).life;
+        let opp0 = state.player(PlayerId(1)).life;
+        let mut e = Engine::new(state, vec![Box::new(Passive), Box::new(Passive)]);
+        // Lethal damage to the 1/1 Pest → CreatureDies SBA → graveyard → TokenCeasesToExist.
+        e.apply_damage(Target::Object(pest), 1, cauldron, DamageKind::Combat);
+        e.run_agenda();
+        while !e.state.stack.items.is_empty() {
+            e.resolve_top();
+            e.run_agenda();
+        }
+        // (1) dies-trigger fired (Cauldron drained: P0 +1, P1 −1) — reads the dead token's LKI controller.
+        assert_eq!(e.state.player(PlayerId(0)).life, life0 + 1, "Cauldron's dies-drain fired for the token");
+        assert_eq!(e.state.player(PlayerId(1)).life, opp0 - 1, "opponent lost 1 to the drain");
+        // (2) the token ceased — not lingering in any graveyard (phantom-gy regression).
+        assert!(!e.state.objects.contains_key(&pest), "the dead token ceased to exist (CR 111.7)");
+        assert!(!e.state.player(PlayerId(0)).graveyard.contains(&pest), "not a phantom in the graveyard");
+        // (3) the cease is NOT a graveyard-leave — leave-gy watchers/counters must not see it.
+        assert_eq!(
+            e.state.player(PlayerId(0)).cards_left_graveyard_this_turn, 0,
+            "token cease bypasses move_object → no phantom leave-graveyard (Kirol/Ark stay silent)"
+        );
+    }
 }
