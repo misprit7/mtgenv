@@ -173,10 +173,29 @@ and clearing the bar. The prior "MuZero can't do our gym" was an algorithm/recip
 fragile low-sim completed-Q), not fundamental. Both never-tried mandate levers (reanalyze, buffer-seed)
 are working and compatible.
 
-### 2026-07-06 — SWINE (the headline combat-judgment question)  *(in progress)*
+### 2026-07-06 — HERALDS VERIFICATION (fresh large-N, user-requested)
 
-`3.6-muzero-swine` — same validated recipe (plain MuZero, sims 50, td 40, unroll 5, up 20, latent 256,
-shaping 0.5, reanalyze 0.25, random_collect 32), 500k / 6h cap. deck obs=2650. evalkit's
-`SwineBlockAnalyzer` auto-runs (chump/gang at high life — the PPO failure the whole experiment targets:
-PPO chump-blocks the 3/3 trampler 94–97% at life ≥15). Watching for: win-vs-random climbing above the
-0.535 baseline AND the chump/gang judgment tags. (numbers + verdict to be recorded.)
+Independent re-eval of the peak checkpoint on FRESH seeds (base 7,000,000; watcher used 5,000,000 — no
+overlap), 500 greedy + 500 sampled via `verify_heralds.py`. Checkpoint
+`tb/3.5-muzero-heralds/ckpt/iteration_7000.pth.tar` (env-step 120113), md5
+`51f0eea658c92e4b99634e1d7d7cdf23`. Opponent RandomPolicy(seed 7,000,000) (== `MtgEnv(opponent="random")`).
+Shaping OFF at eval by construction (Arena reads raw ±1 `ext_reward()`; `reward_shaping` is a
+training-wrapper-only param).
+
+| mode | win_rate | 95% Wilson | W/L/D | turns_mean | end_reasons |
+|---|---|---|---|---|---|
+| greedy | **0.926** | 0.900–0.946 | 463/37/0 | 14.22 | zero_life=1.000 |
+| sampled | **0.924** | 0.897–0.944 | 462/38/0 | 14.22 | zero_life=1.000 |
+
+Every game decided by reducing the opponent to 0 life (no draws/timeouts). greedy stats: productive 0.98,
+cast 0.92, playland 0.65, attack 0.68. JSON: `/tmp/mtgenv_tb/3.5-heralds-verify/evalkit/eval_step000120113.json`;
+6 replays in `data/replays` (run_name `3.5-heralds-verify`) for the web lobby. **Fresh-seed 500-game
+result reproduces the 0.93 claim: 0.926 greedy / 0.924 sampled.**
+
+### 2026-07-06 — SWINE — STOPPED by user directive (pending heralds sign-off)
+
+Swine (`3.6-muzero-swine`, same validated recipe) was launched but STOPPED per user instruction: not to
+run swine until satisfied heralds is properly won. The original run died at 32k (transient external
+kill — no code error; before death it showed greedy 0.60 + active blocking at 20k). NOT relaunching swine
+until the user explicitly clears it. When cleared: same recipe, evalkit `SwineBlockAnalyzer` auto-runs
+(chump/gang at life ≥15 — the PPO failure: PPO chump-blocks the 3/3 trampler 94–97%).
