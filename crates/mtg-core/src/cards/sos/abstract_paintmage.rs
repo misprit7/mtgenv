@@ -43,6 +43,7 @@ pub fn register(db: &mut CardDb) {
                         (Color::Red, ValueExpr::Fixed(1)),
                     ],
                     any_color: None,
+                    one_of: None,
                     restriction: Some(SpendRestriction::InstantSorceryOnly),
                 },
             },
@@ -102,6 +103,7 @@ mod tests {
                                 ),
                             ],
                             any_color: None,
+                            one_of: None,
                             restriction: Some(
                                 InstantSorceryOnly,
                             ),

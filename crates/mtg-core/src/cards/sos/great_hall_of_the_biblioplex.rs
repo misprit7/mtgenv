@@ -55,6 +55,7 @@ pub fn register(db: &mut CardDb) {
                     mana: ManaSpec {
                         produces: vec![],
                         any_color: Some(ValueExpr::Fixed(1)),
+                        one_of: None,
                         restriction: Some(SpendRestriction::InstantSorceryOnly),
                     },
                 },

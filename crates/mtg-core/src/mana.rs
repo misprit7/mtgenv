@@ -184,6 +184,9 @@ fn mana_spec_count(mana: &ManaSpec) -> u32 {
     if let Some(n) = &mana.any_color {
         return fixed(n).max(1);
     }
+    if let Some((_, n)) = &mana.one_of {
+        return fixed(n).max(1);
+    }
     mana.produces.iter().map(|(_, v)| fixed(v)).sum::<u32>().max(1)
 }
 
@@ -198,11 +201,18 @@ fn restriction_holds(state: &GameState, r: &Restriction, controller: PlayerId) -
 }
 
 /// The colours a `ManaSpec` can produce (for the source-selection model). `any_color` offers all
-/// five; `produces` lists fixed colours. (`one_of` constrained-choice is wired when design adds it.)
+/// five; `produces` lists fixed colours; `one_of` offers its constrained subset (empty ⇒ all five).
 fn mana_spec_colors(mana: &ManaSpec) -> Vec<Color> {
     let mut v: Vec<Color> = mana.produces.iter().map(|(c, _)| *c).collect();
     if mana.any_color.is_some() {
         v.extend([Color::White, Color::Blue, Color::Black, Color::Red, Color::Green]);
+    }
+    if let Some((colors, _)) = &mana.one_of {
+        if colors.is_empty() {
+            v.extend([Color::White, Color::Blue, Color::Black, Color::Red, Color::Green]);
+        } else {
+            v.extend(colors.iter().copied());
+        }
     }
     v
 }
@@ -791,6 +801,7 @@ mod tests {
                     mana: ManaSpec {
                         produces: vec![(Color::Green, ValueExpr::Fixed(1))],
                         any_color: None,
+                        one_of: None,
                         restriction: None,
                     },
                 },
@@ -864,6 +875,7 @@ mod tests {
                         mana: ManaSpec {
                             produces: vec![(Color::Green, ValueExpr::Fixed(1))],
                             any_color: None,
+                            one_of: None,
                             restriction: None,
                         },
                     },
@@ -982,6 +994,7 @@ mod tests {
                     mana: ManaSpec {
                         produces: vec![(Color::Green, ValueExpr::Fixed(1))],
                         any_color: None,
+                        one_of: None,
                         restriction: None,
                     },
                 },
@@ -1224,6 +1237,7 @@ mod tests {
                     mana: ManaSpec {
                         produces: vec![(Color::White, ValueExpr::Fixed(1))],
                         any_color: None,
+                        one_of: None,
                         restriction: None,
                     },
                 },

@@ -35,6 +35,7 @@ fn grant_lands_two_any_is() -> Ability {
             mana: ManaSpec {
                 produces: vec![],
                 any_color: Some(ValueExpr::Fixed(2)),
+                one_of: None,
                 restriction: Some(SpendRestriction::InstantSorceryOnly),
             },
         },

@@ -2179,6 +2179,34 @@ impl EngineCore {
                 *bucket.entry(color).or_insert(0) += amt;
             }
         }
+        // "Add {B} or {G} for each …" (CR 106.1c) — produce `count` mana, each one independently
+        // chosen from `colors` (empty ⇒ all five). Ask per mana so each is a separate colour choice.
+        if let Some((colors, amount)) = &mana.one_of {
+            let amt = self.eval_value(amount, ctx).max(0) as u32;
+            let allowed = if colors.is_empty() {
+                vec![Color::White, Color::Blue, Color::Black, Color::Red, Color::Green]
+            } else {
+                colors.clone()
+            };
+            for _ in 0..amt {
+                let resp = self
+                    .ask(player, &DecisionRequest::ChooseColor { allowed: allowed.clone(), min: 1, max: 1 });
+                let color = match resp {
+                    DecisionResponse::Indices(v) => v
+                        .first()
+                        .and_then(|&i| allowed.get(i as usize))
+                        .copied()
+                        .unwrap_or(allowed[0]),
+                    _ => allowed[0],
+                };
+                let pool = &mut self.state.player_mut(player).mana_pool;
+                let bucket = if restricted { &mut pool.restricted } else { &mut pool.amounts };
+                *bucket.entry(color).or_insert(0) += 1;
+            }
+            if amt > 0 {
+                self.broadcast(GameEvent::ManaPoolChanged { player });
+            }
+        }
     }
 
     /// The `ObjId`s in one of a player's zones (for selection enumeration).

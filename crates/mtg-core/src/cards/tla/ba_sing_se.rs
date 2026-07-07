@@ -104,6 +104,7 @@ mod tests {
                                 ),
                             ],
                             any_color: None,
+                            one_of: None,
                             restriction: None,
                         },
                     },

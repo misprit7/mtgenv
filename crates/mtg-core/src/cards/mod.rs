@@ -355,6 +355,7 @@ pub(crate) fn mana_ability(color: Color) -> Ability {
             mana: ManaSpec {
                 produces: vec![(color, ValueExpr::Fixed(1))],
                 any_color: None,
+                one_of: None,
                 restriction: None,
             },
         },

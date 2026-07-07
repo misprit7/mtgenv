@@ -37,6 +37,7 @@ fn mana_on_counter() -> Ability {
             mana: ManaSpec {
                 produces: Vec::new(),
                 any_color: Some(ValueExpr::Fixed(1)),
+                one_of: None,
                 restriction: None,
             },
         },

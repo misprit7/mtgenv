@@ -21,6 +21,7 @@ pub fn register(db: &mut CardDb) {
         mana: ManaSpec {
             produces: vec![(Color::Black, ValueExpr::Fixed(4))],
             any_color: None,
+            one_of: None,
             restriction: None,
         },
     };

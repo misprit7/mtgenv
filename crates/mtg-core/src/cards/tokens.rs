@@ -63,7 +63,7 @@ pub fn register(db: &mut CardDb) {
             },
             effect: Effect::AddMana {
                 who: PlayerRef::Controller,
-                mana: ManaSpec { produces: vec![], any_color: Some(ValueExpr::Fixed(1)), restriction: None },
+                mana: ManaSpec { produces: vec![], any_color: Some(ValueExpr::Fixed(1)), one_of: None, restriction: None },
             },
             timing: Timing::Instant,
             restriction: None,

@@ -49,6 +49,7 @@ fn grant_named_lands_add_c() -> Ability {
             mana: ManaSpec {
                 produces: vec![(Color::Colorless, ValueExpr::Fixed(1))],
                 any_color: None,
+                one_of: None,
                 restriction: None,
             },
         },

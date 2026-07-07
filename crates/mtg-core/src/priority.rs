@@ -8949,6 +8949,7 @@ mod expect_tests {
                 mana: ManaSpec {
                     produces: vec![(Color::Green, ValueExpr::Fixed(2))],
                     any_color: None,
+                    one_of: None,
                     restriction: None,
                 },
             },

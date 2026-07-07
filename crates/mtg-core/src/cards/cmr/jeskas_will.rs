@@ -27,6 +27,7 @@ pub fn register(db: &mut CardDb) {
             mana: ManaSpec {
                 produces: vec![(Color::Red, ValueExpr::HandSize { who: PlayerRef::ChosenTarget(0) })],
                 any_color: None,
+                one_of: None,
                 restriction: None,
             },
         },

@@ -44,6 +44,7 @@ pub fn register(db: &mut CardDb) {
                     mana: ManaSpec {
                         produces: vec![(Color::Red, ValueExpr::Fixed(1))],
                         any_color: None,
+                        one_of: None,
                         restriction: None,
                     },
                 },
@@ -59,6 +60,7 @@ pub fn register(db: &mut CardDb) {
                     mana: ManaSpec {
                         produces: vec![(Color::Red, ValueExpr::Fixed(2))],
                         any_color: None,
+                        one_of: None,
                         restriction: Some(SpendRestriction::InstantSorceryOnly),
                     },
                 },

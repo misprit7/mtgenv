@@ -178,6 +178,13 @@ pub struct ManaSpec {
     pub produces: Vec<(Color, ValueExpr)>,
     /// "Any one color"-style production: the controller chooses the color when it resolves.
     pub any_color: Option<ValueExpr>,
+    /// "Add {B} or {G} for each …" (CR 106.1c) — produce `count` mana where **each** mana is
+    /// independently one of `colors` (the controller chooses each mana's colour as it's produced).
+    /// Distinct from [`any_color`](Self::any_color) (N mana, all of one of the five colours) and
+    /// [`produces`](Self::produces) (fixed colours). Empty `colors` reads as all five (defensive).
+    /// `#[serde(default)]` so existing serialized data round-trips. (Culling Ritual: `([B, G], N)`.)
+    #[serde(default)]
+    pub one_of: Option<(Vec<Color>, ValueExpr)>,
     /// A spend restriction on the produced mana (CR 106.6, e.g. "only to cast instant and sorcery
     /// spells"). `None` = unrestricted. `#[serde(default)]` so existing serialized data round-trips.
     #[serde(default)]
