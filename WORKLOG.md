@@ -9,6 +9,18 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
   **`soa`** (Secrets of Strixhaven Mystical Archive), **65 distinct booster-legal cards**. Full per-card
   triage in `docs/plans/SOS_CARDS.md` ★ BONUS SHEET. Reprints live in their first-printing folders;
   bonus grp_id block = 600+.
+- **58/65 authored (sos-bonus-2, 977 mtg-core green, whole workspace builds).** Shipped 10 cards + 7
+  caps/subsystems: **Spree** (`Effect::Spree`/`SpreeMode`, mode-relative targets, `Effect::ChangeTarget` +
+  `CardFilter::HasSingleTarget`) → Requisition Raid/Return the Favor; **Roles** (`Effect::CreateRoleToken` +
+  Role Aura tokens + **`StateBasedAction::TokenCeasesToExist`** [CR 111.7 was unimplemented — a real
+  phantom-graveyard fix, incl. a follow-up `cease_to_exist` dangling-zone-vec fix `11435a4`]) → Monstrous
+  Rage/Royal Treatment; **alt-cast** (`CastVariant::Alternative` + `Ability::AlternativeCast` +
+  `CostComponent::ReturnToHand`) → Daze/Force of Will; **Infect** (`Keyword::Infect`) → Triumph of the Hordes;
+  **Kicker** (`Ability::Kicker`+`Object.kicked`+`ValueExpr::IfKicked`) → Burst Lightning; **Berserk**
+  (`Object.attacked_this_turn` + `Effect::DestroyAtEndStepIfAttacked`); Locust Spray (pure IR). **Remaining 7**
+  are architecture-level, all lead-APPROVED with sketches — see the **▶▶ NEXT-AGENT HANDOFF** block atop
+  `docs/plans/SOS_CARDS.md` ★ BONUS SHEET (protection/hexproof-from-colour, redirect, suspend, split-second/
+  can't-lose, convoke, Culling-Ritual ManaSpec refactor, Veil of Summer).
 - **46/65 authored** (real-path tested, 943 mtg-core green, whole workspace builds). Engine caps (all
   additive/card-agnostic): `CardFilter::PowerAtLeast/ToughnessAtLeast`, `Effect::Scry`,
   `Effect::ReturnSpellToHand`, `Effect::ExileTopForPlay`, `Effect::RevealTopLoseLifeMayRepeat`,

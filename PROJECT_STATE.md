@@ -77,18 +77,20 @@ MTGA client.
 - **✅ MOBILE WEB CLIENT (2026-07-03).** Game client + lobby fully playable from a phone: mobile
   reflow (sticky prompt sheet, opp-top/you-bottom strips, log toggle), touch previews long-press-only
   (hover gated to real mice), on-screen pass-turn button. Desktop unchanged.
-- **▶ SOS BONUS SHEET in progress: `soa` (Secrets of Strixhaven Mystical Archive), 65 cards — 48/65 authored (74%), 948
-  mtg-core green, whole workspace builds (2026-07-06, sos-bonus-1).** SOS *limited* = the 271 main set + this 65-card bonus
+- **▶ SOS BONUS SHEET in progress: `soa` (Secrets of Strixhaven Mystical Archive), 65 cards — 58/65 authored (89%), 977
+  mtg-core green, whole workspace builds (2026-07-06, sos-bonus-2).** SOS *limited* = the 271 main set + this 65-card bonus
   sheet; directive: "everything playable in SOS limited must be in the engine." Reprints in first-printing folders (grp
-  600+). Engine caps added (all additive/card-agnostic): `PowerAtLeast/ToughnessAtLeast`, `Effect::Scry`,
-  `ReturnSpellToHand`, `ExileTopForPlay`, `RevealTopLoseLifeMayRepeat`, `LookDistribute`, Clue token, search→shuffle→place,
-  **token-identity** (created objects stamped `Supertype::Token`), **phyrexian pip class** (one `resolve_phyrexian` seam,
-  no-suicide auto-pay gate), **parametrized YouCastSpell delayed trigger** (reaction + recurring), **OVERLOAD subsystem**
-  (`Ability::Overload` + `CastVariant::Overload` + `overload_rewrite` target→each → Cyclonic Rift/Winds of Abandon). Lead
-  approved all remaining (3 architecture notes captured in ledger). Remaining 17: **Spree** (bespoke `SpreeMode` +
-  cast-pipeline, `Effect::ChangeTarget`), **Roles** (`Effect::CreateRoleToken` aura tokens), singles (Protection/Infect/
-  Suspend/Convoke/Redirect/Split-second), + deferred Berserk/Veil/Culling Ritual/Daze/Force of Will. **Every remaining card
-  has a build-spec in `docs/plans/SOS_CARDS.md` ★ BONUS SHEET** for the next relay agent.
+  600+). Subsystems/caps shipped: **Overload**, **Spree** (`Effect::Spree`/`SpreeMode` + `Effect::ChangeTarget` +
+  `CardFilter::HasSingleTarget`), **Roles** (`Effect::CreateRoleToken` + Role Aura tokens + **`StateBasedAction::Token
+  CeasesToExist`** — CR 111.7 was unimplemented; a real phantom-graveyard fix), **alt-cast** (`CastVariant::Alternative`
+  + `Ability::AlternativeCast` + `CostComponent::ReturnToHand`), **Infect** (`Keyword::Infect`), **Kicker** (`Ability::
+  Kicker`+`Object.kicked`+`ValueExpr::IfKicked`), **Berserk** (`Object.attacked_this_turn` + `Effect::DestroyAtEndStepIf
+  Attacked`), + phyrexian / YouCastSpell / token-identity / Scry / etc. from sos-bonus-1. **Remaining 7 are all
+  architecture-level, lead-APPROVED with sketches** — protection/hexproof-from-colour (Akroma's Will + Veil of Summer),
+  redirect (Deflecting Palm), suspend (Living End), split-second/can't-lose (Angel's Grace), convoke (Return to the
+  Ranks — greedy pre-payment tap-selection per §2.6), Culling Ritual (batched `ManaSpec` subset-choice refactor).
+  **Full build-specs + lead's binding notes in the ▶▶ NEXT-AGENT HANDOFF block atop `docs/plans/SOS_CARDS.md` ★ BONUS
+  SHEET** for the next relay agent.
 - **✅ SOS FULL-SET COMPLETE: 271/271 authored · 271 fully-faithful · 0 tracked-partials · 0 Native hatches, 871 mtg-core
   green (2026-07-06, sos-cards-21 finale).** Scryfall-diff verified vs. `set_code='sos'`. Final 3: Resonating Lute
   (granted-mana subsystem — `StaticContribution::GrantTapMana` + `chars::granted_tap_mana` + per-tap-count payment),
