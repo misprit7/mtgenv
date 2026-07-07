@@ -15,6 +15,14 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
   runs (3.5 winner recipe, verification numbers, 2.9 PPO chump-block baseline). Running detached:
   `aim up --repo data/aim --host 0.0.0.0 --port 43800` (UI at :43800) + `tb2aim.py --watch 120`
   (future runs auto-appear). Aim 3.29.1 lives in the muzero2 py3.11 venv (no dep changes; lzero OK).
+- **Run descriptions are now mandatory + auto-lifted (user directive).** Every future run must say
+  what it's testing: `selfplay_train --notes` is REQUIRED (CLI; Python API stays optional for
+  tests/ab_shaping), `muzero2/train.py --notes` is REQUIRED for non-smoke runs (writes
+  `/tmp/mtgenv_tb/<run>/description.md`). tb2aim lifts descriptions into Aim on every sweep and
+  re-syncs on edit; priority: `description.md` in the run dir (post-hoc override) > curated map in
+  tb2aim.py (hindsight for historical runs) > the PPO `run/notes` TB text > `-train` boilerplate.
+  All 26 existing Aim runs are now described (2.x lifted from their launch notes; 3.0–3.3 failures
+  + smokes given curated entries).
 
 ## 2026-07-06 (SOS bonus sheet — Mystical Archive `soa`, 65 cards)
 

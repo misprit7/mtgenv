@@ -17,6 +17,7 @@ Run with the muzero2 venv (has aim + tensorboard):
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -71,7 +72,52 @@ DESCRIPTIONS = {
         "PPO swine baseline (evalkit watcher schema). Known failure: chump-blocks 94–97% at life≥15 "
         "(swine/chump_rate_swine_hi)."
     ),
+    "3.0-muzero-swine": (
+        "First stochastic_muzero-era attempt (swine) — failed to learn. Diagnosis: recipe, not bug "
+        "(td_steps 5, no reanalyze, no exploration floor, tiny budget). Superseded by experiments/muzero2."
+    ),
+    "3.1-muzero-swine-shaped": (
+        "stochastic_muzero-era swine + reward shaping — still failed to learn. Superseded by experiments/muzero2."
+    ),
+    "3.2-muzero-heralds-combined-long": (
+        "stochastic_muzero-era heralds, combined tweaks, long run — failed (~0 greedy vs random). "
+        "Superseded by experiments/muzero2 (3.5 solves heralds)."
+    ),
+    "3.3-muzero-swine-combined": (
+        "stochastic_muzero-era swine, combined tweaks — failed. Last run before the muzero2 rebuild."
+    ),
+    "smoke-eval-test": "evalkit watcher wiring smoke test (not a training run).",
 }
+
+
+def notes_text(acc) -> "str | None":
+    """The ``run/notes`` TEXT-tab markdown written by tb_meta.write_run_metadata, if present."""
+    for tag in acc.Tags().get("tensors", []):
+        if "run/notes" in tag:
+            try:
+                return acc.Tensors(tag)[0].tensor_proto.string_val[0].decode("utf-8", "replace")
+            except Exception:
+                return None
+    return None
+
+
+def desired_description(name: str, path: str, notes: "str | None") -> "str | None":
+    """Priority: <run_dir>/description.md (post-hoc override, muzero2 --notes) > curated map
+    (hindsight beats launch-time intent for historical runs) > run/notes TB text (PPO --notes)
+    > boilerplate for the -train internals mirrors."""
+    desc_md = os.path.join(path, "description.md")
+    if os.path.isfile(desc_md):
+        with open(desc_md) as f:
+            return f.read().strip() or None
+    if name in DESCRIPTIONS:
+        return DESCRIPTIONS[name]
+    if notes:
+        return notes.strip()
+    if name.endswith("-train"):
+        base = name[: -len("-train")]
+        return (f"LightZero internal training metrics (losses, collect stats) for {base} — "
+                f"see the '{base}' run for the evalkit eval curves.")
+    return None
 
 
 def event_dirs(path: str) -> "list[str]":
@@ -89,7 +135,21 @@ def sync_run(tb_root: str, name: str, repo: str, state: dict) -> int:
     path = os.path.join(tb_root, name)
     st = state.setdefault(name, {"hash": None, "tags": {}})
     run = None  # open lazily — only if there is something new to write
+    notes = None
     imported = 0
+
+    def ensure_run():
+        nonlocal run
+        if run is None:
+            run = Run(run_hash=st["hash"], repo=repo,
+                      system_tracking_interval=None, capture_terminal_logs=False)
+            if st["hash"] is None:  # first sight of this run: name + group it
+                st["hash"] = run.hash
+                run.name = name
+                run.experiment = experiment_for(name)
+                run["tb_source"] = os.path.realpath(path)
+        return run
+
     try:
         for d in event_dirs(path):
             rel = os.path.relpath(d, path)
@@ -99,26 +159,27 @@ def sync_run(tb_root: str, name: str, repo: str, state: dict) -> int:
             except Exception as e:  # malformed stray file — skip this dir, keep the sweep alive
                 print(f"[tb2aim] WARN {name}/{rel}: {e}", file=sys.stderr)
                 continue
+            notes = notes or notes_text(acc)
             for tag in acc.Tags().get("scalars", []):
                 key = tag if rel == "." else f"{rel}::{tag}"
                 last = st["tags"].get(key, -1)
                 events = [e for e in acc.Scalars(tag) if e.step > last]
                 if not events:
                     continue
-                if run is None:
-                    run = Run(run_hash=st["hash"], repo=repo,
-                              system_tracking_interval=None, capture_terminal_logs=False)
-                    if st["hash"] is None:  # first sight of this run: name/group/describe it
-                        st["hash"] = run.hash
-                        run.name = name
-                        run.experiment = experiment_for(name)
-                        if name in DESCRIPTIONS:
-                            run.description = DESCRIPTIONS[name]
-                        run["tb_source"] = os.path.realpath(path)
+                ensure_run()
                 for e in events:
                     run.track(float(e.value), name=tag, step=int(e.step))
                 st["tags"][key] = events[-1].step
                 imported += len(events)
+
+        # Descriptions sync every sweep (not just first import) so a description.md dropped or
+        # edited after launch — or new --notes plumbing — reaches Aim. Skip data-less stub runs.
+        desc = desired_description(name, path, notes)
+        if desc and (st["hash"] is not None or imported):
+            h = hashlib.md5(desc.encode()).hexdigest()
+            if st.get("desc_hash") != h:
+                ensure_run().description = desc
+                st["desc_hash"] = h
     finally:
         if run is not None:
             run.close()

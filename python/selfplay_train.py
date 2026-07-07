@@ -249,8 +249,9 @@ def main():
     ap.add_argument("--subproc", action="store_true", help="SubprocVecEnv (parallel workers)")
     ap.add_argument("--shaping-coef", type=float, default=0.1,
                     help="potential-based reward-shaping coef0 (annealed to 0); 0 disables. On by default.")
-    ap.add_argument("--notes", default=None,
-                    help="freeform description of what this run tests → TensorBoard 'run/notes' (TEXT tab)")
+    ap.add_argument("--notes", required=True,
+                    help="REQUIRED: what this run tests → TB 'run/notes' (TEXT tab) + the Aim run "
+                         "description (lifted by scripts/tb2aim.py)")
     ap.add_argument("--replay-every", type=int, default=25_000,
                     help="record one greedy self-play game every N steps → data/replays/ (lobby's AI "
                          "Training Replays). 0 disables. On by default so every run is watchable.")

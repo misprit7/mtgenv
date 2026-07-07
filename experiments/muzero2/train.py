@@ -19,6 +19,7 @@ Run:
 """
 from __future__ import annotations
 
+import os
 import sys
 
 import lz_patches  # noqa: F401  (enables the Gumbel random-collect exploration floor)
@@ -36,6 +37,13 @@ ALGO = _argval("--algo", str, "gumbel")
 DECK = _argval("--deck", str, "heralds")
 max_env_step = _argval("--max-steps", int, int(2e3) if SMOKE else int(500e3))
 exp_name = _argval("--exp", str, f"/tmp/mtgenv_tb/dev-{ALGO}-{DECK}{'-smoke' if SMOKE else ''}")
+
+# Every real run must say what it is testing (user directive): --notes lands in
+# /tmp/mtgenv_tb/<run>/description.md, which scripts/tb2aim.py lifts into the Aim run description.
+NOTES = _argval("--notes", str, None)
+if not NOTES and not SMOKE:
+    sys.exit("train.py: --notes 'what this run tests' is required for non-smoke runs "
+             "(it becomes the Aim run description)")
 
 # Smoke = tiny/fast wiring check (CPU-ok); real = the full recipe.
 kw = dict(algo=ALGO, deck=DECK, exp_name=exp_name)
@@ -67,8 +75,14 @@ main_config, create_config = build_configs(**kw)
 if __name__ == "__main__":
     from lzero.entry import train_muzero
     p = main_config.policy
-    print(f"[muzero2] algo={ALGO} deck={DECK} obs={p.model.observation_shape} act={p.model.action_space_size} "
-          f"latent={p.model.latent_state_dim} reanalyze={p.reanalyze_ratio} rand_collect={p.random_collect_episode_num} "
-          f"td={p.td_steps} unroll={p.num_unroll_steps} up={p.update_per_collect} "
-          f"max_steps={max_env_step} exp={exp_name}", flush=True)
+    recipe = (f"algo={ALGO} deck={DECK} obs={p.model.observation_shape} act={p.model.action_space_size} "
+              f"latent={p.model.latent_state_dim} reanalyze={p.reanalyze_ratio} rand_collect={p.random_collect_episode_num} "
+              f"td={p.td_steps} unroll={p.num_unroll_steps} up={p.update_per_collect} "
+              f"max_steps={max_env_step} exp={exp_name}")
+    print(f"[muzero2] {recipe}", flush=True)
+    if NOTES:
+        run_dir = os.path.join("/tmp/mtgenv_tb", os.path.basename(exp_name.rstrip("/")))
+        os.makedirs(run_dir, exist_ok=True)
+        with open(os.path.join(run_dir, "description.md"), "w") as f:
+            f.write(f"{NOTES}\n\nRecipe: {recipe}\n")
     train_muzero([main_config, create_config], seed=_argval("--seed", int, 0), max_env_step=max_env_step)
