@@ -205,6 +205,11 @@ pub struct EngineCore {
     /// how many were discarded (`ValueExpr::DiscardedThisResolution`) for "draw that many cards"
     /// (Borrowed Knowledge / Colossus of the Blood Age). Cleared at the start of each `resolve_effect`.
     pub(crate) discarded_this_resolution: Vec<ObjId>,
+    /// The permanents actually **destroyed** during the **current** effect resolution (recorded when
+    /// an `Action::Destroy` moves the object to the graveyard — not on indestructible / replaced-away
+    /// destructions) — so a follow-up effect can read "for each permanent destroyed this way"
+    /// (`ValueExpr::DestroyedThisResolution`, Culling Ritual). Cleared at the start of each `resolve_effect`.
+    pub(crate) destroyed_this_resolution: Vec<ObjId>,
     /// The target currently being iterated by an `Effect::ForEach` (always an object) or
     /// `Effect::ForEachTarget` (an object OR a player) — bound while its body interprets, read by
     /// `EffectTarget::Each` (Dyadrine's "remove a counter from each of …"; Prismari Charm's "1 damage
@@ -264,6 +269,7 @@ impl Engine {
             record_events: false,
             searched_this_resolution: Vec::new(),
             discarded_this_resolution: Vec::new(),
+            destroyed_this_resolution: Vec::new(),
             foreach_current: None,
             record_replay: false,
             replay_frames: Vec::new(),

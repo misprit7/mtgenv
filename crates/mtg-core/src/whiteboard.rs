@@ -91,6 +91,7 @@ impl EngineCore {
         };
         self.searched_this_resolution.clear();
         self.discarded_this_resolution.clear();
+        self.destroyed_this_resolution.clear();
         // Snapshot each player's graveyard size so we can fire the "cards leave your graveyard"
         // trigger (CR — SoS Lorehold) once per resolution in which a graveyard shrank (batched).
         let gy_before: Vec<usize> = self.state.players.iter().map(|p| p.graveyard.len()).collect();
@@ -3364,6 +3365,9 @@ impl EngineCore {
                     None => return,
                 };
                 if self.state.move_object(obj, Zone::Graveyard, owner) {
+                    // Record the actual destruction (not indestructible / replaced-away ones) so
+                    // "for each permanent destroyed this way" (Culling Ritual) counts it this resolution.
+                    self.destroyed_this_resolution.push(obj);
                     self.broadcast(GameEvent::PermanentDied { obj });
                     self.broadcast(GameEvent::ObjectMoved {
                         obj,
@@ -3912,6 +3916,7 @@ impl EngineCore {
             }
             // Cards discarded so far during this resolution — Borrowed Knowledge / Colossus.
             ValueExpr::DiscardedThisResolution => self.discarded_this_resolution.len() as i64,
+            ValueExpr::DestroyedThisResolution => self.destroyed_this_resolution.len() as i64,
             // Cards the controller has drawn this turn (CR 120) — Fractal Anomaly.
             ValueExpr::CardsDrawnThisTurn => ctx
                 .controller
