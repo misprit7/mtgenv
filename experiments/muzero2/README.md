@@ -140,4 +140,23 @@ recipe (**sims 50, td 40, unroll 5, up 20, latent 256, shaping 0.5**) + the two 
 (**reanalyze 0.25, random_collect 32**). Highest-probability path to reproduce ~0.9 while still testing
 reanalyze/buffer-seeding. Fallback if B is also worse-than-random: reanalyze-off control (prime suspect).
 
-- (Run B 100k-gate numbers + curves + verdict to be recorded here)
+**Run B PASSES the 100k gate — the retry works.** evalkit vs random (0.535 baseline), greedy/sampled:
+
+| env-step | greedy | sampled | prod | atk | note |
+|---|---|---|---|---|---|
+| 0 | 0.000 | 0.400 | 0.23 | 0.12 | untrained (post-random-collect) |
+| 31k | 0.000 | 0.000 | 0.05 | 0.00 | early |
+| 48k | 0.175 | 0.200 | 0.41 | 0.19 | rising |
+| 65k | 0.600 | 0.550 | 0.63 | 0.56 | crosses random |
+| 83k | 0.550 | 0.525 | 0.81 | 0.47 | |
+| **98k** | **0.680** (95% 0.61–0.74) | **0.705** | 0.81 | 0.47 | 200-game |
+
+Collector `reward_mean` stably positive (0.45–0.75). Clearly >0.535 and rising from zero — beats the
+prior arc's stalling ~0.4–0.5 and already matches its best sampled (~0.72) at 98k, budget remaining.
+
+**Headline:** the failure was the *algorithm/recipe*, not anything fundamental. Plain MuZero (robust
+visit-count targets + Dirichlet root exploration) + reanalyze 0.25 + random_collect 32 learns heralds
+where Gumbel collapsed worse-than-random. Both new mandate levers (reanalyze, buffer-seeding) are
+compatible/working — not a poison. Letting B climb toward the ≥0.9 success bar, then SWINE (same recipe).
+
+- (Run B climb to 0.9 + swine results to be recorded here)
