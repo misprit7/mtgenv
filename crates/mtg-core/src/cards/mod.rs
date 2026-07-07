@@ -857,7 +857,7 @@ mod tests {
         let db = starter_db();
         // 359 base pool + the `soa` bonus-sheet reprints authored into their first-printing folders
         // (+ the registered Clue token def for Investigate + the two Role Aura token defs).
-        assert_eq!(db.len(), 423);
+        assert_eq!(db.len(), 424);
         // Forest is "type line only": a Basic Land with subtype Forest. Mana is intrinsic
         // (CR 305.6) — the engine derives {T}: Add {G} from the subtype, so the CardDef carries
         // no explicit mana ability (and `is_mana_source` only sees authored abilities).

@@ -417,6 +417,12 @@ pub enum Ability {
     /// casting-permission ability — `legal_priority_actions` scans for it to offer the alternative
     /// cast; the engine handles the exile-at-end-step + cast-from-exile mechanics.
     Warp { cost: ManaCost },
+    /// Suspend N—[cost] (CR 702.62): "Rather than cast this card from your hand, you may pay `cost`
+    /// and exile it with `n` time counters on it." A time counter is removed at the beginning of the
+    /// card's owner's upkeep; when the last is removed, its owner casts it without paying its mana
+    /// cost (cast triggers fire — the suspended cast IS a cast, CR 702.62f). A static casting-
+    /// permission ability offered by `legal_priority_actions` (as `CastVariant::Suspend`).
+    Suspend { n: u32, cost: ManaCost },
     /// Flashback (CR 702.34): "You may cast this card from your graveyard for its flashback `cost`.
     /// Then exile it." A static casting-permission ability — `legal_priority_actions` scans for it to
     /// offer casting the card from the graveyard; the spell is exiled as it leaves the stack. The

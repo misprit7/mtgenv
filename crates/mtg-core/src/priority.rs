@@ -210,6 +210,11 @@ pub struct EngineCore {
     /// destructions) — so a follow-up effect can read "for each permanent destroyed this way"
     /// (`ValueExpr::DestroyedThisResolution`, Culling Ritual). Cleared at the start of each `resolve_effect`.
     pub(crate) destroyed_this_resolution: Vec<ObjId>,
+    /// The cards moved to exile by an `Action::Exile` during the **current** effect resolution — so a
+    /// follow-up effect can return exactly "the cards exiled this way" (`Effect::
+    /// ReturnExiledThisResolution`, Living End's exile-park-then-return). Cleared at the start of each
+    /// `resolve_effect`.
+    pub(crate) exiled_this_resolution: Vec<ObjId>,
     /// The target currently being iterated by an `Effect::ForEach` (always an object) or
     /// `Effect::ForEachTarget` (an object OR a player) — bound while its body interprets, read by
     /// `EffectTarget::Each` (Dyadrine's "remove a counter from each of …"; Prismari Charm's "1 damage
@@ -270,6 +275,7 @@ impl Engine {
             searched_this_resolution: Vec::new(),
             discarded_this_resolution: Vec::new(),
             destroyed_this_resolution: Vec::new(),
+            exiled_this_resolution: Vec::new(),
             foreach_current: None,
             record_replay: false,
             replay_frames: Vec::new(),
@@ -846,6 +852,9 @@ impl Engine {
                     self.draw(ap, 1);
                 }
             }
+            // Suspend (CR 702.62c): remove a time counter from each suspended card at the beginning of
+            // its owner's upkeep; a card that hits zero is cast for free.
+            Phase::Upkeep => self.suspend_upkeep_sweep(),
             // Combat turn-based actions (CR 508/509/510/511 — see combat/).
             Phase::DeclareAttackers => self.declare_attackers(),
             Phase::DeclareBlockers => self.declare_blockers(),
@@ -1102,6 +1111,17 @@ impl Engine {
             if let Some(ocost) = self.overload_cost(card) {
                 if mana::can_pay_ex(s, p, &ocost, is_is) {
                     actions.push(PlayableAction::Cast { spell: card, variant: CastVariant::Overload });
+                }
+            }
+            // Suspend (CR 702.62): a special action, not a cast — offered at the card's own timing
+            // (sorcery speed for Living End) when its suspend cost is payable, regardless of whether
+            // the card could currently be cast (its targets, if any, are chosen when it's cast at 0).
+            // Offered before the target gate so a would-be-uncastable-now card can still be suspended.
+            if sorcery_speed {
+                if let Some((_, scost)) = self.suspend_ability(card) {
+                    if mana::can_pay_ex(s, p, &scost, is_is) {
+                        actions.push(PlayableAction::Cast { spell: card, variant: CastVariant::Suspend });
+                    }
                 }
             }
             // Must be able to choose legal targets (CR 601.2c) — modal-aware, and Aura-aware (an
@@ -2336,6 +2356,75 @@ impl Engine {
         })
     }
 
+    /// The suspend `(n, cost)` a card declares via `Ability::Suspend`, if any (CR 702.62).
+    fn suspend_ability(&self, card: ObjId) -> Option<(u32, ManaCost)> {
+        self.state.def_of(card).and_then(|d| {
+            d.abilities.iter().find_map(|a| match a {
+                Ability::Suspend { n, cost } => Some((*n, cost.clone())),
+                _ => None,
+            })
+        })
+    }
+
+    /// Perform the Suspend special action (CR 702.62b): pay the suspend cost, then exile the card
+    /// from hand with N time counters on it. `can_pay_ex` already gated affordability at the offer.
+    fn suspend_card(&mut self, p: PlayerId, card: ObjId) {
+        let Some((n, mana)) = self.suspend_ability(card) else {
+            return;
+        };
+        self.pay_cost(p, card, &Cost { mana: Some(mana), components: Vec::new() });
+        let owner = self.state.object(card).owner;
+        if self.state.move_object(card, Zone::Exile, owner) {
+            if let Some(o) = self.state.objects.get_mut(&card) {
+                o.counters.counts.insert(CounterKind::Time, n);
+            }
+            self.broadcast(GameEvent::ObjectMoved { obj: card, to: Zone::Exile });
+        }
+    }
+
+    /// CR 702.62c–e: at the beginning of the active player's upkeep, remove one time counter from
+    /// each card they have suspended (a card in exile with ≥1 time counter). When the last is
+    /// removed, its owner casts it without paying its mana cost — a real cast, so cast triggers fire
+    /// (CR 702.62f). (Creature suspend cards would also gain haste; none are in the pool — deferred.)
+    fn suspend_upkeep_sweep(&mut self) {
+        let ap = self.state.active_player;
+        let suspended: Vec<ObjId> = self
+            .state
+            .player(ap)
+            .exile
+            .iter()
+            .copied()
+            .filter(|&id| {
+                self.state
+                    .objects
+                    .get(&id)
+                    .and_then(|o| o.counters.counts.get(&CounterKind::Time))
+                    .copied()
+                    .unwrap_or(0)
+                    > 0
+            })
+            .collect();
+        for id in suspended {
+            let remaining = self
+                .state
+                .objects
+                .get_mut(&id)
+                .map(|o| {
+                    let c = o.counters.counts.entry(CounterKind::Time).or_insert(0);
+                    *c = c.saturating_sub(1);
+                    *c
+                })
+                .unwrap_or(0);
+            if remaining == 0 {
+                if let Some(o) = self.state.objects.get_mut(&id) {
+                    o.counters.counts.remove(&CounterKind::Time);
+                }
+                // CR 702.62e: cast it without paying its mana cost from exile.
+                self.cast_spell(ap, id, CastVariant::WithoutPayingManaCost);
+            }
+        }
+    }
+
     /// The miracle cost of `card` for caster `p` (CR 702.94) — the two-origin check: the card's OWN
     /// printed [`Ability::Miracle`], OR a miracle GRANTED by a permanent `p` controls
     /// ([`Ability::GrantMiracle`]) whose `filter` matches the card. `None` if the card has no miracle
@@ -2636,6 +2725,13 @@ impl Engine {
     /// Affordability + target availability are pre-checked in `legal_priority_actions`, so no
     /// rewind (CR 732) is needed. The caller keeps priority with the caster (CR 601.2i).
     pub(crate) fn cast_spell(&mut self, p: PlayerId, card: ObjId, variant: CastVariant) {
+        // Suspend (CR 702.62) is a special action, not a real cast: pay the suspend cost and exile the
+        // card with N time counters instead of putting it on the stack. Diverts here so it can still
+        // ride the `PlayableAction::Cast` offer/plumbing.
+        if variant == CastVariant::Suspend {
+            self.suspend_card(p, card);
+            return;
+        }
         // A flashback cost (Group Project: tap three creatures) or an **alternative** cost (Daze:
         // return an Island; Force of Will: pay 1 life + exile a blue card, CR 118.9) may carry non-mana
         // components — pay them alongside the mana below. Captured now; the `cost` match uses only the

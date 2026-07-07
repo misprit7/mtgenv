@@ -371,6 +371,13 @@ pub enum Effect {
     ExileReturnNextEndStep {
         what: EffectTarget,
     },
+    /// "Put all cards exiled **this way** onto the battlefield under their owners' control" (Living
+    /// End's third step). Returns every object recorded in the per-resolution exile scratch
+    /// (`exiled_this_resolution`) that is still in exile — as a **new** object under its owner
+    /// (`move_object(_, Battlefield, owner)`, ETB triggers fire, CR 400.7). Imperative (zone moves +
+    /// broadcasts), so it lives in `interpret`. Pairs with a preceding exile step in the same
+    /// resolution (the parked set), independent of what did the exiling.
+    ReturnExiledThisResolution,
     /// "When you next cast a `filter` spell this turn, copy that spell" (CR 707.10) — Striking Palette
     /// ("… an instant or sorcery spell this turn, copy that spell. You may choose new targets for the
     /// copy."). Arms a one-shot delayed triggered ability (CR 603.7,

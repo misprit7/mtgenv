@@ -268,6 +268,9 @@ pub enum CounterKind {
     Stun,
     Finality,
     Defense,
+    /// A time counter (CR 122 / 702.62) — Suspend exiles a card with N time counters; one is
+    /// removed at the beginning of each of its owner's upkeeps, and it's cast free at zero.
+    Time,
     /// A keyword-granting counter (CR 122.1b), e.g. a "flying" counter.
     Keyword(String),
     /// Any other named counter.
@@ -294,6 +297,7 @@ impl std::fmt::Display for CounterKind {
             CounterKind::Stun => write!(f, "Stun"),
             CounterKind::Finality => write!(f, "Finality"),
             CounterKind::Defense => write!(f, "Defense"),
+            CounterKind::Time => write!(f, "Time"),
             CounterKind::Keyword(s) => write!(f, "kw:{s}"),
             CounterKind::Named(s) => write!(f, "{s}"),
         }
@@ -313,6 +317,7 @@ impl std::str::FromStr for CounterKind {
             "Stun" => CounterKind::Stun,
             "Finality" => CounterKind::Finality,
             "Defense" => CounterKind::Defense,
+            "Time" => CounterKind::Time,
             // A `kw:`-tagged token is a keyword counter; anything else is a free-form `Named` counter
             // (the inverse of `Display`). An unrecognised string can't fail — it's just a `Named`.
             other => match other.strip_prefix("kw:") {

@@ -97,6 +97,7 @@ impl EngineCore {
         self.searched_this_resolution.clear();
         self.discarded_this_resolution.clear();
         self.destroyed_this_resolution.clear();
+        self.exiled_this_resolution.clear();
         // Snapshot each player's graveyard size so we can fire the "cards leave your graveyard"
         // trigger (CR — SoS Lorehold) once per resolution in which a graveyard shrank (batched).
         let gy_before: Vec<usize> = self.state.players.iter().map(|p| p.graveyard.len()).collect();
@@ -946,6 +947,31 @@ impl EngineCore {
                     );
                 }
                 true
+            }
+            // "Put all cards exiled this way onto the battlefield under their owners' control" (Living
+            // End's third step). Flush staged actions first so the preceding exile step's `Action::
+            // Exile`s have committed and populated the per-resolution exile scratch. Each parked card
+            // returns as a NEW object under its owner (ETB fires; status/counters/damage reset).
+            Effect::ReturnExiledThisResolution => {
+                self.flush_pending(wb);
+                let parked = self.exiled_this_resolution.clone();
+                let mut returned = false;
+                for obj in parked {
+                    let still_exiled = self
+                        .state
+                        .objects
+                        .get(&obj)
+                        .is_some_and(|o| o.zone == Zone::Exile);
+                    if !still_exiled {
+                        continue;
+                    }
+                    let owner = self.state.object(obj).owner;
+                    if self.state.move_object(obj, Zone::Battlefield, owner) {
+                        self.broadcast(GameEvent::ObjectMoved { obj, to: Zone::Battlefield });
+                        returned = true;
+                    }
+                }
+                returned
             }
             // "When you next cast a [filter] spell this turn, copy that spell" (CR 707.10 / 603.7) —
             // arm a one-shot delayed trigger on the controller (Striking Palette). Non-interactive
@@ -2947,6 +2973,7 @@ impl EngineCore {
             | Effect::ReanimateUnderControl { .. }
             | Effect::Blink { .. }
             | Effect::ExileReturnNextEndStep { .. }
+            | Effect::ReturnExiledThisResolution
             | Effect::CopyNextSpellCast { .. }
             | Effect::WheneverYouCastThisTurn { .. }
             | Effect::CopySpellOnStack { .. }
@@ -3555,6 +3582,8 @@ impl EngineCore {
                     if let Some(o) = self.state.objects.get_mut(&obj) {
                         o.exiled_with = source;
                     }
+                    // Track "exiled this way" so a follow-up can return exactly these (Living End).
+                    self.exiled_this_resolution.push(obj);
                     self.broadcast(GameEvent::ObjectMoved { obj, to: Zone::Exile });
                 }
             }

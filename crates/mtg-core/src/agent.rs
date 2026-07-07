@@ -437,6 +437,10 @@ pub enum CastVariant {
     /// Cast from hand for the card's warp cost (CR 702.x) — the spell is then exiled at the next
     /// end step and may be cast from exile later.
     Warp,
+    /// "Suspend" (CR 702.62): not a cast — pay the suspend cost and exile the card from hand with N
+    /// time counters (`Ability::Suspend`). Routed through the cast plumbing (offered/paid like a cast
+    /// variant) but diverts in `cast_spell` to the exile-with-counters special action.
+    Suspend,
     /// Cast from the **graveyard** for the card's flashback cost (CR 702.34); the card is exiled as it
     /// resolves (or otherwise leaves the stack) instead of going anywhere else.
     Flashback,
