@@ -88,6 +88,72 @@ stays the map for future sets). `WORKLOG.md` + `PROJECT_STATE.md` updated to the
 
 ## ★ BONUS SHEET — Secrets of Strixhaven Mystical Archive (`soa`, 65 distinct cards) — OPEN RELAY
 
+## ▶▶ NEXT-AGENT HANDOFF (sos-bonus-2 retiring at 58/65, 2026-07-06) — the REMAINING 7, all lead-APPROVED
+
+**State: 58/65 authored, 977 mtg-core green, whole workspace builds, tree clean, LEAD pushes.** sos-bonus-2
+shipped 10 cards + 7 caps/subsystems (Spree, Roles+token-SBA, alt-cast, Infect, Kicker, Berserk, + Locust Spray).
+All 7 remaining are **architecture-level, sketched to and APPROVED by the lead** — execute from these specs.
+Every new card: own commit, `cargo test -p mtg-core` green, real-path tests, expect snapshots, `git commit --only
+<your paths>` (shared tree — MuZero lives in `experiments/`, so `cards/` is yours; the 20-file Culling migration
+is churn-safe). PROCESS RULES in the top header apply (`git log -S` + read the code before believing claims).
+
+**Token-cease area is CLOSED** (lead's owed verification): `cease_to_exist` (state/mod.rs:810) now also removes the
+dangling zone-vec id (a token that died was lingering in the graveyard-vec — a partial phantom) via a direct
+`zone_vec_mut` retain, NOT `move_object` — so it is *not* counted as "a card left the graveyard" (`cards_left_
+graveyard_this_turn` untouched; `LeftGraveyard` only fires from `resolve_effect`'s gy-shrink check at whiteboard.rs
+:105, which the SBA loop never runs). Regression `tokens.rs::dead_token_fires_dies_triggers_then_ceases_without_a
+_leave_graveyard`: token dies → Cauldron's dies-drain fires (LKI controller read) → token ceases (not in gy) →
+leave-gy watchers stay silent. Commit `11435a4`.
+
+### The 7 — approaches + lead's binding notes (verbatim)
+
+1. **Protection/hexproof-from-COLOUR → Akroma's Will (mode 2) + Veil of Summer (hexproof-from-blue/black).**
+   Paint `ComputedChars.protection_from: Vec<Color>` (+ opponent-scoped `hexproof_from`) via a new
+   `StaticContribution`, consumed in 3 seams: (a) `targetable_by` (priority.rs:3186) — **thread the targeting
+   source's colour+controller in (signature change)** and reject; (b) `apply_damage` (whiteboard.rs:3486) — prevent
+   damage from a source of that colour; (c) combat can't-be-blocked-by-colour (combat/mod.rs ~98-102). Akroma's mode
+   1 (flying/vig/double-strike to your creatures) is pure IR (Triumph idiom). **Lead notes: (i)** also ledger CR
+   702.16's attach/enchant clause as a pool-scoped omission (targeting/damage/blocking suffice for both cards).
+   **(ii) The `targetable_by` signature change is the riskiest seam — do it as its OWN commit with the full-suite
+   gate BEFORE any card rides it.**
+2. **Redirect → Deflecting Palm.** `Rewrite::Redirect` is stubbed (whiteboard.rs ~3205 `_ => {}`) + `WouldBe
+   DealtDamage` `pattern_matches` only handles `Target::Object` (whiteboard.rs:3080). Extend the pattern to
+   `Target::Player` + a one-shot `FloatingRewrite::PreventAndRedirectToSourceController` scoped to a chosen source
+   (a `FloatingReplacement` with `one_shot`/`until_turn`). **Lead: approved as scoped.**
+3. **Suspend → Living End.** Mirror **Warp** (Ability::Warp, `warp_cost`, `CastVariant::Warp`, `Action::WarpExile`,
+   `castable_from_exile`, the `AtBeginningOfNextEndStep` delayed rail): add `CounterKind::Time` (basics.rs enum +
+   Display/FromStr), `Ability::Suspend{n,cost}` + `CastVariant::Suspend` (exile with N time counters at cast), a
+   per-**upkeep** sweep removing one counter + casting-free at 0. The effect (exile all creature cards from gys →
+   sac all creatures → return exiled) is IR-expressible. **Lead: approved — note the suspended-cast IS a CAST, so
+   cast triggers fire (CR 702.62).**
+4. **Split-second + can't-lose → Angel's Grace.** Split-second: gate `legal_priority_actions` (priority.rs:1025)
+   **ON** — suppress `Cast` + non-mana activated-ability offers while a split-second spell is on the stack, but
+   **mana abilities stay legal (CR 702.61)**. Can't-lose: a per-turn player flag consulted in `sba::collect`
+   (sba.rs:81) to suppress `PlayerLoses`; opponents-can't-win gates `check_game_end`. "Life becomes 1 instead": a
+   clamp in `change_life` (whiteboard.rs:3560). **Lead: test the SBA-suppression edge — lethal damage at 1 life
+   with Angel's Grace resolved = player stays ALIVE.**
+5. **Convoke → Return to the Ranks** (`{X}{W}{W}`, X = creatures returned). **Lead ruling: GREEDY pre-payment
+   tap-selection** (fold a tap-creatures step into `cast_spell` before `auto_pay` — each tapped creature pays {1}
+   or one pip of its colour, reducing `pay`). The full pending-cast rollback is the §2.6 milestone, NOT one card's
+   rider. **Hard requirements: the offer/affordability gate and the payment must share ONE planner (the B2 lesson —
+   don't let them diverge); tapped-for-convoke creatures are excluded from the also-attacking / other-cost decision
+   context that turn as applicable.** `ConvokeImprovise` (agent.rs:616) is a bare stub — no path uses it. Closest
+   mirror: `CostComponent::TapCreatures`/`Crew` (priority.rs pay_tap_creatures/pay_crew).
+6. **Culling Ritual** (`{2}{B}{G}`: destroy each nonland permanent MV≤2, add {B}/{G} per destroyed). **Lead ruling:
+   the batched `ManaSpec` subset-choice refactor — SUCCESSOR's FIRST task while freshest.** Extend `ManaSpec` with a
+   proper subset/one-of-colours choice and migrate the ~20 literals mechanically (one atomic commit; you're the only
+   agent in `cards/`, churn-safe). NOT an any-colour divergence.
+7. **Veil of Summer** (`{G}`): needs #1's **hexproof-from-colour** (you + your permanents, opponent-scoped blue/black)
+   + "spells you control can't be countered this turn" (a floating grant read at the counter choke) + "an opponent
+   cast a blue or black spell this turn" state (a per-turn per-player cast-colour tracker → the conditional draw).
+   Build AFTER #1 lands.
+
+**Yield order:** #1 first (unlocks 2: Akroma's Will + Veil of Summer, though Veil also needs the extra two riders),
+then #6 Culling Ritual (freshest), then #2/#3/#4/#5 by appetite. End state target: **65/65 authored + final
+census** (Scryfall-diff the 65 `soa` names against registered `CardDef`s). The relay does NOT require one session.
+
+---
+
 **New user directive (2026-07-06): everything playable in SOS *limited* must be in the engine.** The SOS
 limited environment = the 271 `sos` main set (COMPLETE) **+ the bonus sheet**, which is the **Secrets of
 Strixhaven Mystical Archive** — Scryfall set **`soa`** (the SOS analog of real-Strixhaven's `sta`). It is a
