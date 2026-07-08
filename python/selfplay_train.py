@@ -172,7 +172,8 @@ def train_selfplay(deck="demo", timesteps=120_000, n_envs=8, pool_dir=DEFAULT_PO
                    tensorboard_log=None, seed=0, pool_every=8000, eval_every=8000, subproc=False,
                    shaping_coef=0.1, notes=None, replay_every=0, run_name=None,
                    vecenv="batched", num_workers=8, verbose=0,
-                   policy="MultiInputPolicy", policy_kwargs=None, p_script=0.0, script_mix=None):
+                   policy="MultiInputPolicy", policy_kwargs=None, p_script=0.0, script_mix=None,
+                   eval_ladder=True):
     # replay_every>0 records one greedy self-play game every that-many steps to data/replays/ (the
     # lobby's "AI Training Replays" learning progression). Default 0 (OFF) as a library call — the
     # CLI turns it on (~25k) so real runs record, but tests / ab_shaping stay clean.
@@ -230,6 +231,7 @@ def train_selfplay(deck="demo", timesteps=120_000, n_envs=8, pool_dir=DEFAULT_PO
         # TrackedStats/GameLength on the training rollout stream (no double-logging here).
         EvalkitCallback(deck, total_timesteps=timesteps, eval_freq=eval_every, n_envs=n_envs,
                         ref_path=ref_path, ladder_dir=ladder_dir, n_games=40,
+                        milestones=((0.10, 0.25, 0.50, 0.75) if eval_ladder else ()),
                         replay_every=replay_every, run_name=rname, verbose=verbose),
         TrackedStatsCallback(),  # action-rate summary stats → stats/* (#68)
         GameLengthCallback(),    # game/turns_mean + end-reason mix (batched env bypasses Monitor)
@@ -282,6 +284,8 @@ def main():
     ap.add_argument("--num-workers", type=int, default=8, help="fleet worker threads (--vecenv fleet)")
     ap.add_argument("--eval-every", type=int, default=8000, help="steps between the evalkit battery")
     ap.add_argument("--pool-every", type=int, default=8000, help="steps between self-play pool snapshots")
+    ap.add_argument("--no-ladder", action="store_true",
+                    help="skip the %%-trained ladder eval (superseded by Elo ratings; ~+23%% throughput)")
     ap.add_argument("--p-script", type=float, default=0.0,
                     help="fraction of self-play episodes played vs a punisher heuristic (0 = off)")
     ap.add_argument("--script-mix", default="gang,careful,turtle",
@@ -298,7 +302,7 @@ def main():
         tensorboard_log=args.tensorboard, subproc=args.subproc, shaping_coef=args.shaping_coef,
         notes=args.notes, replay_every=args.replay_every, run_name=run_name,
         vecenv=args.vecenv, num_workers=args.num_workers, verbose=1,
-        eval_every=args.eval_every, pool_every=args.pool_every,
+        eval_every=args.eval_every, pool_every=args.pool_every, eval_ladder=not args.no_ladder,
         p_script=args.p_script, script_mix=(args.script_mix.split(",") if args.p_script > 0 else None),
     )
     wr_rand = play_winrate(model, args.deck, "random", 200, 9_000_000)
