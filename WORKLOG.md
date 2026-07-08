@@ -3,6 +3,18 @@
 Short, dated entries for future-agent consumption. Newest first. One line or a few bullets
 per unit of meaningful progress. Keep it terse — detail lives in `docs/` and git history.
 
+## 2026-07-08 (Contract v3 Python side — attn extractor migrated, v2-key consumers → suite green)
+
+- **attn v3 extractor + full v2-key migration (dmc4; 99f8f1f / 9a9cad1 / a608376 + export_replays delete).**
+  attn_policy.py v3-branched (v2 preserved, 4.10 loads identically): `edges`→per-(type,dir) attention bias
+  (replaces id-matched adjacency), you/opp/decision always-present rows (attn row == edge row, no gtok),
+  `choice_feat` content pointers with `abstract_q` deleted (4.7 scale family gone), present-row gather wired
+  into v3 (packed edge bias, behaviorally exact). Real-obs gates green (edge validity 1.0, mask⊆candidate,
+  logit scale-balance 4.3<5, packed==full); 141,261 params (+2.2% vs 4.9). Migrated the 10 v2-key breakages
+  to a GREEN suite (104/0): cardid tests deleted, DMC→`*_grpid`, mean-pool default flipped to attn
+  RelationalPointerPolicy in every trainer entrypoint (EntityExtractor kept opt-in), export_replays.py
+  deleted (redundant retired-arch utility; trainers already record replays). v3 reference retrain pending user go.
+
 ## 2026-07-08 (Contract v3 Rust side — edges + choice tokens + grpid-only ids)
 
 - **User approved OBS2_DESIGN.md §7; v3 Rust contract implemented** (obs/codec/layout/lib/fleet in
