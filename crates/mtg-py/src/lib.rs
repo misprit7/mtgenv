@@ -306,10 +306,15 @@ impl PyGame {
         let inter = self.interaction.as_ref().expect("interaction present");
         let num_legal = inter.num_legal();
         let mask = inter.mask();
-        let (pending_blocks, block_source) = inter.pending_block_view();
-        let pending_attackers = inter.pending_attackers();
-        let o = obs::encode(inter.view(), inter.req(), num_legal, &pending_blocks, block_source,
-                            &pending_attackers);
+        let (blocks, block_source) = inter.pending_block_view();
+        let pending = obs::PendingView {
+            blocks,
+            block_source,
+            attackers: inter.pending_attackers(),
+            target_picks: inter.pending_target_picks(),
+            choices: inter.choice_rows(),
+        };
+        let o = obs::encode(inter.view(), inter.req(), num_legal, &pending);
         let obs_dict = obs_to_py(py, &o);
         let name = request_name(inter.req()).to_string();
         (obs_dict, mask, self.seat, name, num_legal, false)
@@ -332,20 +337,25 @@ fn obs_to_py(py: Python<'_>, o: &obs::Obs) -> PyObject {
     let d = PyDict::new(py);
     d.set_item("globals", &o.globals).unwrap();
     d.set_item("bf_feat", &o.bf_feat).unwrap();
-    d.set_item("bf_ids", &o.bf_ids).unwrap();
+    d.set_item("bf_grpid", &o.bf_grpid).unwrap();
     d.set_item("hand_feat", &o.hand_feat).unwrap();
-    d.set_item("hand_ids", &o.hand_ids).unwrap();
+    d.set_item("hand_grpid", &o.hand_grpid).unwrap();
     d.set_item("stack_feat", &o.stack_feat).unwrap();
-    d.set_item("stack_ids", &o.stack_ids).unwrap();
-    d.set_item("decision_ids", &o.decision_ids).unwrap();
+    d.set_item("stack_grpid", &o.stack_grpid).unwrap();
+    d.set_item("decision_grpid", &o.decision_grpid).unwrap();
+    d.set_item("edges", &o.edges).unwrap();
+    d.set_item("choice_feat", &o.choice_feat).unwrap();
     d.into_any().unbind()
 }
 
-/// A zero observation (correct shapes) for terminal steps.
+/// A zero observation (correct shapes) for terminal steps. `edges` pads with −1 (its pad value —
+/// an all-zero edge row would read as a real "bf row 0 → bf row 0, BLOCKS" edge).
 fn zeros_obs(py: Python<'_>) -> PyObject {
     let d = PyDict::new(py);
     for (name, rows, cols, is_int) in obs::spec() {
-        if is_int {
+        if name == "edges" {
+            d.set_item(name, vec![-1i64; rows * cols]).unwrap();
+        } else if is_int {
             d.set_item(name, vec![0i64; rows * cols]).unwrap();
         } else {
             d.set_item(name, vec![0f32; rows * cols]).unwrap();

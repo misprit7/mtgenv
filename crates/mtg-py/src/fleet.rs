@@ -109,12 +109,14 @@ impl GameSlot {
 struct GroupBatch {
     globals: Vec<f32>,
     bf_feat: Vec<f32>,
-    bf_ids: Vec<i64>,
+    bf_grpid: Vec<i64>,
     hand_feat: Vec<f32>,
-    hand_ids: Vec<i64>,
+    hand_grpid: Vec<i64>,
     stack_feat: Vec<f32>,
-    stack_ids: Vec<i64>,
-    decision_ids: Vec<i64>,
+    stack_grpid: Vec<i64>,
+    decision_grpid: Vec<i64>,
+    edges: Vec<i64>,
+    choice_feat: Vec<f32>,
     mask: Vec<u8>,
     seat: Vec<i32>,
     num_legal: Vec<i32>,
@@ -129,12 +131,14 @@ impl GroupBatch {
         GroupBatch {
             globals: Vec::with_capacity(k * obs::G),
             bf_feat: Vec::new(),
-            bf_ids: Vec::new(),
+            bf_grpid: Vec::new(),
             hand_feat: Vec::new(),
-            hand_ids: Vec::new(),
+            hand_grpid: Vec::new(),
             stack_feat: Vec::new(),
-            stack_ids: Vec::new(),
-            decision_ids: Vec::new(),
+            stack_grpid: Vec::new(),
+            decision_grpid: Vec::new(),
+            edges: Vec::new(),
+            choice_feat: Vec::new(),
             mask: Vec::with_capacity(k * codec::ACTION_DIM),
             seat: Vec::with_capacity(k),
             num_legal: Vec::with_capacity(k),
@@ -171,30 +175,42 @@ fn encode_group(slots: &[GameSlot]) -> GroupBatch {
         }
         // obs arrays (encode, or zero rows when terminal)
         let o = slot.interaction.as_ref().map(|i| {
-            let (pb, bs) = i.pending_block_view();
-            obs::encode(i.view(), i.req(), i.num_legal(), &pb, bs, &i.pending_attackers())
+            let (blocks, block_source) = i.pending_block_view();
+            let pending = obs::PendingView {
+                blocks,
+                block_source,
+                attackers: i.pending_attackers(),
+                target_picks: i.pending_target_picks(),
+                choices: i.choice_rows(),
+            };
+            obs::encode(i.view(), i.req(), i.num_legal(), &pending)
         });
         match o {
             Some(o) => {
                 b.globals.extend_from_slice(&o.globals);
                 b.bf_feat.extend_from_slice(&o.bf_feat);
-                b.bf_ids.extend_from_slice(&o.bf_ids);
+                b.bf_grpid.extend_from_slice(&o.bf_grpid);
                 b.hand_feat.extend_from_slice(&o.hand_feat);
-                b.hand_ids.extend_from_slice(&o.hand_ids);
+                b.hand_grpid.extend_from_slice(&o.hand_grpid);
                 b.stack_feat.extend_from_slice(&o.stack_feat);
-                b.stack_ids.extend_from_slice(&o.stack_ids);
-                b.decision_ids.extend_from_slice(&o.decision_ids);
+                b.stack_grpid.extend_from_slice(&o.stack_grpid);
+                b.decision_grpid.extend_from_slice(&o.decision_grpid);
+                b.edges.extend_from_slice(&o.edges);
+                b.choice_feat.extend_from_slice(&o.choice_feat);
             }
             None => {
-                // A terminal env contributes a full-width zero row for every array.
+                // A terminal env contributes a full-width zero row for every array
+                // (edges pad with −1 — an all-zero edge row would read as a real edge).
                 b.globals.extend(std::iter::repeat(0f32).take(obs::G));
                 b.bf_feat.extend(std::iter::repeat(0f32).take(arr_width("bf_feat")));
-                b.bf_ids.extend(std::iter::repeat(0i64).take(arr_width("bf_ids")));
+                b.bf_grpid.extend(std::iter::repeat(0i64).take(arr_width("bf_grpid")));
                 b.hand_feat.extend(std::iter::repeat(0f32).take(arr_width("hand_feat")));
-                b.hand_ids.extend(std::iter::repeat(0i64).take(arr_width("hand_ids")));
+                b.hand_grpid.extend(std::iter::repeat(0i64).take(arr_width("hand_grpid")));
                 b.stack_feat.extend(std::iter::repeat(0f32).take(arr_width("stack_feat")));
-                b.stack_ids.extend(std::iter::repeat(0i64).take(arr_width("stack_ids")));
-                b.decision_ids.extend(std::iter::repeat(0i64).take(arr_width("decision_ids")));
+                b.stack_grpid.extend(std::iter::repeat(0i64).take(arr_width("stack_grpid")));
+                b.decision_grpid.extend(std::iter::repeat(0i64).take(arr_width("decision_grpid")));
+                b.edges.extend(std::iter::repeat(-1i64).take(arr_width("edges")));
+                b.choice_feat.extend(std::iter::repeat(0f32).take(arr_width("choice_feat")));
             }
         }
     }
@@ -301,12 +317,14 @@ impl Fleet {
             for (name, _is_int, fbuf, ibuf) in self.obs_flat.iter_mut() {
                 match *name {
                     "bf_feat" => fbuf.extend_from_slice(&b.bf_feat),
-                    "bf_ids" => ibuf.extend_from_slice(&b.bf_ids),
+                    "bf_grpid" => ibuf.extend_from_slice(&b.bf_grpid),
                     "hand_feat" => fbuf.extend_from_slice(&b.hand_feat),
-                    "hand_ids" => ibuf.extend_from_slice(&b.hand_ids),
+                    "hand_grpid" => ibuf.extend_from_slice(&b.hand_grpid),
                     "stack_feat" => fbuf.extend_from_slice(&b.stack_feat),
-                    "stack_ids" => ibuf.extend_from_slice(&b.stack_ids),
-                    "decision_ids" => ibuf.extend_from_slice(&b.decision_ids),
+                    "stack_grpid" => ibuf.extend_from_slice(&b.stack_grpid),
+                    "decision_grpid" => ibuf.extend_from_slice(&b.decision_grpid),
+                    "edges" => ibuf.extend_from_slice(&b.edges),
+                    "choice_feat" => fbuf.extend_from_slice(&b.choice_feat),
                     _ => {}
                 }
             }

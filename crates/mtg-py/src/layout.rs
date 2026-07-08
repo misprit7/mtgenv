@@ -21,6 +21,35 @@ pub const MAX_PERM: usize = 256;
 pub const MAX_HAND: usize = 16;
 pub const MAX_STACK: usize = 8;
 
+// ── v3 contract: abstract-choice tokens + relation edges (OBS2_DESIGN.md §7) ─────────────────
+/// Rows of the `choice_feat` table — content tokens for the current decision's abstract options
+/// (modes / colors / numbers / yes-no). Covers every abstract bucket: MAX_MODES = MAX_NUM = 16,
+/// colors 5, bool 2 — only ONE family is live per decision.
+pub const MAX_CHOICE: usize = 16;
+/// Rows of the `edges` tensor (relation edges, padded with −1). Bound analysis (§7.4): blocks +
+/// attachments + targets + pending picks ≲ 100 on degenerate boards; overflow truncates in the
+/// emission priority order (TARGETS first — see `obs::encode_edges`).
+pub const MAX_EDGES: usize = 128;
+
+/// The flat **row space** edge endpoints live in (`src_row`/`dst_row` — positions in THIS
+/// observation, shared with the attention token layout; entityids never enter the tensors).
+pub const ROW_BF: usize = 0; //                                    0..256   battlefield rows
+pub const ROW_HAND: usize = MAX_PERM; //                         256..272   hand rows
+pub const ROW_STACK: usize = MAX_PERM + MAX_HAND; //             272..280   stack rows
+pub const ROW_ME: usize = ROW_STACK + MAX_STACK; //                   280   you (player token)
+pub const ROW_OPP: usize = ROW_ME + 1; //                             281   opponent (player token)
+pub const ROW_DECISION: usize = ROW_OPP + 1; //                       282   the current decision
+pub const N_ROWS: usize = ROW_DECISION + 1;
+
+/// Edge types (col 2 of `edges`). §7.4: pairings that need cross-row identity ONLY — unary
+/// decision context (source/candidate/pending flags) stays in the feature columns.
+pub const EDGE_BLOCKS: i64 = 0; //        blocker → attacker (committed + pending)
+pub const EDGE_ATTACKS: i64 = 1; //       attacker → defending player
+pub const EDGE_ATTACHED_TO: i64 = 2; //   aura/equipment → host
+pub const EDGE_TARGETS: i64 = 3; //       stack object → entity/player (k = target slot order)
+pub const EDGE_STACK_SOURCE: i64 = 4; //  ability on stack → its source permanent
+pub const EDGE_PENDING_PICK: i64 = 5; //  decision → already-picked entity (k = pick order; §4a)
+
 // ── categorical vocabularies (stable order; APPEND-ONLY — changing order changes the obs) ────
 /// Card-type one-hot basis (must match `CardType::as_str`). `Kindred` is rare; folded out for now.
 pub const CARD_TYPES: [&str; 8] = [

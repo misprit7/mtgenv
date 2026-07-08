@@ -60,6 +60,29 @@ fn nonzero(slot: usize, fallback_idx: usize) -> usize {
     }
 }
 
+/// One abstract-choice token row (v3 `choice_feat`, OBS2_DESIGN.md §7.5). The codec BUILT the slot
+/// tables, so it is the single source of which choice row carries which option — the obs encoder
+/// consumes these verbatim and obs↔codec alignment holds by construction (no second bucketing
+/// code path to drift).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ChoiceRow {
+    /// Row within the choice table = the option's index within its live bucket
+    /// (`MODE[row]` / `COLOR[row]` / `NUMBER[row]`; `YES`→0, `NO`→1).
+    pub row: usize,
+    pub kind: ChoiceKind,
+    /// `Number` rows: the actual number this slot submits. Other kinds: the option index.
+    pub value: f32,
+    /// `Color` rows: the WUBRG index (drives the color one-hot columns).
+    pub color: Option<usize>,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChoiceKind {
+    Mode,
+    Color,
+    Number,
+    Bool,
+}
+
 /// One in-flight engine decision, decomposed into single-index sub-steps. `apply` returns `Some`
 /// once enough sub-steps have committed a full [`DecisionResponse`].
 pub struct Interaction {
@@ -211,6 +234,105 @@ impl Interaction {
         let legal = self.legal_slots();
         let set: BTreeSet<usize> = legal.into_iter().collect();
         (0..ACTION_DIM).map(|i| set.contains(&i)).collect()
+    }
+
+    /// Targets picked SO FAR in an in-flight `ChooseTargets` decision (completed slots + the one in
+    /// progress), resolved to engine `Target`s with their pick order — feeds the obs encoder's
+    /// `PENDING_PICK` edges (§4a: the observation must carry the full commitment prefix). Empty for
+    /// every other state (combat's prefix rides `pending_block_view`/`pending_attackers`).
+    pub fn pending_target_picks(&self) -> Vec<(Target, u32)> {
+        if let (DecisionRequest::ChooseTargets { slots, .. },
+                IState::Targets { done, current, .. }) = (&self.req, &self.state)
+        {
+            let mut out = vec![];
+            let mut k = 0u32;
+            for (s, picks) in done.iter().chain(std::iter::once(current)).enumerate() {
+                for &c in picks {
+                    if let Some(t) = slots.get(s).and_then(|sl| sl.legal.get(c as usize)) {
+                        out.push((*t, k));
+                        k += 1;
+                    }
+                }
+            }
+            out
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// The current decision's abstract-choice rows (v3 `choice_feat` content — see [`ChoiceRow`]).
+    /// Scans the live state's slot tables for slots in the MODE/COLOR/NUMBER/YES/NO buckets and maps
+    /// each to its in-bucket row; entity-bucket slots (HAND/PERM/PLAYER/STACK) contribute nothing.
+    /// This also covers the `nonzero()` MODE-fallback slots (off-board candidates, e.g. a Search's
+    /// library cards) so every legal abstract slot has a content token. First writer to a row wins.
+    pub fn choice_rows(&self) -> Vec<ChoiceRow> {
+        let mut pairs: Vec<(usize, f32)> = vec![];
+        match &self.state {
+            IState::Single(table) => {
+                for (slot, resp) in table {
+                    let v = match resp {
+                        DecisionResponse::Number(n) => *n as f32,
+                        DecisionResponse::Index(i) => *i as f32,
+                        DecisionResponse::Bool(b) => *b as u8 as f32,
+                        _ => 0.0,
+                    };
+                    pairs.push((*slot, v));
+                }
+            }
+            IState::Subset { slot_of, .. } => {
+                for (i, &s) in slot_of.iter().enumerate() {
+                    pairs.push((s, i as f32));
+                }
+            }
+            IState::Targets { cand_slot, .. } => {
+                for cands in cand_slot {
+                    for (c, &s) in cands.iter().enumerate() {
+                        pairs.push((s, c as f32));
+                    }
+                }
+            }
+            IState::Attackers { def_slot, .. } => {
+                for defs in def_slot {
+                    for (d, &s) in defs.iter().enumerate() {
+                        pairs.push((s, d as f32));
+                    }
+                }
+            }
+            IState::Blockers { atk_slot, .. } => {
+                for atks in atk_slot {
+                    for (a, &s) in atks.iter().enumerate() {
+                        pairs.push((s, a as f32));
+                    }
+                }
+            }
+            IState::Order { item_slot, .. } => {
+                for (i, &s) in item_slot.iter().enumerate() {
+                    pairs.push((s, i as f32));
+                }
+            }
+        }
+        let mut out: Vec<ChoiceRow> = vec![];
+        let mut seen: BTreeSet<usize> = BTreeSet::new();
+        for (slot, v) in pairs {
+            let cr = if (MODE_BASE..MODE_BASE + MAX_MODES).contains(&slot) {
+                ChoiceRow { row: slot - MODE_BASE, kind: ChoiceKind::Mode, value: v, color: None }
+            } else if (COLOR_BASE..COLOR_BASE + N_COLORS).contains(&slot) {
+                let ci = slot - COLOR_BASE;
+                ChoiceRow { row: ci, kind: ChoiceKind::Color, value: ci as f32, color: Some(ci) }
+            } else if (NUMBER_BASE..NUMBER_BASE + MAX_NUM).contains(&slot) {
+                ChoiceRow { row: slot - NUMBER_BASE, kind: ChoiceKind::Number, value: v, color: None }
+            } else if slot == YES {
+                ChoiceRow { row: 0, kind: ChoiceKind::Bool, value: 1.0, color: None }
+            } else if slot == NO {
+                ChoiceRow { row: 1, kind: ChoiceKind::Bool, value: 0.0, color: None }
+            } else {
+                continue; // an entity-bucket slot — its content lives on its entity row
+            };
+            if seen.insert(cr.row) {
+                out.push(cr);
+            }
+        }
+        out
     }
 
     // ── slot mapping ────────────────────────────────────────────────────────────────────────
@@ -742,7 +864,9 @@ mod tests {
         let ty = if is_land { "Land" } else { "Creature" };
         ObjView::Visible {
             id: ObjId(id),
-            chars: CharacteristicsView { card_types: vec![ty.to_string()], ..Default::default() },
+            // grp_id mirrors the entityid so the obs↔codec agreement below can compare row-for-row
+            // through `bf_grpid` (v3 has no instance-id column — grp is the only tensor identity).
+            chars: CharacteristicsView { grp_id: id as u32, card_types: vec![ty.to_string()], ..Default::default() },
             controller: PlayerId(0),
             owner: PlayerId(0),
             zone: mtg_core::basics::Zone::Battlefield,
@@ -788,13 +912,13 @@ mod tests {
         assert_eq!(land_ids.len(), n_land);
         let req = DecisionRequest::Priority { actions: vec![], can_pass: true };
 
-        // Codec PERM ordering (the ids in slot order), and obs instance_id per row.
+        // Codec PERM ordering (the ids in slot order), and the obs identity channel per row.
+        // v3 removed the instance-id column, so agreement is checked through `bf_grpid` — the test
+        // objects set grp_id == entityid, making the per-row comparison exact.
         let it = Interaction::new(&view, &req);
         let codec_ids: Vec<u64> = it.bf.iter().map(|o| o.0).collect();
-        let o = crate::obs::encode(&view, &req, 1, &[], None, &[]);
-        let obs_ids: Vec<u64> = (0..MAX_PERM)
-            .map(|r| o.bf_feat[r * crate::obs::F_PERM + crate::obs::BF_INSTANCE_ID] as u64)
-            .collect();
+        let o = crate::obs::encode(&view, &req, 1, &crate::obs::PendingView::default());
+        let obs_ids: Vec<u64> = o.bf_grpid.iter().map(|&g| g as u64).collect();
 
         // (c) both capped at MAX_PERM and pointing at the same objects, row-for-row.
         assert_eq!(codec_ids.len(), MAX_PERM, "codec bf capped at MAX_PERM");
@@ -923,6 +1047,93 @@ mod tests {
         let mask = it.mask();
         assert!(mask[COMMIT] && mask.iter().filter(|b| **b).count() == 1);
         assert_eq!(it.apply(COMMIT), Some(DecisionResponse::Indices(vec![0])));
+    }
+
+    /// §4a enforcement (OBS2_DESIGN.md): walk a REAL two-blocker DeclareBlockers decomposition and
+    /// re-encode the observation at every sub-step — the obs alone must carry the full commitment
+    /// prefix (PENDING_PICK + BLOCKS edges, blocked_by count), never just the action mask.
+    #[test]
+    fn mid_decision_obs_carries_commitment_prefix_at_every_substep() {
+        use crate::layout::{EDGE_BLOCKS, EDGE_PENDING_PICK, ROW_DECISION};
+        use crate::obs::{self, BF_BLOCKED_BY, F_PERM};
+
+        let blk_a = ObjId(10); // bf row 0
+        let blk_b = ObjId(11); // bf row 1
+        let attacker = ObjId(30); // bf row 2
+        let mut view = base_view();
+        view.battlefield = vec![vis(10), vis(11), vis(30)];
+        let req = DecisionRequest::DeclareBlockers {
+            eligible: vec![
+                BlockerOption { creature: blk_a, may_block: vec![attacker], required: false, block_cost: None },
+                BlockerOption { creature: blk_b, may_block: vec![attacker], required: false, block_cost: None },
+            ],
+            attackers: vec![attacker],
+        };
+        let mut it = Interaction::new(&view, &req);
+        let encode_now = |it: &Interaction| {
+            let (blocks, block_source) = it.pending_block_view();
+            let pending = obs::PendingView {
+                blocks,
+                block_source,
+                attackers: it.pending_attackers(),
+                target_picks: it.pending_target_picks(),
+                choices: it.choice_rows(),
+            };
+            obs::encode(it.view(), it.req(), it.num_legal(), &pending)
+        };
+        let edges_of = |o: &obs::Obs| -> Vec<(i64, i64, i64)> {
+            o.edges.chunks(4).take_while(|c| c[0] >= 0).map(|c| (c[0], c[1], c[2])).collect()
+        };
+
+        // Sub-step 0: nothing assigned — no PENDING_PICK/BLOCKS edges, blocked_by 0.
+        let o0 = encode_now(&it);
+        assert!(edges_of(&o0).is_empty(), "no commitment yet → no edges");
+        assert_eq!(o0.bf_feat[2 * F_PERM + BF_BLOCKED_BY], 0.0);
+
+        // Sub-step 1: assign blocker A (single may_block → no attacker sub-pick).
+        assert_eq!(it.apply(PERM_BASE), None);
+        let o1 = encode_now(&it);
+        let e1 = edges_of(&o1);
+        assert!(e1.contains(&(ROW_DECISION as i64, 0, EDGE_PENDING_PICK)), "A is a committed pick");
+        assert!(e1.contains(&(0, 2, EDGE_BLOCKS)), "A's BLOCKS edge appears immediately");
+        assert_eq!(o1.bf_feat[2 * F_PERM + BF_BLOCKED_BY], 1.0, "attacker sees 1 pending blocker");
+
+        // Sub-step 2: assign blocker B — the SECOND blocker's decision context includes the first.
+        assert_eq!(it.apply(PERM_BASE + 1), None);
+        let o2 = encode_now(&it);
+        let e2 = edges_of(&o2);
+        assert!(e2.contains(&(ROW_DECISION as i64, 0, EDGE_PENDING_PICK)));
+        assert!(e2.contains(&(ROW_DECISION as i64, 1, EDGE_PENDING_PICK)));
+        assert!(e2.contains(&(0, 2, EDGE_BLOCKS)) && e2.contains(&(1, 2, EDGE_BLOCKS)));
+        assert_eq!(o2.bf_feat[2 * F_PERM + BF_BLOCKED_BY], 2.0, "the gang is fully observable");
+
+        // Commit → the engine response carries both assignments.
+        assert_eq!(it.apply(COMMIT), Some(DecisionResponse::Pairs(vec![(0, 0), (1, 0)])));
+    }
+
+    /// v3 §7.5 alignment: `NUMBER[j]`'s submitted value and choice row `j`'s value column come from
+    /// the SAME table, so they cannot disagree — pinned on a stepped/filtered ChooseNumber.
+    #[test]
+    fn choice_rows_match_number_slots() {
+        let req = DecisionRequest::ChooseNumber {
+            reason: NumberReason::ChooseX,
+            min: 1,
+            max: 7,
+            step: 2,           // legal: 1,3,5,7
+            forbidden: vec![5], // legal: 1,3,7
+            disallow_even: false,
+            disallow_odd: false,
+        };
+        let mut it = Interaction::new(&base_view(), &req);
+        let rows = it.choice_rows();
+        assert_eq!(rows.len(), 3);
+        for (j, expected) in [(0usize, 1.0f32), (1, 3.0), (2, 7.0)] {
+            let r = rows.iter().find(|r| r.row == j).expect("row present");
+            assert_eq!(r.kind, ChoiceKind::Number);
+            assert_eq!(r.value, expected, "choice row {j} carries the number NUMBER[{j}] submits");
+        }
+        // And the slot really submits that number.
+        assert_eq!(it.apply(NUMBER_BASE + 1), Some(DecisionResponse::Number(3)));
     }
 
     #[test]

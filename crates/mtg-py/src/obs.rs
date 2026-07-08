@@ -22,12 +22,15 @@
 //! row the policy saw. Everything here is data-only (no PyO3) so it unit-tests in pure Rust.
 
 use mtg_core::agent::{CharacteristicsView, DecisionRequest, ObjView, PlayerPublicView, PlayerView};
-use mtg_core::basics::{Color, Phase};
-use mtg_core::ids::ObjId;
-use std::collections::BTreeSet;
+use mtg_core::basics::{Color, Phase, Target};
+use mtg_core::ids::{ObjId, StackId};
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::layout::{
-    CARD_TYPES, COLORS, KEYWORDS, MAX_HAND, MAX_PERM, MAX_STACK, N_CARD_TYPES, N_COLORS, N_KEYWORDS,
+    CARD_TYPES, COLORS, EDGE_ATTACHED_TO, EDGE_ATTACKS, EDGE_BLOCKS, EDGE_PENDING_PICK,
+    EDGE_STACK_SOURCE, EDGE_TARGETS, KEYWORDS, MAX_CHOICE, MAX_EDGES, MAX_HAND, MAX_PERM,
+    MAX_STACK, N_CARD_TYPES, N_COLORS, N_KEYWORDS, ROW_DECISION, ROW_HAND, ROW_ME, ROW_OPP,
+    ROW_STACK,
 };
 
 const PHASES: [Phase; 12] = [
@@ -64,20 +67,15 @@ pub const COMBAT_LINK: usize = 1;
 /// tell a double-block is in progress and which of my creatures are in it. Read the decision KIND
 /// (globals decision one-hot) to interpret it as attacker-vs-blocker. Appended, so no index shifts.
 pub const PENDING_COMBAT: usize = 1;
-/// Relational ids (Tier 3): three per-permanent object-id columns for the relational attention encoder
-/// — `instance_id` (this object's stable-within-game id), `blocking_id` (the attacker this creature is
-/// blocking; committed + pending — the GENERAL form of the `blocked_by` count, which stays for
-/// back-compat), and `attached_to_id` (the host this aura/equipment is attached to). Per-game ObjIds
-/// are small sequential integers (exact in f32). These are NOT features to embed — they are MATCH KEYS:
-/// the encoder builds a hard adjacency/attention-bias from `blocking_id[i] == instance_id[j]` etc. and
-/// slices them out of the content projection. 0 = none. Appended, so no existing index shifts.
-pub const RELATION_IDS: usize = 3;
-/// Per-battlefield-row feature width (excludes `grp_id`, which rides in `bf_ids`).
-pub const F_PERM: usize = 9 + N_CARD_TYPES + N_COLORS + N_KEYWORDS + 4 + DECISION_FLAGS + COMBAT_LINK
-    + PENDING_COMBAT + RELATION_IDS;
+// (v3, OBS2_DESIGN.md §7.3) The Tier-3 relational id columns (instance/blocking/attached match
+// keys, cols 45–47 of contract v2) are GONE: pairings now arrive as explicit `edges` (engine truth,
+// no cross-row id-matching for the network to learn). Scalar features stay; float match-keys die.
+/// Per-battlefield-row feature width (excludes `grp_id`, which rides in `bf_grpid`).
+pub const F_PERM: usize =
+    9 + N_CARD_TYPES + N_COLORS + N_KEYWORDS + 4 + DECISION_FLAGS + COMBAT_LINK + PENDING_COMBAT;
 
-// Absolute bf_feat column indices of the combat/decision/relation tail (append-stable — everything
-// through BF_ATTACHED_ID keeps its index when new columns are appended). Mirror of the push order in
+// Absolute bf_feat column indices of the combat/decision tail (append-stable — everything through
+// BF_PENDING_COMBAT keeps its index when new columns are appended). Mirror of the push order in
 // `encode_battlefield`; the Python encoder mirrors these too.
 pub const BF_ATTACKING: usize = 9 + N_CARD_TYPES + N_COLORS + N_KEYWORDS + 2; // 39
 pub const BF_BLOCKING: usize = BF_ATTACKING + 1; // 40
@@ -85,9 +83,6 @@ pub const BF_IS_SRC: usize = BF_ATTACKING + 2; // 41
 pub const BF_IS_CAND: usize = BF_ATTACKING + 3; // 42
 pub const BF_BLOCKED_BY: usize = BF_ATTACKING + 4; // 43
 pub const BF_PENDING_COMBAT: usize = BF_ATTACKING + 5; // 44
-pub const BF_INSTANCE_ID: usize = BF_ATTACKING + 6; // 45
-pub const BF_BLOCKING_ID: usize = BF_ATTACKING + 7; // 46
-pub const BF_ATTACHED_ID: usize = BF_ATTACKING + 8; // 47
 /// Per-hand-row feature width.
 pub const F_HAND: usize = 3 + N_CARD_TYPES + N_COLORS + DECISION_FLAGS;
 /// Per-stack-row feature width.
@@ -100,19 +95,31 @@ const SEAT_BLOCK: usize = 7 + 6;
 /// target of the current decision).
 pub const G: usize = 1 + 12 + 3 + SEAT_BLOCK + SEAT_BLOCK + 1 + NUM_REQUESTS + 3 + 2;
 
-/// The structured observation. Flat `Vec`s (Python reshapes per [`spec`]); `*_ids` are the
-/// per-row `grp_id`s (0 = empty row) for the policy's embedding table.
+/// Per-choice-row feature width (v3 `choice_feat`, §7.5): col 0 `present` · 1–4 kind one-hot
+/// (mode/color/number/bool) · 5 value scalar (Number rows: the number; others: the option index) ·
+/// 6–10 color one-hot · 11 reserved.
+pub const F_CHOICE: usize = 12;
+/// Columns of the `edges` tensor: `(src_row, dst_row, type, k)`; pad rows are all −1.
+pub const F_EDGE: usize = 4;
+
+/// The structured observation. Flat `Vec`s (Python reshapes per [`spec`]); `*_grpid` are the
+/// per-row card identities (`grp_id`, 0 = empty row) for the policy's embedding table — the ONLY
+/// id that appears in tensors (§7.1a; entityids are resolved to row positions at encode time).
 #[derive(Debug, Clone)]
 pub struct Obs {
     pub globals: Vec<f32>,
     pub bf_feat: Vec<f32>,
-    pub bf_ids: Vec<i64>,
+    pub bf_grpid: Vec<i64>,
     pub hand_feat: Vec<f32>,
-    pub hand_ids: Vec<i64>,
+    pub hand_grpid: Vec<i64>,
     pub stack_feat: Vec<f32>,
-    pub stack_ids: Vec<i64>,
+    pub stack_grpid: Vec<i64>,
     /// The resolved source-card `grp_id` of the current decision (0 = none) — see module docs.
-    pub decision_ids: Vec<i64>,
+    pub decision_grpid: Vec<i64>,
+    /// Relation edges `(src_row, dst_row, type, k)` in the shared row space (§7.2/§7.4), −1-padded.
+    pub edges: Vec<i64>,
+    /// Content tokens for the current decision's abstract options (§7.5).
+    pub choice_feat: Vec<f32>,
 }
 
 /// `(name, rows, cols, is_int)` for each obs array — Python builds the `gym.spaces.Dict` from this
@@ -121,57 +128,71 @@ pub fn spec() -> Vec<(&'static str, usize, usize, bool)> {
     vec![
         ("globals", 1, G, false),
         ("bf_feat", MAX_PERM, F_PERM, false),
-        ("bf_ids", 1, MAX_PERM, true),
+        ("bf_grpid", 1, MAX_PERM, true),
         ("hand_feat", MAX_HAND, F_HAND, false),
-        ("hand_ids", 1, MAX_HAND, true),
+        ("hand_grpid", 1, MAX_HAND, true),
         ("stack_feat", MAX_STACK, F_STACK, false),
-        ("stack_ids", 1, MAX_STACK, true),
-        // Source-card identity of the current decision (Tier 1) — one row, one grp_id; Python maps
-        // it to a one-hot through the same deck-local card index as `*_ids`.
-        ("decision_ids", 1, 1, true),
+        ("stack_grpid", 1, MAX_STACK, true),
+        // Source-card identity of the current decision (Tier 1) — one row, one grp_id.
+        ("decision_grpid", 1, 1, true),
+        ("edges", MAX_EDGES, F_EDGE, true),
+        ("choice_feat", MAX_CHOICE, F_CHOICE, false),
     ]
+}
+
+/// In-flight sub-decision state handed over from the codec's [`Interaction`](crate::codec::Interaction)
+/// — the §4a commitment prefix the frozen `view` snapshot cannot show, plus the codec's live
+/// abstract-choice rows (single-sourced so obs↔codec choice alignment holds by construction).
+#[derive(Default)]
+pub struct PendingView {
+    /// `(blocker, attacker)` pairs assigned so far in the current DeclareBlockers decision.
+    pub blocks: Vec<(ObjId, ObjId)>,
+    /// The blocker currently awaiting its attacker pick (lights `is_decision_source`).
+    pub block_source: Option<ObjId>,
+    /// My creatures already declared in the current DeclareAttackers decision.
+    pub attackers: Vec<ObjId>,
+    /// Targets picked so far in an in-flight multi-target decision, with pick order.
+    pub target_picks: Vec<(Target, u32)>,
+    /// The current decision's abstract-choice rows (from `Interaction::choice_rows`).
+    pub choices: Vec<crate::codec::ChoiceRow>,
 }
 
 /// Encode `view` + the current request (and its legal-option count) into the structured [`Obs`].
 ///
-/// `pending_blocks` / `block_source` come from the in-flight [`Interaction`](crate::codec::Interaction)
-/// (`pending_block_view`): the `(blocker, attacker)` pairs assigned so far in the current
-/// DeclareBlockers decision and the blocker being assigned. They surface mid-decision gang structure
-/// the frozen `view` snapshot can't; pass `(&[], None)` for any non-block decision.
-///
-/// `pending_attackers` come from [`Interaction::pending_attackers`](crate::codec::Interaction): my
-/// creatures already declared as attackers in the current DeclareAttackers decision. Together with the
-/// pending-block blockers they populate the per-row `is_pending_combat` flag (PENDING_COMBAT); pass
-/// `&[]` for any non-attack decision.
+/// `pending` carries the in-flight sub-decision state from the codec's
+/// [`Interaction`](crate::codec::Interaction) — the §4a commitment prefix (pending blocks /
+/// attackers / target picks) plus the codec-authored abstract-choice rows. Pass
+/// `&PendingView::default()` when there is no in-flight decomposition.
 pub fn encode(view: &PlayerView, req: &DecisionRequest, num_legal: usize,
-              pending_blocks: &[(ObjId, ObjId)], block_source: Option<ObjId>,
-              pending_attackers: &[ObjId]) -> Obs {
+              pending: &PendingView) -> Obs {
     let mut di = decision_info(view, req);
-    if let Some(src) = block_source {
+    if let Some(src) = pending.block_source {
         di.src_objs.insert(src); // (Tier 2c) light is_decision_source on the blocker being assigned
     }
-    let blocked_by = blocked_by_counts(view, pending_blocks);
+    let blocked_by = blocked_by_counts(view, &pending.blocks);
     // My creatures committed in the current in-flight combat decision: declared attackers (attack
     // step) or assigned blockers incl. the one being assigned (block step) — the is_pending_combat set.
-    let pending_combat: std::collections::BTreeSet<ObjId> = pending_attackers
+    let pending_combat: std::collections::BTreeSet<ObjId> = pending
+        .attackers
         .iter()
         .copied()
-        .chain(pending_blocks.iter().map(|(blk, _)| *blk))
-        .chain(block_source)
+        .chain(pending.blocks.iter().map(|(blk, _)| *blk))
+        .chain(pending.block_source)
         .collect();
-    let relations = RelationMaps::build(view, pending_blocks);
+    let relations = RelationMaps::build(view, &pending.blocks);
     // The shared battlefield row ordering (nonlands-first, then lands; capped at MAX_PERM) — the SAME
     // function the action codec uses, so obs row `k` and codec `PERM[k]` name the same object even
     // when the board overflows the cap and trailing lands are dropped. See `layout::perm_order`.
     let perm_order = crate::layout::perm_order(&view.battlefield);
+    let rows = RowMap::build(view, &perm_order);
     Obs {
         globals: encode_globals(view, req, num_legal, &di),
-        bf_feat: encode_battlefield(view, &di, &blocked_by, &pending_combat, &relations, &perm_order),
-        bf_ids: bf_ids_ordered(&view.battlefield, &perm_order),
+        bf_feat: encode_battlefield(view, &di, &blocked_by, &pending_combat, &perm_order),
+        bf_grpid: bf_ids_ordered(&view.battlefield, &perm_order),
         hand_feat: encode_hand(view, req, &di),
-        hand_ids: ids(&view.me.hand, MAX_HAND),
+        hand_grpid: ids(&view.me.hand, MAX_HAND),
         stack_feat: encode_stack(view, &di),
-        stack_ids: view
+        stack_grpid: view
             .stack
             .iter()
             .take(MAX_STACK)
@@ -179,8 +200,150 @@ pub fn encode(view: &PlayerView, req: &DecisionRequest, num_legal: usize,
             .chain(std::iter::repeat(0))
             .take(MAX_STACK)
             .collect(),
-        decision_ids: vec![di.src_grp],
+        decision_grpid: vec![di.src_grp],
+        edges: encode_edges(view, &relations, pending, &rows),
+        choice_feat: encode_choices(&pending.choices),
     }
+}
+
+/// entityid → row-space position for THIS observation (§7.2). Built once per encode; the boundary
+/// where engine ids are resolved into positions and then discarded — no id crosses into a tensor.
+struct RowMap {
+    bf: BTreeMap<ObjId, usize>,
+    hand: BTreeMap<ObjId, usize>,
+    stack: BTreeMap<StackId, usize>,
+    me: mtg_core::ids::PlayerId,
+}
+
+impl RowMap {
+    fn build(view: &PlayerView, perm_order: &[usize]) -> RowMap {
+        let mut bf = BTreeMap::new();
+        for (k, &row) in perm_order.iter().enumerate() {
+            bf.insert(crate::layout::objview_id(&view.battlefield[row]), k);
+        }
+        let mut hand = BTreeMap::new();
+        for (i, o) in view.me.hand.iter().take(MAX_HAND).enumerate() {
+            hand.insert(crate::layout::objview_id(o), ROW_HAND + i);
+        }
+        let mut stack = BTreeMap::new();
+        for (i, s) in view.stack.iter().take(MAX_STACK).enumerate() {
+            stack.insert(s.id, ROW_STACK + i);
+        }
+        RowMap { bf, hand, stack, me: view.seat }
+    }
+    fn obj(&self, id: ObjId) -> Option<usize> {
+        self.bf.get(&id).copied().or_else(|| self.hand.get(&id).copied())
+    }
+    fn target(&self, t: &Target) -> Option<usize> {
+        match t {
+            Target::Object(id) => self.obj(*id),
+            Target::Stack(sid) => self.stack.get(sid).copied(),
+            Target::Player(p) => Some(if *p == self.me { ROW_ME } else { ROW_OPP }),
+        }
+    }
+}
+
+/// Relation edges `(src_row, dst_row, type, k)` (§7.4), emitted in truncation-priority order
+/// (TARGETS > PENDING_PICK > BLOCKS > ATTACHED_TO > ATTACKS > STACK_SOURCE) and −1-padded to
+/// [`MAX_EDGES`]. Pending relations appear in their final type immediately (a mid-decision block
+/// already has its BLOCKS edge); pendingness is marked by the accompanying PENDING_PICK edge.
+fn encode_edges(view: &PlayerView, relations: &RelationMaps, pending: &PendingView,
+                rows: &RowMap) -> Vec<i64> {
+    let mut e: Vec<[i64; 4]> = Vec::new();
+    // TARGETS: what each stack object targets (closes gap G1). k = target slot order.
+    for (si, s) in view.stack.iter().take(MAX_STACK).enumerate() {
+        for (k, t) in s.targets.iter().enumerate() {
+            if let Some(dst) = rows.target(t) {
+                e.push([(ROW_STACK + si) as i64, dst as i64, EDGE_TARGETS, k as i64]);
+            }
+        }
+    }
+    // PENDING_PICK: decision → every pick already made in the in-flight decision (§4a). k = order.
+    let mut k: i64 = 0;
+    let pend = |e: &mut Vec<[i64; 4]>, row: Option<usize>, k: &mut i64| {
+        if let Some(r) = row {
+            e.push([ROW_DECISION as i64, r as i64, EDGE_PENDING_PICK, *k]);
+            *k += 1;
+        }
+    };
+    for id in &pending.attackers {
+        pend(&mut e, rows.bf.get(id).copied(), &mut k);
+    }
+    for (blk, _) in &pending.blocks {
+        pend(&mut e, rows.bf.get(blk).copied(), &mut k);
+    }
+    if let Some(src) = pending.block_source {
+        pend(&mut e, rows.bf.get(&src).copied(), &mut k);
+    }
+    for (t, _) in &pending.target_picks {
+        pend(&mut e, rows.target(t), &mut k);
+    }
+    // BLOCKS: blocker → the attacker it blocks (committed + pending, from RelationMaps).
+    for (blk, atk) in &relations.blocking_of {
+        if let (Some(b), Some(a)) = (rows.bf.get(blk), rows.bf.get(atk)) {
+            e.push([*b as i64, *a as i64, EDGE_BLOCKS, 0]);
+        }
+    }
+    // ATTACHED_TO: aura/equipment → host.
+    for (att, host) in &relations.attached_of {
+        if let (Some(a), Some(h)) = (rows.bf.get(att), rows.bf.get(host)) {
+            e.push([*a as i64, *h as i64, EDGE_ATTACHED_TO, 0]);
+        }
+    }
+    // ATTACKS: committed attacker → whom it attacks (a player today; planeswalkers later).
+    if let Some(c) = &view.combat {
+        for (a, t) in &c.attackers {
+            if let (Some(ar), Some(tr)) = (rows.bf.get(a), rows.target(t)) {
+                e.push([*ar as i64, tr as i64, EDGE_ATTACKS, 0]);
+            }
+        }
+    }
+    // STACK_SOURCE: an ability on the stack → the permanent it came from.
+    for (si, s) in view.stack.iter().take(MAX_STACK).enumerate() {
+        if let Some(src) = s.source {
+            if let Some(r) = rows.obj(src) {
+                e.push([(ROW_STACK + si) as i64, r as i64, EDGE_STACK_SOURCE, 0]);
+            }
+        }
+    }
+    e.truncate(MAX_EDGES);
+    let n = e.len();
+    let mut out = Vec::with_capacity(MAX_EDGES * F_EDGE);
+    for row in &e {
+        out.extend_from_slice(row);
+    }
+    out.extend(std::iter::repeat(-1).take((MAX_EDGES - n) * F_EDGE));
+    out
+}
+
+/// The current decision's abstract options as content tokens (§7.5). Rows come verbatim from the
+/// codec ([`crate::codec::Interaction::choice_rows`]) so `MODE[j]`/`COLOR[j]`/`NUMBER[j]`/YES/NO
+/// slot `j` and choice row `j` can never disagree.
+fn encode_choices(choices: &[crate::codec::ChoiceRow]) -> Vec<f32> {
+    use crate::codec::ChoiceKind as K;
+    let mut out = vec![0.0; MAX_CHOICE * F_CHOICE];
+    for c in choices {
+        if c.row >= MAX_CHOICE {
+            continue;
+        }
+        let b = c.row * F_CHOICE;
+        out[b] = 1.0; // present
+        let kind = match c.kind {
+            K::Mode => 0,
+            K::Color => 1,
+            K::Number => 2,
+            K::Bool => 3,
+        };
+        out[b + 1 + kind] = 1.0;
+        out[b + 5] = c.value;
+        if let Some(ci) = c.color {
+            if ci < N_COLORS {
+                out[b + 6 + ci] = 1.0;
+            }
+        }
+        // col 11 reserved
+    }
+    out
 }
 
 /// Which objects/players the *current* decision is **for** (its source) and **over** (its legal
@@ -440,7 +603,7 @@ fn blocked_by_counts(view: &PlayerView, pending_blocks: &[(ObjId, ObjId)])
     m
 }
 
-/// Relation maps for the Tier-3 id columns: for each blocker, the attacker it blocks (committed +
+/// Relation maps feeding the `edges` tensor: for each blocker, the attacker it blocks (committed +
 /// pending); for each attachment, its host permanent. Object ids only — data-only, no characteristics.
 struct RelationMaps {
     blocking_of: std::collections::BTreeMap<ObjId, ObjId>,   // blocker  -> attacker it blocks
@@ -473,7 +636,7 @@ impl RelationMaps {
 fn encode_battlefield(view: &PlayerView, di: &DecisionInfo,
                       blocked_by: &std::collections::BTreeMap<ObjId, u32>,
                       pending_combat: &std::collections::BTreeSet<ObjId>,
-                      relations: &RelationMaps, perm_order: &[usize]) -> Vec<f32> {
+                      perm_order: &[usize]) -> Vec<f32> {
     let me = view.seat;
     let (attacking, blocking) = combat_sets(view);
     let mut out = Vec::with_capacity(MAX_PERM * F_PERM);
@@ -513,11 +676,8 @@ fn encode_battlefield(view: &PlayerView, di: &DecisionInfo,
                 out.push(*blocked_by.get(id).unwrap_or(&0) as f32);
                 // (Tier 2b) is_pending_combat: this creature is mine and already committed in the
                 // current in-flight combat decision (declared attacker / assigned blocker).
+                // Pairings (who blocks whom, aura hosts) are NOT columns — they ride `edges` (v3).
                 out.push(pending_combat.contains(id) as u8 as f32);
-                // (Tier 3) relational match-keys: this object's id, the attacker it blocks, its host.
-                out.push(id.0 as f32);
-                out.push(relations.blocking_of.get(id).map(|a| a.0).unwrap_or(0) as f32);
-                out.push(relations.attached_of.get(id).map(|h| h.0).unwrap_or(0) as f32);
             }
             ObjView::Hidden { .. } => {
                 // Hidden permanent (e.g. a face-down): present but featureless.
@@ -713,16 +873,20 @@ mod tests {
     #[test]
     fn shapes_match_spec_and_are_finite() {
         let req = DecisionRequest::Priority { actions: vec![], can_pass: true };
-        let o = encode(&view(), &req, 1, &[], None, &[]);
+        let o = encode(&view(), &req, 1, &PendingView::default());
         assert_eq!(o.globals.len(), G);
         assert_eq!(o.bf_feat.len(), MAX_PERM * F_PERM);
-        assert_eq!(o.bf_ids.len(), MAX_PERM);
+        assert_eq!(o.bf_grpid.len(), MAX_PERM);
         assert_eq!(o.hand_feat.len(), MAX_HAND * F_HAND);
-        assert_eq!(o.hand_ids.len(), MAX_HAND);
+        assert_eq!(o.hand_grpid.len(), MAX_HAND);
         assert_eq!(o.stack_feat.len(), MAX_STACK * F_STACK);
-        assert_eq!(o.stack_ids.len(), MAX_STACK);
+        assert_eq!(o.stack_grpid.len(), MAX_STACK);
+        assert_eq!(o.edges.len(), MAX_EDGES * F_EDGE);
+        assert_eq!(o.choice_feat.len(), MAX_CHOICE * F_CHOICE);
         assert!(o.globals.iter().all(|x| x.is_finite()));
         assert!(o.bf_feat.iter().all(|x| x.is_finite()));
+        // No relations, nothing pending → every edge row is padding (−1).
+        assert!(o.edges.iter().all(|&x| x == -1), "empty board → all edge rows padded");
         // turn first; PrecombatMain one-hot set; self life (20) leads the me-block.
         assert_eq!(o.globals[0], 3.0);
         assert_eq!(o.globals[1 + 3], 1.0);
@@ -734,13 +898,15 @@ mod tests {
             assert!(rows * cols > 0);
         }
         // F_PERM / F_HAND / F_STACK pinned so a vocab edit that desyncs obs↔codec is caught.
-        // (DECISION_FLAGS=2 Tier-1 flags; COMBAT_LINK=1 blocked-by count; PENDING_COMBAT=1 self-flag;
-        // RELATION_IDS=3 Tier-3 instance/blocking/attached match-keys.)
-        assert_eq!(F_PERM, 48);
-        assert_eq!(BF_ATTACHED_ID, F_PERM - 1); // the relation tail is the last block of columns
+        // (DECISION_FLAGS=2 Tier-1 flags; COMBAT_LINK=1 blocked-by count; PENDING_COMBAT=1 self-flag.
+        // Contract v3: the Tier-3 relation-id columns are gone — pairings ride `edges` now.)
+        assert_eq!(F_PERM, 45);
+        assert_eq!(BF_PENDING_COMBAT, F_PERM - 1); // the combat/decision tail closes the row
         assert_eq!(F_HAND, 18);
         assert_eq!(F_STACK, 18);
         assert_eq!(G, 69);
+        assert_eq!(F_CHOICE, 12);
+        assert_eq!(F_EDGE, 4);
     }
 
     /// Tier 1: a `ChooseTargets` raised by a spell mid-cast surfaces (a) the spell's card identity
@@ -787,9 +953,9 @@ mod tests {
             }],
         };
 
-        let o = encode(&v, &req, 2, &[], None, &[]);
+        let o = encode(&v, &req, 2, &PendingView::default());
         // (a) source card identity = the spell's grp_id.
-        assert_eq!(o.decision_ids, vec![555], "decision_ids carries the source spell's grp_id");
+        assert_eq!(o.decision_grpid, vec![555], "decision_grpid carries the source spell's grp_id");
         // (b) the stack row (row 0) is flagged is_src (the last-but-one feature of F_STACK).
         assert_eq!(o.stack_feat[F_STACK - 2], 1.0, "source spell's stack row flagged is_src");
         // (c) the creature row (row 0) is flagged is_cand (absolute column, append-stable).
@@ -851,8 +1017,8 @@ mod tests {
             }],
         };
 
-        let o = encode(&v, &req, 1, &[], None, &[]);
-        assert_eq!(o.decision_ids, vec![114], "source grp recovered from the off-stack trigger source");
+        let o = encode(&v, &req, 1, &PendingView::default());
+        assert_eq!(o.decision_grpid, vec![114], "source grp recovered from the off-stack trigger source");
         // row 0 = the enchantment, flagged is_src; row 1 = the creature, flagged is_cand (absolute).
         assert_eq!(o.bf_feat[BF_IS_SRC], 1.0, "triggering permanent flagged is_src");
         assert_eq!(o.bf_feat[F_PERM + BF_IS_CAND], 1.0, "target creature flagged is_cand");
@@ -891,12 +1057,15 @@ mod tests {
             ],
             attackers: vec![attacker],
         };
+        let pend = |blocks: Vec<(ObjId, ObjId)>, src: Option<ObjId>| PendingView {
+            blocks, block_source: src, ..Default::default()
+        };
         // No blocks assigned yet → 0 on the attacker's row.
-        assert_eq!(encode(&v, &req, 3, &[], None, &[]).bf_feat[BF_BLOCKED_BY], 0.0, "unblocked → 0");
+        assert_eq!(encode(&v, &req, 3, &PendingView::default()).bf_feat[BF_BLOCKED_BY], 0.0, "unblocked → 0");
         // One blocker → single-block → 1.
-        assert_eq!(encode(&v, &req, 3, &[(blk_a, attacker)], None, &[]).bf_feat[BF_BLOCKED_BY], 1.0, "single → 1");
+        assert_eq!(encode(&v, &req, 3, &pend(vec![(blk_a, attacker)], None)).bf_feat[BF_BLOCKED_BY], 1.0, "single → 1");
         // TWO blockers ganging the SAME attacker (pending) → 2: double-blocking is now observable.
-        let o2 = encode(&v, &req, 3, &[(blk_a, attacker), (blk_b, attacker)], Some(blk_b), &[]);
+        let o2 = encode(&v, &req, 3, &pend(vec![(blk_a, attacker), (blk_b, attacker)], Some(blk_b)));
         assert_eq!(o2.bf_feat[BF_BLOCKED_BY], 2.0, "pending gang → 2 (the double-block signal)");
     }
 
@@ -932,7 +1101,8 @@ mod tests {
             eligible: vec![BlockerOption { creature: my_creature, may_block: vec![enemy], required: false, block_cost: None }],
             attackers: vec![enemy],
         };
-        let ob = encode(&v, &blk_req, 3, &[(my_creature, enemy)], None, &[]);
+        let ob = encode(&v, &blk_req, 3,
+                        &PendingView { blocks: vec![(my_creature, enemy)], ..Default::default() });
         assert_eq!(ob.bf_feat[pc], 1.0, "my pending blocker flagged is_pending_combat");
         assert_eq!(ob.bf_feat[F_PERM + pc], 0.0, "the enemy attacker is not my pending combatant");
 
@@ -940,15 +1110,26 @@ mod tests {
         let atk_req = DecisionRequest::DeclareAttackers {
             eligible: vec![AttackerOption { creature: my_creature, may_attack: vec![Target::Player(PlayerId(1))], required: false, attack_cost: None, may_exert: false, may_enlist: false }],
         };
-        let oa = encode(&v, &atk_req, 2, &[], None, &[my_creature]);
+        let oa = encode(&v, &atk_req, 2,
+                        &PendingView { attackers: vec![my_creature], ..Default::default() });
         assert_eq!(oa.bf_feat[pc], 1.0, "my declared attacker flagged is_pending_combat");
     }
 
-    /// Tier 3 — the relational match-keys: instance_id carries each object's id; blocking_id points a
-    /// blocker at the attacker it blocks (committed + pending); attached_to_id points an aura/equipment
-    /// at its host. The encoder builds adjacency by matching blocking_id/attached_to_id to instance_id.
+    /// Decode the −1-padded flat edges vec into (src, dst, type, k) tuples for assertions.
+    fn edge_tuples(o: &Obs) -> Vec<(i64, i64, i64, i64)> {
+        o.edges
+            .chunks(F_EDGE)
+            .take_while(|c| c[0] >= 0)
+            .map(|c| (c[0], c[1], c[2], c[3]))
+            .collect()
+    }
+
+    /// v3 §7.4 — relations arrive as explicit edges in row space: a mid-decision block emits BOTH
+    /// its BLOCKS edge (final type, immediately) AND a PENDING_PICK edge from the decision token
+    /// (the §4a commitment prefix); an aura emits ATTACHED_TO → its host. Raw entityids appear in
+    /// NO tensor — the RowMap resolves them to row positions at encode time.
     #[test]
-    fn relation_ids_link_blocker_to_attacker_and_aura_to_host() {
+    fn edges_link_blocker_attacker_aura_host_and_pending() {
         use mtg_core::agent::{BlockerOption, CharacteristicsView};
         use mtg_core::basics::Status;
         use mtg_core::ids::ObjId;
@@ -977,16 +1158,82 @@ mod tests {
             eligible: vec![BlockerOption { creature: blocker, may_block: vec![attacker], required: false, block_cost: None }],
             attackers: vec![attacker],
         };
-        let o = encode(&v, &req, 3, &[(blocker, attacker)], None, &[]);
-        let row = |r: usize, c: usize| o.bf_feat[r * F_PERM + c];
-        // instance_id == the object's own id on every row.
-        assert_eq!(row(0, BF_INSTANCE_ID), 10.0);
-        assert_eq!(row(1, BF_INSTANCE_ID), 30.0);
-        // blocker's blocking_id == the attacker's instance_id (the pending block).
-        assert_eq!(row(0, BF_BLOCKING_ID), 30.0, "blocker points at the attacker it blocks");
-        assert_eq!(row(1, BF_BLOCKING_ID), 0.0, "the attacker blocks nothing");
-        // aura's attached_to_id == the host's instance_id.
-        assert_eq!(row(2, BF_ATTACHED_ID), 41.0, "aura points at its host");
-        assert_eq!(row(3, BF_ATTACHED_ID), 0.0, "the host is attached to nothing");
+        let o = encode(&v, &req, 3,
+                       &PendingView { blocks: vec![(blocker, attacker)], ..Default::default() });
+        let edges = edge_tuples(&o);
+        // The pending block: PENDING_PICK (decision → blocker row 0, k=0) AND BLOCKS (row 0 → row 1).
+        assert!(edges.contains(&(ROW_DECISION as i64, 0, EDGE_PENDING_PICK, 0)),
+                "pending pick edge from the decision token to the assigned blocker");
+        assert!(edges.contains(&(0, 1, EDGE_BLOCKS, 0)),
+                "BLOCKS edge appears immediately for the pending assignment");
+        // The aura (row 2) attached to its host (row 3).
+        assert!(edges.contains(&(2, 3, EDGE_ATTACHED_TO, 0)), "aura → host attachment edge");
+        // No raw entityid anywhere in the feature tensor (ids 10/30/40/41 don't appear as columns).
+        assert_eq!(F_PERM, BF_PENDING_COMBAT + 1, "no id columns after the combat tail");
+    }
+
+    /// v3 §7.4 — stack targeting (gap G1 closed): a spell on the stack emits TARGETS edges to its
+    /// object/player targets (k = target order) and STACK_SOURCE back to its source permanent.
+    #[test]
+    fn edges_expose_stack_targets_and_source() {
+        use mtg_core::agent::{CharacteristicsView, StackObjView};
+        use mtg_core::basics::{Status, Target};
+        use mtg_core::ids::{ObjId, StackId};
+
+        let creature = ObjId(10); // bf row 0
+        let source_perm = ObjId(11); // bf row 1
+        let mut v = view();
+        let vis = |id: ObjId| ObjView::Visible {
+            id,
+            chars: CharacteristicsView { grp_id: 1, power: Some(2), toughness: Some(2), ..Default::default() },
+            controller: PlayerId(0),
+            owner: PlayerId(0),
+            zone: mtg_core::basics::Zone::Battlefield,
+            status: Status::default(),
+            counters: CounterBag::default(),
+            damage_marked: 0,
+            attachments: vec![],
+            summoning_sick: false,
+        };
+        v.battlefield = vec![vis(creature), vis(source_perm)];
+        v.stack = vec![StackObjView {
+            id: StackId(1),
+            controller: PlayerId(0),
+            source: Some(source_perm),
+            chars: CharacteristicsView { grp_id: 555, ..Default::default() },
+            targets: vec![Target::Object(creature), Target::Player(PlayerId(1))],
+        }];
+        let req = DecisionRequest::Priority { actions: vec![], can_pass: true };
+        let o = encode(&v, &req, 1, &PendingView::default());
+        let edges = edge_tuples(&o);
+        let srow = ROW_STACK as i64; // the spell is stack row 0
+        assert!(edges.contains(&(srow, 0, EDGE_TARGETS, 0)), "first target: the creature (k=0)");
+        assert!(edges.contains(&(srow, ROW_OPP as i64, EDGE_TARGETS, 1)), "second target: the opponent (k=1)");
+        assert!(edges.contains(&(srow, 1, EDGE_STACK_SOURCE, 0)), "stack object → its source permanent");
+    }
+
+    /// v3 §7.5 — abstract options become content tokens: choice rows arrive verbatim from the codec
+    /// so `NUMBER[j]` / choice row `j` can never disagree about which number slot `j` submits.
+    #[test]
+    fn choice_feat_carries_codec_choice_rows() {
+        use crate::codec::{ChoiceKind, ChoiceRow};
+        let req = DecisionRequest::Priority { actions: vec![], can_pass: true };
+        let pending = PendingView {
+            choices: vec![
+                ChoiceRow { row: 0, kind: ChoiceKind::Number, value: 3.0, color: None },
+                ChoiceRow { row: 1, kind: ChoiceKind::Number, value: 5.0, color: None },
+                ChoiceRow { row: 2, kind: ChoiceKind::Color, value: 2.0, color: Some(2) },
+            ],
+            ..Default::default()
+        };
+        let o = encode(&view(), &req, 2, &pending);
+        let row = |r: usize, c: usize| o.choice_feat[r * F_CHOICE + c];
+        assert_eq!(row(0, 0), 1.0, "row 0 present");
+        assert_eq!(row(0, 1 + 2), 1.0, "row 0 kind = number");
+        assert_eq!(row(0, 5), 3.0, "row 0 submits 3");
+        assert_eq!(row(1, 5), 5.0, "row 1 submits 5");
+        assert_eq!(row(2, 1 + 1), 1.0, "row 2 kind = color");
+        assert_eq!(row(2, 6 + 2), 1.0, "row 2 color one-hot = Black (WUBRG idx 2)");
+        assert_eq!(row(3, 0), 0.0, "row 3 absent");
     }
 }

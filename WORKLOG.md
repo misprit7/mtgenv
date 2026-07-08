@@ -3,6 +3,24 @@
 Short, dated entries for future-agent consumption. Newest first. One line or a few bullets
 per unit of meaningful progress. Keep it terse — detail lives in `docs/` and git history.
 
+## 2026-07-08 (Contract v3 Rust side — edges + choice tokens + grpid-only ids)
+
+- **User approved OBS2_DESIGN.md §7; v3 Rust contract implemented** (obs/codec/layout/lib/fleet in
+  `crates/mtg-py`): bf_feat 256×48→**45** (Tier-3 id match-key cols deleted — "scalar features stay,
+  float match-keys die"); `*_ids`→**`*_grpid`** (§7.1a: grpid + entityid are the only two id spaces;
+  entityids resolve to row positions at encode and never enter tensors); NEW **`edges` 128×4**
+  `(src_row,dst_row,type,k)` — BLOCKS/ATTACKS/ATTACHED_TO/TARGETS (G1 closed)/STACK_SOURCE/
+  PENDING_PICK in a flat row space (bf 0-255, hand 256-271, stack 272-279, players 280/281,
+  decision 282); NEW **`choice_feat` 16×12** — abstract options as content tokens, rows authored BY
+  the codec (`Interaction::choice_rows`) so MODE/COLOR/NUMBER/YES/NO slots and choice rows align by
+  construction; `Interaction::pending_target_picks` extends the §4a commitment prefix to
+  multi-target. §4a walk test drives a real two-blocker decomposition and re-encodes at every
+  sub-step. Workspace green (1001 core / 28 server / 25 py). Python step 3 (edges-as-bias +
+  choice pointer, dmc4) + ratings bump-env v3 next; earlier same day: present-row gather (76c2ccf,
+  forward 3.4-6×) and the web client's RL reward lens (Φ RL toggle).
+
+## 2026-07-08 (Contract v2 = 256/322 LIVE — both env spine ladders baselined)
+
 ## 2026-07-08 (Contract v2 = 256/322 LIVE — both env spine ladders baselined)
 
 - **v2 (MAX_PERM 256 / action 322, engine 70aa34e) DONE.** scripted.py derived PERM_BASE 17 /
