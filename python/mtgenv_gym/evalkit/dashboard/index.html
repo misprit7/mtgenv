@@ -154,6 +154,24 @@ details.section > summary .count { margin-left: auto; color: var(--muted); font-
 .grid { display: grid; gap: 12px; grid-template-columns: 1fr; }
 @media (min-width: 700px) { .grid { grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); } }
 
+/* ── ratings panel: env tabs + BT/Elo leaderboard ── */
+.elotable {
+  background: var(--panel); border: 2.5px solid var(--line); border-radius: 7px 5px 8px 6px;
+  box-shadow: 3px 3px 0 var(--yellow); padding: 4px 0; overflow-x: auto;
+}
+.elotable .erow {
+  display: flex; align-items: baseline; gap: 10px; padding: 8px 14px; min-height: 38px;
+  border-top: 1.5px solid var(--hair); font-size: 13px;
+}
+.elotable .erow:first-child { border-top: none; }
+.elotable .erank { color: var(--muted); min-width: 20px; font-variant-numeric: tabular-nums; }
+.elotable .ename { font-weight: 700; flex: 1; word-break: break-all; }
+.elotable .ename.trained { color: var(--magenta); }
+.elotable .erating { font-weight: 800; font-variant-numeric: tabular-nums; min-width: 52px; text-align: right; }
+.elotable .eci { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; min-width: 92px; text-align: right; }
+.elotable .egames { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; min-width: 46px; text-align: right; }
+.elotable .eempty { padding: 12px 14px; color: var(--muted); font-size: 12.5px; }
+
 /* ── replays panel: run tabs (newest first) + that run's replay list ── */
 .rtabs { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 0 8px; }
 .rtabs .chip.active { background: var(--cyan); color: #08202a; border-color: var(--ink); }
@@ -204,6 +222,11 @@ details.section > summary .count { margin-left: auto; color: var(--muted); font-
       <label><input type="checkbox" id="ratelock" checked> rates 0–1</label>
       <label><input type="checkbox" id="allmetrics"> all metrics</label>
     </div>
+    <details class="chartsec" id="elosec" open>
+      <summary>ratings<span class="n" id="eloNote"></span></summary>
+      <div class="rtabs" id="eloTabs"></div>
+      <div class="elotable" id="eloTable"></div>
+    </details>
     <details class="chartsec" id="replaysec" open>
       <summary>replays<span class="n" id="replayCount"></span></summary>
       <div class="rtabs" id="replayTabs"></div>
@@ -524,6 +547,46 @@ function renderGroup(grid, tags, visible, a, lockRates, theme) {
   }
 }
 
+/* ══ ratings panel — BT/Elo leaderboard per environment ══════════════════════════ */
+function renderElo() {
+  const elo = index.elo || {};
+  const envs = Object.keys(elo).filter(e => elo[e].agents && Object.keys(elo[e].agents).length);
+  const tabs = $("eloTabs");
+  tabs.textContent = "";
+  if (!envs.length) {
+    $("eloNote").textContent = "";
+    $("eloTable").innerHTML = '<div class="eempty">No rating tables yet — run a tournament.</div>';
+    return;
+  }
+  let active = LS.get("elotab", null);
+  if (!envs.includes(active)) active = envs[0];
+  for (const e of envs) {
+    const chip = document.createElement("span");
+    chip.className = "chip" + (e === active ? " active" : "");
+    chip.textContent = e;
+    chip.addEventListener("click", () => { LS.set("elotab", e); renderElo(); });
+    tabs.appendChild(chip);
+  }
+  const tab = elo[active];
+  const rows = Object.entries(tab.agents)
+    .sort((x, y) => y[1].rating - x[1].rating);
+  $("eloNote").textContent = `${tab.n_games_total || ""} games`;
+  const box = $("eloTable");
+  box.textContent = "";
+  rows.forEach(([name, a], i) => {
+    const div = document.createElement("div");
+    div.className = "erow";
+    const trained = !name.startsWith("script") && name !== "random";   // trained agents pop
+    div.innerHTML =
+      `<span class="erank">${i + 1}</span>
+       <span class="ename${trained ? " trained" : ""}">${name}</span>
+       <span class="erating">${Math.round(a.rating)}</span>
+       <span class="eci">[${Math.round(a.ci_lo)}, ${Math.round(a.ci_hi)}]</span>
+       <span class="egames">${a.games}g</span>`;
+    box.appendChild(div);
+  });
+}
+
 /* ══ replays panel — tabs by run (newest first), rows link straight into the lobby player ══ */
 function renderReplays() {
   // Only the runs SELECTED in the picker; latest versioned first, non-versioned at the end.
@@ -590,6 +653,7 @@ async function refresh(force) {
   if (sig !== paneSig) { paneSig = sig; buildRunsPane(); }   // run set changed: full pane build
   else updateRunsPane();                                     // else: in-place text updates only
   renderReplays();
+  renderElo();
   if (changed || force) {
     for (const n of selected) delete runData[n];   // refetch: series may have grown
     await loadSelected();

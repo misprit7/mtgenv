@@ -164,8 +164,20 @@ def sweep(tb_root: str, out_dir: str, cache: dict, lobby: str) -> None:
              "t": r.get("created_at", 0)}
             for r in mine
         ]
+    # Elo/BT rating tables (written by python/rate_agent.py) — fail-soft when absent.
+    elo = {}
+    elo_root = os.path.join(REPO, "data", "elo")
+    if os.path.isdir(elo_root):
+        for env in sorted(os.listdir(elo_root)):
+            p = os.path.join(elo_root, env, "ratings.json")
+            if os.path.isfile(p):
+                try:
+                    with open(p) as f:
+                        elo[env] = json.load(f)
+                except Exception:
+                    pass
     _atomic_write(os.path.join(out_dir, "index.json"),
-                  {"generated_at": time.time(), "runs": entries})
+                  {"generated_at": time.time(), "runs": entries, "elo": elo})
 
 
 class Handler(SimpleHTTPRequestHandler):
