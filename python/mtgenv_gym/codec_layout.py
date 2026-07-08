@@ -35,6 +35,10 @@ def slot_layout(max_hand: int, max_perm: int, max_stack: int, action_dim: int) -
     no = yes + 1
     dim = no + 1
     assert dim == action_dim, f"slot layout total {dim} != action_dim {action_dim} (obs↔codec desync)"
-    # Only the entity-backed buckets are used for content scatter; the rest ride the slot embedding.
-    return {"hand": (hand, max_hand), "perm": (perm, max_perm), "stack": (stack, max_stack),
-            "action_dim": dim}
+    # (base, count) for EVERY bucket — the entity-backed ones (hand/perm/stack) are the content-scatter
+    # targets in v2; v3 additionally points player/mode/color/number/yes/no slots at content tokens, so
+    # it needs all bases. Additive: existing callers index only the keys they use.
+    return {"commit": (commit, 1), "hand": (hand, max_hand), "perm": (perm, max_perm),
+            "player": (player, _N_PLAYER_SLOTS), "stack": (stack, max_stack),
+            "mode": (mode, _MAX_MODES), "color": (color, _N_COLORS), "number": (number, _MAX_NUM),
+            "yes": (yes, 1), "no": (no, 1), "action_dim": dim}

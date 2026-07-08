@@ -50,7 +50,20 @@ from mtgenv_gym.codec_layout import slot_layout  # the canonical Python-side mir
 # a checkpoint loads under whatever spec it was saved with. obs.rs bf_feat relation-id columns
 # (Tier-3) are absolute F_PERM-tail indices, unchanged across the MAX_PERM bump.
 _BF_INSTANCE_ID, _BF_BLOCKING_ID, _BF_ATTACHED_ID = 45, 46, 47
-_N_RELATION_COLS = 3  # the trailing id columns, sliced OUT of the content projection
+_N_RELATION_COLS = 3  # the trailing id columns (v2 only), sliced OUT of the content projection
+
+# ── v3 contract additions (OBS2_DESIGN.md §7; detected by an `edges` obs key) ─────────────────────
+# v3 drops *_cardid + the three bf relation-id cols (bf_feat 48→45), renames *_ids→*_grpid, and adds:
+#   edges (MAX_EDGES×4: src_row, dst_row, type, k; pad rows = -1) consumed as a per-(type,direction,head)
+#   attention bias — the adjacency the v2 arm rebuilt from id-equality, handed over directly; and
+#   choice_feat (MAX_CHOICE×N) = content tokens for the decision's abstract options (mode/color/number/
+#   bool), giving the abstract action slots content for the pointer (deletes abstract_q, the 4.7 scale
+#   family). Player (you/opp) + decision tokens become always-present attention rows so the entity-index
+#   space [0, N) is the shared addressing for both attention rows and edge endpoints (§7.2).
+_MAX_CHOICE = 16
+_N_EDGE_TYPES = 6           # §7.4 ids 0..5: BLOCKS ATTACKS ATTACHED_TO TARGETS STACK_SOURCE PENDING_PICK
+_EDGE_PAD = -1
+_N_SPECIAL = 3             # appended always-present rows: you, opp, decision (edge indices 280/281/282)
 
 _TABLES = ("bf", "hand", "stack")
 
@@ -108,30 +121,46 @@ class _RelationalEncoder(nn.Module):
         # PRESENT rows (padded keys are -inf either way); the old full path stays available via this
         # flag for the equivalence gate. See `_encode_packed` / `_encode_full`.
         self.gather_present = gather_present
+        self.nhead = nhead
+        self.v3 = "edges" in obs_space.spaces        # OBS2 v3 contract (edges + choice_feat + *_grpid)
+        self.ids_suffix = "_grpid" if self.v3 else "_ids"
         self.id_embed = nn.Embedding(vocab, id_embed)
         self.proj = nn.ModuleDict()
         self.cardid_dims = {}
         self.content_dims = {}
         for name in _TABLES:
             fdim = obs_space[f"{name}_feat"].shape[-1]
-            if name == "bf":
-                fdim -= _N_RELATION_COLS   # relation ids are match-keys, not content
+            if name == "bf" and not self.v3:
+                fdim -= _N_RELATION_COLS   # v2: relation ids are match-keys, not content (v3 drops the cols)
             cid = f"{name}_cardid"
-            cdim = obs_space[cid].shape[-1] if cid in obs_space.spaces else 0
+            cdim = obs_space[cid].shape[-1] if cid in obs_space.spaces else 0   # v3: no *_cardid → 0
             self.cardid_dims[name] = cdim
             self.content_dims[name] = fdim
             self.proj[name] = nn.Linear(fdim + id_embed + cdim, d_model)
         self.type_emb = nn.Embedding(len(_TABLES), d_model)
         g = obs_space["globals"].shape[0]
-        dcid = obs_space["decision_cardid"].shape[-1] if "decision_cardid" in obs_space.spaces else 0
-        self.globals_proj = nn.Linear(g + dcid, d_model)
         self.layers = nn.ModuleList([_RelBiasLayer(d_model, nhead, ff) for _ in range(layers)])
-        # learned per-relation-type attention-bias magnitudes (blocker↔attacker, aura↔host).
-        self.w_block = nn.Parameter(torch.tensor(2.0))
-        self.w_attach = nn.Parameter(torch.tensor(2.0))
         self.query = nn.Parameter(torch.randn(1, 1, d_model) * 0.02)  # attention-pooling query
         self.pool = nn.MultiheadAttention(d_model, nhead, batch_first=True)
         self.pool_norm = nn.LayerNorm(d_model)
+        if self.v3:
+            # you/opp/decision content tokens (projected from globals; the per-seat blocks + decision
+            # one-hot + scalars all live there — exact seat-block slicing is a later refinement), the
+            # choice-option projection (pointer content for abstract buckets), and the per-(type,dir,head)
+            # edge attention bias that replaces v2's id-matched adjacency + w_block/w_attach.
+            self.you_proj = nn.Linear(g, d_model)
+            self.opp_proj = nn.Linear(g, d_model)
+            self.decision_proj = nn.Linear(g, d_model)
+            self.choice_proj = nn.Linear(obs_space["choice_feat"].shape[-1], d_model)
+            # per-(type, direction) additive attention bias, head-uniform (fits the layer's (B,N,N) mask;
+            # per-head is a flagged refinement). direction 0 = src→dst, 1 = dst→src.
+            self.edge_bias = nn.Parameter(torch.zeros(_N_EDGE_TYPES, 2))
+        else:
+            dcid = obs_space["decision_cardid"].shape[-1] if "decision_cardid" in obs_space.spaces else 0
+            self.globals_proj = nn.Linear(g + dcid, d_model)
+            # learned per-relation-type attention-bias magnitudes (blocker↔attacker, aura↔host).
+            self.w_block = nn.Parameter(torch.tensor(2.0))
+            self.w_attach = nn.Parameter(torch.tensor(2.0))
         # Normalize the contextualized entity embeddings before the pointer dot-product so the entity
         # action logits (q·emb) sit on the SAME scale as the abstract-slot logits (q·abstract_q).
         # Without this the raw transformer-output magnitudes make entity logits ~−10 vs abstract ~0, so
@@ -152,14 +181,14 @@ class _RelationalEncoder(nn.Module):
 
         return match(block), match(att)
 
-    def forward(self, obs):
-        B = obs["globals"].shape[0]
-        tokens, present = [], []
-        embs = {}
+    def _entity_tokens(self, obs):
+        """bf/hand/stack tokens + present flags (shared v2/v3). Reads `{name}{ids_suffix}` (v2 `_ids` /
+        v3 `_grpid`); the *_cardid parts appear only when the obs provides them (v2)."""
+        tokens, present, embs = [], [], {}
         for ti, name in enumerate(_TABLES):
             feat = obs[f"{name}_feat"]
-            content = feat[..., :self.content_dims[name]]            # drop bf relation-id cols
-            ids = (obs[f"{name}_ids"].long() % self.vocab)
+            content = feat[..., :self.content_dims[name]]            # v2: drop bf relation-id cols
+            ids = (obs[name + self.ids_suffix].long() % self.vocab)
             parts = [content, self.id_embed(ids)]
             if self.cardid_dims[name]:
                 parts.append(obs[f"{name}_cardid"])
@@ -167,11 +196,26 @@ class _RelationalEncoder(nn.Module):
             embs[name] = tok
             tokens.append(tok)
             present.append(feat[..., 0] > 0.5)                       # (B, R)
+        return tokens, present, embs
+
+    def _pool(self, H, pres):
+        """Attention-pool over present keys → (B, d) state (padded keys masked, so weights sum over
+        present only — no fixed-size denominator)."""
+        B = H.shape[0]
+        q = self.query.expand(B, -1, -1)
+        pooled, _ = self.pool(q, H, H, key_padding_mask=~pres, need_weights=False)
+        return self.pool_norm(pooled.squeeze(1))
+
+    def forward(self, obs):
+        return self._forward_v3(obs) if self.v3 else self._forward_v2(obs)
+
+    def _forward_v2(self, obs):
+        B = obs["globals"].shape[0]
+        tokens, present, embs = self._entity_tokens(obs)
         gin = [obs["globals"]]
         if "decision_cardid" in obs:
             gin.append(obs["decision_cardid"].reshape(B, -1))
         gtok = self.globals_proj(torch.cat(gin, dim=-1)).unsqueeze(1)  # (B, 1, d)
-
         H = torch.cat([gtok, *tokens], dim=1)                        # (B, N, d); N = 1 + MP + MH + MS
         B, N, _ = H.shape
         gpres = torch.ones(B, 1, dtype=torch.bool, device=H.device)
@@ -179,27 +223,67 @@ class _RelationalEncoder(nn.Module):
         mp = obs["bf_feat"].shape[1]                                 # actual bf row count (MAX_PERM)
         block_adj, att_adj = self._bf_adjacency(obs["bf_feat"])      # (B, MP, MP) each
         rel = self.w_block * block_adj + self.w_attach * att_adj     # (B, MP, MP) additive relation bias
-
-        # Run the L attention layers. Both paths are numerically identical on the PRESENT rows (the only
-        # rows the pooler + pointer read for present entities); they differ only on padded rows, whose
-        # embeddings feed action logits that are always masked illegal (padded rows are never legal
-        # actions). The pooled state is identical (padded keys are masked in the pool either way).
+        # Present-row gather vs full attention are identical on present rows (the only rows read); see
+        # `_encode_packed`. Both feed the shared pool + slice.
         H = (self._encode_packed if self.gather_present else self._encode_full)(H, pres, rel, mp)
-
-        kpm = ~pres                                                  # True = padded key (ignore in pool)
-        q = self.query.expand(B, -1, -1)
-        pooled, _ = self.pool(q, H, H, key_padding_mask=kpm, need_weights=False)
-        state = self.pool_norm(pooled.squeeze(1))                    # (B, d)
-        # split the contextualized entity tokens back out (skip the globals token at index 0) and
-        # normalize them for the pointer head (scale-balance with the abstract-slot queries).
-        Hn = self.out_norm(H)
-        off = 1
-        ctx = {}
+        state = self._pool(H, pres)
+        Hn = self.out_norm(H)                                        # scale-balance for the pointer
+        off, ctx = 1, {}                                             # skip the globals token at index 0
         for name in _TABLES:
-            r = embs[name].shape[1]
-            ctx[name] = Hn[:, off:off + r, :]
-            off += r
-        return state, ctx["bf"], ctx["hand"], ctx["stack"]
+            ctx[name] = Hn[:, off:off + embs[name].shape[1], :]
+            off += embs[name].shape[1]
+        return {"state": state, "bf": ctx["bf"], "hand": ctx["hand"], "stack": ctx["stack"]}
+
+    def _forward_v3(self, obs):
+        """v3: no globals token — you/opp/decision are appended as always-present rows so the attention
+        row order equals the §7.2 edge index space [bf | hand | stack | you | opp | decision]. Relations
+        come from the `edges` tensor as a per-(type,direction) attention bias (not id-matching)."""
+        B = obs["globals"].shape[0]
+        g = obs["globals"]
+        tokens, present, embs = self._entity_tokens(obs)
+        # you/opp/decision content tokens (projected from globals), always present.
+        specials = torch.stack([self.you_proj(g), self.opp_proj(g), self.decision_proj(g)], dim=1)  # (B,3,d)
+        H = torch.cat([*tokens, specials], dim=1)                    # (B, N, d); N = MP+MH+MS+3
+        B, N, _ = H.shape
+        spres = torch.ones(B, _N_SPECIAL, dtype=torch.bool, device=H.device)
+        pres = torch.cat([*present, spres], dim=1)                   # (B, N)
+        pair_bias = self._edge_bias(obs["edges"].long(), N)          # (B, N, N) additive edge bias
+        H = self._encode_full_bias(H, pres, pair_bias)               # (packed-coord edge bias = follow-up)
+        state = self._pool(H, pres)
+        Hn = self.out_norm(H)
+        off, ctx = 0, {}                                             # no globals token; bf starts at row 0
+        for name in _TABLES:
+            ctx[name] = Hn[:, off:off + embs[name].shape[1], :]
+            off += embs[name].shape[1]
+        you, opp, decision = Hn[:, off], Hn[:, off + 1], Hn[:, off + 2]  # (B, d) each
+        choice = self.out_norm(self.choice_proj(obs["choice_feat"]))     # (B, MAX_CHOICE, d) pointer content
+        return {"state": state, "bf": ctx["bf"], "hand": ctx["hand"], "stack": ctx["stack"],
+                "you": you, "opp": opp, "decision": decision, "choice": choice}
+
+    def _edge_bias(self, edges, N):
+        """(B, N, N) additive attention bias from the edge list: edge (src_row, dst_row, type, k) adds
+        edge_bias[type, 0] to logits[src, dst] and edge_bias[type, 1] to logits[dst, src] (directional);
+        pad rows (src == -1) are skipped. Head-uniform (per-(type,direction)); per-head is a refinement."""
+        B, _ME, _ = edges.shape
+        src, dst, etype = edges[..., 0], edges[..., 1], edges[..., 2]
+        valid = src >= 0
+        bias = torch.zeros(B, N, N, device=edges.device, dtype=self.edge_bias.dtype)
+        b_idx = torch.arange(B, device=edges.device).unsqueeze(1).expand_as(src)
+        et = etype.clamp(min=0)                                      # clamp pad (-1) → 0; masked by `valid`
+        fwd = self.edge_bias[et, 0][valid]
+        rev = self.edge_bias[et, 1][valid]
+        bi, si, di = b_idx[valid], src[valid], dst[valid]
+        bias.index_put_((bi, si, di), fwd, accumulate=True)
+        bias.index_put_((bi, di, si), rev, accumulate=True)
+        return bias
+
+    def _encode_full_bias(self, H, pres, pair_bias):
+        """L attention layers over all N tokens with a precomputed (B, N, N) additive pair bias + -inf on
+        padded keys. (The v2 path builds its bf-bf bias inline; this is the v3 edge-bias entry point.)"""
+        bias = pair_bias.masked_fill((~pres).unsqueeze(1), float("-inf"))
+        for layer in self.layers:
+            H = layer(H, bias)
+        return H
 
     def _full_bias(self, pres, rel, mp):
         """The full (B, N, N) additive attention mask: relation bias on the bf-bf block + -inf on padded
@@ -251,17 +335,26 @@ class _RelationalEncoder(nn.Module):
 
 
 class _PackSpec:
-    """Flat-features layout shared by the extractor (writer) and the heads (readers)."""
+    """Flat-features layout shared by the extractor (writer) and the heads (readers). v3 appends the
+    always-present you/opp/decision token embeddings + the projected choice rows (pointer content for
+    the player / commit / abstract-modal action slots)."""
 
-    def __init__(self, d_model, sizes):
+    def __init__(self, d_model, sizes, v3=False):
         self.d = d_model
         self.state_dim = d_model
         self.mp, self.mh, self.ms = sizes["bf"], sizes["hand"], sizes["stack"]
+        self.v3 = v3
         self.o_state = 0
         self.o_bf = self.state_dim
         self.o_hand = self.o_bf + self.mp * self.d
         self.o_stack = self.o_hand + self.mh * self.d
         self.total = self.o_stack + self.ms * self.d
+        if v3:
+            self.o_you = self.total
+            self.o_opp = self.o_you + self.d
+            self.o_decision = self.o_opp + self.d
+            self.o_choice = self.o_decision + self.d
+            self.total = self.o_choice + _MAX_CHOICE * self.d
 
 
 class RelationalAttnExtractor(BaseFeaturesExtractor):
@@ -269,7 +362,7 @@ class RelationalAttnExtractor(BaseFeaturesExtractor):
 
     def __init__(self, observation_space, d_model=48, nhead=4, ff=128, layers=2):
         sizes = {name: observation_space[f"{name}_feat"].shape[0] for name in _TABLES}
-        pack = _PackSpec(d_model, sizes)
+        pack = _PackSpec(d_model, sizes, v3="edges" in observation_space.spaces)
         super().__init__(observation_space, features_dim=pack.total)
         self.enc = _RelationalEncoder(observation_space, d_model=d_model, nhead=nhead, ff=ff, layers=layers)
         self.pack = pack
@@ -278,9 +371,13 @@ class RelationalAttnExtractor(BaseFeaturesExtractor):
         self.table_sizes = sizes
 
     def forward(self, obs):
-        state, bf, hand, stack = self.enc(obs)
-        B = state.shape[0]
-        return torch.cat([state, bf.reshape(B, -1), hand.reshape(B, -1), stack.reshape(B, -1)], dim=1)
+        out = self.enc(obs)
+        B = out["state"].shape[0]
+        parts = [out["state"], out["bf"].reshape(B, -1), out["hand"].reshape(B, -1),
+                 out["stack"].reshape(B, -1)]
+        if self.pack.v3:
+            parts += [out["you"], out["opp"], out["decision"], out["choice"].reshape(B, -1)]
+        return torch.cat(parts, dim=1)
 
 
 class PointerHead(nn.Module):
@@ -293,30 +390,54 @@ class PointerHead(nn.Module):
         self.action_dim = int(action_dim)
         d = pack.d
         self.q_proj = nn.Linear(pack.state_dim, d)
-        self.scale = d ** -0.5           # √d scaling so logits are O(1) (entity emb + abstract_q unit-var)
+        self.scale = d ** -0.5           # √d scaling so logits are O(1) (unit-var content embeddings)
         # Entity/abstract split derived from the table sizes + action_dim (no hard-coded bucket bases).
         self._entity_slots = _entity_slots(pack.mh, pack.mp, pack.ms, self.action_dim)
-        self._abstract_idx = _abstract_slot_indices(self._entity_slots, self.action_dim)
-        self.abstract_q = nn.Parameter(torch.randn(len(self._abstract_idx), d))  # unit-var, like out_norm emb
+        if pack.v3:
+            # v3: every slot is a content pointer (player/commit/modal buckets get real content tokens),
+            # so the whole abstract_q family — the 4.7 unnormalized-query scale bug — is deleted.
+            self._lay = slot_layout(pack.mh, pack.mp, pack.ms, self.action_dim)
+        else:
+            self._abstract_idx = _abstract_slot_indices(self._entity_slots, self.action_dim)
+            self.abstract_q = nn.Parameter(torch.randn(len(self._abstract_idx), d))  # unit-var
 
     def _unpack(self, feats):
         p = self.pack
         B = feats.shape[0]
         state = feats[:, p.o_state:p.o_state + p.state_dim]
-        bf = feats[:, p.o_bf:p.o_hand].reshape(B, p.mp, p.d)
-        hand = feats[:, p.o_hand:p.o_stack].reshape(B, p.mh, p.d)
-        stack = feats[:, p.o_stack:p.total].reshape(B, p.ms, p.d)
-        return state, {"bf": bf, "hand": hand, "stack": stack}
+        bf = feats[:, p.o_bf:p.o_bf + p.mp * p.d].reshape(B, p.mp, p.d)
+        hand = feats[:, p.o_hand:p.o_hand + p.mh * p.d].reshape(B, p.mh, p.d)
+        stack = feats[:, p.o_stack:p.o_stack + p.ms * p.d].reshape(B, p.ms, p.d)
+        ctx = {"bf": bf, "hand": hand, "stack": stack}
+        if p.v3:
+            ctx["you"] = feats[:, p.o_you:p.o_you + p.d]
+            ctx["opp"] = feats[:, p.o_opp:p.o_opp + p.d]
+            ctx["decision"] = feats[:, p.o_decision:p.o_decision + p.d]
+            ctx["choice"] = feats[:, p.o_choice:p.o_choice + _MAX_CHOICE * p.d].reshape(B, _MAX_CHOICE, p.d)
+        return state, ctx
 
     def forward(self, feats):
         state, ctx = self._unpack(feats)
         B = state.shape[0]
         q = self.q_proj(state) * self.scale                          # (B, d), √d-scaled
         logits = torch.zeros(B, self.action_dim, device=feats.device, dtype=feats.dtype)
-        for name, (base, count) in self._entity_slots.items():
-            emb = ctx[name][:, :count, :]                            # (B, count, d) — out_norm'd, unit-var
-            logits[:, base:base + count] = torch.einsum("bd,bcd->bc", q, emb)
-        logits[:, self._abstract_idx] = torch.einsum("bd,ad->ba", q, self.abstract_q)
+        for name, (base, count) in self._entity_slots.items():       # HAND/PERM/STACK ← entity rows
+            logits[:, base:base + count] = torch.einsum("bd,bcd->bc", q, ctx[name][:, :count, :])
+        if not self.pack.v3:
+            logits[:, self._abstract_idx] = torch.einsum("bd,ad->ba", q, self.abstract_q)
+            return logits
+        lay = self._lay
+        pbase, pcnt = lay["player"]                                   # PLAYER ← [you, opp] tokens
+        players = torch.stack([ctx["you"], ctx["opp"]], dim=1)       # (B, 2, d)
+        logits[:, pbase:pbase + pcnt] = torch.einsum("bd,bcd->bc", q, players[:, :pcnt, :])
+        logits[:, lay["commit"][0]] = (q * ctx["decision"]).sum(-1)  # COMMIT ← decision token
+        choice = ctx["choice"]                                        # MODE/COLOR/NUMBER ← choice rows j→j
+        for bucket in ("mode", "color", "number"):
+            base, cnt = lay[bucket]
+            k = min(cnt, choice.shape[1])
+            logits[:, base:base + k] = torch.einsum("bd,bcd->bc", q, choice[:, :k, :])
+        logits[:, lay["yes"][0]] = (q * choice[:, 0]).sum(-1)        # YES/NO ← choice rows 0, 1 (bool family)
+        logits[:, lay["no"][0]] = (q * choice[:, 1]).sum(-1)
         return logits
 
 
