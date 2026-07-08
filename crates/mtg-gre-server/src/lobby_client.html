@@ -135,7 +135,10 @@
   .dcwarn { position: absolute; top: 4px; right: 4px; background: var(--yellow); color: #232a4d; border-radius: 4px;
     font-size: 11px; font-weight: 900; padding: 0 3px; line-height: 15px; border:2px solid var(--ink); }
   #cardpreview { position: fixed; display: none; width: 300px; border-radius: 10px; z-index: 200;
-    border:2.5px solid var(--ink); box-shadow: 5px 5px 0 var(--magenta); pointer-events: none; }
+    border:2.5px solid var(--ink); box-shadow: 5px 5px 0 var(--magenta); pointer-events: none;
+    /* Inert image: no iOS image callout ("Open Image" would navigate away), no selection/drag.
+       The touch path re-enables pointer-events for tap-to-dismiss only. */
+    -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
   /* deck builder */
   .deckacts { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
   .deckhdr { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
@@ -721,6 +724,9 @@ function showCardPreviewCentered(url, grpId) {
   p.style.left = Math.max(8, (window.innerWidth - w) / 2) + "px";
   p.style.top = Math.max(8, (window.innerHeight - h) / 2) + "px";
 }
+// No browser image context menu on the preview (long-press/right-click would offer "Open Image",
+// navigating away from the lobby).
+$("cardpreview").addEventListener("contextmenu", (e) => e.preventDefault());
 if (!HOVER) {
   // Tap the preview → dismiss (stop here so it doesn't fall through to a card underneath).
   $("cardpreview").addEventListener("click", (e) => { e.stopPropagation(); hideCardPreview(); });

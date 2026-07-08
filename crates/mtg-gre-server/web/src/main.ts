@@ -1277,7 +1277,7 @@ document.addEventListener("click", (e) => {
 // Scoped to previewable cards so text everywhere else stays selectable.
 document.addEventListener("contextmenu", (e) => {
   const t = e.target as HTMLElement;
-  if (t && t.closest && t.closest("[data-preview]")) e.preventDefault();
+  if (t && t.closest && t.closest("[data-preview], .preview-overlay")) e.preventDefault();
 }, true);
 
 // ── stack → target arrows ──────────────────────────────────────────────────────

@@ -369,7 +369,10 @@
     align-items: center; justify-content: center; background: rgba(15,17,30,.8); padding: 20px; }
   .preview-overlay.show { display: flex; }
   .preview-overlay img { max-width: 90vw; max-height: 84vh; border-radius: 14px;
-    box-shadow: 0 14px 50px rgba(0,0,0,.7); }
+    box-shadow: 0 14px 50px rgba(0,0,0,.7);
+    /* Inert image: no iOS image callout ("Open Image" would navigate away), no selection/drag.
+       Taps still dismiss via the overlay's click handler. */
+    -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
   .preview-overlay .preview-close { position: fixed; top: 10px; right: 16px; color: #fff;
     font-size: 30px; line-height: 1; font-weight: 700; cursor: pointer; text-shadow: 0 1px 4px #000; }
   /* Bottom-sheet slot for your player strip (mobile only). Empty & inert on desktop; on mobile the
