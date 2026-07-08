@@ -71,6 +71,7 @@ a.iconbtn { text-decoration: none; display: inline-flex; align-items: center; }
 /* ── layout: run picker on top (phone) / left pane (wide), charts after ── */
 .wrap { display: grid; gap: 12px; padding: 12px; max-width: 1500px; margin: 0 auto; }
 @media (min-width: 1000px) { .wrap { grid-template-columns: 320px minmax(0, 1fr); align-items: start; } }
+#ratingsPage { grid-column: 1 / -1; max-width: 820px; }
 @media (max-width: 560px) { .topbar .sub { display: none; } .topbar h1 { font-size: 16px; } }
 
 /* ── runs pane ── */
@@ -154,7 +155,22 @@ details.section > summary .count { margin-left: auto; color: var(--muted); font-
 .grid { display: grid; gap: 12px; grid-template-columns: 1fr; }
 @media (min-width: 700px) { .grid { grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); } }
 
-/* ── ratings panel: env tabs + BT/Elo leaderboard ── */
+/* ── hamburger drawer ── */
+.backdrop { position: fixed; inset: 0; z-index: 90; background: rgba(15,17,30,.45); }
+.drawer {
+  position: fixed; top: 0; left: 0; bottom: 0; z-index: 95; width: 230px; padding: 14px 12px;
+  background: var(--panel); border-right: 3px solid var(--line); box-shadow: 6px 0 0 var(--cyan);
+  display: flex; flex-direction: column; gap: 8px;
+}
+.drawer-item {
+  text-align: left; background: var(--surface); color: var(--ink); border: 2px solid var(--line);
+  border-radius: 7px 4px 7px 5px; padding: 12px 14px; font: inherit; font-weight: 700;
+  font-size: 14px; cursor: pointer; min-height: 46px;
+}
+.drawer-item.active { background: var(--cyan); color: #08202a; }
+.drawer-item:active { transform: translate(1px,1px); }
+
+/* ── ratings page: env/version tabs + BT/Elo leaderboard with descriptions ── */
 .elotable {
   background: var(--panel); border: 2.5px solid var(--line); border-radius: 7px 5px 8px 6px;
   box-shadow: 3px 3px 0 var(--yellow); padding: 4px 0; overflow-x: auto;
@@ -165,7 +181,7 @@ details.section > summary .count { margin-left: auto; color: var(--muted); font-
 }
 .elotable .erow:first-child { border-top: none; }
 .elotable .erank { color: var(--muted); min-width: 20px; font-variant-numeric: tabular-nums; }
-.elotable .ename { font-weight: 700; flex: 1; word-break: break-all; }
+.elotable .ename { font-weight: 700; flex: 1; overflow-wrap: anywhere; }
 .elotable .ename.trained { color: var(--magenta); }
 .elotable .erating { font-weight: 800; font-variant-numeric: tabular-nums; min-width: 52px; text-align: right; }
 .elotable .eci { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; min-width: 92px; text-align: right; }
@@ -204,12 +220,18 @@ details.section > summary .count { margin-left: auto; color: var(--muted); font-
 </head>
 <body>
 <header class="topbar">
-  <h1>mtgenv <span class="spot">·</span> training</h1>
+  <button class="iconbtn" id="menuBtn" title="menu">☰</button>
+  <h1>mtgenv <span class="spot">·</span> <span id="viewTitle">training</span></h1>
   <span class="sub" id="synced"></span>
   <span class="grow"></span>
   <a class="iconbtn" id="lobbylink" title="game lobby (replays)">▶ lobby</a>
   <button class="iconbtn" id="themebtn" title="theme">◐</button>
 </header>
+<div class="backdrop" id="backdrop" hidden></div>
+<nav class="drawer" id="drawer" hidden>
+  <button class="drawer-item" data-view="metrics">📈 Metrics</button>
+  <button class="drawer-item" data-view="ratings">🏆 Ratings</button>
+</nav>
 
 <div class="wrap">
   <aside class="runs" id="runs"></aside>
@@ -222,11 +244,6 @@ details.section > summary .count { margin-left: auto; color: var(--muted); font-
       <label><input type="checkbox" id="ratelock" checked> rates 0–1</label>
       <label><input type="checkbox" id="allmetrics"> all metrics</label>
     </div>
-    <details class="chartsec" id="elosec" open>
-      <summary>ratings<span class="n" id="eloNote"></span></summary>
-      <div class="rtabs" id="eloTabs"></div>
-      <div class="elotable" id="eloTable"></div>
-    </details>
     <details class="chartsec" id="replaysec" open>
       <summary>replays<span class="n" id="replayCount"></span></summary>
       <div class="rtabs" id="replayTabs"></div>
@@ -235,8 +252,11 @@ details.section > summary .count { margin-left: auto; color: var(--muted); font-
     <div class="chartcol" id="charts"></div>
     <div class="empty" id="empty" hidden>No runs selected — pick some from the run list.</div>
   </main>
+  <section class="main" id="ratingsPage" hidden>
+    <div class="rtabs" id="eloTabs"></div>
+    <div class="elotable" id="eloTable"></div>
+  </section>
 </div>
-<div class="footer">evalkit dashboard · TB events are the source of truth · re-syncs every 90 s</div>
 
 <script src="/chart.umd.min.js"></script>
 <script>
@@ -547,45 +567,113 @@ function renderGroup(grid, tags, visible, a, lockRates, theme) {
   }
 }
 
-/* ══ ratings panel — BT/Elo leaderboard per environment ══════════════════════════ */
+/* ══ ratings page — BT/Elo leaderboards per environment (versioned) ═══════════════
+   Payload shapes supported: flat {agents:…} (pre-versioning) or {current:N, versions:{N:{agents:…}}}.
+   Defaults to the env's CURRENT version; older versions selectable but visually marked. */
+function eloVersions(entry) {
+  if (entry.versions) return { current: String(entry.current), versions: entry.versions };
+  return { current: "1", versions: { "1": entry } };   // legacy flat shape
+}
+
+function agentDescription(name, a) {
+  // Registry notes + (for trained agents) the matching run's full description.
+  const parts = [];
+  if (a.notes) parts.push(a.notes);
+  const run = index.runs.find(r => r.name.startsWith(name));
+  if (run && run.description) parts.push(run.description);
+  return parts.join("\n\n---\n\n");
+}
+
 function renderElo() {
   const elo = index.elo || {};
-  const envs = Object.keys(elo).filter(e => elo[e].agents && Object.keys(elo[e].agents).length);
+  const envs = Object.keys(elo);
   const tabs = $("eloTabs");
   tabs.textContent = "";
   if (!envs.length) {
-    $("eloNote").textContent = "";
     $("eloTable").innerHTML = '<div class="eempty">No rating tables yet — run a tournament.</div>';
     return;
   }
-  let active = LS.get("elotab", null);
-  if (!envs.includes(active)) active = envs[0];
+  let activeEnv = LS.get("elotab", null);
+  if (!envs.includes(activeEnv)) activeEnv = envs[0];
+  const { current, versions } = eloVersions(elo[activeEnv]);
+  const vkeys = Object.keys(versions).sort((a, b) => (+b) - (+a));
+  let activeV = LS.get("elover." + activeEnv, current);
+  if (!vkeys.includes(activeV)) activeV = current;
+
   for (const e of envs) {
     const chip = document.createElement("span");
-    chip.className = "chip" + (e === active ? " active" : "");
+    chip.className = "chip" + (e === activeEnv ? " active" : "");
     chip.textContent = e;
     chip.addEventListener("click", () => { LS.set("elotab", e); renderElo(); });
     tabs.appendChild(chip);
   }
-  const tab = elo[active];
-  const rows = Object.entries(tab.agents)
-    .sort((x, y) => y[1].rating - x[1].rating);
-  $("eloNote").textContent = `${tab.n_games_total || ""} games`;
+  if (vkeys.length > 1) {   // version selector, only when history exists
+    const sep = document.createElement("span");
+    sep.style.cssText = "flex-basis:100%;height:0";
+    tabs.appendChild(sep);
+    for (const v of vkeys) {
+      const chip = document.createElement("span");
+      chip.className = "chip" + (v === activeV ? " active" : "");
+      chip.textContent = "v" + v + (v === current ? " (current)" : "");
+      chip.addEventListener("click", () => { LS.set("elover." + activeEnv, v); renderElo(); });
+      tabs.appendChild(chip);
+    }
+  }
+
+  const tab = versions[activeV] || { agents: {} };
   const box = $("eloTable");
   box.textContent = "";
+  if (activeV !== current) {
+    const warn = document.createElement("div");
+    warn.className = "eempty";
+    warn.textContent = `⚠ historical table (v${activeV}) — env contract has changed since; not comparable to current`;
+    box.appendChild(warn);
+  }
+  const rows = Object.entries(tab.agents || {}).sort((x, y) => y[1].rating - x[1].rating);
+  if (!rows.length) box.innerHTML += '<div class="eempty">Empty table.</div>';
   rows.forEach(([name, a], i) => {
-    const div = document.createElement("div");
-    div.className = "erow";
-    const trained = !name.startsWith("script") && name !== "random";   // trained agents pop
-    div.innerHTML =
-      `<span class="erank">${i + 1}</span>
-       <span class="ename${trained ? " trained" : ""}">${name}</span>
-       <span class="erating">${Math.round(a.rating)}</span>
-       <span class="eci">[${Math.round(a.ci_lo)}, ${Math.round(a.ci_hi)}]</span>
-       <span class="egames">${a.games}g</span>`;
-    box.appendChild(div);
+    const row = document.createElement("div");
+    const trained = !name.startsWith("script") && name !== "random";
+    const desc = agentDescription(name, a);
+    row.innerHTML =
+      `<div class="erow">
+         <span class="erank">${i + 1}</span>
+         <span class="ename${trained ? " trained" : ""}">${name}</span>
+         <span class="erating">${Math.round(a.rating)}</span>
+         <span class="eci">[${Math.round(a.ci_lo)}, ${Math.round(a.ci_hi)}]</span>
+         <span class="egames">${a.games}g</span>
+         ${desc ? '<button class="infobtn" aria-expanded="false" title="about this agent">ⓘ</button>' : ""}
+       </div>
+       ${desc ? `<div class="desc" hidden>${md(desc)}</div>` : ""}`;
+    const info = row.querySelector(".infobtn");
+    if (info) info.addEventListener("click", () => {
+      const d = row.querySelector(".desc");
+      d.hidden = !d.hidden;
+      info.setAttribute("aria-expanded", String(!d.hidden));
+    });
+    box.appendChild(row);
   });
 }
+
+/* ══ view routing — hamburger drawer, metrics vs ratings pages ════════════════════ */
+function showView(v) {
+  const ratings = v === "ratings";
+  document.querySelector("main.main").hidden = ratings;
+  $("runs").hidden = ratings;
+  $("ratingsPage").hidden = !ratings;
+  $("viewTitle").textContent = ratings ? "ratings" : "training";
+  document.querySelectorAll(".drawer-item").forEach(b =>
+    b.classList.toggle("active", b.dataset.view === v));
+  LS.set("view", v);
+  if (location.hash !== "#/" + v) history.replaceState(null, "", "#/" + v);
+  closeDrawer();
+}
+function openDrawer() { $("drawer").hidden = false; $("backdrop").hidden = false; }
+function closeDrawer() { $("drawer").hidden = true; $("backdrop").hidden = true; }
+$("menuBtn").addEventListener("click", openDrawer);
+$("backdrop").addEventListener("click", closeDrawer);
+document.querySelectorAll(".drawer-item").forEach(b =>
+  b.addEventListener("click", () => showView(b.dataset.view)));
 
 /* ══ replays panel — tabs by run (newest first), rows link straight into the lobby player ══ */
 function renderReplays() {
@@ -680,6 +768,11 @@ $("themebtn").addEventListener("click", () => {
 });
 $("lobbylink").href = `http://${location.hostname}:8080/`;
 
+showView((location.hash.match(/^#\/(ratings|metrics)/) || [])[1] || LS.get("view", "metrics"));
+window.addEventListener("hashchange", () => {
+  const v = (location.hash.match(/^#\/(ratings|metrics)/) || [])[1];
+  if (v) showView(v);
+});
 refresh(true);
 setInterval(() => refresh(false).catch(() => {}), 45_000);
 // Mobile browsers suspend timers in background tabs — refresh immediately on return so the

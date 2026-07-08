@@ -165,6 +165,8 @@ def sweep(tb_root: str, out_dir: str, cache: dict, lobby: str) -> None:
             for r in mine
         ]
     # Elo/BT rating tables (written by python/rate_agent.py) — fail-soft when absent.
+    # Registry notes (agents.json) are merged per agent so the dashboard can describe each
+    # strategy; trained agents additionally match their run's description client-side.
     elo = {}
     elo_root = os.path.join(REPO, "data", "elo")
     if os.path.isdir(elo_root):
@@ -174,6 +176,13 @@ def sweep(tb_root: str, out_dir: str, cache: dict, lobby: str) -> None:
                 try:
                     with open(p) as f:
                         elo[env] = json.load(f)
+                    reg_p = os.path.join(elo_root, env, "agents.json")
+                    if os.path.isfile(reg_p):
+                        with open(reg_p) as f:
+                            reg = json.load(f)
+                        for name, a in elo[env].get("agents", {}).items():
+                            a["notes"] = reg.get(name, {}).get("notes")
+                            a["kind"] = reg.get(name, {}).get("kind")
                 except Exception:
                     pass
     _atomic_write(os.path.join(out_dir, "index.json"),
