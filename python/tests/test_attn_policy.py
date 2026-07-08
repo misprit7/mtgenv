@@ -82,7 +82,7 @@ def test_pointer_slot_scores_matching_entity():
     B = 2
     feats = torch.randn(B, pack.total)
     state, ctx = head._unpack(feats)
-    q = head.q_proj(state)
+    q = head.q_proj(state) * head.scale     # √d-scaled query (pointer balances entity vs abstract logits)
     logits = head(feats)
     # entity slot k of each bucket == q · that bucket's contextual entity-emb k (exact alignment).
     for name, base, count in [("bf", _PERM_BASE, _MAX_PERM), ("hand", _HAND_BASE, _MAX_HAND)]:

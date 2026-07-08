@@ -122,6 +122,12 @@ class _RelationalEncoder(nn.Module):
         self.query = nn.Parameter(torch.randn(1, 1, d_model) * 0.02)  # attention-pooling query
         self.pool = nn.MultiheadAttention(d_model, nhead, batch_first=True)
         self.pool_norm = nn.LayerNorm(d_model)
+        # Normalize the contextualized entity embeddings before the pointer dot-product so the entity
+        # action logits (q·emb) sit on the SAME scale as the abstract-slot logits (q·abstract_q).
+        # Without this the raw transformer-output magnitudes make entity logits ~−10 vs abstract ~0, so
+        # the policy never samples an entity action (attack/cast) and PPO can't learn — the pointer must
+        # be scale-balanced. Paired with the √d scaling in PointerHead.
+        self.out_norm = nn.LayerNorm(d_model)
 
     def _bf_adjacency(self, bf_feat):
         """(B, MP, MP) symmetric 0/1 adjacency from id-matching, per relation type."""
@@ -176,12 +182,14 @@ class _RelationalEncoder(nn.Module):
         q = self.query.expand(B, -1, -1)
         pooled, _ = self.pool(q, H, H, key_padding_mask=kpm, need_weights=False)
         state = self.pool_norm(pooled.squeeze(1))                    # (B, d)
-        # split the contextualized entity tokens back out of H (skip the globals token at index 0).
+        # split the contextualized entity tokens back out (skip the globals token at index 0) and
+        # normalize them for the pointer head (scale-balance with the abstract-slot queries).
+        Hn = self.out_norm(H)
         off = 1
         ctx = {}
         for name in _TABLES:
             r = embs[name].shape[1]
-            ctx[name] = H[:, off:off + r, :]
+            ctx[name] = Hn[:, off:off + r, :]
             off += r
         return state, ctx["bf"], ctx["hand"], ctx["stack"]
 
@@ -228,8 +236,9 @@ class PointerHead(nn.Module):
         self.pack = pack
         d = pack.d
         self.q_proj = nn.Linear(pack.state_dim, d)
+        self.scale = d ** -0.5           # √d scaling so logits are O(1) (entity emb + abstract_q unit-var)
         self._abstract_idx = _abstract_slot_indices()
-        self.abstract_q = nn.Parameter(torch.randn(len(self._abstract_idx), d) * (1.0 / d ** 0.5))
+        self.abstract_q = nn.Parameter(torch.randn(len(self._abstract_idx), d))  # unit-var, like out_norm emb
 
     def _unpack(self, feats):
         p = self.pack
@@ -243,10 +252,10 @@ class PointerHead(nn.Module):
     def forward(self, feats):
         state, ctx = self._unpack(feats)
         B = state.shape[0]
-        q = self.q_proj(state)                                       # (B, d)
+        q = self.q_proj(state) * self.scale                          # (B, d), √d-scaled
         logits = torch.zeros(B, _ACTION_DIM, device=feats.device, dtype=feats.dtype)
         for name, (base, count) in _ENTITY_SLOTS.items():
-            emb = ctx[name][:, :count, :]                            # (B, count, d)
+            emb = ctx[name][:, :count, :]                            # (B, count, d) — out_norm'd, unit-var
             logits[:, base:base + count] = torch.einsum("bd,bcd->bc", q, emb)
         logits[:, self._abstract_idx] = torch.einsum("bd,ad->ba", q, self.abstract_q)
         return logits
