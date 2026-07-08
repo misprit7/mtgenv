@@ -3,6 +3,32 @@
 Short, dated entries for future-agent consumption. Newest first. One line or a few bullets
 per unit of meaningful progress. Keep it terse — detail lives in `docs/` and git history.
 
+## 2026-07-08 (PPO combat-judgment baseline 4.4-4.6 + relational-attention arm 4.7-4.9)
+
+- **Obs audit + `is_pending_combat` flag (11133e8, F_PERM 44→45):** DeclareBlockers double-block IS
+  observable — per-attacker blocked-by count (col 43) = "in progress" signal; added a per-row
+  `is_pending_combat` self-flag (col 44) so the value/feature net (never sees the action mask) knows
+  which of MY creatures are already committed mid-decision. New `codec::Interaction::pending_attackers`.
+- **Swine combat-judgment analyzers (2121a5e):** `swine/chump_block_rate` (unforced lone-bear chump of
+  the swine; forced bucketed separately), `swine/double_block_rate`, `swine/lone_bear_attack_rate` —
+  the user's exact ground truths, off the obs board + is_pending_combat. `test_swine_analyzer.py`.
+- **Baseline PPO 4.4-4.6 (500k each, fixed-seed, `data/tb`):** heralds vs_random 0.970 / vs_script ~0.5;
+  bears 0.865 / 0.70; swine 0.860 / 0.675. Swine combat metrics (500g self-mirror final ckpt): chump
+  0.168, double-block 0.384, lone-bear-attack 0.070 — the mean-pool baseline DID learn the judgment
+  (chump 0.43→0.05 in-training). Fleet decision_stats gate passes.
+- **Rotating eval seeds (8fc7069):** `eval_seed=base+step` at the Arena seed param (EvalkitCallback +
+  evaluate_checkpoint + ladder) so converged curves stop being frozen-flat. 4.4-4.6 fixed; 4.7+ rotating.
+- **Run-data root moved `/tmp/mtgenv_tb`→`data/tb` (8365c3e):** compat symlink at the old path; defaults
+  updated in trainers/viewers; evaldash restarted on data/tb.
+- **Relational-attention arm (7a26160 obs Tier-3 relation ids instance/blocking/attached F_PERM 48;
+  attn_policy.py; 302eee6 scale fix):** self-attention over entity+globals tokens with a hard adjacency
+  bias from id-matching (blocker↔attacker, aura↔host) + a content POINTER head (entity slot logit =
+  q·contextual-entity-emb). Runs at PARAM PARITY (~138k ≈ baseline 142k; d_model 48) to isolate
+  architecture from size (d_model 256 ~1.56M parked). **Bug caught in smoke:** unnormalized entity
+  embeddings → entity logits ~−10 vs abstract ~0 → never explored attacking (vs_random 0.0); fixed by
+  LayerNorm'ing entity emb + √d-scaling the query (→ vs_random 0.93→0.98). **4.7/4.8/4.9-ppo-attn
+  running** (parity, rotating seeds, full battery) — comparison vs 4.4-4.6 in-flight.
+
 ## 2026-07-08 (10 real 7-0 SOS trophy decks as server prebuilts)
 
 - **Ten real 7-0 SOS Premier Draft decks** added as presets from 17lands public data
