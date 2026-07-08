@@ -3,20 +3,24 @@
 Short, dated entries for future-agent consumption. Newest first. One line or a few bullets
 per unit of meaningful progress. Keep it terse — detail lives in `docs/` and git history.
 
-## 2026-07-08 (Contract v2 executed — both env pools bumped v1→v2)
+## 2026-07-08 (Contract v2 churn — first bump ROLLED BACK; real bump pending MAX_PERM 256)
 
-- **Engine hit Contract v2** (e5e207f: MAX_PERM 32→64, action Discrete 98→130). scripted.py DYNAMIZED
-  (5651084): `_codec_layout()` derives MAX_HAND/MAX_PERM/action_dim from mtg_py at import (v1 fallback)
-  → PERM_BASE 17 / PLAYER_BASE 81 / YES 128 / NO 129 auto-track the contract; column indices stay
-  static (v2-stable). Test fixtures sized by ACTION_DIM (b6ee2bb), no more hardcoded 98.
-- **Both envs bumped v1→v2** (spine-only: random + script-racer/turtle/gang/careful; empty crosstable;
-  fingerprint action_dim 130 / bf_feat [64,48] / sha b6ee2bb). v1 retained read-only
-  (`list <env> --env-version 1` still shows the old tables). Guard verified: v2 plays; a v1 tournament
-  now auto-refuses. Per user directive, NO v1 agents carried forward (clean slate) — the SchemaAdapter
-  stays a v1-history reader only. dmc4 re-adds v2-trained finals via `add`.
-- Note: `test_scripted.py::test_fallback` still red — its `_mask` hardcodes `np.zeros(98)` (overflows
-  YES=128 on v2); one-line fix owned by the in-flight v2 edit to that file. Scripted runtime verified
-  correct on v2 (real-engine drive + live spine games).
+- **scripted.py DYNAMIZED (5651084) — the durable win:** `_codec_layout()` derives
+  MAX_HAND/MAX_PERM/action_dim from mtg_py obs_spec()+action_dim() at import (v1 fallback), so
+  PERM_BASE/PLAYER_BASE/YES/NO auto-track ANY contract with zero edits (column indices stay static).
+  Test fixtures sized by ACTION_DIM (b6ee2bb). This is what let the pool survive two contract changes
+  in one afternoon without touching the spine.
+- **First v2 bump (64/130, e5e207f) was PREMATURE and rolled back.** Sequence: engine went 32→64
+  (action 130); I bumped both envs v1→v2; minutes later the user upsized the contract again to
+  **MAX_PERM 256 / action 322**, obsoleting the 64/130 v2 before any trained agent joined. Per lead:
+  deleted both v2 dirs + reset meta current→1 (v1 untouched) so version numbers stay meaningful — the
+  real v2 will be 256/322. Net on disk: both envs back to current=1, versions=[1]; v1 fully intact.
+- **HOLDING for the 256 binary** (live action_dim will read 322). Then: spine suite on 256 → bump-env
+  both --reason "MAX_PERM 32→256, action 98→322" → full spine round-robin on the fresh v2 (~4000 games,
+  approved) BEFORE 4.10 joins → 4.10 launches. During the hold the engine (130, soon 322) ≠ v1 (98), so
+  the guard freezes all v1 add/tournament — correct by design; nothing more goes into v1.
+- Note: `test_scripted.py::test_fallback` red under the non-98 engine — its `_mask` hardcodes
+  `np.zeros(98)`; one-line fix (size by ACTION_DIM) owned by the in-flight v2 edit to that shared file.
 
 ## 2026-07-08 (Rating environments VERSIONED by the engine contract)
 
