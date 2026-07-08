@@ -18,6 +18,15 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
   sub-step. Workspace green (1001 core / 28 server / 25 py). Python step 3 (edges-as-bias +
   choice pointer, dmc4) + ratings bump-env v3 next; earlier same day: present-row gather (76c2ccf,
   forward 3.4-6×) and the web client's RL reward lens (Φ RL toggle).
+- **Ratings bumped to v3 (ratings agent):** spine suite + real-swine legal-play drive verified GREEN on
+  the v3 binary FIRST (scripted.py `_codec_layout` unchanged — action_dim 322 / bases identical; the
+  break is obs-side and the spine reads only preserved bf_feat cols ≤44 + globals/hand_feat); synthetic
+  bf_feat width now sizes to the live spec. `bump-env v3` both envs (fingerprint bf_feat [256,45] +
+  edges/choice_feat + `*_grpid`), then full spine round-robin baselines (2000 games/env) — heralds
+  gang≈careful≈racer ~1750 / turtle -728; swine careful 1261 / gang 1231 / racer 1122 / turtle 909
+  (byte-identical to v2: the spine is contract-invariant by design). v1(98/32)+v2(322/48) retained
+  read-only (v2 holds dmc4's v2-trained 4.10 add); guard auto-refuses them. v3-trained agents join via
+  `add`.
 
 ## 2026-07-08 (Contract v2 = 256/322 LIVE — both env spine ladders baselined)
 
