@@ -150,8 +150,11 @@ def sweep(tb_root: str, out_dir: str, cache: dict, lobby: str) -> None:
             print(f"[evaldash] synced {name} ({entry['points']} pts)")
     replays = fetch_replays(lobby)  # oldest→newest, so the last match per run is the latest
     for e in entries:
-        prefix = f"aitrain-{e['name']}-"
-        mine = [r for r in replays if r.get("id", "").startswith(prefix)]
+        # SB3 appends _N to the TB dir name ("4.4-ppo-heralds_1") but replays are recorded under
+        # the bare run name — match both.
+        base = re.sub(r"_\d+$", "", e["name"])
+        prefixes = {f"aitrain-{e['name']}-", f"aitrain-{base}-"}
+        mine = [r for r in replays if any(r.get("id", "").startswith(p) for p in prefixes)]
         e["replays"] = len(mine)
         e["latest_replay"] = mine[-1]["id"] if mine else None
     _atomic_write(os.path.join(out_dir, "index.json"),
