@@ -12,7 +12,7 @@ DECK="${1:-selesnya}"
 STEPS="${2:-5000000}"
 RUN="${3:-${DECK}-cardid}"
 STALE_S="${4:-200}"          # consider frozen if newest tfevents hasn't grown in this many seconds
-TB=/tmp/mtgenv_tb
+TB=/home/xander/dev/p-mtg/mtgenv/data/tb
 POOL="/tmp/mtgenv_pool_${DECK}_wd"
 LOG=/tmp/mtgenv_wd.log
 cd /home/xander/dev/p-mtg/mtgenv || exit 1

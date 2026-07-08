@@ -25,7 +25,7 @@ def main():
     ap.add_argument("--timesteps", type=int, default=500_000)
     ap.add_argument("--n-envs", type=int, default=8)
     ap.add_argument("--pool-dir", default="/tmp/mtgenv_pool_attn")
-    ap.add_argument("--tensorboard", default="/tmp/mtgenv_tb")
+    ap.add_argument("--tensorboard", default="/home/xander/dev/p-mtg/mtgenv/data/tb")
     ap.add_argument("--shaping-coef", type=float, default=0.1)
     ap.add_argument("--vecenv", default="fleet", choices=["fleet", "batched"])
     ap.add_argument("--num-workers", type=int, default=8)

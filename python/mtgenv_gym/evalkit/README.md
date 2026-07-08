@@ -40,7 +40,7 @@ res = Arena("swine").evaluate(MyPolicy(net), RandomPolicy(), n_games=200, seed=5
 print(res["greedy"], res["sample"])
 
 # or log the full canonical battery into a TB run dir (scalars + JSON + replay), from any loop:
-evaluate_checkpoint(MyPolicy(net), step=50_000, run_dir="/tmp/mtgenv_tb/my-run", deck="swine")
+evaluate_checkpoint(MyPolicy(net), step=50_000, run_dir="/home/xander/dev/p-mtg/mtgenv/data/tb/my-run", deck="swine")
 ```
 
 That's it. A **search** policy (MCTS/AZ) is the same shape — `act` runs its per-decision budget over

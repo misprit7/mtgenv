@@ -3,8 +3,8 @@ copies of itself (a self-play league), on the demo deck (mirror). Logs win-rate 
 the initial (random-init) checkpoint to TensorBoard — "stable self-play improvement" is the M2 exit
 signal (the policy keeps beating its past selves while staying strong vs random).
 
-    PYTHONPATH=python python python/selfplay_train.py --timesteps 120000 --tensorboard /tmp/mtgenv_tb
-    tensorboard --logdir /tmp/mtgenv_tb
+    PYTHONPATH=python python python/selfplay_train.py --timesteps 120000 --tensorboard /home/xander/dev/p-mtg/mtgenv/data/tb
+    tensorboard --logdir /home/xander/dev/p-mtg/mtgenv/data/tb
 
 ``train_selfplay`` is importable so the learning-sanity test can run a short version.
 """
@@ -250,7 +250,7 @@ def main():
     ap.add_argument("--timesteps", type=int, default=120_000)
     ap.add_argument("--n-envs", type=int, default=8)
     ap.add_argument("--pool-dir", default=DEFAULT_POOL)
-    ap.add_argument("--tensorboard", default="/tmp/mtgenv_tb", help="TB ROOT; runs land as <root>/<version>-<slug>")
+    ap.add_argument("--tensorboard", default="/home/xander/dev/p-mtg/mtgenv/data/tb", help="TB ROOT; runs land as <root>/<version>-<slug>")
     ap.add_argument("--subproc", action="store_true", help="SubprocVecEnv (parallel workers)")
     ap.add_argument("--shaping-coef", type=float, default=0.1,
                     help="potential-based reward-shaping coef0 (annealed to 0); 0 disables. On by default.")

@@ -2,7 +2,7 @@
 """Mirror TensorBoard runs into an Aim repo (idempotent; optionally watch-loop).
 
 The training stacks (SB3 PPO callbacks, LightZero, the evalkit watcher) all write TB event
-files under one logdir (default ``/tmp/mtgenv_tb``). This script mirrors every run dir into a
+files under one logdir (default ``/home/xander/dev/p-mtg/mtgenv/data/tb``). This script mirrors every run dir into a
 persistent Aim repo (default ``data/aim``) so Aim is the *view* while TB event files remain the
 write format — no training code changes, and runs from any venv (py3.11 muzero2, py3.14 gym)
 all land in one place.
@@ -205,7 +205,7 @@ def sweep(tb_root: str, repo: str, state_path: str) -> int:
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--tb-dir", default="/tmp/mtgenv_tb")
+    ap.add_argument("--tb-dir", default="/home/xander/dev/p-mtg/mtgenv/data/tb")
     ap.add_argument("--repo", default=os.path.join(os.path.dirname(__file__), "..", "data", "aim"))
     ap.add_argument("--watch", type=int, default=0, metavar="SECONDS",
                     help="re-sync forever every N seconds (0 = one-shot)")

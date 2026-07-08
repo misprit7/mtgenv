@@ -186,7 +186,7 @@ class Handler(SimpleHTTPRequestHandler):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--tb-dir", default="/tmp/mtgenv_tb")
+    ap.add_argument("--tb-dir", default="/home/xander/dev/p-mtg/mtgenv/data/tb")
     ap.add_argument("--out", default=os.path.join(REPO, "data", "dash"))
     ap.add_argument("--port", type=int, default=8060)
     ap.add_argument("--host", default="0.0.0.0")

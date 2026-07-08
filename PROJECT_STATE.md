@@ -66,7 +66,7 @@ MTGA client.
   (card-dominant Φ = 0.5·tanh(Δcards/4)+0.3·tanh(Δpower/6)+0.2·tanh(Δlife/10)) defaults to coef 0.1
   annealed to 0 across 50%→80% (PPO); muzero2 uses the same Φ at CONSTANT coef 0.5. Eval stays raw
   ±1 everywhere. Per-window cast/playland_rate cap <1.0 for optimal play (mutual-exclusion
-  artifact) — use `productive_rate` as the convergence gauge. TB event files under /tmp/mtgenv_tb/
+  artifact) — use `productive_rate` as the convergence gauge. TB event files under /home/xander/dev/p-mtg/mtgenv/data/tb/
   are the write format; **evaldash is the main view** (`scripts/evaldash.py`, mobile-first, :8060,
   syncs to `data/dash/`) with Aim (:43800, `data/aim/`, `scripts/tb2aim.py --watch`) and TB (:6006)
   still served — see WORKLOG 2026-07-07.

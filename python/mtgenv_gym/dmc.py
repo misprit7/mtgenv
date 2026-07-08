@@ -371,7 +371,7 @@ class DMCPolicy(BasePolicy):
 
 # ── the DMC training loop ────────────────────────────────────────────────────────────────────────────
 def train_dmc(deck="heralds", *, env_steps=500_000, n_envs=64, run_name="4.3-dmc-heralds",
-              tensorboard_root="/tmp/mtgenv_tb", eval_every=25_000, eval_games=200,
+              tensorboard_root="/home/xander/dev/p-mtg/mtgenv/data/tb", eval_every=25_000, eval_games=200,
               buffer_capacity=60_000, batch_size=512, updates_per_iter=16, lr=1e-3,
               collect_per_iter=2048, min_buffer=5_000, eps_start=0.9, eps_end=0.05,
               eps_decay_frac=0.6, sample_temp=0.1, device=None, seed=0, notes=None,

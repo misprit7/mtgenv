@@ -70,7 +70,7 @@ def main():
     ap.add_argument("--env-steps", type=int, default=500_000)
     ap.add_argument("--n-envs", type=int, default=64)
     ap.add_argument("--run-name", default="4.3-dmc-heralds", help="TB run dir name (exact)")
-    ap.add_argument("--tensorboard", default="/tmp/mtgenv_tb", help="TB ROOT; run lands at <root>/<run-name>")
+    ap.add_argument("--tensorboard", default="/home/xander/dev/p-mtg/mtgenv/data/tb", help="TB ROOT; run lands at <root>/<run-name>")
     ap.add_argument("--eval-every", type=int, default=25_000)
     ap.add_argument("--eval-games", type=int, default=200)
     ap.add_argument("--buffer-capacity", type=int, default=60_000)

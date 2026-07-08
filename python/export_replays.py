@@ -4,8 +4,8 @@ in one continuous run (clean TensorBoard curves), and records one **self-play** 
 policy on both seats) at checkpoints to ``data/replays/``, tagged ``AiTraining{step}``, viewable in
 the web lobby's "AI Training Replays" section.
 
-    PYTHONPATH=python python python/export_replays.py --deck burn_vs_bears --tensorboard /tmp/mtgenv_tb
-    tensorboard --logdir /tmp/mtgenv_tb     # the run appears as MaskablePPO_<n>
+    PYTHONPATH=python python python/export_replays.py --deck burn_vs_bears --tensorboard /home/xander/dev/p-mtg/mtgenv/data/tb
+    tensorboard --logdir /home/xander/dev/p-mtg/mtgenv/data/tb     # the run appears as MaskablePPO_<n>
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ def main():
     ap.add_argument("--deck", default="demo", choices=["lands", "demo", "burn_vs_bears", "selesnya", "heralds", "bears", "swine"])
     ap.add_argument("--timesteps", type=int, default=60_000)
     ap.add_argument("--record-every", type=int, default=10_000, help="record a replay every N steps")
-    ap.add_argument("--tensorboard", default="/tmp/mtgenv_tb", help="TensorBoard log dir")
+    ap.add_argument("--tensorboard", default="/home/xander/dev/p-mtg/mtgenv/data/tb", help="TensorBoard log dir")
     ap.add_argument("--n-envs", type=int, default=8)
     ap.add_argument("--pool-dir", default="/tmp/mtgenv_pool_export")
     ap.add_argument("--run-name", default=None,
