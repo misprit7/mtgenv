@@ -3,6 +3,16 @@
 Short, dated entries for future-agent consumption. Newest first. One line or a few bullets
 per unit of meaningful progress. Keep it terse — detail lives in `docs/` and git history.
 
+## 2026-07-08 (Contract v2 = 256/322 LIVE — both env spine ladders baselined)
+
+- **v2 (MAX_PERM 256 / action 322, engine 70aa34e) DONE.** scripted.py derived PERM_BASE 17 /
+  PLAYER_BASE 273 / YES 320 / NO 321 with zero code changes; spine suite green on 256. Bumped both
+  envs v1→v2 (fingerprint action_dim 322 / bf_feat [256,48]) + ran the full spine round-robin (100
+  games/seat, 2000 games/env). Baselines — heralds: gang 1752 / careful 1747 / racer 1744 / random
+  1000 / turtle -728. swine: careful 1261 / gang 1231 / racer 1122 / random 1000 / turtle 909
+  (nontransitivity random-vs-turtle +0.37 — the RPS edge). ratings.json carries env_version:2 +
+  fingerprint. v1 retained read-only (`--env-version 1`). 4.10 (v2-trained) joins via `add`.
+
 ## 2026-07-08 (Contract v2 churn — first bump ROLLED BACK; real bump pending MAX_PERM 256)
 
 - **scripted.py DYNAMIZED (5651084) — the durable win:** `_codec_layout()` derives
