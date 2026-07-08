@@ -148,6 +148,10 @@ def sweep(tb_root: str, out_dir: str, cache: dict, lobby: str) -> None:
             cache[name] = {"mtime": mt, "entry": entry}
             entries.append(entry)
             print(f"[evaldash] synced {name} ({entry['points']} pts)")
+    now = time.time()
+    for e in entries:
+        # A run whose event files were written in the last 3 minutes is training right now.
+        e["live"] = (now - e.get("updated", 0)) < 180
     replays = fetch_replays(lobby)  # oldest→newest, so the last match per run is the latest
     for e in entries:
         # SB3 appends _N to the TB dir name ("4.4-ppo-heralds_1") but replays are recorded under
@@ -200,7 +204,11 @@ def sweep(tb_root: str, out_dir: str, cache: dict, lobby: str) -> None:
                         if t:
                             versions[str(v)] = t
                     if versions:
-                        elo[env] = {"current": str(meta.get("current")), "versions": versions}
+                        cur = str(meta.get("current"))
+                        # A crosstable appended to in the last 3 minutes = tournament in progress.
+                        gj = os.path.join(env_dir, f"v{cur}", "games.jsonl")
+                        active = os.path.isfile(gj) and (time.time() - os.path.getmtime(gj)) < 180
+                        elo[env] = {"current": cur, "versions": versions, "active": active}
                 else:  # legacy flat layout
                     t = _load_table(env_dir)
                     if t:

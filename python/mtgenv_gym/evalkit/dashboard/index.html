@@ -111,6 +111,14 @@ details.section > summary .count { margin-left: auto; color: var(--muted); font-
   padding: 3px 8px; border-radius: 99px; min-height: 26px;
 }
 .grouptoggle:hover { color: var(--ink); border-color: var(--ink); }
+/* Live indicator: this run is writing metrics right now / tournament appending games. */
+.livedot { width: 9px; height: 9px; border-radius: 50%; background: var(--green); flex: none;
+  box-shadow: 0 0 0 0 var(--green); animation: livepulse 1.6s ease-out infinite; }
+@keyframes livepulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--green) 60%, transparent); }
+  100% { box-shadow: 0 0 0 8px transparent; } }
+@media (prefers-reduced-motion: reduce) { .livedot { animation: none; } }
+.livetag { color: var(--green); font-size: 10.5px; font-weight: 800; letter-spacing: .05em;
+  text-transform: uppercase; display: inline-flex; align-items: center; gap: 5px; }
 .desc {
   margin: 0 12px 10px; padding: 8px 10px; background: var(--surface);
   border-left: 3px solid var(--yellow); border-radius: 4px; font-size: 12.5px; overflow-x: auto;
@@ -408,6 +416,7 @@ function buildRunsPane() {
         `<div class="rowline">
            <input type="checkbox" id="${cbid}" ${selected.includes(r.name) ? "checked" : ""}>
            <label class="name" for="${cbid}">${r.name}</label>
+           <span class="livedot" title="training right now" hidden></span>
            <a class="replaylink" target="_blank" rel="noopener" title="watch this run's latest replay" hidden></a>
            <span class="step"></span>
            ${r.description ? `<button class="infobtn" aria-expanded="false" title="notes">ⓘ</button>` : ""}
@@ -426,7 +435,8 @@ function buildRunsPane() {
         d.hidden = !d.hidden;
         info.setAttribute("aria-expanded", String(!d.hidden));
       });
-      rowByName[r.name] = { cb, step: row.querySelector(".step"), replay: row.querySelector(".replaylink") };
+      rowByName[r.name] = { cb, step: row.querySelector(".step"), replay: row.querySelector(".replaylink"),
+                            live: row.querySelector(".livedot") };
       det.appendChild(row);
     }
     root.appendChild(det);
@@ -439,6 +449,7 @@ function updateRunsPane() {
     const row = rowByName[r.name];
     if (!row) continue;
     row.step.textContent = kfmt(r.max_step);
+    row.live.hidden = !r.live;
     const href = replayHref(r);
     row.replay.hidden = !href;
     if (href) { row.replay.href = href; row.replay.textContent = `▶ ${r.replays}`; }
@@ -604,20 +615,26 @@ function renderElo() {
     const chip = document.createElement("span");
     chip.className = "chip" + (e === activeEnv ? " active" : "");
     chip.textContent = e;
+    if (elo[e].active) chip.innerHTML += ' <span class="livedot" title="tournament running"></span>';
     chip.addEventListener("click", () => { LS.set("elotab", e); renderElo(); });
     tabs.appendChild(chip);
   }
-  if (vkeys.length > 1) {   // version selector, only when history exists
-    const sep = document.createElement("span");
-    sep.style.cssText = "flex-basis:100%;height:0";
-    tabs.appendChild(sep);
-    for (const v of vkeys) {
-      const chip = document.createElement("span");
-      chip.className = "chip" + (v === activeV ? " active" : "");
-      chip.textContent = "v" + v + (v === current ? " (current)" : "");
-      chip.addEventListener("click", () => { LS.set("elover." + activeEnv, v); renderElo(); });
-      tabs.appendChild(chip);
-    }
+  // Version selector — always visible so the versioning model is discoverable even at v1.
+  const sep = document.createElement("span");
+  sep.style.cssText = "flex-basis:100%;height:0";
+  tabs.appendChild(sep);
+  for (const v of vkeys) {
+    const chip = document.createElement("span");
+    chip.className = "chip" + (v === activeV ? " active" : "");
+    chip.textContent = "v" + v + (v === current ? " (current)" : "");
+    chip.addEventListener("click", () => { LS.set("elover." + activeEnv, v); renderElo(); });
+    tabs.appendChild(chip);
+  }
+  if (elo[activeEnv].active) {
+    const t = document.createElement("span");
+    t.className = "livetag";
+    t.innerHTML = '<span class="livedot"></span> tournament in progress — table updating';
+    tabs.appendChild(t);
   }
 
   const tab = versions[activeV] || { agents: {} };
