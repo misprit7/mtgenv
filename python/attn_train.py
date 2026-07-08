@@ -30,7 +30,9 @@ def main():
     ap.add_argument("--vecenv", default="fleet", choices=["fleet", "batched"])
     ap.add_argument("--num-workers", type=int, default=8)
     ap.add_argument("--replay-every", type=int, default=25_000)
-    ap.add_argument("--run-name", required=True, help="exact TB run name, e.g. 4.7-ppo-attn-heralds")
+    ap.add_argument("--eval-every", type=int, default=8000, help="steps between the evalkit battery")
+    ap.add_argument("--pool-every", type=int, default=8000, help="steps between self-play pool snapshots")
+    ap.add_argument("--run-name", required=True, help="exact TB run name, e.g. 4.7-ppo-attn-swine")
     # PARITY defaults (~138k params ≈ baseline ~142k). d_model=256/ff=512 is the parked size experiment.
     ap.add_argument("--d-model", type=int, default=48)
     ap.add_argument("--ff", type=int, default=128)
@@ -43,7 +45,7 @@ def main():
         deck=args.deck, timesteps=args.timesteps, n_envs=args.n_envs, pool_dir=args.pool_dir,
         tensorboard_log=args.tensorboard, shaping_coef=args.shaping_coef, notes=args.notes,
         replay_every=args.replay_every, run_name=args.run_name, vecenv=args.vecenv,
-        num_workers=args.num_workers, verbose=1,
+        num_workers=args.num_workers, eval_every=args.eval_every, pool_every=args.pool_every, verbose=1,
         policy=RelationalPointerPolicy,
         policy_kwargs=dict(d_model=args.d_model, ff=args.ff, layers=args.layers),
     )
