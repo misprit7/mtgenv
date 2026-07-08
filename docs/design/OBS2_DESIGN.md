@@ -230,9 +230,16 @@ suspend, convoke) with named simplifications — not a toy-pool special case.*
 
 ### 7.1 Constants
 
-`MAX_PERM 256 · MAX_HAND 16 · MAX_STACK 8` (unchanged) · **`MAX_CHOICE 16`** (new) ·
-**`MAX_EDGES 128`** (new). Fixed shapes stay permanently (§1 revision); these are caps with
-deterministic truncation priorities, not guesses to outgrow.
+| Constant | Value | Status |
+|---|---|---|
+| `MAX_PERM` | 256 | unchanged |
+| `MAX_HAND` | 16 | unchanged |
+| `MAX_STACK` | 8 | unchanged |
+| `MAX_CHOICE` | 16 | **new** |
+| `MAX_EDGES` | 128 | **new** |
+
+Fixed shapes stay permanently (§1 revision); these are caps with deterministic truncation
+priorities, not guesses to outgrow.
 
 ### 7.1a Naming: exactly two id spaces (user decision, 2026-07-08)
 
@@ -312,9 +319,18 @@ adjacency the 4.7+ arm currently reconstructs from id-equality, handed over dire
 ### 7.5 Choice tokens (`choice_feat` 16×12)
 
 Rows = the current decision's abstract options (only one family is live per decision, so 16
-rows cover all buckets): col 0 `present` · 1–4 kind one-hot (mode/color/number/bool) ·
-5 value scalar (number value, mode index) · 6–10 color one-hot · 11 reserved. The action codec
-maps the live `MODE`/`COLOR`/`NUMBER`/`YES`/`NO` bucket onto choice rows positionally. This
+rows cover all buckets):
+
+| Col | Name | Meaning |
+|---|---|---|
+| 0 | `present` | |
+| 1–4 | kind one-hot | mode / color / number / bool |
+| 5 | `value` | Number rows: the exact number the slot submits; other kinds: the option index |
+| 6–10 | color one-hot | WUBRG (Color rows) |
+| 11 | reserved | |
+
+The action codec maps the live `MODE`/`COLOR`/`NUMBER`/`YES`/`NO` bucket onto choice rows
+positionally. This
 gives every abstract action slot *content* for the pointer head — deleting the
 unnormalized-abstract-embedding family that caused the 4.7 logit-scale bug. (Richer mode
 content — the mode's Effect-IR features — plugs into these rows later under §2.)

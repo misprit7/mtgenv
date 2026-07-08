@@ -52,14 +52,81 @@ Output is a fixed-shape bundle:
 Every zone has the same *card-identity* channel (`*_grpid`); relations for every zone ride the
 shared `edges` tensor (stack rows participate via `TARGETS`/`STACK_SOURCE` edges).
 
-**`hand_feat` (18 cols):** 0 `present` · 1 `mana_value` · 2 `castable` (legal to cast **right
-now**, from the live decision's enumeration — not a static flag) · 3–10 card types · 11–15 colors
-· 16 `is_decision_source` · 17 `is_decision_candidate` (e.g. a discard/reveal choice).
+**`hand_feat` (16 × 18):**
 
-**`stack_feat` (18 cols):** 0 `present` · 1 `controller_is_me` · 2 `mana_value` · 3–10 card types
-· 11–15 colors · 16 `is_decision_source` (the spell/ability being decided) · 17
-`is_decision_candidate` (this stack object is targetable by the current decision). *What this
-spell targets* is no longer missing — it arrives as `TARGETS` edges (v3; gap G1 closed).
+| Col | Name | Meaning |
+|---|---|---|
+| 0 | `present` | |
+| 1 | `mana_value` | |
+| 2 | `castable` | legal to cast **right now**, from the live decision's enumeration — not a static flag |
+| 3–10 | card types | multi-hot |
+| 11–15 | colors | WUBRG multi-hot |
+| 16 | `is_decision_source` | |
+| 17 | `is_decision_candidate` | e.g. a discard/reveal choice |
+
+**`stack_feat` (8 × 18):**
+
+| Col | Name | Meaning |
+|---|---|---|
+| 0 | `present` | |
+| 1 | `controller_is_me` | |
+| 2 | `mana_value` | |
+| 3–10 | card types | multi-hot |
+| 11–15 | colors | WUBRG multi-hot |
+| 16 | `is_decision_source` | the spell/ability being decided |
+| 17 | `is_decision_candidate` | this stack object is targetable by the current decision |
+
+*What each spell targets* is no longer missing — it arrives as `TARGETS` edges (§2c; gap G1
+closed in v3).
+
+## 2c. The `edges` and `choice_feat` tensors — full reference
+
+**`edges` (128 × 4, int64, pad rows = all −1):**
+
+| Col | Name | Meaning |
+|---|---|---|
+| 0 | `src_row` | source, as a **row position** in this observation (row space below) |
+| 1 | `dst_row` | destination row position |
+| 2 | `type` | edge type (table below) |
+| 3 | `k` | ordering payload where it means something (see per-type notes) |
+
+Edge types (`layout.rs::EDGE_*`):
+
+| `type` | Name | src → dst | `k` |
+|---|---|---|---|
+| 0 | `BLOCKS` | blocker → the attacker it blocks (committed **and** pending mid-decision) | — |
+| 1 | `ATTACKS` | attacker → the defending player | — |
+| 2 | `ATTACHED_TO` | aura/equipment → its host | — |
+| 3 | `TARGETS` | stack object → any entity **or player** it targets | target slot order |
+| 4 | `STACK_SOURCE` | ability on the stack → its source permanent | — |
+| 5 | `PENDING_PICK` | the decision (row 282) → an entity already picked in the in-flight decision (§4a commitment prefix) | pick order |
+
+Row space (shared by edge endpoints and, in the v3 policy, the attention token order):
+
+| Rows | Entities |
+|---|---|
+| 0–255 | battlefield (in `perm_order`, §2a) |
+| 256–271 | own hand |
+| 272–279 | stack |
+| 280 / 281 | you / opponent (player tokens) |
+| 282 | the current decision (pseudo-entity) |
+
+Emission is in truncation-priority order (`TARGETS > PENDING_PICK > BLOCKS > ATTACHED_TO >
+ATTACKS > STACK_SOURCE`) so an overflow past 128 drops the least decision-critical relations
+first. A pending relation appears in its **final** type immediately (a mid-decision block already
+has its `BLOCKS` edge); pendingness is marked by the accompanying `PENDING_PICK` edge.
+
+**`choice_feat` (16 × 12):** row `j` ↔ slot `j` of the live abstract bucket
+(`MODE[j]`/`COLOR[j]`/`NUMBER[j]`; `YES`→row 0, `NO`→row 1), authored by the codec
+(`Interaction::choice_rows`) so slot↔row alignment holds by construction.
+
+| Col | Name | Meaning |
+|---|---|---|
+| 0 | `present` | |
+| 1–4 | kind one-hot | mode / color / number / bool |
+| 5 | `value` | Number rows: **the exact number this slot submits**; other kinds: the option index |
+| 6–10 | color one-hot | WUBRG (Color rows) |
+| 11 | reserved | |
 
 ## 2a. Battlefield row ordering & truncation priority (`layout::perm_order`)
 
@@ -83,17 +150,26 @@ This is load-bearing in two ways:
 
 ## 2. The battlefield row — where combat lives
 
-Each of the 45 columns per permanent, by block (exact indices for the combat block):
+`bf_feat` (256 × 45) column map (source: `obs.rs::encode_battlefield` push order):
 
-- **0–8**: computed P/T, damage, tapped, summoning-sick, counters, controller-is-me, …
-- **9–36**: card types (8), colors (5), keywords (15)
-- **37–38**: status pair
-- **39 `attacking`** — declared attacker
-- **40 `blocking`** — binary "is blocking" (flattens *whom* and *with how many* — those pairings ride `edges`)
-- **41 `is_decision_source`** — this object raised the current decision
-- **42 `is_decision_candidate`** — this object is a *legal choice* for the current decision
-- **43 `blocked_by`** — per-attacker count of blockers, **committed + pending mid-decision** (makes gang-vs-single observable; added for the 2.9 era)
-- **44 `is_pending_combat`** — *my* creature already assigned in the in-flight combat decision (attacker mid-DeclareAttackers, blocker mid-DeclareBlockers; added in the 4.x audit — before this, the policy could not see its own partial combat plan; only the action mask knew, and the mask never feeds the value/feature nets)
+| Col | Name | Meaning |
+|---|---|---|
+| 0 | `present` | row is a real object |
+| 1 | `controller_is_me` | |
+| 2–4 | `power` / `toughness` / `mana_value` | computed (post-layers) P/T |
+| 5 | `damage_marked` | |
+| 6–8 | `tapped` / `summoning_sick` / `face_down` | |
+| 9–16 | card types | 8-wide multi-hot (`layout::CARD_TYPES`) |
+| 17–21 | colors | WUBRG multi-hot |
+| 22–36 | keywords | 15-wide multi-hot (`layout::KEYWORDS`) |
+| 37 | counters | total counter count |
+| 38 | attachments | attachment count |
+| 39 | `attacking` | declared attacker |
+| 40 | `blocking` | binary "is blocking" — *whom*/*with how many* ride `edges` (§2c) |
+| 41 | `is_decision_source` | this object raised the current decision |
+| 42 | `is_decision_candidate` | this object is a *legal choice* for the current decision |
+| 43 | `blocked_by` | per-attacker gang count, **committed + pending mid-decision** (2.9 era) |
+| 44 | `is_pending_combat` | *my* creature already assigned in the in-flight combat decision (4.x audit — before this, only the action mask knew the partial plan, and the mask never feeds the value/feature nets) |
 
 Columns 45–47 (`instance_id`/`blocking_id`/`attached_to_id`) existed in contract v1–v2 as float
 **match keys** the relational arm compared across rows (`blocking_id[i] == instance_id[j]`).
