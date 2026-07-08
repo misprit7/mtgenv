@@ -35,13 +35,34 @@ import numpy as np
 
 from .policy import BasePolicy
 
-# ── codec Discrete(ACTION_DIM) slot layout (mirrors crate::codec; pinned by test vs PyGame) ──────────
+# ── codec Discrete(ACTION_DIM) slot layout — DERIVED from the live engine so the benchmark spine is
+# engine-contract-proof. The obs/action widths change across contract versions (e.g. v2 raised
+# MAX_PERM 32→64, widening the PERM bucket and shifting every later base +32, action_dim 98→130);
+# hardcoding them would silently misclassify slots after a bump. Computed once at import from the
+# append-stable pyo3 exports — obs_spec() row counts + action_dim() — falling back to the v1 contract
+# if mtg_py isn't importable. (The obs COLUMN indices further down are append-stable and stay static.)
+def _codec_layout():
+    """`(MAX_HAND, MAX_PERM, ACTION_DIM)` from the live engine; v1 values (16, 32, 98) as fallback."""
+    max_hand, max_perm, action_dim = 16, 32, 98
+    try:
+        import mtg_py
+
+        spec = {name: (rows, cols) for (name, rows, cols, _is_int) in mtg_py.PyGame.obs_spec()}
+        max_hand, max_perm = spec["hand_feat"][0], spec["bf_feat"][0]
+        action_dim = int(mtg_py.PyGame.action_dim())
+    except Exception:
+        pass
+    return max_hand, max_perm, action_dim
+
+
+MAX_HAND, MAX_PERM, ACTION_DIM = _codec_layout()
 COMMIT = 0
-HAND_BASE, MAX_HAND = 1, 16
-PERM_BASE, MAX_PERM = 17, 32
-PLAYER_BASE = PERM_BASE + MAX_PERM          # 49
-STACK_BASE = PLAYER_BASE + 2                # 51
-YES, NO = 96, 97
+HAND_BASE = 1                                # HAND[0..MAX_HAND)          (v1: 1)
+PERM_BASE = HAND_BASE + MAX_HAND             # PERM[0..MAX_PERM)          (v1: 17)
+PLAYER_BASE = PERM_BASE + MAX_PERM           # PLAYER[0..2)               (v1: 49)
+STACK_BASE = PLAYER_BASE + 2                 # STACK[…]                   (v1: 51)
+NO = ACTION_DIM - 1                          # codec: NO is the last slot (v1: 97)
+YES = ACTION_DIM - 2                         # YES = NO - 1               (v1: 96)
 
 # ── obs `globals` decision-kind one-hot (obs.rs::encode_globals) ─────────────────────────────────────
 # Layout up to it: turn(1) + phases(12) + [active,priority,priority_some](3) + my-seat(13) + opp-seat(13)
@@ -115,7 +136,6 @@ BF_PRESENT, BF_MINE, BF_POWER, BF_TOUGHNESS = 0, 1, 2, 3
 BF_TAPPED = 6
 BF_ATTACKING, BF_BLOCKED_BY = 39, 43
 
-PLAYER_BASE = PERM_BASE + MAX_PERM                    # 49 — defender player slots at a DeclareAttackers
 GANG_MIN = 2                                          # "prefer 2+ blockers on the biggest attacker"
 
 ATTACK_MODES = ("all", "never", "conservative")
