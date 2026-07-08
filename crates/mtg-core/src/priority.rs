@@ -30,7 +30,7 @@ use crate::effects::value::{PlayerRef, ValueExpr};
 use crate::effects::{Effect, EffectTarget, Mode};
 use crate::ids::{ObjId, PlayerId, StackId};
 use crate::mana;
-use crate::replay::{Replay, ReplayFrame, ReplayMeta, ReplaySource};
+use crate::replay::{FrameKind, Replay, ReplayFrame, ReplayMeta, ReplaySource};
 use crate::sba::{self, LossReason, StateBasedAction};
 use crate::stack::{StackObject, StackObjectKind};
 use crate::state::view::{god_view, view_for};
@@ -399,7 +399,7 @@ impl Engine {
     pub fn record_replay(&mut self, on: bool) {
         self.record_replay = on;
         if on && self.replay_frames.is_empty() {
-            self.push_replay_frame("game start".to_string());
+            self.push_replay_frame(FrameKind::Event, "game start".to_string());
         }
     }
 
@@ -418,14 +418,16 @@ impl Engine {
         self.record_replay(true);
     }
 
-    /// Capture one omniscient frame of the *current* state, labelled with what just happened, and
-    /// (if a [sink][Engine::set_replay_sink] is installed) stream it live. No-op unless recording.
-    fn push_replay_frame(&mut self, label: String) {
+    /// Capture one omniscient frame of the *current* state, labelled with what just happened (or
+    /// what is being decided) and tagged with its [`FrameKind`] so the replay UI can filter/step by
+    /// decision points vs priority windows vs plain event snapshots. Streams to the live
+    /// [sink][Engine::set_replay_sink] if installed. No-op unless recording.
+    fn push_replay_frame(&mut self, kind: FrameKind, label: String) {
         if !self.record_replay {
             return;
         }
         let state = god_view(&self.state);
-        let frame = ReplayFrame { state, label };
+        let frame = ReplayFrame { state, label, kind };
         if let Some(sink) = self.replay_sink.as_mut() {
             sink(&frame);
         }
@@ -4349,6 +4351,19 @@ impl Engine {
             request_has_legal_response(req),
             "engine emitted a DecisionRequest with no legal response (deadlock): {req:?}"
         );
+        // Replay: capture the moment of the ask — the state the decider is looking at — tagged as a
+        // Priority window or a (non-priority) Decision point, so the replay UI can step decision-to-
+        // decision instead of event-to-event. This is the single agent seam, so EVERY decision in
+        // the game gets exactly one such frame (both the blocking path and the Session fiber path).
+        if self.record_replay {
+            let (kind, label) = match req {
+                DecisionRequest::Priority { .. } => {
+                    (FrameKind::Priority, format!("P{} holds priority", p.0))
+                }
+                other => (FrameKind::Decision, format!("P{} to decide: {}", p.0, other.name())),
+            };
+            self.push_replay_frame(kind, label);
+        }
         let mut view = self.view_for_seat(p);
         self.reveal_request_objects(&mut view, req);
         // The one decision seam (RESUMABLE_ENGINE.md §3.2): inside a `Session` fiber, SUSPEND and
@@ -4430,7 +4445,7 @@ impl Engine {
         // Capture an omniscient replay frame of the post-event state, labelled by the event.
         if record && self.record_replay {
             let label = self.event_label(&ev);
-            self.push_replay_frame(label);
+            self.push_replay_frame(FrameKind::Event, label);
         }
         for seat in 0..self.state.players.len() {
             let pid = self.state.players[seat].id;
@@ -6072,6 +6087,18 @@ mod tests {
         assert!(replay.frames.len() > 5, "frame stream ({} frames)", replay.frames.len());
         assert_eq!(replay.frames[0].label, "game start");
         assert_eq!(replay.frames[0].state.players.len(), 2, "both seats present");
+
+        // Frame kinds: the ask seam tags every decision — a lands-only game has Priority windows
+        // (and Event frames), and each Priority frame's label names the deciding seat.
+        use crate::replay::FrameKind;
+        assert!(replay.frames.iter().any(|f| f.kind == FrameKind::Event), "event frames present");
+        let prio = replay.frames.iter().filter(|f| f.kind == FrameKind::Priority).count();
+        assert!(prio > 0, "priority-window frames present ({prio})");
+        assert!(replay
+            .frames
+            .iter()
+            .filter(|f| f.kind == FrameKind::Priority)
+            .all(|f| f.label.contains("holds priority")));
 
         // God view = NO hidden info: the library (which PlayerView masks to a count) is visible.
         let saw_library = replay

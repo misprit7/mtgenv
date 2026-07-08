@@ -355,6 +355,9 @@
     padding: 4px 10px; font-weight: 800; cursor: pointer; font-size: 13px; }
   .replaybar .rbtn:hover { box-shadow: 2px 2px 0 var(--magenta); }
   .replaybar .rbtn:active { transform: translate(1px,1px); }
+  /* Replay frame-kind filter chips (decision points / priority windows). */
+  .replaybar .rbtn.rbfilter { opacity: .55; font-size: 11px; white-space: nowrap; }
+  .replaybar .rbtn.rbfilter.on { opacity: 1; background: var(--magenta); color: #fff; }
   .replaybar .rbtn:disabled { opacity: .4; cursor: not-allowed; }
   .replaybar .rbscrub { flex: 1 1 220px; min-width: 140px; accent-color: var(--magenta); cursor: pointer; }
   .replaybar .rbframe { font-variant-numeric: tabular-nums; color: var(--muted); min-width: 64px; }
@@ -527,6 +530,8 @@
       <button class="rbtn" id="rbBack" title="Step back (←)">⏮</button>
       <button class="rbtn" id="rbPlay" title="Play / pause (space)">▶</button>
       <button class="rbtn" id="rbFwd" title="Step forward (→)">⏭</button>
+      <button class="rbtn rbfilter" id="rbFDec" title="Step only agent DECISION points (attacks / blocks / targets / …) — toggle; frames from new games only">⚔ dec</button>
+      <button class="rbtn rbfilter" id="rbFPri" title="Step only PRIORITY windows — toggle; frames from new games only">⏸ prio</button>
       <input type="range" class="rbscrub" id="rbScrub" min="0" max="0" step="1" value="0" title="Scrub through the game" />
       <span class="rbframe" id="rbFrame">0 / 0</span>
       <label class="rbrate">rate <input type="range" id="rbRate" min="1" max="30" step="1" value="3" /> <span id="rbRateV">3</span>/s</label>
@@ -788,7 +793,7 @@
         stack: cf.stack != null ? cf.stack : [],
         combat: cf.combat != null ? cf.combat : null,
       };
-      frames.push({ state: g, label: cf.label });
+      frames.push({ state: g, label: cf.label, kind: cf.kind }); // kind absent (legacy/Event) is fine
       prev = g;
     }
     return { meta: rep.meta, frames };
@@ -844,23 +849,51 @@
       render();
     }
     $("rbFrame").textContent = (frameIdx + 1) + " / " + n;
-    $("rbLabel").textContent = fr.label || "";
+    const kindBadge = fr.kind === "Decision" ? "⚔ " : fr.kind === "Priority" ? "⏸ " : "";
+    $("rbLabel").textContent = kindBadge + (fr.label || "");
     $("rbBack").disabled = frameIdx === 0;
     $("rbFwd").disabled = frameIdx === n - 1;
     const sc = $("rbScrub"); sc.max = n - 1; sc.value = frameIdx; // keep the scrubber in sync
     if (playing && frameIdx >= n - 1) pauseReplay();
   }
-  function stepReplay(d) { pauseReplay(); showFrame(frameIdx + d); }
+  // ── frame-kind filter (Decision / Priority / all) ─────────────────────────────
+  // Engine frames carry `kind`: "Event" (post-event snapshots — also the default for pre-kind
+  // replays), "Priority" (a seat holds priority), "Decision" (a non-priority agent decision point).
+  // Empty set = no filter; otherwise stepping/playback only visits the selected kinds.
+  const rbKinds = new Set();
+  function frameKind(i) { const f = replay && replay.frames[i]; return (f && f.kind) || "Event"; }
+  function frameMatch(i) { return rbKinds.size === 0 || rbKinds.has(frameKind(i)); }
+  function nextMatching(from, dir) {
+    const n = frameCount();
+    for (let i = from + dir; i >= 0 && i < n; i += dir) if (frameMatch(i)) return i;
+    return -1;
+  }
+  function toggleKindFilter(kind, btnId) {
+    if (rbKinds.has(kind)) rbKinds.delete(kind); else rbKinds.add(kind);
+    const b = document.getElementById(btnId); if (b) b.classList.toggle("on", rbKinds.has(kind));
+    if (frameCount() && !frameMatch(frameIdx)) {
+      const j = nextMatching(frameIdx, 1);
+      const k = j >= 0 ? j : nextMatching(frameIdx, -1);
+      if (k >= 0) { pauseReplay(); showFrame(k); }
+    }
+  }
+  function stepReplay(d) {
+    pauseReplay();
+    const j = nextMatching(frameIdx, d); // honours the kind filter (no filter → adjacent frame)
+    if (j >= 0) showFrame(j);
+  }
   function playReplay() {
     if (!frameCount()) return;
-    if (frameIdx >= frameCount() - 1) frameIdx = -1; // at end → restart from the top
+    if (nextMatching(frameIdx, 1) < 0) frameIdx = -1; // at (filtered) end → restart from the top
     playing = true; $("rbPlay").textContent = "❚❚";
     // Self-scheduling timeout, NOT setInterval: each frame schedules the next only AFTER its (heavy)
     // render finishes, so the event loop always gets a gap to process input. A tight setInterval whose
     // per-frame render outruns the interval (at high rates) back-to-backs the ticks and starves the
     // thread — the Pause tap then never lands. This is the real fix for "Pause dead at >10 fps".
     const tick = () => {
-      showFrame(frameIdx + 1, true);                 // coalesced render; end → showFrame() pauses
+      const j = nextMatching(frameIdx, 1);           // next frame the kind filter admits
+      if (j < 0) { pauseReplay(); return; }
+      showFrame(j, true);                            // coalesced render; end → showFrame() pauses
       if (playing) playTimer = setTimeout(tick, Math.max(16, Math.round(1000 / frameRate)));
     };
     playTimer = setTimeout(tick, Math.max(16, Math.round(1000 / frameRate)));
@@ -883,6 +916,8 @@
     bindBarBtn("rbBack", () => stepReplay(-1));
     bindBarBtn("rbFwd", () => stepReplay(1));
     bindBarBtn("rbPlay", togglePlay);
+    bindBarBtn("rbFDec", () => toggleKindFilter("Decision", "rbFDec"));
+    bindBarBtn("rbFPri", () => toggleKindFilter("Priority", "rbFPri"));
     $("rbScrub").oninput = (e) => { pauseReplay(); showFrame(+e.target.value); };
     $("rbRate").oninput = (e) => { frameRate = +e.target.value || 1; $("rbRateV").textContent = frameRate;
       if (playing) { pauseReplay(); playReplay(); } };

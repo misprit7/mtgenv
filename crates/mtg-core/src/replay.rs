@@ -61,12 +61,34 @@ pub struct Replay {
     pub frames: Vec<ReplayFrame>,
 }
 
-/// One recorded step: the omniscient board after something happened, plus a human label for it.
+/// What kind of moment a frame captures — the replay UI steps/filters on this.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum FrameKind {
+    /// A post-event snapshot (the classic stream: zone moves, damage, phase changes, …).
+    /// Also the serde default, so pre-kind replay files load as all-`Event`.
+    #[default]
+    Event,
+    /// A priority window: the labelled seat holds priority and may act or pass.
+    Priority,
+    /// A non-priority agent decision point (attackers / blockers / targets / modes / mulligan / …),
+    /// captured at the moment the engine asks — the state the decider is looking at.
+    Decision,
+}
+
+fn kind_is_event(k: &FrameKind) -> bool {
+    *k == FrameKind::Event
+}
+
+/// One recorded step: the omniscient board after something happened (or at a decision/priority
+/// ask), plus a human label for it.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReplayFrame {
     pub state: GodView,
-    /// What just happened, e.g. `"P0 casts Lightning Bolt"`, `"Turn 3 — P0 upkeep"`.
+    /// What just happened, e.g. `"P0 casts Lightning Bolt"`, `"P1 to decide: DeclareBlockers"`.
     pub label: String,
+    /// What kind of moment this is (defaults to [`FrameKind::Event`] for pre-kind files).
+    #[serde(default, skip_serializing_if = "kind_is_event")]
+    pub kind: FrameKind,
 }
 
 /// Replay metadata. The engine fills `players` (seats) + `result`; everything else is
@@ -163,6 +185,9 @@ pub struct CompactReplay {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CompactFrame {
     pub label: String,
+    /// Frame kind (omitted when `Event`, which is also the default — pre-kind files load fine).
+    #[serde(default, skip_serializing_if = "kind_is_event")]
+    pub kind: FrameKind,
     pub turn: u32,
     pub active_player: PlayerId,
     pub phase: Phase,
@@ -364,6 +389,7 @@ impl Replay {
             let battlefield = delta_zone(&mut interner, prev.map(|pg| &pg.battlefield), &g.battlefield);
             frames.push(CompactFrame {
                 label: f.label.clone(),
+                kind: f.kind,
                 turn: g.turn,
                 active_player: g.active_player,
                 phase: g.phase,
@@ -430,7 +456,7 @@ impl CompactReplay {
                 stack: cf.stack,
                 combat: cf.combat,
             };
-            frames.push(ReplayFrame { state: g.clone(), label: cf.label });
+            frames.push(ReplayFrame { state: g.clone(), label: cf.label, kind: cf.kind });
             prev = Some(g);
         }
         Replay { meta: self.meta, frames }
@@ -519,6 +545,7 @@ mod tests {
             frames: vec![ReplayFrame {
                 state: god_view(&state),
                 label: "P0 has a counter-bearing bear".into(),
+                kind: FrameKind::Event,
             }],
         };
 
@@ -600,23 +627,27 @@ mod tests {
         let mut frames = vec![ReplayFrame {
             state: gv(1, Phase::PrecombatMain, 20, Vec::new(), p0_lib.clone(), Vec::new()),
             label: "turn 1 main".into(),
+            kind: FrameKind::Event,
         }];
         // 16 "nothing big changed" frames (only life ticks) — the common case in a real game.
         for i in 0..16 {
             frames.push(ReplayFrame {
                 state: gv(1, Phase::DeclareAttackers, 20 - i, Vec::new(), p0_lib.clone(), Vec::new()),
                 label: format!("chip {i}"),
+                kind: FrameKind::Event,
             });
         }
         // A land drop: battlefield changes, libraries don't.
         frames.push(ReplayFrame {
             state: gv(1, Phase::PostcombatMain, 4, vec![land.clone()], p0_lib.clone(), Vec::new()),
             label: "played a land".into(),
+            kind: FrameKind::Event,
         });
         // A draw: P0's library + hand change, battlefield + P1 don't.
         frames.push(ReplayFrame {
             state: gv(2, Phase::PrecombatMain, 4, vec![land.clone()], p0_lib[1..].to_vec(), vec![ov(0, Zone::Hand)]),
             label: "turn 2 draw".into(),
+            kind: FrameKind::Event,
         });
         let replay = Replay { meta: ReplayMeta::new(2, ReplaySource::Human), frames };
 
@@ -649,6 +680,49 @@ mod tests {
         assert!(draw.battlefield.is_none() && draw.players[1].library.is_none());
     }
 
+    /// Frame kinds survive the compact round-trip, are omitted on the wire when `Event` (thrift +
+    /// forward-compat), and a pre-kind (legacy) frame with no `kind` field loads as `Event`.
+    #[test]
+    fn frame_kinds_round_trip_and_default_to_event() {
+        let mk = |kind, label: &str| ReplayFrame {
+            state: GodView {
+                turn: 1,
+                active_player: PlayerId(0),
+                phase: Phase::PrecombatMain,
+                priority_player: None,
+                players: vec![seat(0, 20, Vec::new(), Vec::new())],
+                battlefield: Vec::new(),
+                stack: Vec::new(),
+                combat: None,
+            },
+            label: label.into(),
+            kind,
+        };
+        let replay = Replay {
+            meta: ReplayMeta::new(1, ReplaySource::Human),
+            frames: vec![
+                mk(FrameKind::Event, "e"),
+                mk(FrameKind::Priority, "p"),
+                mk(FrameKind::Decision, "d"),
+            ],
+        };
+        // Compact round-trip preserves kinds; Event is omitted from the wire form.
+        let compact_json = serde_json::to_string(&replay.to_compact()).unwrap();
+        assert!(!compact_json.contains(r#""kind":"Event""#), "Event kind omitted on the wire");
+        assert!(compact_json.contains(r#""kind":"Priority""#));
+        assert!(compact_json.contains(r#""kind":"Decision""#));
+        let back: AnyReplay = serde_json::from_str(&compact_json).unwrap();
+        let kinds: Vec<FrameKind> = back.into_replay().frames.iter().map(|f| f.kind).collect();
+        assert_eq!(kinds, vec![FrameKind::Event, FrameKind::Priority, FrameKind::Decision]);
+        // Legacy shape (no `kind` fields anywhere) still loads — every frame defaults to Event.
+        let legacy_json = serde_json::to_string(&replay)
+            .unwrap()
+            .replace(r#","kind":"Priority""#, "")
+            .replace(r#","kind":"Decision""#, "");
+        let legacy: AnyReplay = serde_json::from_str(&legacy_json).unwrap();
+        assert!(legacy.into_replay().frames.iter().all(|f| f.kind == FrameKind::Event));
+    }
+
     /// `AnyReplay` reads BOTH the new v2 compact JSON and the pre-v2 full-frame JSON to the same
     /// replay — so old saved files keep loading (versioned format).
     #[test]
@@ -668,6 +742,7 @@ mod tests {
                         combat: None,
                     },
                     label: "start".into(),
+                    kind: FrameKind::Event,
                 },
                 ReplayFrame {
                     state: GodView {
@@ -681,6 +756,7 @@ mod tests {
                         combat: None,
                     },
                     label: "combat".into(),
+                    kind: FrameKind::Event,
                 },
             ],
         };

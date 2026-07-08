@@ -357,6 +357,36 @@ pub enum DecisionRequest {
     Confirm { kind: ConfirmKind },
 }
 
+impl DecisionRequest {
+    /// The short stable variant name (for replay-frame labels, logs, and debugging).
+    pub fn name(&self) -> &'static str {
+        use DecisionRequest as Q;
+        match self {
+            Q::ChooseStartingPlayer { .. } => "ChooseStartingPlayer",
+            Q::Mulligan { .. } => "Mulligan",
+            Q::Priority { .. } => "Priority",
+            Q::ChooseModes { .. } => "ChooseModes",
+            Q::ChooseNumber { .. } => "ChooseNumber",
+            Q::CastingTimeOptions { .. } => "CastingTimeOptions",
+            Q::ChooseTargets { .. } => "ChooseTargets",
+            Q::Distribute { .. } => "Distribute",
+            Q::PayCost { .. } => "PayCost",
+            Q::DeclareAttackers { .. } => "DeclareAttackers",
+            Q::DeclareBlockers { .. } => "DeclareBlockers",
+            Q::AssignCombatDamage { .. } => "AssignCombatDamage",
+            Q::OrderObjects { .. } => "OrderObjects",
+            Q::SelectCards { .. } => "SelectCards",
+            Q::SelectFromGroups { .. } => "SelectFromGroups",
+            Q::ArrangeCards { .. } => "ArrangeCards",
+            Q::ChooseReplacement { .. } => "ChooseReplacement",
+            Q::ChooseCounterType { .. } => "ChooseCounterType",
+            Q::ChooseOption { .. } => "ChooseOption",
+            Q::ChooseColor { .. } => "ChooseColor",
+            Q::Confirm { .. } => "Confirm",
+        }
+    }
+}
+
 // ════════════════════════════════════════════════════════════════════════════════════════
 // DecisionResponse (§4)
 // ════════════════════════════════════════════════════════════════════════════════════════

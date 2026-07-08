@@ -144,6 +144,30 @@ function replaySource(s: Any): string {
   return `${s}`;
 }
 function frameCount(): number { return replay && replay.frames ? replay.frames.length : 0; }
+// ── frame-kind filter (Decision / Priority / all) ─────────────────────────────
+// Engine frames carry `kind`: "Event" (post-event snapshots, the classic stream — also the
+// default for pre-kind replays), "Priority" (a seat holds priority), "Decision" (a non-priority
+// agent decision point: attackers/blockers/targets/…). Empty set = no filter (visit everything);
+// otherwise stepping/playback only visits the selected kinds. The scrubber stays unfiltered.
+const rbKinds = new Set<string>();
+function frameKind(i: number): string { const f = replay && replay.frames[i]; return (f && f.kind) || "Event"; }
+function frameMatch(i: number): boolean { return rbKinds.size === 0 || rbKinds.has(frameKind(i)); }
+function nextMatching(from: number, dir: number): number {
+  const n = frameCount();
+  for (let i = from + dir; i >= 0 && i < n; i += dir) if (frameMatch(i)) return i;
+  return -1;
+}
+function toggleKindFilter(kind: string, btnId: string): void {
+  if (rbKinds.has(kind)) rbKinds.delete(kind); else rbKinds.add(kind);
+  const b = document.getElementById(btnId); if (b) b.classList.toggle("on", rbKinds.has(kind));
+  // Snap onto a matching frame so the view reflects the filter immediately (old replays have no
+  // kind tags → nothing matches → stay put).
+  if (frameCount() && !frameMatch(frameIdx)) {
+    const j = nextMatching(frameIdx, 1);
+    const k = j >= 0 ? j : nextMatching(frameIdx, -1);
+    if (k >= 0) { pauseReplay(); showFrame(k); }
+  }
+}
 function startReplay(): void {
   document.body.classList.add("replay-mode"); // enables replay-only layout damping
   ($("replaybar") as HTMLElement).hidden = false;
@@ -249,7 +273,7 @@ function reconstructReplay(rep: Any): Any {
       stack: cf.stack != null ? cf.stack : [],
       combat: cf.combat != null ? cf.combat : null,
     };
-    frames.push({ state: g, label: cf.label });
+    frames.push({ state: g, label: cf.label, kind: cf.kind }); // kind absent (legacy/Event) is fine
     prev = g;
   }
   return { meta: rep.meta, frames };
@@ -306,23 +330,30 @@ function showFrame(i: number, coalesceOk?: boolean): void {
     render();
   }
   $("rbFrame").textContent = `${frameIdx + 1} / ${n}`;
-  $("rbLabel").textContent = fr.label || "";
+  const kindBadge = fr.kind === "Decision" ? "⚔ " : fr.kind === "Priority" ? "⏸ " : "";
+  $("rbLabel").textContent = kindBadge + (fr.label || "");
   ($("rbBack") as HTMLButtonElement).disabled = frameIdx === 0;
   ($("rbFwd") as HTMLButtonElement).disabled = frameIdx === n - 1;
   const sc = $("rbScrub") as HTMLInputElement; sc.max = `${n - 1}`; sc.value = `${frameIdx}`; // keep scrubber synced
   if (playing && frameIdx >= n - 1) pauseReplay();
 }
-function stepReplay(d: number): void { pauseReplay(); showFrame(frameIdx + d); }
+function stepReplay(d: number): void {
+  pauseReplay();
+  const j = nextMatching(frameIdx, d); // honours the kind filter (no filter → adjacent frame)
+  if (j >= 0) showFrame(j);
+}
 function playReplay(): void {
   if (!frameCount()) return;
-  if (frameIdx >= frameCount() - 1) frameIdx = -1; // at end → restart from the top
+  if (nextMatching(frameIdx, 1) < 0) frameIdx = -1; // at (filtered) end → restart from the top
   playing = true; $("rbPlay").textContent = "❚❚";
   // Self-scheduling timeout, NOT setInterval: each frame schedules the next only AFTER its (heavy)
   // render finishes, so the event loop always gets a gap to process input. A tight setInterval whose
   // per-frame render outruns the interval (at high rates) back-to-backs the ticks and starves the
   // thread — the Pause tap then never lands. This is the real fix for "Pause dead at >10 fps".
   const tick = (): void => {
-    showFrame(frameIdx + 1, true);                 // coalesced render; end → showFrame() pauses
+    const j = nextMatching(frameIdx, 1);           // next frame the kind filter admits
+    if (j < 0) { pauseReplay(); return; }
+    showFrame(j, true);                            // coalesced render; end → showFrame() pauses
     if (playing) playTimer = setTimeout(tick, Math.max(16, Math.round(1000 / frameRate)));
   };
   playTimer = setTimeout(tick, Math.max(16, Math.round(1000 / frameRate)));
@@ -345,6 +376,8 @@ if (replayId) {
   bindBarBtn("rbBack", () => stepReplay(-1));
   bindBarBtn("rbFwd", () => stepReplay(1));
   bindBarBtn("rbPlay", togglePlay);
+  bindBarBtn("rbFDec", () => toggleKindFilter("Decision", "rbFDec"));
+  bindBarBtn("rbFPri", () => toggleKindFilter("Priority", "rbFPri"));
   ($("rbScrub") as HTMLInputElement).oninput = (e) => { pauseReplay(); showFrame(+(e.target as HTMLInputElement).value); };
   ($("rbRate") as HTMLInputElement).oninput = (e) => {
     frameRate = +(e.target as HTMLInputElement).value || 1; $("rbRateV").textContent = `${frameRate}`;

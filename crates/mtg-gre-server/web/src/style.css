@@ -371,6 +371,9 @@
     border-radius: 7px 4px 7px 4px; padding: 4px 10px; font: var(--condensed); font-size: 12px; font-weight: 800;
     text-transform: uppercase; letter-spacing: .4px; cursor: pointer; box-shadow: 2px 2px 0 var(--cyan); }
   .logtoggle.on { background: var(--cyan); color: #08202a; }
+  /* Replay frame-kind filter chips (decision points / priority windows). */
+  .rbtn.rbfilter { opacity: .55; font-size: 11px; white-space: nowrap; }
+  .rbtn.rbfilter.on { opacity: 1; background: var(--magenta); color: #fff; border-color: var(--ink); }
   /* RL reward lens: topbar chip + fixed Φ panel (training-debug; mirrors the gym's shaping). */
   .rewardtoggle { background: var(--panel); color: var(--ink); border: 2.5px solid var(--ink);
     border-radius: 7px 4px 7px 4px; padding: 4px 10px; font: var(--condensed); font-size: 12px; font-weight: 800;
