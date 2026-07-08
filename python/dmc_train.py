@@ -39,7 +39,7 @@ checkpoint), the search apparatus is buying little here; if it plateaus below, t
 contribution. Compared on **sustained final-checkpoint** win-rate (no peak-picking).
 
 ## Head: {head}
-MTG's action head is a fixed `Discrete(98)` of *factored slots* whose meaning is positional (`codec.rs`):
+MTG's action head is a fixed `Discrete(ACTION_DIM)` of *factored slots* whose meaning is positional (`codec.rs`):
 `HAND[i]`/`PERM[i]`/`STACK[i]` slots point at a specific entity ROW already in the observation
 (hand/battlefield/stack); `COMMIT`/`PLAYER`/`MODE`/`COLOR`/`NUMBER`/`YES`/`NO` are abstract. So the net
 scores `Q(s,a)` from the **content of the object the action points at** (its encoded entity row) — the

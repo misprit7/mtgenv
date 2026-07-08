@@ -12,7 +12,11 @@ use mtg_core::basics::Color;
 use mtg_core::ids::ObjId;
 
 // ── padded table sizes (config; grow with the pool) ─────────────────────────────────────────
-pub const MAX_PERM: usize = 32;
+// MAX_PERM 32→64 (contract v2, 2026-07-08): late-game SOS boards were observed at ~39 permanents,
+// past the old 32-row cap — objects beyond it were silently truncated (invisible to the policy AND
+// unmappable to a PERM action slot). 64 covers the observed max with token headroom; the
+// deterministic truncation priority in `perm_order` bounds the residual overflow risk.
+pub const MAX_PERM: usize = 64;
 pub const MAX_HAND: usize = 16;
 pub const MAX_STACK: usize = 8;
 
@@ -71,4 +75,33 @@ pub fn objview_id(o: &ObjView) -> ObjId {
         ObjView::Visible { id, .. } => *id,
         ObjView::Hidden { id, .. } => *id,
     }
+}
+
+/// Is this battlefield object a land? Used only for the truncation-priority ordering in
+/// [`perm_order`]. A `Hidden` permanent (face-down) has no visible types; treated as a nonland (a
+/// face-down is a 2/2 creature — more decision-relevant than a land, so it keeps the higher slot).
+pub fn objview_is_land(o: &ObjView) -> bool {
+    match o {
+        ObjView::Visible { chars, .. } => chars.card_types.iter().any(|t| t == "Land"),
+        ObjView::Hidden { .. } => false,
+    }
+}
+
+/// **THE permanent obs↔action contract.** The battlefield row ordering shared by the obs encoder
+/// ([`crate::obs`]) and the action codec ([`crate::codec`]): returns indices into `battlefield`,
+/// **capped at [`MAX_PERM`]**, partitioned nonlands-first then lands, STABLE within each class
+/// (engine `view.battlefield` order preserved). Obs row `k` and codec `PERM[k]` both refer to
+/// `battlefield[perm_order(battlefield)[k]]`.
+///
+/// When the board exceeds `MAX_PERM`, the rows dropped on overflow are the **trailing lands** — the
+/// least decision-relevant permanents (a wall of tapped lands can't act; creatures/artifacts/
+/// enchantments carry the choices). Both callers MUST route through this one function: a slot that
+/// pointed at a different object than the policy saw would silently corrupt every combat/target
+/// decision on a large board. `sort_by_key` is a stable sort, so within a class the engine's order
+/// is preserved exactly (needed for reproducibility + the equivalence snapshot).
+pub fn perm_order(battlefield: &[ObjView]) -> Vec<usize> {
+    let mut idx: Vec<usize> = (0..battlefield.len()).collect();
+    idx.sort_by_key(|&i| objview_is_land(&battlefield[i])); // false (nonland) < true (land)
+    idx.truncate(MAX_PERM);
+    idx
 }

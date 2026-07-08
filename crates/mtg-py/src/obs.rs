@@ -160,10 +160,14 @@ pub fn encode(view: &PlayerView, req: &DecisionRequest, num_legal: usize,
         .chain(block_source)
         .collect();
     let relations = RelationMaps::build(view, pending_blocks);
+    // The shared battlefield row ordering (nonlands-first, then lands; capped at MAX_PERM) — the SAME
+    // function the action codec uses, so obs row `k` and codec `PERM[k]` name the same object even
+    // when the board overflows the cap and trailing lands are dropped. See `layout::perm_order`.
+    let perm_order = crate::layout::perm_order(&view.battlefield);
     Obs {
         globals: encode_globals(view, req, num_legal, &di),
-        bf_feat: encode_battlefield(view, &di, &blocked_by, &pending_combat, &relations),
-        bf_ids: ids(&view.battlefield, MAX_PERM),
+        bf_feat: encode_battlefield(view, &di, &blocked_by, &pending_combat, &relations, &perm_order),
+        bf_ids: bf_ids_ordered(&view.battlefield, &perm_order),
         hand_feat: encode_hand(view, req, &di),
         hand_ids: ids(&view.me.hand, MAX_HAND),
         stack_feat: encode_stack(view, &di),
@@ -469,11 +473,12 @@ impl RelationMaps {
 fn encode_battlefield(view: &PlayerView, di: &DecisionInfo,
                       blocked_by: &std::collections::BTreeMap<ObjId, u32>,
                       pending_combat: &std::collections::BTreeSet<ObjId>,
-                      relations: &RelationMaps) -> Vec<f32> {
+                      relations: &RelationMaps, perm_order: &[usize]) -> Vec<f32> {
     let me = view.seat;
     let (attacking, blocking) = combat_sets(view);
     let mut out = Vec::with_capacity(MAX_PERM * F_PERM);
-    for o in view.battlefield.iter().take(MAX_PERM) {
+    for &row in perm_order {
+        let o = &view.battlefield[row];
         match o {
             ObjView::Visible {
                 id,
@@ -521,8 +526,20 @@ fn encode_battlefield(view: &PlayerView, di: &DecisionInfo,
             }
         }
     }
-    out.extend(std::iter::repeat(0.0).take((MAX_PERM - view.battlefield.len().min(MAX_PERM)) * F_PERM));
+    out.extend(std::iter::repeat(0.0).take((MAX_PERM - perm_order.len()) * F_PERM));
     out
+}
+
+/// Battlefield `grp_id`s in the shared `perm_order` (so `bf_ids[k]` matches obs row `k` / codec
+/// `PERM[k]`), padded to MAX_PERM with 0. Distinct from the generic `ids` (used for the natural-order
+/// hand table), which does NOT reorder.
+fn bf_ids_ordered(battlefield: &[ObjView], perm_order: &[usize]) -> Vec<i64> {
+    perm_order
+        .iter()
+        .map(|&row| grp_of(&battlefield[row]))
+        .chain(std::iter::repeat(0))
+        .take(MAX_PERM)
+        .collect()
 }
 
 fn encode_hand(view: &PlayerView, req: &DecisionRequest, di: &DecisionInfo) -> Vec<f32> {

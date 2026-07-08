@@ -42,29 +42,32 @@ import torch.nn as nn
 from sb3_contrib.common.maskable.policies import MaskableActorCriticPolicy
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 
-# ── codec Discrete(ACTION_DIM) slot layout (mirrors crate::codec) ────────────────────────────────
-_COMMIT = 0
-_HAND_BASE, _MAX_HAND = 1, 16
-_PERM_BASE, _MAX_PERM = 17, 32
-_PLAYER_BASE, _N_PLAYER = 49, 2
-_STACK_BASE, _MAX_STACK = 51, 8
-_ACTION_DIM = 98
-# obs.rs bf_feat relation-id columns (Tier-3, append-stable absolute indices).
+from mtgenv_gym.codec_layout import slot_layout  # the canonical Python-side mirror of codec's buckets
+
+# ── codec Discrete(ACTION_DIM) slot layout ───────────────────────────────────────────────────────
+# The entity-slot bases are DERIVED from the table sizes + engine action_dim (via `slot_layout`), not
+# hard-coded — so the MAX_PERM/ACTION_DIM contract (v1 98/32, v2 130/64, …) flows straight through and
+# a checkpoint loads under whatever spec it was saved with. obs.rs bf_feat relation-id columns
+# (Tier-3) are absolute F_PERM-tail indices, unchanged across the MAX_PERM bump.
 _BF_INSTANCE_ID, _BF_BLOCKING_ID, _BF_ATTACHED_ID = 45, 46, 47
 _N_RELATION_COLS = 3  # the trailing id columns, sliced OUT of the content projection
 
 _TABLES = ("bf", "hand", "stack")
-# which action-slot bucket points at each entity table, and that table's row count.
-_ENTITY_SLOTS = {"bf": (_PERM_BASE, _MAX_PERM), "hand": (_HAND_BASE, _MAX_HAND),
-                 "stack": (_STACK_BASE, _MAX_STACK)}
 
 
-def _abstract_slot_indices() -> list:
+def _entity_slots(mh: int, mp: int, ms: int, action_dim: int) -> dict:
+    """{table_name: (base, count)} for the entity-pointing buckets (bf←PERM, hand←HAND, stack←STACK),
+    derived from the table sizes + engine action_dim through the shared codec mirror."""
+    lay = slot_layout(max_hand=mh, max_perm=mp, max_stack=ms, action_dim=action_dim)
+    return {"bf": lay["perm"], "hand": lay["hand"], "stack": lay["stack"]}
+
+
+def _abstract_slot_indices(entity_slots: dict, action_dim: int) -> list:
     """Action slots that do NOT point at an entity row (COMMIT/PLAYER/MODE/COLOR/NUMBER/YES/NO)."""
     entity = set()
-    for base, count in _ENTITY_SLOTS.values():
+    for base, count in entity_slots.values():
         entity.update(range(base, base + count))
-    return [i for i in range(_ACTION_DIM) if i not in entity]
+    return [i for i in range(action_dim) if i not in entity]
 
 
 # ── relation-biased transformer layer ────────────────────────────────────────────────────────────
@@ -171,7 +174,7 @@ class _RelationalEncoder(nn.Module):
         # additive attention mask = relation bias (bf-bf) + padding (-inf on padded keys). The globals
         # token (col 0) is always present, so no query row is fully -inf (no NaN softmax).
         bias = torch.zeros(B, N, N, device=H.device, dtype=H.dtype)
-        mp = _MAX_PERM
+        mp = obs["bf_feat"].shape[1]                                 # actual bf row count (MAX_PERM)
         block_adj, att_adj = self._bf_adjacency(obs["bf_feat"])      # (B, MP, MP) each
         bias[:, 1:1 + mp, 1:1 + mp] = self.w_block * block_adj + self.w_attach * att_adj
         bias = bias.masked_fill(kpm.unsqueeze(1), float("-inf"))     # -inf on padded key columns
@@ -231,13 +234,16 @@ class PointerHead(nn.Module):
     """Flat features → ``(B, ACTION_DIM)`` logits. Entity slots: ``q · entity_emb``; abstract: learned
     per-slot queries dotted with ``q``. Slot k of a bucket scores that bucket's entity row k."""
 
-    def __init__(self, pack: _PackSpec):
+    def __init__(self, pack: _PackSpec, action_dim: int):
         super().__init__()
         self.pack = pack
+        self.action_dim = int(action_dim)
         d = pack.d
         self.q_proj = nn.Linear(pack.state_dim, d)
         self.scale = d ** -0.5           # √d scaling so logits are O(1) (entity emb + abstract_q unit-var)
-        self._abstract_idx = _abstract_slot_indices()
+        # Entity/abstract split derived from the table sizes + action_dim (no hard-coded bucket bases).
+        self._entity_slots = _entity_slots(pack.mh, pack.mp, pack.ms, self.action_dim)
+        self._abstract_idx = _abstract_slot_indices(self._entity_slots, self.action_dim)
         self.abstract_q = nn.Parameter(torch.randn(len(self._abstract_idx), d))  # unit-var, like out_norm emb
 
     def _unpack(self, feats):
@@ -253,8 +259,8 @@ class PointerHead(nn.Module):
         state, ctx = self._unpack(feats)
         B = state.shape[0]
         q = self.q_proj(state) * self.scale                          # (B, d), √d-scaled
-        logits = torch.zeros(B, _ACTION_DIM, device=feats.device, dtype=feats.dtype)
-        for name, (base, count) in _ENTITY_SLOTS.items():
+        logits = torch.zeros(B, self.action_dim, device=feats.device, dtype=feats.dtype)
+        for name, (base, count) in self._entity_slots.items():
             emb = ctx[name][:, :count, :]                            # (B, count, d) — out_norm'd, unit-var
             logits[:, base:base + count] = torch.einsum("bd,bcd->bc", q, emb)
         logits[:, self._abstract_idx] = torch.einsum("bd,ad->ba", q, self.abstract_q)
@@ -287,7 +293,7 @@ class RelationalPointerPolicy(MaskableActorCriticPolicy):
     def _build(self, lr_schedule):
         super()._build(lr_schedule)                   # builds extractor + (soon-replaced) action/value nets
         pack = self.features_extractor.pack
-        self.action_net = PointerHead(pack)
+        self.action_net = PointerHead(pack, int(self.action_space.n))
         self.value_net = ValueHead(pack)
         self.optimizer = self.optimizer_class(self.parameters(), lr=lr_schedule(1.0),
                                               **self.optimizer_kwargs)

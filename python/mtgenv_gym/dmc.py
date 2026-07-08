@@ -9,7 +9,7 @@ the whole objective (DouZero, *Deep Monte-Carlo* — arXiv:2106.06135, simplifie
 value net for a symmetric 2-player game). Reward shaping is intentionally **OFF**: DMC learns the raw
 ±1, which is also exactly what eval scores.
 
-**The head is ACTION-AS-INPUT.** MTG's action head is a fixed ``Discrete(98)`` of *factored slots*
+**The head is ACTION-AS-INPUT.** MTG's action head is a fixed ``Discrete(ACTION_DIM)`` of *factored slots*
 whose meaning is positional (see ``codec.rs``): ``HAND[i]``/``PERM[i]``/``STACK[i]`` slots point at a
 specific entity ROW the policy already sees in the observation (hand / battlefield / stack), while
 ``COMMIT``/``PLAYER``/``MODE``/``COLOR``/``NUMBER``/``YES``/``NO`` are abstract slots. So we score
@@ -32,38 +32,14 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+from .codec_layout import slot_layout
 from .env import MtgEnv
 from .evalkit.policy import BasePolicy
 
-# ── action-slot layout (mirrors crate::codec — the flat Discrete(ACTION_DIM) vocabulary) ────────────
-# Only the entity-backed buckets matter to the net: their slots map 1:1 onto observation rows, so an
-# action's features ARE the pointed row's features. The bases are derived from the obs table widths
-# (MAX_HAND / MAX_PERM / MAX_STACK read from the encoder spec) + the fixed abstract-bucket sizes, and
-# `slot_layout` asserts the total equals PyGame.action_dim() so an obs↔codec desync is caught loudly.
-_N_PLAYER_SLOTS = 2
-_MAX_MODES = 16
-_N_COLORS = 5
-_MAX_NUM = 16
-
-
-def slot_layout(max_hand: int, max_perm: int, max_stack: int, action_dim: int) -> dict:
-    """The ``{bucket: (base, count)}`` map + a check that it tiles ``[0, action_dim)`` exactly as
-    ``codec.rs`` lays it out (COMMIT, HAND, PERM, PLAYER, STACK, MODE, COLOR, NUMBER, YES, NO)."""
-    commit = 0
-    hand = commit + 1
-    perm = hand + max_hand
-    player = perm + max_perm
-    stack = player + _N_PLAYER_SLOTS
-    mode = stack + max_stack
-    color = mode + _MAX_MODES
-    number = color + _N_COLORS
-    yes = number + _MAX_NUM
-    no = yes + 1
-    dim = no + 1
-    assert dim == action_dim, f"slot layout total {dim} != action_dim {action_dim} (obs↔codec desync)"
-    # Only the entity-backed buckets are used for content scatter; the rest ride the slot embedding.
-    return {"hand": (hand, max_hand), "perm": (perm, max_perm), "stack": (stack, max_stack),
-            "action_dim": dim}
+# The action-slot layout (mirrors crate::codec) lives in `codec_layout.slot_layout` — the canonical,
+# engine-free mirror shared with the attn pointer head. Only the entity-backed buckets matter to the
+# net: their slots map 1:1 onto observation rows, so an action's features ARE the pointed row's
+# features; the bases are derived from the obs table widths + action_dim (nothing hard-coded).
 
 
 # ── the Q-network (action-as-input) ─────────────────────────────────────────────────────────────────

@@ -1,9 +1,18 @@
 # Observation & Action Space — current state and honest gaps
 
-*Written 2026-07-08 (obs `F_PERM = 48`, action space `Discrete(98)`). Source of truth:
-`crates/mtg-py/src/{obs.rs, codec.rs, layout.rs}`. This doc exists to answer one question
-precisely: **what can the policy actually know, especially about relationships between entities
-in combat — and what can it not.***
+*Written 2026-07-08. **Contract v2** (obs `F_PERM = 48`, `MAX_PERM = 64`, action space
+`Discrete(130)`). Source of truth: `crates/mtg-py/src/{obs.rs, codec.rs, layout.rs}`. This doc
+exists to answer one question precisely: **what can the policy actually know, especially about
+relationships between entities in combat — and what can it not.***
+
+> **v2 change (2026-07-08): `MAX_PERM` 32 → 64.** Late-game SOS boards were observed at ~39
+> permanents — past the old 32-row cap, so any object beyond row 32 was silently truncated:
+> invisible to the policy *and* unmappable to a `PERM` action slot (≈18% of a 39-object board
+> unseen). Raising the cap to 64 covers the observed max with token headroom; a **deterministic
+> truncation priority** (§2a) bounds the residual overflow risk for degenerate grinds. The action
+> space grew `Discrete(98) → Discrete(130)` (the `PERM` bucket widened by 32; all later bucket
+> bases shifted +32). This is a deliberate contract break: the byte-equivalence snapshot + ratings
+> fingerprint were re-pinned to v2 on purpose.
 
 ## 1. What the policy sees
 
@@ -14,11 +23,30 @@ Output is a fixed-shape bundle:
 | Tensor | Shape | Contents |
 |---|---|---|
 | `globals` | 69 | turn, phase one-hot (12), active/priority flags, per-seat block ×2 (life, poison, hand/library/graveyard/exile/battlefield counts, floating mana WUBRGC), stack depth, **decision-kind one-hot (21 `DecisionRequest` variants)**, request scalars, 2 player-candidate flags |
-| `bf_feat` | 32 × 48 | one row per battlefield object (both players'), see §2 |
-| `bf_ids` / `bf_cardid` | 32 | hashed `grp_id` (embedding lookup) + deck-local exact one-hot |
+| `bf_feat` | 64 × 48 | one row per battlefield object (both players'), in `perm_order` (§2a), see §2 |
+| `bf_ids` / `bf_cardid` | 64 | hashed `grp_id` (embedding lookup) + deck-local exact one-hot |
 | `hand_feat` | 16 × 18 | own hand: base stats, types, colors, castable flag, 2 decision flags |
 | `stack_feat` | 8 × 18 | stack objects: base, types, colors, 2 decision flags — **thin; see gap G1** |
 | `decision_ids` | 1 | `grp_id` of the card *raising the current decision* (fed to the head directly, bypassing any pooling) |
+
+## 2a. Battlefield row ordering & truncation priority (`layout::perm_order`)
+
+The `bf_feat`/`bf_ids` rows are **not** in raw `view.battlefield` order. Both the obs encoder and the
+action codec route through one shared function, `layout::perm_order(battlefield)`, which returns the
+row indices **partitioned nonlands-first (creatures/artifacts/enchantments/…), then lands, stable
+within each class** (the engine's order preserved inside a class), **capped at `MAX_PERM = 64`**.
+
+This is load-bearing in two ways:
+
+1. **The obs↔action contract.** Obs row `k` and action slot `PERM[k]` must name the *same* object —
+   the whole point of positional slots. A single ordering function used by both sides guarantees it
+   by construction (there is no second code path to drift). The 70-permanent agreement test in
+   `codec.rs` pins this: obs row `k`'s `instance_id` equals codec `PERM[k]`'s id for all `k`.
+2. **Deterministic truncation priority.** When a board exceeds 64 permanents, `.truncate(64)` drops
+   the **trailing lands** — the least decision-relevant rows (a wall of tapped lands has no legal
+   action; the creatures/artifacts/enchantments carry every real choice). A face-down/`Hidden`
+   permanent counts as a nonland (it's a 2/2 creature). Before v2 the cap was 32 and truncation was
+   "first 32 in engine order" — arbitrary, and it silently hid ~18% of an observed 39-object board.
 
 ## 2. The battlefield row — where combat lives
 
@@ -41,24 +69,31 @@ Columns 45–47 were added for the relational (4.7) arm. They are **match keys, 
 raw ids are meaningless to an MLP; they become information only through machinery that *matches*
 them across rows (the attention arm builds an adjacency bias from `blocking_id[i] == instance_id[j]`).
 
-## 3. The action space — `Discrete(98)`, positional buckets
+## 3. The action space — `Discrete(130)`, positional buckets
 
 ```
-0        COMMIT            (finish/accept-default for the current decision)
-1–16     HAND[i]           (act on hand row i: play/cast)
-17–48    PERM[i]           (act on battlefield row i: declare attacker/blocker, target, …)
-49–50    PLAYER[i]         (target a player)
-51–58    STACK[i]          (target a stack object)
-59–74    MODE[i]           (modal choices; also fallback for unmappable candidates)
-75–79    COLOR[i]
-80–95    NUMBER[i]
-96–97    YES / NO
+0         COMMIT            (finish/accept-default for the current decision)
+1–16      HAND[i]           (act on hand row i: play/cast)
+17–80     PERM[i]           (act on battlefield row i: declare attacker/blocker, target, …)  [64 slots]
+81–82     PLAYER[i]         (target a player)
+83–90     STACK[i]          (target a stack object)
+91–106    MODE[i]           (modal choices; also fallback for unmappable candidates)
+107–111   COLOR[i]
+112–127   NUMBER[i]
+128–129   YES / NO
 ```
 
-Slot semantics are **positional and contextual**: `PERM[3]` means "battlefield row 3 *under the
-current decision*" — an attacker declaration in one phase, a block target in another. What the
-current decision *is* comes from the globals' decision one-hot + `is_decision_source` +
-`decision_ids`. Every enumerated slot is legal by construction; the mask zeroes the rest.
+Slot semantics are **positional and contextual**: `PERM[3]` means "battlefield row 3 (in
+`perm_order`, §2a) *under the current decision*" — an attacker declaration in one phase, a block
+target in another. What the current decision *is* comes from the globals' decision one-hot +
+`is_decision_source` + `decision_ids`. Every enumerated slot is legal by construction; the mask
+zeroes the rest. Bucket bases are **derived** from the shared table sizes (`codec.rs`), so nothing
+downstream hard-codes 130 — Python reads `PyGame.action_dim()` and `obs_spec()` at runtime.
+
+*v1→v2 remap (for reading old 98-slot checkpoints through the ratings `SchemaAdapter`):* `COMMIT`,
+`HAND[0..16]`, and `PERM[0..32]` keep their indices (the first 32 perm rows map 1:1 after 64→32 obs
+truncation); every bucket from `PLAYER` onward shifts **+32** (the `PERM` bucket widened by 32).
+`PERM[32..64]` is new — an old net can't see or act on those rows, so they're masked off for it.
 
 **Combat is autoregressive.** DeclareAttackers: pick `PERM[i]` per attacker (each toggle updates
 `is_pending_combat` in the next obs), then `COMMIT`. DeclareBlockers is two-level: pick a blocker
@@ -100,9 +135,12 @@ machinery. This distinction matters and cuts both ways:*
 
 ## 5. History of the widths (for reading old runs)
 
-| Era | F_PERM | What was missing |
-|---|---|---|
-| ≤2.8 | 43 | gang counts (double-block invisible → 2.8's flat gang_rate was predetermined) |
-| 2.9–4.3 | 44 | own pending combat plan |
-| 4.4–4.6 | 45 | relation ids (pairings/attachments) |
-| 4.7+ | 48 | — (current; gaps G1/G2 remain) |
+`F_PERM` is the per-row width (columns); `MAX_PERM` is the row count / action `PERM`-bucket size.
+
+| Era | F_PERM | MAX_PERM | action_dim | What changed |
+|---|---|---|---|---|
+| ≤2.8 | 43 | 32 | 98 | gang counts missing (double-block invisible → 2.8's flat gang_rate was predetermined) |
+| 2.9–4.3 | 44 | 32 | 98 | + own pending combat plan |
+| 4.4–4.6 | 45 | 32 | 98 | + relation ids (pairings/attachments) |
+| 4.7–4.9 | 48 | 32 | 98 | + G1/G2 relation cols (contract **v1**) |
+| 4.10+ | 48 | **64** | **130** | **v2**: `MAX_PERM` 32→64 (late-game truncation fix, §2a) + `perm_order` truncation priority; columns unchanged |

@@ -15,12 +15,8 @@ from mtgenv_gym.attn_policy import (
     _BF_ATTACHED_ID,
     _BF_BLOCKING_ID,
     _BF_INSTANCE_ID,
-    _HAND_BASE,
-    _MAX_HAND,
-    _MAX_PERM,
-    _MAX_STACK,
-    _PERM_BASE,
     _abstract_slot_indices,
+    _entity_slots,
     PointerHead,
     RelationalAttnExtractor,
     _PackSpec,
@@ -28,6 +24,13 @@ from mtgenv_gym.attn_policy import (
 )
 
 _V = 11  # cardid one-hot width
+# Contract v2 table sizes (MAX_PERM 64). The action_dim + all bucket bases are DERIVED from these via
+# `slot_layout` — the test pins the same spec-driven layout the policy builds, so a future contract
+# bump only needs these three numbers.
+_MAX_HAND, _MAX_PERM, _MAX_STACK = 16, 64, 8
+# action_dim = COMMIT(1) + HAND + PERM + PLAYER(2) + STACK + MODE(16) + COLOR(5) + NUMBER(16) + YES/NO(2)
+_ADIM = 1 + _MAX_HAND + _MAX_PERM + 2 + _MAX_STACK + 16 + 5 + 16 + 2  # = 130 for MAX_PERM 64
+_SLOTS = _entity_slots(_MAX_HAND, _MAX_PERM, _MAX_STACK, _ADIM)  # {"bf":(base,cnt),"hand":..,"stack":..}
 
 
 def _obs_space():
@@ -78,24 +81,26 @@ def test_bf_adjacency_matches_ids():
 # ── pointer-logit alignment ──────────────────────────────────────────────────────────────────────
 def test_pointer_slot_scores_matching_entity():
     pack = _PackSpec(d_model=8, sizes={"bf": _MAX_PERM, "hand": _MAX_HAND, "stack": _MAX_STACK})
-    head = PointerHead(pack)
+    head = PointerHead(pack, _ADIM)
     B = 2
     feats = torch.randn(B, pack.total)
     state, ctx = head._unpack(feats)
     q = head.q_proj(state) * head.scale     # √d-scaled query (pointer balances entity vs abstract logits)
     logits = head(feats)
     # entity slot k of each bucket == q · that bucket's contextual entity-emb k (exact alignment).
-    for name, base, count in [("bf", _PERM_BASE, _MAX_PERM), ("hand", _HAND_BASE, _MAX_HAND)]:
+    for name in ("bf", "hand"):
+        base, count = _SLOTS[name]
         expect = torch.einsum("bd,bcd->bc", q, ctx[name])
         assert torch.allclose(logits[:, base:base + count], expect, atol=1e-5), f"{name} pointer misaligned"
     # abstract slots filled from the learned abstract queries.
-    assert logits.shape == (B, 98)
-    ab = _abstract_slot_indices()
+    assert logits.shape == (B, _ADIM)
+    ab = _abstract_slot_indices(_SLOTS, _ADIM)
     assert torch.allclose(logits[:, ab], torch.einsum("bd,ad->ba", q, head.abstract_q), atol=1e-5)
-    # entity slots and abstract slots together tile all 98 slots exactly once.
-    entity = set(range(_PERM_BASE, _PERM_BASE + _MAX_PERM)) | set(range(_HAND_BASE, _HAND_BASE + _MAX_HAND)) \
-        | set(range(51, 51 + _MAX_STACK))
-    assert entity.isdisjoint(ab) and len(entity) + len(ab) == 98
+    # entity slots and abstract slots together tile all action_dim slots exactly once.
+    entity = set()
+    for b, c in _SLOTS.values():
+        entity |= set(range(b, b + c))
+    assert entity.isdisjoint(ab) and len(entity) + len(ab) == _ADIM
 
 
 # ── forward shapes + no NaN, and param budget ─────────────────────────────────────────────────────
@@ -107,25 +112,27 @@ def test_extractor_forward_and_param_budget():
     feats = ext(_obs_batch(3))
     assert feats.shape == (3, ext.pack.total)
     assert torch.isfinite(feats).all()
-    head = PointerHead(ext.pack)
+    head = PointerHead(ext.pack, _ADIM)
     logits = head(feats)
-    assert logits.shape == (3, 98) and torch.isfinite(logits).all()
+    assert logits.shape == (3, _ADIM) and torch.isfinite(logits).all()
     # Parity: total attn-policy params within ±20% of the baseline (architecture isolated from size).
+    # Param count is INVARIANT to MAX_PERM (attention shares per-row projections; abstract_q count is
+    # action_dim − entity_slots = 42, unchanged by the +32/+32 v2 bump), so the v1 band still holds.
     from mtgenv_gym.attn_policy import RelationalPointerPolicy, ValueHead
     from gymnasium import spaces
-    pol = RelationalPointerPolicy(_obs_space(), spaces.Discrete(98), lambda _: 3e-4)
+    pol = RelationalPointerPolicy(_obs_space(), spaces.Discrete(_ADIM), lambda _: 3e-4)
     n = sum(p.numel() for p in pol.parameters())
     assert 0.8 * _BASELINE_PARAMS <= n <= 1.2 * _BASELINE_PARAMS, \
         f"parity attn {n:,} not within ±20% of baseline {_BASELINE_PARAMS:,}"
     # the wider config is the parked SIZE experiment (~1.5M), deliberately out of the parity band.
-    big = RelationalPointerPolicy(_obs_space(), spaces.Discrete(98), lambda _: 3e-4, d_model=256, ff=512)
+    big = RelationalPointerPolicy(_obs_space(), spaces.Discrete(_ADIM), lambda _: 3e-4, d_model=256, ff=512)
     assert sum(p.numel() for p in big.parameters()) > 1_000_000
 
 
 def test_full_maskable_policy_builds():
     from mtgenv_gym.attn_policy import RelationalPointerPolicy
 
-    pol = RelationalPointerPolicy(_obs_space(), spaces.Discrete(98), lambda _: 3e-4)
+    pol = RelationalPointerPolicy(_obs_space(), spaces.Discrete(_ADIM), lambda _: 3e-4)
     # action_net / value_net were replaced by the pointer / value heads; optimizer covers their params.
     from mtgenv_gym.attn_policy import PointerHead as PH, ValueHead as VH
     assert isinstance(pol.action_net, PH) and isinstance(pol.value_net, VH)

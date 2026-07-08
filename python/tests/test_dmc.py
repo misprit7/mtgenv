@@ -7,12 +7,12 @@ handful of transitions and take one DMC gradient step on heralds).
 import numpy as np
 import pytest
 
+from mtgenv_gym.codec_layout import slot_layout
 from mtgenv_gym.dmc import (
     EpsilonSchedule,
     ReplayBuffer,
     compute_returns,
     greedy_from_q,
-    slot_layout,
 )
 
 
@@ -41,13 +41,14 @@ def test_epsilon_schedule_linear_then_flat():
 
 # ── pure: slot layout tiles [0, action_dim) exactly like codec.rs ────────────────────────────────
 def test_slot_layout_matches_codec():
-    lay = slot_layout(max_hand=16, max_perm=32, max_stack=8, action_dim=98)
+    # contract v2 (MAX_PERM 64 → action_dim 130).
+    lay = slot_layout(max_hand=16, max_perm=64, max_stack=8, action_dim=130)
     assert lay["hand"] == (1, 16)          # HAND_BASE=1
-    assert lay["perm"] == (17, 32)         # PERM_BASE=17
-    assert lay["stack"] == (51, 8)         # STACK_BASE=51
-    assert lay["action_dim"] == 98
+    assert lay["perm"] == (17, 64)         # PERM_BASE=17 (64 rows)
+    assert lay["stack"] == (83, 8)         # STACK_BASE=83 (shifted +32 by the wider PERM bucket)
+    assert lay["action_dim"] == 130
     with pytest.raises(AssertionError):    # a wrong total is caught loudly (obs↔codec desync)
-        slot_layout(16, 32, 8, 99)
+        slot_layout(16, 64, 8, 131)
 
 
 # ── pure: greedy over legal with random tie-break ────────────────────────────────────────────────

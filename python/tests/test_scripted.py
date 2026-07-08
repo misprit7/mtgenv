@@ -86,7 +86,7 @@ def test_fallback_prefers_commit_then_decline():
 def test_layout_matches_engine():
     import mtg_py
 
-    assert mtg_py.PyGame.action_dim() == 98
+    assert mtg_py.PyGame.action_dim() == 130   # contract v2 (MAX_PERM 64)
     spec = dict((name, cols) for (name, rows, cols, is_int) in mtg_py.PyGame.obs_spec())
     assert spec["globals"] == 69          # decision one-hot at [43,64) relies on this width
     assert spec["hand_feat"] == 18        # HAND_LAND_COL indexes into this row

@@ -120,11 +120,12 @@ enum IState {
 
 impl Interaction {
     pub fn new(view: &PlayerView, req: &DecisionRequest) -> Interaction {
-        let bf: Vec<ObjId> = view
-            .battlefield
-            .iter()
-            .take(MAX_PERM)
-            .map(layout::objview_id)
+        // PERM slots index into the SAME shared row ordering the obs encoder uses (nonlands-first,
+        // then lands; capped at MAX_PERM) — so slot `PERM[k]` acts on the object at obs row `k`, and
+        // an overflowing board drops the same trailing lands on both sides. See `layout::perm_order`.
+        let bf: Vec<ObjId> = layout::perm_order(&view.battlefield)
+            .into_iter()
+            .map(|row| layout::objview_id(&view.battlefield[row]))
             .collect();
         let hand: Vec<ObjId> = view
             .me
@@ -737,6 +738,63 @@ mod tests {
         }
     }
 
+    fn vis_typed(id: u64, is_land: bool) -> ObjView {
+        let ty = if is_land { "Land" } else { "Creature" };
+        ObjView::Visible {
+            id: ObjId(id),
+            chars: CharacteristicsView { card_types: vec![ty.to_string()], ..Default::default() },
+            controller: PlayerId(0),
+            owner: PlayerId(0),
+            zone: mtg_core::basics::Zone::Battlefield,
+            status: mtg_core::basics::Status::default(),
+            counters: mtg_core::basics::CounterBag::default(),
+            damage_marked: 0,
+            attachments: vec![],
+            summoning_sick: false,
+        }
+    }
+
+    // The obs↔codec contract on an OVERFLOWING board (contract v2, MAX_PERM 64): a slot `PERM[k]`
+    // must act on the object the policy saw at obs row `k`, even past the cap. Both sides route
+    // through `layout::perm_order` (nonlands-first, then lands, stable within class, capped), so a
+    // 70-permanent board must (a) put all nonlands ahead of all lands, (b) drop only trailing lands
+    // on overflow, and (c) have codec `PERM[k]` and obs row `k`'s instance_id name the same object.
+    #[test]
+    fn obs_rows_and_codec_perm_slots_agree_on_70_permanent_board() {
+        let mut view = base_view();
+        // 70 perms interleaved land/nonland so raw battlefield order does NOT match the sorted order.
+        let mut nonland_ids = vec![];
+        let mut land_ids = vec![];
+        for k in 0..70u64 {
+            let id = 1000 + k;
+            let is_land = k % 2 == 1; // odd = land, even = creature → 35 of each
+            view.battlefield.push(vis_typed(id, is_land));
+            if is_land { land_ids.push(id) } else { nonland_ids.push(id) }
+        }
+        let req = DecisionRequest::Priority { actions: vec![], can_pass: true };
+
+        // Codec PERM ordering (the ids in slot order), and obs instance_id per row.
+        let it = Interaction::new(&view, &req);
+        let codec_ids: Vec<u64> = it.bf.iter().map(|o| o.0).collect();
+        let o = crate::obs::encode(&view, &req, 1, &[], None, &[]);
+        let obs_ids: Vec<u64> = (0..MAX_PERM)
+            .map(|r| o.bf_feat[r * crate::obs::F_PERM + crate::obs::BF_INSTANCE_ID] as u64)
+            .collect();
+
+        // (c) both capped at 64 and pointing at the same objects, row-for-row.
+        assert_eq!(codec_ids.len(), MAX_PERM, "codec bf capped at MAX_PERM");
+        assert_eq!(obs_ids, codec_ids, "obs row k and codec PERM[k] must name the same object");
+        // (a) the 35 nonlands come first (stable ⇒ ascending id), then lands.
+        assert_eq!(&obs_ids[..35], &nonland_ids[..], "all nonlands ahead of any land");
+        // (b) rows 35..64 are the first 29 lands; the last 6 lands are the dropped overflow.
+        assert_eq!(&obs_ids[35..MAX_PERM], &land_ids[..MAX_PERM - 35], "lands fill the rest, in order");
+        assert_eq!(MAX_PERM - 35, 29);
+        // The dropped ids (never in either table) are exactly the trailing 6 lands.
+        for dropped in &land_ids[29..] {
+            assert!(!codec_ids.contains(dropped), "overflow drops trailing lands only");
+        }
+    }
+
     #[test]
     fn confirm_is_yes_no() {
         let mut it =
@@ -858,7 +916,7 @@ mod tests {
         // A change to the table sizes shifts every downstream slot — pin the totals so an
         // accidental obs↔codec desync is caught.
         expect![[r#"
-            COMMIT=0 HAND=1 PERM=17 PLAYER=49 STACK=51 MODE=59 COLOR=75 NUMBER=80 YES=96 NO=97 DIM=98
+            COMMIT=0 HAND=1 PERM=17 PLAYER=81 STACK=83 MODE=91 COLOR=107 NUMBER=112 YES=128 NO=129 DIM=130
         "#]]
         .assert_eq(&format!(
             "COMMIT={COMMIT} HAND={HAND_BASE} PERM={PERM_BASE} PLAYER={PLAYER_BASE} STACK={STACK_BASE} MODE={MODE_BASE} COLOR={COLOR_BASE} NUMBER={NUMBER_BASE} YES={YES} NO={NO} DIM={ACTION_DIM}\n"
