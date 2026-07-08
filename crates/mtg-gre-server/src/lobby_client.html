@@ -189,8 +189,10 @@
 <div class="wrap">
   <div class="apphdr">
     <h1>mtg<span class="tag">env</span> · lobby</h1>
+    <a id="dashLink" class="themebtn" style="text-decoration:none" title="Training dashboard (metrics, ratings, replays)">📊 dashboard</a>
     <button id="themeBtn" class="themebtn" title="Cycle theme: Auto / Light / Dark">◐ Auto</button>
   </div>
+  <script>document.getElementById("dashLink").href = "http://" + location.hostname + ":8060/";</script>
   <div class="hdrrule"></div>
   <p class="sub">Set up a game and choose who plays each seat. Open one browser tab per human seat —
     games start automatically once every human seat is connected.</p>
