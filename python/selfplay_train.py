@@ -170,7 +170,8 @@ def _clean(*paths):
 def train_selfplay(deck="demo", timesteps=120_000, n_envs=8, pool_dir=DEFAULT_POOL,
                    tensorboard_log=None, seed=0, pool_every=8000, eval_every=8000, subproc=False,
                    shaping_coef=0.1, notes=None, replay_every=0, run_name=None,
-                   vecenv="batched", num_workers=8, verbose=0):
+                   vecenv="batched", num_workers=8, verbose=0,
+                   policy="MultiInputPolicy", policy_kwargs=None):
     # replay_every>0 records one greedy self-play game every that-many steps to data/replays/ (the
     # lobby's "AI Training Replays" learning progression). Default 0 (OFF) as a library call — the
     # CLI turns it on (~25k) so real runs record, but tests / ab_shaping stay clean.
@@ -186,10 +187,14 @@ def train_selfplay(deck="demo", timesteps=120_000, n_envs=8, pool_dir=DEFAULT_PO
     _clean(os.path.join(pool_dir, "*.zip"), ref_path, os.path.join(ladder_dir, "*.zip"))  # fresh league
 
     venv = make_vecenv(deck, pool_dir, n_envs, seed, subproc=subproc, vecenv=vecenv, num_workers=num_workers)
+    # Default policy = the DeepSets EntityExtractor baseline; a caller (e.g. attn_train) can pass a
+    # custom policy class + kwargs (the relational-attention pointer policy) — everything else (vec env,
+    # callbacks, evalkit battery, shaping) is identical, so arms differ only in the policy.
+    pk = policy_kwargs if policy_kwargs is not None else dict(features_extractor_class=EntityExtractor)
     model = MaskablePPO(
-        "MultiInputPolicy",
+        policy,
         venv,
-        policy_kwargs=dict(features_extractor_class=EntityExtractor),
+        policy_kwargs=pk,
         n_steps=256,
         batch_size=256,
         gamma=0.999,
