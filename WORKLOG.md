@@ -3,6 +3,27 @@
 Short, dated entries for future-agent consumption. Newest first. One line or a few bullets
 per unit of meaningful progress. Keep it terse — detail lives in `docs/` and git history.
 
+## 2026-07-08 (Bradley-Terry agent-rating system — the model-quality scalar)
+
+- **`evalkit/ratings.py`:** per-env BT rating pools under `data/elo/<env>/` (gitignored). Registry
+  `agents.json` (name→{kind,checkpoint,notes}); append-only crosstable `games.jsonl` (one row per
+  Arena batch: `{a,b,a_wins,b_wins,draws,n,seed,mode}`, both seatings = two rows); output
+  `ratings.json` (`{agent:{rating,ci_lo,ci_hi,games,…}}` + nontransitivity report). Penalized-MLE BT
+  fit (numpy Newton, deterministic, re-fit from scratch each update), draws = half-win; Elo scale
+  `1000 + (400/ln10)·θ` with `random` pinned at exactly 1000; CIs from inverse Fisher; tiny ridge tames
+  separation → wide-but-finite CIs. numpy-only (imports in any venv). 9 pytest cases green
+  (`test_ratings.py`): ordering/gap recovery, exact-1000 anchor, JSONL round-trip, CI tightening +
+  separation, RPS nontransitivity.
+- **`python/rate_agent.py`:** tournament runner — `seed/list/refit/smoke/tournament/add`. Both
+  seatings via batched `Arena`, seeds rotate past all recorded games (stored per row); `add` trims to
+  anchors+top-K+sample when pool >12; `--only-new` skips replayed pairings. Trivial `ScriptedBlockAll`
+  probe (over-chumps) defined in-runner (scripted.py untouched).
+- **Pools seeded:** heralds = {random, scripted} (4.4-ppo/4.3-dmc finals had NO recoverable weights —
+  overwritten/never-saved). swine = {random, scripted, scripted-blockall, 4.6-ppo, 4.7-ppo-attn,
+  2.9-legacy} — all load. **Rescued the 3 swine finals out of ephemeral `/tmp` pools** →
+  `data/elo/checkpoints/swine/` (the next training run's `_clean` would have wiped them).
+- Initial tournaments (thousands of games) NOT yet run — gated on the profiling window.
+
 ## 2026-07-08 (PPO combat-judgment baseline 4.4-4.6 + relational-attention arm 4.7-4.9)
 
 - **Obs audit + `is_pending_combat` flag (11133e8, F_PERM 44→45):** DeclareBlockers double-block IS
