@@ -76,16 +76,18 @@ if (replayId) {
 }
 
 function handle(m: Any): void {
-  if (m.type === "event") { view = m.view; logEvent(m.event); render(); }
+  if (m.type === "event") { view = m.view; logEvent(m.event); rlTick(); render(); }
   else if (m.type === "godFrame") {
     // Live god-view spectating: omniscient frame (no masking). Render via the same adapter as
     // replays; surface the label of what just happened in the spectating banner.
     view = godToView(m.state, 0);
     if (m.label) $("prompt").innerHTML = `<div class="waiting">👁 ${esc(m.label)}</div>`;
+    rlTick();
     render();
   }
   else if (m.type === "decide") {
     view = m.view; cur = m; multi.clear(); orderSeq = [];
+    rlTick(); rlStep(); // a new decision for you closes the env step → snapshot its shaping sum
     // Enter-engaged "pass through this turn's stops" lapses when the turn advances (MTGA parity).
     if (autoPassTurn !== null && view.turn !== autoPassTurn) { autoPassTurn = null; autoPassBadge(); }
     // The engine surfaces only real stops now; just honour the optional "pass this turn's stops" hold.
@@ -298,6 +300,9 @@ function showFrame(i: number, coalesceOk?: boolean): void {
   if (!skipHeavy) {
     lastHeavyRender = now;
     view = godToView(fr.state, 0);
+    rlTick(frameIdx === rlLastFrame + 1); // Δ only on a k→k+1 step; a scrub/jump resets the baseline
+    rlStep(); // replays have no decision boundary → each frame closes a step
+    rlLastFrame = frameIdx;
     render();
   }
   $("rbFrame").textContent = `${frameIdx + 1} / ${n}`;
@@ -397,6 +402,7 @@ function render(): void {
   renderStepBar();
   renderHand();
   if (cur) renderPrompt();
+  renderRewardPanel(); // RL reward lens (display-only refresh; Φ baseline advances in rlTick)
   refreshPreview(); // re-derive the hover preview against the freshly-rebuilt DOM
   drawArrows();     // draw stack→target arrows over the rebuilt board
 }
@@ -1093,6 +1099,7 @@ function renderEnd(winner: number | null): void {
   const youWon = view && winner === view.seat;
   $("prompt").innerHTML = `<div class="banner">Game over — winner: ${w}${youWon ? " 🎉 (you!)" : ""}</div>`;
   log(`GAME OVER — winner: ${w}`);
+  rlTerminal(winner);
 }
 
 // ── zone viewer modal ─────────────────────────────────────────────────────────
@@ -1168,6 +1175,88 @@ function cycleTheme(): void {
 themeMql.addEventListener("change", () => { if (themeMode() === "auto") applyTheme(); }); // Auto follows the OS
 { const tb = document.getElementById("themeToggle"); if (tb) tb.onclick = cycleTheme; }
 applyTheme(); // reconcile the toggle label with the head-script's data-theme
+
+// ── RL reward lens (Φ shaping preview) ─────────────────────────────────────────
+// Mirrors python/mtgenv_gym/batched_selfplay.py::_phi_batch/_apply_shaping — keep in sync BY HAND:
+//   Φ(s) = 0.5·tanh(Δcards/4) + 0.3·tanh(Δpower/6) + 0.2·tanh(Δlife/10)   (from YOUR seat)
+//   per-step shaping = coef·(γ·Φ(s′) − Φ(s)) with γ=0.999, coef=0.1 at launch (annealed to 0);
+//   terminal = ±1 win/loss + coef·(−Φ(s)) (Φ(terminal)≜0). Eval always scores the raw ±1.
+// A training-debug lens: toggle it and watch whether a line of play (e.g. a chump block) moves Φ
+// the way the learner is nudged. Δcards counts hand+battlefield; Δpower sums battlefield power.
+// Granularity caveat: the env samples Φ only at LEARNER decision points; this panel ticks on every
+// state update, finer-grained — the deltas telescope to the same total, but a single env step can
+// span several panel ticks.
+const RL = { gamma: 0.999, coef: 0.1 };
+const RL_KEY = "mtg_show_reward";
+let showReward = false;
+try { showReward = localStorage.getItem(RL_KEY) === "1"; } catch (e) { /* private mode */ }
+let rlPrev: number | null = null;   // Φ of the previous state
+let rlDelta: number | null = null;  // shaping over the LAST completed env step (decision→decision)
+let rlAccum: number | null = null;  // running coef·(γΦ′−Φ) sum since the previous decision point
+let rlEnd: string | null = null;    // terminal breakdown once the game ends
+let rlLastFrame = -2;               // replay: only a k→k+1 frame advance counts as a step
+function rlPhiTerms(): Any | null {
+  if (!view) return null;
+  const meP = pub(meSeat()), oppP = pub(oppId());
+  let myBf = 0, oppBf = 0, myPow = 0, oppPow = 0;
+  (view.battlefield || []).map(norm).forEach((c: Any) => {
+    const mine = c.controller === meSeat();
+    // Face-down permanents are 2/2 creatures to the obs encoder; visible non-creatures have power 0.
+    const pw = c.hidden ? 2 : (c.chars && c.chars.power != null ? Number(c.chars.power) || 0 : 0);
+    if (mine) { myBf++; myPow += pw; } else { oppBf++; oppPow += pw; }
+  });
+  const myHand = (godMode && view._god) ? (meP._hand || []).length : ((view.me && view.me.hand) || []).length;
+  const oppHand = oppP.hand_count != null ? oppP.hand_count : ((oppP._hand || []).length || 0);
+  const cards = 0.5 * Math.tanh(((myHand + myBf) - (oppHand + oppBf)) / 4.0);
+  const power = 0.3 * Math.tanh((myPow - oppPow) / 6.0);
+  const life = 0.2 * Math.tanh(((meP.life || 0) - (oppP.life || 0)) / 10.0);
+  return { cards, power, life, phi: cards + power + life };
+}
+// Advance the Φ baseline on a real state transition (NOT on cosmetic re-renders — render() only
+// repaints the panel). Many engine events fire between two of YOUR decisions, so per-event deltas
+// are ~0 and get overwritten by trailing no-op events; the env's actual step reward is the SUM over
+// that whole span. So each tick accumulates into rlAccum, and rlStep() (at each new decision /
+// replay frame) closes the env step: that sum is what training would hand the learner.
+// `sequential=false` (replay scrub/jump) resets the baseline without a fake Δ.
+function rlTick(sequential: boolean = true): void {
+  const t = rlPhiTerms(); if (!t) return;
+  if (sequential && rlPrev != null) rlAccum = (rlAccum ?? 0) + RL.coef * (RL.gamma * t.phi - rlPrev);
+  else if (!sequential) { rlAccum = null; rlDelta = null; }
+  rlPrev = t.phi;
+  rlEnd = null;
+}
+function rlStep(): void { if (rlAccum != null) { rlDelta = rlAccum; rlAccum = 0; } }
+function rlTerminal(winner: number | null): void {
+  const base = winner == null ? 0 : (view && winner === view.seat ? 1 : -1);
+  const shape = (rlAccum ?? 0) + (rlPrev != null ? RL.coef * (0 - rlPrev) : 0); // Φ(terminal) ≜ 0
+  rlAccum = 0;
+  rlEnd = `game end: ${fmtd(base, 0)} win/loss ${fmtd(shape, 4)} shaping = ${fmtd(base + shape, 4)}`;
+  renderRewardPanel();
+}
+function fmtd(x: number, d: number): string { return (x >= 0 ? "+" : "") + x.toFixed(d); }
+function renderRewardPanel(): void {
+  const p = document.getElementById("rewardPanel");
+  if (!p) return;
+  const t = showReward ? rlPhiTerms() : null;
+  if (!t) { p.hidden = true; return; }
+  p.hidden = false;
+  const dcls = rlDelta == null ? "" : rlDelta >= 0 ? " pos" : " neg";
+  p.innerHTML =
+    `<div class="rp-row"><b>Φ ${fmtd(t.phi, 3)}</b>` +
+    (rlDelta != null ? ` <span class="rp-d${dcls}">step ${fmtd(rlDelta, 4)}</span>` : "") + `</div>` +
+    `<div class="rp-terms">cards(hand+bf) ${fmtd(t.cards, 3)} · power ${fmtd(t.power, 3)} · life ${fmtd(t.life, 3)}</div>` +
+    (rlEnd ? `<div class="rp-end">${esc(rlEnd)}</div>` : "") +
+    `<div class="rp-note">reward = ±1 at end + 0.1·(0.999·Φ′−Φ) per step</div>`;
+}
+function toggleReward(): void {
+  showReward = !showReward;
+  try { if (showReward) localStorage.setItem(RL_KEY, "1"); else localStorage.removeItem(RL_KEY); } catch (e) {}
+  const b = document.getElementById("rewardToggle"); if (b) b.classList.toggle("on", showReward);
+  if (showReward && rlPrev == null) rlTick(false); // first open → establish the baseline, no fake Δ
+  renderRewardPanel();
+}
+{ const rb = document.getElementById("rewardToggle");
+  if (rb) { rb.onclick = toggleReward; rb.classList.toggle("on", showReward); } }
 
 // ── misc ───────────────────────────────────────────────────────────────────────
 function nameOf(id: number): string {

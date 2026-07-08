@@ -26,6 +26,7 @@
         <span class="spacer"></span>
         <span class="s" id="decks"></span>
         <span class="s" id="stops"></span>
+        <button class="rewardtoggle" id="rewardToggle" title="Show the RL shaping reward (Φ) the training env would see for your seat">Φ RL</button>
         <button class="themetoggle" id="themeToggle" title="Theme: Auto → Light → Dark">◐ Auto</button>
         <button class="logtoggle" id="logToggle" title="Show / hide the game log">▤ Log</button>
       </div>
@@ -59,6 +60,8 @@
 
       <div class="logpanel">
         <div id="selfSlot"></div>
+        <!-- RL reward lens (Φ shaping preview) — toggled by the topbar Φ RL chip. -->
+        <div class="reward-panel" id="rewardPanel" hidden></div>
         <div class="promptbox" id="prompt"><div class="waiting">Waiting for the game to start…</div></div>
         <div class="logtitle">Game log</div>
         <div id="log"></div>

@@ -389,6 +389,21 @@
     border-radius: 7px 4px 7px 4px; padding: 4px 10px; font: var(--condensed); font-size: 12px; font-weight: 800;
     text-transform: uppercase; letter-spacing: .4px; cursor: pointer; box-shadow: 2px 2px 0 var(--cyan); }
   .logtoggle.on { background: var(--cyan); color: #08202a; }
+  /* RL reward lens: topbar chip + fixed Φ panel (training-debug; mirrors the gym's shaping). */
+  .rewardtoggle { background: var(--panel); color: var(--ink); border: 2.5px solid var(--ink);
+    border-radius: 7px 4px 7px 4px; padding: 4px 10px; font: var(--condensed); font-size: 12px; font-weight: 800;
+    text-transform: uppercase; letter-spacing: .4px; cursor: pointer; box-shadow: 2px 2px 0 var(--magenta); white-space: nowrap; }
+  .rewardtoggle.on { background: var(--magenta); color: #fff; }
+  /* In-flow (inside .logpanel, above the prompt) so it can never overlap the board. */
+  .reward-panel { background: var(--paper); color: var(--ink); border: 2px solid var(--ink);
+    border-radius: 7px 5px 6px 7px; padding: 6px 9px; margin-bottom: 8px; font-size: 12px;
+    line-height: 1.4; font-variant-numeric: tabular-nums; }
+  .reward-panel .rp-d { font-weight: 700; }
+  .reward-panel .rp-d.pos { color: var(--cyan); }
+  .reward-panel .rp-d.neg { color: var(--low); }
+  .reward-panel .rp-terms { color: var(--muted); font-size: 11px; }
+  .reward-panel .rp-end { font-weight: 800; }
+  .reward-panel .rp-note { color: var(--muted); font-size: 10px; }
   /* Long-press full-card preview (touch): centered overlay. Desktop still uses hover #preview;
      this only opens on a touch long-press, so it's harmless at desktop sizes. */
   .preview-overlay { position: fixed; inset: 0; z-index: 120; display: none;
@@ -418,6 +433,7 @@
     .topbar { order: 0; flex-wrap: wrap; height: auto; gap: 4px 10px; padding: 6px 10px; }
     .topbar a { padding: 4px 5px; }
     .logtoggle { display: inline-block; }
+    .reward-panel { margin: 6px 8px; }
 
     /* flatten the rail so its opponent panel / phasebar / your panel become direct flex items we can
        interleave: opponent strip up top, your strip down by the prompt (Arena-style vertical order). */
@@ -486,6 +502,7 @@
     <span class="spacer"></span>
     <span class="s" id="decks"></span>
     <span class="s" id="stops"></span>
+    <button class="rewardtoggle" id="rewardToggle" title="Show the RL shaping reward (Φ) the training env would see for your seat">Φ RL</button>
     <button class="themetoggle" id="themeToggle" title="Theme: Auto → Light → Dark">◐ Auto</button>
     <button class="logtoggle" id="logToggle" title="Show / hide the game log">▤ Log</button>
   </div>
@@ -520,6 +537,8 @@
 
   <div class="logpanel">
     <div id="selfSlot"></div>
+    <!-- RL reward lens (Φ shaping preview) — toggled by the topbar Φ RL chip. -->
+    <div class="reward-panel" id="rewardPanel" hidden></div>
     <div class="promptbox" id="prompt"><div class="waiting">Waiting for the game to start…</div></div>
     <div class="logtitle">Game log</div>
     <div id="log"></div>
@@ -597,16 +616,18 @@
   }
 
   function handle(m) {
-    if (m.type === "event") { view = m.view; logEvent(m.event); render(); }
+    if (m.type === "event") { view = m.view; logEvent(m.event); rlTick(); render(); }
     else if (m.type === "godFrame") {
       // Live god-view spectating: omniscient frame (no masking). Render via the same adapter as
       // replays; surface the label of what just happened in the spectating banner.
       view = godToView(m.state, 0);
       if (m.label) { $("prompt").innerHTML = '<div class="waiting">👁 ' + esc(m.label) + "</div>"; }
+      rlTick();
       render();
     }
     else if (m.type === "decide") {
       view = m.view; cur = m; multi.clear(); orderSeq = [];
+      rlTick(); rlStep(); // a new decision for you closes the env step → snapshot its shaping sum
       // Enter-engaged "pass through this turn's stops" lapses when the turn advances (MTGA parity).
       if (autoPassTurn !== null && view.turn !== autoPassTurn) { autoPassTurn = null; autoPassBadge(); }
       // Priority windows: apply the stop policy (Enter-hold passes the rest of the turn; otherwise
@@ -817,6 +838,9 @@
     if (!skipHeavy) {
       lastHeavyRender = now;
       view = godToView(fr.state, 0);
+      rlTick(frameIdx === rlLastFrame + 1); // Δ only on a k→k+1 step; a scrub/jump resets the baseline
+      rlStep(); // replays have no decision boundary → each frame closes a step
+      rlLastFrame = frameIdx;
       render();
     }
     $("rbFrame").textContent = (frameIdx + 1) + " / " + n;
@@ -917,6 +941,7 @@
     renderStepBar();
     renderHand();
     if (cur) renderPrompt();
+    renderRewardPanel(); // RL reward lens (display-only refresh; Φ baseline advances in rlTick)
     refreshPreview(); // re-derive the hover preview against the freshly-rebuilt DOM
     drawArrows();     // draw stack→target arrows over the rebuilt board
   }
@@ -1615,6 +1640,7 @@
     const youWon = view && winner === view.seat;
     $("prompt").innerHTML = '<div class="banner">Game over — winner: ' + w + (youWon ? " 🎉 (you!)" : "") + "</div>";
     log("GAME OVER — winner: " + w);
+    rlTerminal(winner);
   }
 
   // ── zone viewer modal ──────────────────────────────────────────────────
@@ -1689,6 +1715,86 @@
   themeMql.addEventListener("change", () => { if (themeMode() === "auto") applyTheme(); }); // Auto follows the OS
   { const tb = document.getElementById("themeToggle"); if (tb) tb.onclick = cycleTheme; }
   applyTheme(); // reconcile the toggle label with the head-script's data-theme
+
+  // ── RL reward lens (Φ shaping preview) ──────────────────────────────────
+  // Mirrors python/mtgenv_gym/batched_selfplay.py::_phi_batch/_apply_shaping — keep in sync BY HAND:
+  //   Φ(s) = 0.5·tanh(Δcards/4) + 0.3·tanh(Δpower/6) + 0.2·tanh(Δlife/10)   (from YOUR seat)
+  //   per-step shaping = coef·(γ·Φ(s′) − Φ(s)) with γ=0.999, coef=0.1 at launch (annealed to 0);
+  //   terminal = ±1 win/loss + coef·(−Φ(s)) (Φ(terminal)≜0). Eval always scores the raw ±1.
+  // Granularity caveat: the env samples Φ only at LEARNER decision points; this panel ticks on every
+  // state update, finer-grained — the deltas telescope to the same total.
+  const RL = { gamma: 0.999, coef: 0.1 };
+  const RL_KEY = "mtg_show_reward";
+  let showReward = false;
+  try { showReward = localStorage.getItem(RL_KEY) === "1"; } catch (e) { /* private mode */ }
+  let rlPrev = null;      // Φ of the previous state
+  let rlDelta = null;     // shaping over the LAST completed env step (decision→decision)
+  let rlAccum = null;     // running coef·(γΦ′−Φ) sum since the previous decision point
+  let rlEnd = null;       // terminal breakdown once the game ends
+  let rlLastFrame = -2;   // replay: only a k→k+1 frame advance counts as a step
+  function rlPhiTerms() {
+    if (!view) return null;
+    const meP = pub(me()), oppP = pub(oppId());
+    let myBf = 0, oppBf = 0, myPow = 0, oppPow = 0;
+    (view.battlefield || []).map(norm).forEach((c) => {
+      const mine = c.controller === me();
+      // Face-down permanents are 2/2 creatures to the obs encoder; visible non-creatures have power 0.
+      const pw = c.hidden ? 2 : (c.chars && c.chars.power != null ? Number(c.chars.power) || 0 : 0);
+      if (mine) { myBf++; myPow += pw; } else { oppBf++; oppPow += pw; }
+    });
+    const myHand = (godMode && view._god) ? (meP._hand || []).length : ((view.me && view.me.hand) || []).length;
+    const oppHand = oppP.hand_count != null ? oppP.hand_count : ((oppP._hand || []).length || 0);
+    const cards = 0.5 * Math.tanh(((myHand + myBf) - (oppHand + oppBf)) / 4.0);
+    const power = 0.3 * Math.tanh((myPow - oppPow) / 6.0);
+    const life = 0.2 * Math.tanh(((meP.life || 0) - (oppP.life || 0)) / 10.0);
+    return { cards, power, life, phi: cards + power + life };
+  }
+  // Advance the Φ baseline on a real state transition (NOT on cosmetic re-renders — render() only
+  // repaints the panel). Many engine events fire between two of YOUR decisions, so per-event deltas
+  // are ~0 and get overwritten by trailing no-op events; the env's actual step reward is the SUM over
+  // that whole span. So each tick accumulates into rlAccum, and rlStep() (at each new decision /
+  // replay frame) closes the env step: that sum is what training would hand the learner.
+  // `sequential=false` (replay scrub/jump) resets the baseline without a fake Δ.
+  function rlTick(sequential) {
+    if (sequential === undefined) sequential = true;
+    const t = rlPhiTerms(); if (!t) return;
+    if (sequential && rlPrev != null) rlAccum = (rlAccum == null ? 0 : rlAccum) + RL.coef * (RL.gamma * t.phi - rlPrev);
+    else if (!sequential) { rlAccum = null; rlDelta = null; }
+    rlPrev = t.phi;
+    rlEnd = null;
+  }
+  function rlStep() { if (rlAccum != null) { rlDelta = rlAccum; rlAccum = 0; } }
+  function rlTerminal(winner) {
+    const base = winner == null ? 0 : (view && winner === view.seat ? 1 : -1);
+    const shape = (rlAccum == null ? 0 : rlAccum) + (rlPrev != null ? RL.coef * (0 - rlPrev) : 0); // Φ(terminal) ≜ 0
+    rlAccum = 0;
+    rlEnd = "game end: " + fmtd(base, 0) + " win/loss " + fmtd(shape, 4) + " shaping = " + fmtd(base + shape, 4);
+    renderRewardPanel();
+  }
+  function fmtd(x, d) { return (x >= 0 ? "+" : "") + x.toFixed(d); }
+  function renderRewardPanel() {
+    const p = document.getElementById("rewardPanel");
+    if (!p) return;
+    const t = showReward ? rlPhiTerms() : null;
+    if (!t) { p.hidden = true; return; }
+    p.hidden = false;
+    const dcls = rlDelta == null ? "" : rlDelta >= 0 ? " pos" : " neg";
+    p.innerHTML =
+      '<div class="rp-row"><b>Φ ' + fmtd(t.phi, 3) + "</b>" +
+      (rlDelta != null ? ' <span class="rp-d' + dcls + '">step ' + fmtd(rlDelta, 4) + "</span>" : "") + "</div>" +
+      '<div class="rp-terms">cards(hand+bf) ' + fmtd(t.cards, 3) + " · power " + fmtd(t.power, 3) + " · life " + fmtd(t.life, 3) + "</div>" +
+      (rlEnd ? '<div class="rp-end">' + esc(rlEnd) + "</div>" : "") +
+      '<div class="rp-note">reward = ±1 at end + 0.1·(0.999·Φ′−Φ) per step</div>';
+  }
+  function toggleReward() {
+    showReward = !showReward;
+    try { if (showReward) localStorage.setItem(RL_KEY, "1"); else localStorage.removeItem(RL_KEY); } catch (e) {}
+    const b = document.getElementById("rewardToggle"); if (b) b.classList.toggle("on", showReward);
+    if (showReward && rlPrev == null) rlTick(false); // first open → establish the baseline, no fake Δ
+    renderRewardPanel();
+  }
+  { const rb = document.getElementById("rewardToggle");
+    if (rb) { rb.onclick = toggleReward; rb.classList.toggle("on", showReward); } }
 
   // ── misc ────────────────────────────────────────────────────────────────
   function nameOf(id) {
