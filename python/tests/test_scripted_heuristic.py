@@ -10,6 +10,7 @@ never-block invariant.
 import numpy as np
 
 from mtgenv_gym.evalkit.scripted import (
+    ACTION_DIM,
     BF_ATTACKING,
     BF_BLOCKED_BY,
     BF_MINE,
@@ -68,7 +69,7 @@ def _obs(ridx, creatures=(), hand_lands=(), hand_spells=()):
 
 
 def _mask(slots):
-    m = np.zeros(98, bool)
+    m = np.zeros(ACTION_DIM, bool)     # sized by the live contract (v1=98, v2=130, …)
     m[list(slots)] = True
     return m
 
