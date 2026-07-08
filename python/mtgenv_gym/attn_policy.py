@@ -235,9 +235,11 @@ class _RelationalEncoder(nn.Module):
         return {"state": state, "bf": ctx["bf"], "hand": ctx["hand"], "stack": ctx["stack"]}
 
     def _forward_v3(self, obs):
-        """v3: no globals token — you/opp/decision are appended as always-present rows so the attention
-        row order equals the §7.2 edge index space [bf | hand | stack | you | opp | decision]. Relations
-        come from the `edges` tensor as a per-(type,direction) attention bias (not id-matching)."""
+        """v3: DELIBERATELY no globals token (unlike the v2 gather path / the doc's gather-context note) —
+        you/opp/decision are appended as always-present rows so the attention row index equals the §7.2
+        edge index space [bf 0.. | hand | stack | you | opp | decision] EXACTLY, and `edges` src_row/dst_row
+        address attention rows directly. Relations come from the `edges` tensor as a per-(type,direction)
+        attention bias (no id-matching)."""
         B = obs["globals"].shape[0]
         g = obs["globals"]
         tokens, present, embs = self._entity_tokens(obs)
@@ -247,8 +249,13 @@ class _RelationalEncoder(nn.Module):
         B, N, _ = H.shape
         spres = torch.ones(B, _N_SPECIAL, dtype=torch.bool, device=H.device)
         pres = torch.cat([*present, spres], dim=1)                   # (B, N)
-        pair_bias = self._edge_bias(obs["edges"].long(), N)          # (B, N, N) additive edge bias
-        H = self._encode_full_bias(H, pres, pair_bias)               # (packed-coord edge bias = follow-up)
+        edges = obs["edges"].long()
+        # Same present-row gather as v2, with the edge bias built directly in packed coordinates; the full
+        # path (edge bias on the (B,N,N) mask) is the equivalence reference.
+        if self.gather_present:
+            H = self._encode_packed_v3(H, pres, edges)
+        else:
+            H = self._encode_full_bias(H, pres, self._edge_bias(edges, N))
         state = self._pool(H, pres)
         Hn = self.out_norm(H)
         off, ctx = 0, {}                                             # no globals token; bf starts at row 0
@@ -263,9 +270,10 @@ class _RelationalEncoder(nn.Module):
     def _edge_bias(self, edges, N):
         """(B, N, N) additive attention bias from the edge list: edge (src_row, dst_row, type, k) adds
         edge_bias[type, 0] to logits[src, dst] and edge_bias[type, 1] to logits[dst, src] (directional);
-        pad rows (src == -1) are skipped. Head-uniform (per-(type,direction)); per-head is a refinement."""
+        pad rows (src == -1) are skipped. Head-uniform (per-(type,direction)); per-head is a refinement.
+        The `k` column (col 3: target/pick order) is DELIBERATELY unused in the v3 bias — leave it be."""
         B, _ME, _ = edges.shape
-        src, dst, etype = edges[..., 0], edges[..., 1], edges[..., 2]
+        src, dst, etype = edges[..., 0], edges[..., 1], edges[..., 2]   # (col 3 = k, intentionally ignored)
         valid = src >= 0
         bias = torch.zeros(B, N, N, device=edges.device, dtype=self.edge_bias.dtype)
         b_idx = torch.arange(B, device=edges.device).unsqueeze(1).expand_as(src)
@@ -284,6 +292,37 @@ class _RelationalEncoder(nn.Module):
         for layer in self.layers:
             H = layer(H, bias)
         return H
+
+    def _encode_packed_v3(self, H, pres, edges):
+        """v3 fast path (identical to `_encode_full_bias` on present rows): pack the present rows across
+        the batch, and build the edge bias DIRECTLY in packed coordinates by mapping each edge's
+        src_row/dst_row through the row→packed index — no (B, N, N) materialization. you/opp/decision are
+        always present, so their edges (ATTACKS→player, PENDING_PICK from decision) survive the gather."""
+        B, N, d = H.shape
+        Hflat = H.reshape(B * N, d)
+        idx = pres.reshape(-1).nonzero(as_tuple=False).squeeze(1)      # (T,) present-token flat indices
+        T = idx.shape[0]
+        Hp = Hflat.index_select(0, idx).unsqueeze(0)                   # (1, T, d)
+        sample = torch.div(idx, N, rounding_mode="floor")             # (T,)
+        same = sample.unsqueeze(0) == sample.unsqueeze(1)             # (T, T) block-diagonal
+        bias = torch.zeros(T, T, device=H.device, dtype=self.edge_bias.dtype)
+        bias.masked_fill_(~same, float("-inf"))
+        # row → packed position (-1 if that row is padded / absent this sample)
+        row_to_packed = torch.full((B * N,), -1, dtype=torch.long, device=H.device)
+        row_to_packed[idx] = torch.arange(T, device=H.device)
+        src, dst, etype = edges[..., 0], edges[..., 1], edges[..., 2]
+        b_idx = torch.arange(B, device=H.device).unsqueeze(1).expand_as(src)
+        flat_src = b_idx * N + src.clamp(0, N - 1)
+        flat_dst = b_idx * N + dst.clamp(0, N - 1)
+        ps, pd = row_to_packed[flat_src], row_to_packed[flat_dst]     # packed src/dst (-1 if absent)
+        ev = (src >= 0) & (ps >= 0) & (pd >= 0)                       # edge with both endpoints present
+        et = etype.clamp(min=0)
+        bias.index_put_((ps[ev], pd[ev]), self.edge_bias[et, 0][ev], accumulate=True)
+        bias.index_put_((pd[ev], ps[ev]), self.edge_bias[et, 1][ev], accumulate=True)
+        bias = bias.unsqueeze(0)
+        for layer in self.layers:
+            Hp = layer(Hp, bias)
+        return Hflat.index_copy(0, idx, Hp.squeeze(0)).reshape(B, N, d)
 
     def _full_bias(self, pres, rel, mp):
         """The full (B, N, N) additive attention mask: relation bias on the bf-bf block + -inf on padded

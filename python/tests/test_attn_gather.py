@@ -110,7 +110,8 @@ def test_gather_exact_when_no_padding():
     mp = obs["bf_feat"].shape[1]
     for z in ("bf", "hand", "stack"):
         obs[f"{z}_feat"][:, :, 0] = 1.0                      # mark all rows present
-    obs["bf_feat"][:, :, 45] = torch.arange(1, mp + 1).float()  # distinct instance ids
+    if obs["bf_feat"].shape[2] > 45:                         # v2 only: distinct instance ids at col 45
+        obs["bf_feat"][:, :, 45] = torch.arange(1, mp + 1).float()  # (v3 has no id cols — edges instead)
     env = MtgEnv(deck="swine")
     pol = RelationalPointerPolicy(env.observation_space, env.action_space, lambda _: 3e-4)
     pol.eval()
