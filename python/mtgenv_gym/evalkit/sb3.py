@@ -28,6 +28,39 @@ from .scripted import ScriptedPolicy
 from .tb_logging import SB3Recorder, eval_seed, log_eval, write_json
 
 
+def load_elo_opponents(env, top=3, device="cpu", exclude=()):
+    """Top-``top`` rated agents from ``data/elo/<env>/ratings.json`` as ``[(name, Policy), …]`` — READ
+    ONLY, fail-soft. Reuses rate_agent's canonical loader (handles kinds + older obs widths via its
+    schema adapter). Excludes the random anchor + any name in ``exclude`` (e.g. the current run / self).
+    Returns ``[]`` with no ratings file or on any error, so a run without a rating pool just skips it."""
+    try:
+        import json
+
+        from .ratings import ANCHOR_NAME, elo_root, load_registry
+
+        rpath = elo_root() / env / "ratings.json"
+        if not rpath.is_file():
+            return []
+        ratings = json.loads(rpath.read_text())["agents"]
+        reg = load_registry(env)
+        import rate_agent  # canonical build_policy (+ obs-schema adapter); read-only use of its code
+
+        skip = {ANCHOR_NAME, "random"} | set(x for x in exclude if x)
+        out = []
+        for name, r in sorted(ratings.items(), key=lambda kv: -kv[1].get("rating", 0)):
+            if name in skip or name not in reg:
+                continue
+            try:
+                out.append((name, rate_agent.build_policy(reg[name], device=device)))
+            except Exception:
+                continue  # unloadable (bad ckpt / kind) → skip, keep scanning
+            if len(out) >= top:
+                break
+        return out
+    except Exception:
+        return []
+
+
 class SB3Policy(BasePolicy):
     """A MaskablePPO model (or checkpoint path) as an evalkit ``Policy``. Wraps a live model too — its
     ``BatchedPolicy`` reads the model's policy object, so weights are always current."""
@@ -59,8 +92,8 @@ class EvalkitCallback(BaseCallback):
                  ladder_dir, n_games=40, milestones=(0.10, 0.25, 0.50, 0.75),
                  replay_every=0, replay_dir=REPLAY_DIR, run_name=None, device="cpu",
                  batch_size=64, seed_random=5_000_000, seed_initial=6_000_000,
-                 seed_script=8_000_000, eval_script=True,
-                 json_dir=None, log_sampled=True, verbose=0):
+                 seed_script=8_000_000, eval_script=True, eval_elo=True, elo_top=3,
+                 seed_elo=9_500_000, json_dir=None, log_sampled=True, verbose=0):
         super().__init__(verbose)
         self.deck = deck
         self.total = max(int(total_timesteps), 1)
@@ -83,16 +116,32 @@ class EvalkitCallback(BaseCallback):
         self._modes = ("greedy", "sample") if log_sampled else ("greedy",)
         self._arena = None
         self._policy = None
+        self.eval_elo = eval_elo
+        self.elo_top = int(elo_top)
+        self.seed_elo = seed_elo
         self._rec = None
         self._ladder = None
         self._ref = None
         self._script = None
+        self._elo = []  # [(name, Policy), ...] top-rated agents from data/elo/<deck>/ratings.json
 
     # ── lifecycle ──────────────────────────────────────────────────────────────────────────────
     def _on_training_start(self) -> None:
         self._arena = Arena(self.deck, batch_size=self.batch_size)
         self._policy = SB3Policy(self.model, device=self.device)
         self._script = ScriptedPolicy() if self.eval_script else None
+        if self.eval_elo:
+            self._elo = load_elo_opponents(self.deck, self.elo_top, self.device,
+                                           exclude=(self.run_name,))
+            if self._elo:
+                names = ", ".join(f"elo{i+1}={n}" for i, (n, _) in enumerate(self._elo))
+                from ..tb_meta import _writer
+
+                w = _writer(self.model)
+                if w is not None:
+                    w.add_text("run/elo_opponents", names, 0)  # so a reader knows which agent each rank is
+                if self.verbose:
+                    print(f"  elo opponents: {names}")
         self._rec = SB3Recorder(self.logger)
         self._ladder = Ladder(self.ladder_dir, self._snapshot_fn, self._load_snapshot,
                               milestones=self.milestones, n_games=self.n_games)
@@ -164,6 +213,18 @@ class EvalkitCallback(BaseCallback):
                      with_stats=False, with_game=False, with_analyzers=False)
             for m, r in vs.items():
                 labelled[f"script_{m}"] = r
+
+        # vs the top-N Elo-rated agents (data/elo/<deck>) — winrate (+sampled) per rank. The user's
+        # idea: measure progress against the actual strongest agents, not just random/script. Distinct
+        # rotating seed per rank; fixed opponents so no stats/analyzers.
+        for rank, (name, opp) in enumerate(self._elo, 1):
+            ve = self._arena.evaluate(self._policy, opp, n_games=self.n_games,
+                                      seed=eval_seed(self.seed_elo + rank * 100_000, step),
+                                      opponent_label=f"elo{rank}:{name}", modes=self._modes)
+            log_eval(self._rec, ve, win_tag=f"selfplay/winrate_vs_elo{rank}", step=step,
+                     with_stats=False, with_game=False, with_analyzers=False)
+            for m, r in ve.items():
+                labelled[f"elo{rank}_{m}"] = r
 
         # %-trained ladder (framework-managed snapshots).
         self._ladder.maybe_snapshot(self.num_timesteps / self.total)
