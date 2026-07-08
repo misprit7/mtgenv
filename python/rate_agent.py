@@ -30,7 +30,7 @@ import sys
 
 import numpy as np
 
-from mtgenv_gym.evalkit import Arena, RandomPolicy, ScriptedPolicy
+from mtgenv_gym.evalkit import Arena, BasePolicy, RandomPolicy, ScriptedPolicy
 from mtgenv_gym.evalkit.ratings import (
     ANCHOR_NAME,
     AgentEntry,
@@ -99,11 +99,45 @@ def build_policy(entry: AgentEntry, device: str = "cpu"):
             import mtgenv_gym.attn_policy  # noqa: F401 — RelationalAttnExtractor, for unpickle
         if not entry.checkpoint:
             raise ValueError(f"agent {entry.name!r} kind={kind} has no checkpoint path")
-        return SB3Policy.load(entry.checkpoint, device=device)
+        pol = SB3Policy.load(entry.checkpoint, device=device)
+        return _SchemaAdapter(pol, pol.model.observation_space)  # tolerate older obs widths
     if kind == "dmc":
         raise NotImplementedError(
             f"agent {entry.name!r}: no evalkit DMC adapter and no persisted DMC weights")
     raise ValueError(f"unknown agent kind {kind!r} for {entry.name!r}")
+
+
+def _fit_shape(a: np.ndarray, shape: tuple) -> np.ndarray:
+    """Coerce ``a`` to ``shape`` by truncating over-long axes and zero-padding short ones."""
+    if a.shape == shape:
+        return a
+    a = a[tuple(slice(0, s) for s in shape)]           # truncate any axis longer than target
+    if a.shape != shape:                                # pad any axis shorter than target
+        out = np.zeros(shape, dtype=a.dtype)
+        out[tuple(slice(0, s) for s in a.shape)] = a
+        a = out
+    return a
+
+
+class _SchemaAdapter(BasePolicy):
+    """Rate an SB3 checkpoint trained on an OLDER obs schema against the current engine.
+
+    The gym obs only ever grows by APPENDING columns (obs.rs is append-stable — e.g. bf_feat went
+    44→45→48 as is_pending_combat then the relation-id columns were added, indices 0..43 unchanged).
+    So a model that expects a narrower ``bf_feat`` gets fed the current obs truncated to its own
+    per-key shape: exactly the features it was trained on, no more. Keys the model doesn't expect are
+    dropped; a (defensive) narrower current array is zero-padded. A checkpoint already on the current
+    schema passes through unchanged (``_fit_shape`` is a no-op when shapes match)."""
+
+    def __init__(self, inner, space):
+        self.inner = inner
+        self.space = space
+
+    def act(self, obs_batch, mask_batch, *, mode="greedy", env_indices=None):
+        adapted = [{k: _fit_shape(np.asarray(o[k]), tuple(sp.shape))
+                    for k, sp in self.space.spaces.items() if k in o}
+                   for o in obs_batch]
+        return self.inner.act(adapted, mask_batch, mode=mode, env_indices=env_indices)
 
 
 def _try_build(entry: AgentEntry, device: str):
