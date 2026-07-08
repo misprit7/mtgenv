@@ -388,6 +388,7 @@ def train_dmc(deck="heralds", *, env_steps=500_000, n_envs=64, run_name="4.3-dmc
 
     from .evalkit.hooks import evaluate_checkpoint
     from .evalkit.policy import RandomPolicy
+    from .evalkit.scripted import ScriptedPolicy
     from .tb_meta import CUSTOM_SCALARS_LAYOUT, build_notes
 
     if device is None:
@@ -425,7 +426,13 @@ def train_dmc(deck="heralds", *, env_steps=500_000, n_envs=64, run_name="4.3-dmc
     writer.flush()
 
     def do_eval(step):
-        opponents = {"selfplay/winrate_vs_random": RandomPolicy(seed=5_000_000)}
+        # Canonical opponents: vs random (carries stats/game/analyzers), vs the frozen random-init
+        # self, and vs the scripted reference (the standing yardstick — DMC≈0.5 means it learned the
+        # deck). All share the identical evalkit tag schema so DMC overlays the other arms in evaldash.
+        opponents = {
+            "selfplay/winrate_vs_random": RandomPolicy(seed=5_000_000),
+            "selfplay/winrate_vs_script": ScriptedPolicy(),
+        }
         if eval_vs_initial:
             opponents["selfplay/winrate_vs_initial"] = DMCPolicy(initial, device, sample_temp)
         res = evaluate_checkpoint(DMCPolicy(net, device, sample_temp), step=step, run_dir=run_dir,
@@ -433,9 +440,11 @@ def train_dmc(deck="heralds", *, env_steps=500_000, n_envs=64, run_name="4.3-dmc
                                   algo="DMC", run_name=run_name)
         g = res["selfplay/winrate_vs_random"]["greedy"]
         s = res["selfplay/winrate_vs_random"]["sample"]
+        vscr = res["selfplay/winrate_vs_script"]["greedy"]
         if verbose:
             print(f"[eval step={step}] vs_random greedy={g.win_rate:.3f} sampled={s.win_rate:.3f} "
-                  f"turns={g.avg_turns:.1f} buffer={buffer.size}", flush=True)
+                  f"vs_script={vscr.win_rate:.3f} turns={g.avg_turns:.1f} buffer={buffer.size}",
+                  flush=True)
         return g.win_rate
 
     do_eval(0)  # untrained baseline (also the fast smoke that the pipeline logs)
