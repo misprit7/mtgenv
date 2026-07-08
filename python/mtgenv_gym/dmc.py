@@ -477,4 +477,12 @@ def train_dmc(deck="heralds", *, env_steps=500_000, n_envs=64, run_name="4.3-dmc
     do_eval(collector.env_steps)  # final-checkpoint number (the reported metric — no peak-picking)
     writer.flush()
     writer.close()
+    # Persist the FINAL net so the run is reloadable after training (weights + the config needed to
+    # rebuild DMCNet). Best-effort — never lose the returned net on a save failure.
+    try:
+        torch.save({"state_dict": net.state_dict(), "obs_spec": [(n, r, c, i) for (n, r, c, i)
+                    in MtgEnv(deck=deck, opponent="external")._spec], "action_dim": action_dim},
+                   os.path.join(run_dir, "final_model.pt"))
+    except Exception as e:  # pragma: no cover
+        print(f"[train_dmc] WARN final_model save failed: {e}")
     return net, run_dir

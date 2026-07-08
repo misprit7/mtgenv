@@ -241,6 +241,17 @@ def train_selfplay(deck="demo", timesteps=120_000, n_envs=8, pool_dir=DEFAULT_PO
     # TB run and the lobby replay tag match. tensorboard_log is the ROOT; SB3 makes <root>/<run_name>_N.
     model.learn(total_timesteps=timesteps, callback=callbacks, progress_bar=False,
                 tb_log_name=(run_name or "MaskablePPO"))
+    # Persist the FINAL weights into the run dir so a run can be rated/reloaded even after the ephemeral
+    # /tmp pool is wiped (the 4.4/4.3 no-recoverable-weights loss must never recur). rate_agent.py adds
+    # <run_dir>/final_model.zip. Best-effort — never let a save failure lose the trained model object.
+    run_dir = getattr(model.logger, "dir", None) or (model.logger.get_dir() if model.logger else None)
+    if run_dir:
+        try:
+            model.save(os.path.join(run_dir, "final_model"))
+            if verbose:
+                print(f"saved final weights → {os.path.join(run_dir, 'final_model.zip')}")
+        except Exception as e:  # pragma: no cover
+            print(f"[selfplay_train] WARN final_model save failed: {e}")
     return model, ref_path
 
 
