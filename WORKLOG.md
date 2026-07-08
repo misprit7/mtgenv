@@ -30,7 +30,19 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
   load. 4.4-ppo/4.3-dmc heralds finals had NO recoverable weights (overwritten/never-saved).
   **Rescued the 3 swine finals out of ephemeral `/tmp` pools** → `data/elo/checkpoints/swine/` (the
   next training run's `_clean` would have wiped them).
-- Initial tournaments (thousands of games) NOT yet run — gated on the profiling window.
+- **Obs-schema adapter (77b4cae):** the trained finals were saved on an older `bf_feat` width
+  (2.9-legacy 44, 4.6-ppo 45; 4.7-attn 48 = current) — only `bf_feat` drifted (append-only growth,
+  cols 0..43 stable). `rate_agent._SchemaAdapter` truncates the current obs to each model's expected
+  per-key shape (exactly the features it trained on) so old checkpoints rate against the current
+  engine; +2 tests (`test_rate_agent.py`).
+- **Initial tournaments RAN (100 games/seat, both seatings) — DONE.** heralds (2000 games): the three
+  attacking scripts tie ~1745-1752, random 1000, script-turtle cratered (-728, never attacks → 0/800,
+  total separation → wide CI). swine (5600 games): **script-careful 1381 [1351,1412] is #1 over every
+  trained agent** (4.6-ppo 1268, script-gang 1252, 4.7-attn 1251, 2.9-legacy 1250, script-racer 1183,
+  random 1000, script-turtle 960). Nontransitivity: swine random-vs-turtle residual +0.39 (turtle beats
+  random 94% obs vs 56% pred — the scalar's one blind spot, flagged in the report). The optimal-play
+  script topping the trained agents is the headline. Ratings live for the training agent's `add` flow;
+  team-lead's evaldash leaderboard panel is built against ratings.json.
 
 ## 2026-07-08 (PPO combat-judgment baseline 4.4-4.6 + relational-attention arm 4.7-4.9)
 
