@@ -236,15 +236,16 @@
     text-align: center; border: 1px solid rgba(0,0,0,.4); color: #15110c; }
   .pip.gen { background: #cdc5b4; } .pip.w { background: #fbf8e8; } .pip.u { background: #9fd5f5; }
   .pip.b { background: #b6aaa2; } .pip.r { background: #f3a98e; } .pip.g { background: #8fce9c; }
-  .card .c-art { flex: 1; border-radius: 3px; min-height: 28px;
+  /* Art-forward faces: the art strip is the flex-1 region, so every line the text DOESN'T take
+     goes to art. min-height guarantees art dominance even on text-heavy cards. */
+  .card .c-art { flex: 1 0 auto; border-radius: 3px; min-height: 44px;
     background: linear-gradient(135deg,#5a5246,#39342b); border: 1px solid rgba(0,0,0,.3); }
-  .card .c-type { font-size: 7.5px; background: rgba(255,255,255,.4); border-radius: 3px; padding: 1px 3px;
+  .card .c-type { font-size: 7px; background: rgba(255,255,255,.4); border-radius: 3px; padding: 0 3px;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .card .c-rules { font-size: 7.5px; background: rgba(255,255,255,.55); border-radius: 3px; padding: 2px 3px;
-    flex: 0 1 auto; min-height: 14px; color: #2a241b; overflow: hidden; line-height: 1.25;
-    /* Show several lines of oracle text, but hard-clip long text (e.g. Mossborn Hydra) with an
-       ellipsis instead of letting it blow out of the card frame. */
-    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; line-clamp: 4; }
+  .card .c-rules { font-size: 7px; background: rgba(255,255,255,.55); border-radius: 3px; padding: 1px 3px;
+    flex: 0 1 auto; min-height: 0; color: #2a241b; overflow: hidden; line-height: 1.2;
+    /* Hard-clip oracle text with an ellipsis — the full text lives in the hover/long-press preview. */
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
   .card .c-pt { position: absolute; right: 3px; bottom: 2px; background: rgba(255,255,255,.85);
     border: 1.5px solid var(--ink); border-radius: 4px; font-size: 9px; font-weight: 800; padding: 0 3px; color: #15110c; }
   /* 90° tap is game semantics — it STAYS (there are no decorative tilts in this theme). */
@@ -287,9 +288,10 @@
   .card.sick .c-art::after { content: "˝"; }
   .card.sick { opacity: .82; }
   .hand .card { width: 104px; height: 146px; }
-  .hand .card .c-name { font-size: 10px; } .hand .card .c-type, .hand .card .c-rules { font-size: 8.5px; }
-  /* Hand cards are larger, so they can show more oracle-text lines before clipping. */
-  .hand .card .c-rules { -webkit-line-clamp: 6; line-clamp: 6; }
+  .hand .card .c-name { font-size: 10px; } .hand .card .c-type, .hand .card .c-rules { font-size: 8px; }
+  /* Hand cards are larger; still art-forward — a few oracle lines, the rest clips to the preview. */
+  .hand .card .c-rules { -webkit-line-clamp: 3; line-clamp: 3; }
+  .hand .card .c-art { min-height: 60px; }
   .card.mini { width: 64px; height: 90px; }
 
   /* zone viewer modal */
