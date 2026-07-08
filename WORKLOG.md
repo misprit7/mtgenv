@@ -3,7 +3,22 @@
 Short, dated entries for future-agent consumption. Newest first. One line or a few bullets
 per unit of meaningful progress. Keep it terse — detail lives in `docs/` and git history.
 
-## 2026-07-07 (evaldash — custom mobile-first training dashboard)
+## 2026-07-07 (DMC — model-free Deep Monte-Carlo contrast arm)
+
+- **`python/mtgenv_gym/dmc.py` + `python/dmc_train.py`** — DouZero-style Deep Monte-Carlo: mirror
+  self-play, regress `Q(s,a)` to the game's final ±1 return for every visited `(s,a)` (undiscounted,
+  MSE, no critic/bootstrap; shaping OFF). **Head is action-as-input** — MTG's `Discrete(98)` slots are
+  positional (`codec.rs`): `HAND[i]`/`PERM[i]`/`STACK[i]` point at obs entity rows, so `Q(s,a)` is
+  scored from the *pointed entity's encoded row* (reused from the state DeepSets encode); abstract
+  slots (`COMMIT`/`MODE`/`COLOR`/`NUMBER`/`YES`/`NO`/`PLAYER`) get a learned per-slot embedding.
+  Collection reuses the `MtgEnv` `ext_*` interface (both seats driven by the live net, both seats'
+  transitions labelled); all eval/logging via evalkit (`DMCPolicy` adapter, identical tag schema).
+- **Run `4.3-dmc-heralds` (500k env-steps, seed 0, cuda):** greedy-vs-random 0.01→0.94 by 26k, hits
+  0.975 by 51k. **Post-anneal (eps=0.05, step≥300k) greedy mean 0.952** (min 0.93 / max 0.97),
+  **final checkpoint 0.930**. So DMC lands ~2pts UNDER the PPO 0.972 baseline and does **not** sustain
+  ≥0.97 — the model-free MC arm plateaus just below the policy-gradient/tree-search arms (that gap is
+  the informative contrast). Value method is noticeably noisier (±0.03 across 200-game evals). Tests:
+  `python/tests/test_dmc.py` (returns/epsilon/buffer/slot-layout/net/collect — 7 pass).
 
 - **evaldash is the main experiment view** (user bounced off TB defaults, then Aim's mobile UI;
   picked "custom evalkit dashboard" from the alternatives). `scripts/evaldash.py` = one stdlib
