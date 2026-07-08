@@ -35,10 +35,17 @@ def test_replay_json_schema_roundtrip():
     assert [p["name"] for p in r["meta"]["players"]] == ["policy@4200", "random"]
     assert [p["deck"] for p in r["meta"]["players"]] == ["burn", "bears"]
 
-    # Frames: omniscient snapshots with labels; the first is the game-start frame.
+    # Compact v2 contract (d4ac691 + 48108d4): characteristics dedup'd into a top-level `chars`
+    # table; frames are flat snapshots and later frames omit unchanged zones (delta format).
+    assert r["version"] == 2
+    assert "chars" in r
     assert len(r["frames"]) > 1
-    assert r["frames"][0]["label"] == "game start"
-    assert "state" in r["frames"][0]
+    f0 = r["frames"][0]
+    assert f0["label"] == "game start"
+    for key in ("turn", "active_player", "phase", "players", "battlefield"):
+        assert key in f0, f"game-start frame must be a full snapshot (missing {key})"
+    # Delta frames may omit zones — but never the always-present header fields.
+    assert all("label" in f and "players" in f for f in r["frames"])
 
 
 def test_no_replay_without_flag():
