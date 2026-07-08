@@ -5,27 +5,37 @@ Builds and maintains per-environment Bradley-Terry rating pools (see
 ``mtgenv_gym/evalkit/ratings.py``). Every pairing is played BOTH seatings through the batched evalkit
 ``Arena``; every game persists to the append-only crosstable; ratings re-fit from scratch each time.
 
+Rating environments are **versioned by the engine contract** (obs shapes × action dim × engine sha):
+a change there invalidates comparability, so each contract is its own version with its own crosstable.
+All commands resolve to the CURRENT version by default; ``--env-version N`` reads a historical one
+(read-only). Game-playing commands guard the live engine's fingerprint against the current version's
+and REFUSE on a mismatch, pointing you at ``bump-env``.
+
 Subcommands
 -----------
-    seed <env>            register the default pool (random + scripted [+ probes] + loadable finals)
-    list <env>            show the registry + the current ratings table
-    refit <env>           recompute ratings.json from games.jsonl (no games played)
+    seed <env>            (re)seed the current version's registry (the benchmark spine + loadable finals)
+    list <env>            show the registry + ratings table [--env-version N]
+    refit <env>           recompute ratings.json from games.jsonl [--env-version N] (no games played)
     smoke <env>           a few random-vs-scripted games — prove the pipeline (NOT gated)
     tournament <env>      round-robin the registered pool, both seatings   [PLAYS MANY GAMES]
     add <env> --name …    register a new agent, play it vs the pool, refit  [PLAYS MANY GAMES]
+    migrate [env]         fold pre-versioning flat data into v1 (idempotent; all envs if omitted)
+    bump-env <env> --reason "…"   open v(N+1) for a changed contract: fresh spine, empty crosstable
 
 ``tournament`` / ``add`` are the heavy steps (hundreds of games per pairing). Seeds rotate past every
 game already recorded and are stored in each row, so re-runs sample fresh games and stay reproducible.
 
-    python rate_agent.py seed swine
+    python rate_agent.py migrate
     python rate_agent.py tournament swine --games-per-seat 100
     python rate_agent.py add swine --name 5.0-ppo --kind ppo --checkpoint /path/final.zip
+    python rate_agent.py bump-env swine --reason "added menace keyword column to bf_feat"
 """
 
 from __future__ import annotations
 
 import argparse
 import random
+import subprocess
 import sys
 
 import numpy as np
@@ -36,13 +46,21 @@ from mtgenv_gym.evalkit.ratings import (
     AgentEntry,
     GameRow,
     append_games,
+    bump_version,
     compute_ratings,
+    current_version,
     elo_root,
+    ensure_initialized,
+    env_root,
+    fingerprints_compatible,
     format_table,
+    list_versions,
     load_games,
+    load_meta,
     load_registry,
     register_agent,
     save_registry,
+    set_fingerprint,
     write_ratings,
 )
 from mtgenv_gym.evalkit.scripted import ScriptedHeuristic
@@ -195,6 +213,52 @@ def _select_opponents(new_name, ratings, all_names, *, k_top=8, k_sample=3, rng=
     return [n for n in others if n in keep]
 
 
+# ── engine contract fingerprint + the version guard ────────────────────────────────────────────────
+def _git_sha() -> str:
+    try:
+        repo = str(elo_root().parent.parent)   # data/elo -> data -> <repo root>
+        out = subprocess.run(["git", "-C", repo, "rev-parse", "--short", "HEAD"],
+                             capture_output=True, text=True, timeout=5)
+        return out.stdout.strip() or "unknown"
+    except Exception:
+        return "unknown"
+
+
+def engine_fingerprint() -> dict:
+    """The live contract fingerprint: per-key obs shapes + action_dim + engine git sha. This is the
+    only engine-touching call in the rating stack; ratings.py stores/compares the dict but never
+    computes it."""
+    import mtg_py
+
+    spec = {name: [rows, cols] for (name, rows, cols, _is_int) in mtg_py.PyGame.obs_spec()}
+    return {"obs_spec": spec, "action_dim": int(mtg_py.PyGame.action_dim()), "engine_sha": _git_sha()}
+
+
+def _spec_brief(fp: dict) -> str:
+    return f"action_dim={fp.get('action_dim')} obs={fp.get('obs_spec')}"
+
+
+def _guard_current_version(env: str) -> int:
+    """Before any game-playing command: ensure the env is initialized (migrating flat legacy data to
+    v1), record/verify the current version's fingerprint against the live engine, and REFUSE on an
+    incompatible contract so stale games never mix into an invalidated pool. Returns the version."""
+    live = engine_fingerprint()
+    ensure_initialized(env, fingerprint=live)     # migrate/create v1; stamps live if freshly made
+    ver = current_version(env)
+    stored = (load_meta(env)["versions"][str(ver)].get("fingerprint")) or {}
+    if not stored:                                # migrated/created without one → adopt live
+        set_fingerprint(env, ver, live)
+        stored = live
+    if not fingerprints_compatible(stored, live):
+        sys.exit(
+            f"[{env} v{ver}] ENGINE CONTRACT CHANGED — ratings on this pool would be incomparable, "
+            f"refusing to play.\n  stored: {_spec_brief(stored)} (sha {stored.get('engine_sha')})\n"
+            f"  live:   {_spec_brief(live)} (sha {live.get('engine_sha')})\n"
+            f"  Open a fresh version:  python rate_agent.py bump-env {env} --reason \"<what changed>\"\n"
+            f"  (creates v{ver + 1} with an empty crosstable; v{ver} history is retained, read-only.)")
+    return ver
+
+
 # ── subcommands ──────────────────────────────────────────────────────────────────────────────────
 def cmd_seed(args):
     pool = DEFAULT_POOLS.get(args.env)
@@ -209,25 +273,31 @@ def cmd_seed(args):
             registered.append(name)
         else:
             skipped.append((name, err))
+    live = engine_fingerprint()
+    ver = ensure_initialized(args.env, fingerprint=live)  # init/migrate; stamp the contract
+    if not (load_meta(args.env)["versions"][str(ver)].get("fingerprint")):
+        set_fingerprint(args.env, ver, live)
     save_registry(args.env, registry)  # REPLACE the registry with exactly the (loadable) pool
-    print(f"[{args.env}] registered {len(registered)}: {', '.join(registered)}")
+    print(f"[{args.env} v{ver}] registered {len(registered)}: {', '.join(registered)}")
     for name, err in skipped:
         print(f"  SKIPPED {name}: {err}")
-    write_ratings(args.env)
-    print(format_table(compute_ratings(args.env)))
+    print(format_table(write_ratings(args.env)))
 
 
 def cmd_list(args):
-    reg = load_registry(args.env)
-    print(f"[{args.env}] registry ({len(reg)} agents):")
+    ver = getattr(args, "env_version", None)
+    reg = load_registry(args.env, version=ver)
+    cur = current_version(args.env)
+    print(f"[{args.env}] versions: {sorted(list_versions(args.env))} (current v{cur}); "
+          f"registry v{ver or cur} ({len(reg)} agents):")
     for name, e in sorted(reg.items()):
         print(f"  {name:<18} kind={e.kind:<18} ckpt={e.checkpoint or '-'}")
-    print(format_table(compute_ratings(args.env)))
+    print(format_table(compute_ratings(args.env, version=ver)))
 
 
 def cmd_refit(args):
-    out = write_ratings(args.env)
-    print(format_table(out))
+    ver = getattr(args, "env_version", None)     # read-only: may target a historical version
+    print(format_table(write_ratings(args.env, version=ver)))
 
 
 def cmd_smoke(args):
@@ -240,6 +310,8 @@ def cmd_smoke(args):
 
 
 def cmd_tournament(args):
+    ver = _guard_current_version(args.env)       # refuse if the engine contract drifted
+    print(f"[{args.env}] current version v{ver}")
     reg = load_registry(args.env)
     names = [n.strip() for n in args.agents.split(",")] if args.agents else sorted(reg)
     missing = [n for n in names if n not in reg]
@@ -274,9 +346,10 @@ def cmd_tournament(args):
 
 
 def cmd_add(args):
+    ver = _guard_current_version(args.env)       # refuse if the engine contract drifted
     entry = register_agent(args.env, args.name, args.kind, args.checkpoint, args.notes,
                            overwrite=args.overwrite)
-    print(f"[{args.env}] registered {args.name} (kind={args.kind})")
+    print(f"[{args.env} v{ver}] registered {args.name} (kind={args.kind})")
     reg = load_registry(args.env)
     ratings = compute_ratings(args.env)["agents"]
     opponents = _select_opponents(args.name, ratings, list(reg),
@@ -296,6 +369,49 @@ def cmd_add(args):
     print(format_table(write_ratings(args.env)))
 
 
+def _spine_registry(env, device):
+    """Build the benchmark-spine registry (random + the 4 named scripts) for a fresh version, skipping
+    any member that won't build. Trained finals are NOT auto-added — they re-join via `add`."""
+    registry = {}
+    for name, kind, ckpt, notes in _SPINE:
+        entry = AgentEntry(name=name, kind=kind, checkpoint=ckpt, notes=notes)
+        ok, _ = _try_build(entry, device)
+        if ok:
+            registry[name] = entry
+    return registry
+
+
+def cmd_bump_env(args):
+    """Open a new version for a CHANGED engine contract: re-seed the benchmark spine, empty crosstable,
+    stamp the live fingerprint. The current version + its games are retained (read-only)."""
+    live = engine_fingerprint()
+    ensure_initialized(args.env, fingerprint=live)
+    old = current_version(args.env)
+    registry = _spine_registry(args.env, args.device)
+    n = bump_version(args.env, reason=args.reason, fingerprint=live, registry=registry)
+    print(f"[{args.env}] bumped v{old} -> v{n} (reason: {args.reason!r})")
+    print(f"  spine seeded: {', '.join(sorted(registry))}")
+    print(f"  fingerprint: sha={live['engine_sha']} action_dim={live['action_dim']}")
+    print(f"  trained agents re-join via `add`; v{old} retained (read-only).")
+    print(format_table(compute_ratings(args.env, version=n)))
+
+
+def cmd_migrate(args):
+    """One-shot: fold pre-versioning flat data into v1 with the CURRENT fingerprint. Idempotent."""
+    live = engine_fingerprint()
+    envs = [args.env] if args.env else list(DEFAULT_POOLS)
+    for env in envs:
+        had_flat = any((env_root(env) / f).exists() for f in ("agents.json", "games.jsonl"))
+        already = load_meta(env) is not None
+        ver = ensure_initialized(env, fingerprint=live)
+        if not (load_meta(env)["versions"][str(ver)].get("fingerprint")):
+            set_fingerprint(env, ver, live)
+        write_ratings(env, version=ver)          # refresh ratings.json with env_version + fingerprint
+        state = "already versioned" if already else ("migrated flat data" if had_flat else "created empty")
+        print(f"[{env}] {state} → current v{ver}; versions {sorted(list_versions(env))} "
+              f"(sha {live['engine_sha']}, action_dim {live['action_dim']})")
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="rate_agent", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -312,10 +428,21 @@ def main(argv=None):
 
     p = sub.add_parser("seed"); p.add_argument("env"); p.add_argument("--device", default="cpu")
     p.set_defaults(func=cmd_seed)
-    p = sub.add_parser("list"); p.add_argument("env"); p.set_defaults(func=cmd_list)
-    p = sub.add_parser("refit"); p.add_argument("env"); p.set_defaults(func=cmd_refit)
+    p = sub.add_parser("list"); p.add_argument("env")
+    p.add_argument("--env-version", type=int, default=None, help="a historical version (default: current)")
+    p.set_defaults(func=cmd_list)
+    p = sub.add_parser("refit"); p.add_argument("env")
+    p.add_argument("--env-version", type=int, default=None, help="a historical version (default: current)")
+    p.set_defaults(func=cmd_refit)
     p = sub.add_parser("smoke"); p.add_argument("env"); p.add_argument("--games", type=int, default=6)
     p.set_defaults(func=cmd_smoke)
+
+    p = sub.add_parser("migrate"); p.add_argument("env", nargs="?", default=None,
+                                                  help="one env, or all default envs if omitted")
+    p.add_argument("--device", default="cpu"); p.set_defaults(func=cmd_migrate)
+    p = sub.add_parser("bump-env"); p.add_argument("env"); p.add_argument("--device", default="cpu")
+    p.add_argument("--reason", required=True, help="what about the engine contract changed")
+    p.set_defaults(func=cmd_bump_env)
 
     p = sub.add_parser("tournament"); common(p)
     p.add_argument("--agents", default=None, help="comma list to restrict participants")

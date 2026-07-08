@@ -167,7 +167,8 @@ def test_write_ratings_persists_json(tmp_path):
     out = write_ratings("heralds", root=tmp_path)
     import json
 
-    disk = json.loads((tmp_path / "heralds" / "ratings.json").read_text())
+    disk = json.loads((tmp_path / "heralds" / "v1" / "ratings.json").read_text())
     assert disk == out
     assert disk["anchor"] == ANCHOR_NAME
+    assert disk["env_version"] == 1
     assert "a" in disk["agents"]

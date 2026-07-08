@@ -29,20 +29,22 @@ from .tb_logging import SB3Recorder, eval_seed, log_eval, write_json
 
 
 def load_elo_opponents(env, top=3, device="cpu", exclude=()):
-    """Top-``top`` rated agents from ``data/elo/<env>/ratings.json`` as ``[(name, Policy), …]`` — READ
-    ONLY, fail-soft. Reuses rate_agent's canonical loader (handles kinds + older obs widths via its
-    schema adapter). Excludes the random anchor + any name in ``exclude`` (e.g. the current run / self).
-    Returns ``[]`` with no ratings file or on any error, so a run without a rating pool just skips it."""
+    """Top-``top`` rated agents from the CURRENT version's ``ratings.json`` as ``[(name, Policy), …]``
+    — READ ONLY, fail-soft. Resolves the versioned pool (``data/elo/<env>/v<current>/ratings.json``,
+    falling back to the legacy flat path) without creating anything. Reuses rate_agent's canonical
+    loader (handles kinds + older obs widths via its schema adapter). Excludes the random anchor + any
+    name in ``exclude``. Returns ``[]`` with no ratings file or on any error, so a run without a rating
+    pool just skips it."""
     try:
         import json
 
-        from .ratings import ANCHOR_NAME, elo_root, load_registry
+        from .ratings import ANCHOR_NAME, load_registry, ratings_file
 
-        rpath = elo_root() / env / "ratings.json"
+        rpath = ratings_file(env)                 # current version, non-creating
         if not rpath.is_file():
             return []
         ratings = json.loads(rpath.read_text())["agents"]
-        reg = load_registry(env)
+        reg = load_registry(env)                  # resolves the current version (never creates)
         import rate_agent  # canonical build_policy (+ obs-schema adapter); read-only use of its code
 
         skip = {ANCHOR_NAME, "random"} | set(x for x in exclude if x)

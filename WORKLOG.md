@@ -3,6 +3,34 @@
 Short, dated entries for future-agent consumption. Newest first. One line or a few bullets
 per unit of meaningful progress. Keep it terse — detail lives in `docs/` and git history.
 
+## 2026-07-08 (Rating environments VERSIONED by the engine contract)
+
+- **Why:** a rating is only comparable within one obs×action×engine contract; a change there
+  invalidates the table. So pools are now versioned. Layout: `data/elo/<env>/meta.json`
+  (`{current, versions:{N:{created,reason,fingerprint}}}`) + `v<N>/{agents,games,ratings}.json`.
+  **Fingerprint** = per-key obs shapes (`mtg_py.PyGame.obs_spec()`) + `action_dim` + engine git sha.
+- **`ratings.py`:** meta/version primitives + atomic flat→v1 migration (idempotent, race-safe: single
+  atomic meta write is the commit point; every op funnels through `ensure_initialized`, so a concurrent
+  `add` can't split-brain). Read ops (`load_registry/games`, `compute_ratings`, `ratings_file`) use a
+  NON-creating resolver (current version, else legacy flat, else empty) so fail-soft readers have no
+  side effects; write ops create/migrate. `ratings.json` gains `env_version` + `fingerprint`. All fns
+  keep their old signatures (new `version=None` → current), so the CLI stays compatible (dmc4's `add`
+  campaign unaffected).
+- **`rate_agent.py`:** `migrate` (fold flat→v1 with current fingerprint), `bump-env <env> --reason`
+  (open v(N+1): fresh spine + empty crosstable + new fingerprint; history retained read-only),
+  `--env-version N` on `list`/`refit` (read historical). **AUTO-GUARD:** `tournament`/`add` compare the
+  live engine fingerprint (obs shapes + action_dim; sha is provenance only) against the current
+  version's and REFUSE on drift, pointing at `bump-env`. Verified end-to-end (refuse → bump → allowed).
+- **`evalkit/sb3.py::load_elo_opponents`** updated to read the current version's ratings.json (was flat
+  path) — keeps the training loop's `winrate_vs_elo` opponents working post-migration.
+- **MIGRATED both real envs** to v1 with the live v1 fingerprint (action_dim 98, bf_feat 32×48):
+  heralds 20 rows, swine 72 rows (incl. dmc4's `4.8-ppo-scriptpool-swine` add) preserved; tables
+  unchanged. +11 versioning tests (`test_ratings_versioning.py`); full suite 39 green.
+- **Heads-up for the incoming Contract v2** (OBS_ACTION_SPACE.md: MAX_PERM 32→64, action 98→130):
+  the doc is ahead of the compiled `mtg_py` (still 98/32). When the v2 binary lands, the guard will
+  auto-refuse v1 → run `bump-env <env> --reason "..."`. NOTE: `scripted.py`'s hardcoded codec constants
+  (MAX_PERM=32, action_dim 98) must be updated with v2 or the benchmark spine misplays.
+
 ## 2026-07-08 (Bradley-Terry agent-rating system — the model-quality scalar)
 
 - **`evalkit/ratings.py`:** per-env BT rating pools under `data/elo/<env>/` (gitignored). Registry

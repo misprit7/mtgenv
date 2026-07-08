@@ -1,38 +1,37 @@
 """Bradley-Terry agent ratings — the model-quality scalar for hill climbing.
 
-Per-environment rating pools. Every game an agent ever plays persists in an append-only
-crosstable; ratings are always recomputable from scratch (order-independent, deterministic).
+Per-environment rating pools, **versioned by the engine contract**. A rating is only meaningful within
+one (obs-space × action-space × engine) contract — any change there invalidates comparability, so each
+contract gets its own version with its own crosstable; history is retained and the *current* version is
+the default view. Layout under ``data/elo/<env>/`` (gitignored via ``/data/``):
 
-Three files per environment live under ``data/elo/<env>/`` (gitignored via ``/data/``):
+    meta.json                     {"current": N, "versions": {"N": {created, reason, fingerprint}}}
+    v<N>/agents.json              registry: {name: {kind, checkpoint, notes}}
+    v<N>/games.jsonl              append-only crosstable, one row per Arena batch (one seating)
+    v<N>/ratings.json             fitted output (also carries env_version + fingerprint)
 
-* ``agents.json``  — the registry: ``{name: {kind, checkpoint, notes}}``. ``kind`` names an
-  evalkit ``Policy`` adapter (``random`` / ``scripted`` / ``scripted_noblock`` / ``ppo`` /
-  ``attn`` / …); ``checkpoint`` is the weights path (``null`` for the torch-free baselines).
-* ``games.jsonl`` — append-only, **one row per Arena batch** (one seating of one pairing):
-  ``{a, b, a_wins, b_wins, draws, n, seed, mode}``. Both seatings of a pairing are two rows.
-* ``ratings.json`` — the fitted output: ``{agents: {name: {rating, ci_lo, ci_hi, games, …}}}``
-  plus a nontransitivity report (largest predicted-vs-observed pairwise winrate residuals).
+The **fingerprint** captures the contract: per-key obs shapes (``mtg_py.PyGame.obs_spec()``), the
+``action_dim``, and the engine git sha at creation. Game-playing commands compare the live engine's
+fingerprint against the current version's stored one and REFUSE on a mismatch (obs shapes or action
+dim) — the mechanism that makes "we changed the action/obs space" impossible to forget; the operator
+runs ``bump-env`` to open a fresh version. Everything below is numpy-only and never imports the engine
+— the *live* fingerprint is computed by the caller (see ``rate_agent.engine_fingerprint``) and passed
+in as a plain dict; this module only stores/compares them.
 
-The model is Bradley-Terry: agent *i* has strength ``theta_i`` and ``P(i beats j) =
-sigmoid(theta_i - theta_j)``. We fit ``theta`` by penalized maximum likelihood (a small logistic
-regression) over the AGGREGATED crosstable, with one agent (``random``) pinned so the scale is
-identified, then map to an Elo-like scale ``rating = anchor_rating + (400/ln 10)·theta`` so the
-anchor sits at exactly ``anchor_rating`` (1000). Draws count as half a win to each side.
-
-Confidence intervals come from the Fisher information (the negative Hessian of the penalized
-log-likelihood at the optimum): ``cov = inv(Fisher)``, ``se = sqrt(diag)``, ``ci = rating ±
-1.96·(400/ln 10)·se``. A tiny ridge (``reg``) keeps ``theta`` finite and the Fisher matrix
-invertible even under total separation (an agent that won or lost every game) or a disconnected
-pool — such agents simply get very wide CIs, which is the honest signal.
-
-numpy-only (no torch/sb3/scipy), so this imports in any venv that has the gym.
+The model is Bradley-Terry: agent *i* has strength ``theta_i`` and ``P(i beats j) = sigmoid(theta_i -
+theta_j)``. We fit ``theta`` by penalized maximum likelihood (a small logistic regression) over the
+AGGREGATED crosstable of one version, pin ``random`` so the scale is identified, and map to an Elo-like
+scale ``rating = 1000 + (400/ln 10)·theta``. Draws count as half a win to each side. CIs come from the
+Fisher information; a tiny ridge keeps ``theta`` finite under separation.
 """
 
 from __future__ import annotations
 
+import datetime
 import json
 import math
 import os
+import tempfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -47,7 +46,10 @@ ANCHOR_RATING = 1000.0
 # Environments with a v1 rating pool (both mirror decks). SOS/random-deck envs are deferred.
 ENVS = ("heralds", "swine")
 
+_FLAT_FILES = ("agents.json", "games.jsonl", "ratings.json")   # legacy pre-versioning layout
 
+
+# ── paths ──────────────────────────────────────────────────────────────────────────────────────────
 def elo_root(root: "str | os.PathLike | None" = None) -> Path:
     """Resolve the ``data/elo`` root. Override with ``root=`` (tests) or ``$MTGENV_ELO_ROOT``."""
     if root is not None:
@@ -59,8 +61,150 @@ def elo_root(root: "str | os.PathLike | None" = None) -> Path:
     return Path(__file__).resolve().parents[3] / "data" / "elo"
 
 
-def env_dir(env: str, root=None) -> Path:
+def env_root(env: str, root=None) -> Path:
     return elo_root(root) / env
+
+
+def meta_path(env: str, root=None) -> Path:
+    return env_root(env, root) / "meta.json"
+
+
+def version_dir(env: str, version: int, root=None) -> Path:
+    return env_root(env, root) / f"v{int(version)}"
+
+
+def _atomic_write(path: Path, text: str) -> None:
+    """Write ``text`` to ``path`` via a temp file + ``os.replace`` (atomic; no torn reads)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as f:
+            f.write(text)
+        os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+
+
+def _now_iso() -> str:
+    return datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
+
+
+# ── meta.json (the version index) ────────────────────────────────────────────────────────────────
+def load_meta(env: str, root=None) -> "dict | None":
+    p = meta_path(env, root)
+    return json.loads(p.read_text()) if p.exists() else None
+
+
+def save_meta(env: str, meta: dict, root=None) -> None:
+    _atomic_write(meta_path(env, root), json.dumps(meta, indent=2, sort_keys=True) + "\n")
+
+
+def current_version(env: str, root=None) -> "int | None":
+    m = load_meta(env, root)
+    return int(m["current"]) if m else None
+
+
+def list_versions(env: str, root=None) -> "dict[int, dict]":
+    m = load_meta(env, root) or {"versions": {}}
+    return {int(k): v for k, v in m.get("versions", {}).items()}
+
+
+def ensure_initialized(env: str, root=None, *, reason: str = "initial",
+                       fingerprint: "dict | None" = None) -> int:
+    """Guarantee ``meta.json`` + a current version dir exist; return the current version.
+
+    Idempotent and race-safe: if ``meta.json`` is present we're done. Otherwise MIGRATE any legacy
+    flat files (``<env>/agents.json`` …) into ``v1`` (atomic per-file move) and write ``meta`` — the
+    single atomic ``meta`` write is the commit point, so a concurrent writer either sees no meta (and
+    funnels through this same migration) or the finished versioned layout, never a split brain. A fresh
+    env with no data just gets an empty ``v1``. ``fingerprint`` records the contract for the created
+    version (callers with the engine pass the live one; ``None`` → ``{}``, backfilled later)."""
+    if load_meta(env, root) is not None:
+        return current_version(env, root)
+    v1 = version_dir(env, 1, root)
+    v1.mkdir(parents=True, exist_ok=True)
+    er = env_root(env, root)
+    for fn in _FLAT_FILES:                       # migrate legacy flat data (move; skip if already gone)
+        src, dst = er / fn, v1 / fn
+        if src.exists() and not dst.exists():
+            os.replace(str(src), str(dst))
+    if load_meta(env, root) is None:             # re-check right before the commit (lost-race guard)
+        save_meta(env, {"current": 1, "versions": {
+            "1": {"created": _now_iso(), "reason": reason, "fingerprint": fingerprint or {}}}}, root)
+    return current_version(env, root)
+
+
+def set_fingerprint(env: str, version: int, fingerprint: dict, root=None) -> None:
+    """Record (or backfill) the contract fingerprint of ``version`` in ``meta.json``."""
+    m = load_meta(env, root)
+    if m is None or str(version) not in m["versions"]:
+        raise ValueError(f"{env} v{version} is not initialized")
+    m["versions"][str(version)]["fingerprint"] = fingerprint
+    save_meta(env, m, root)
+
+
+def bump_version(env: str, *, reason: str, fingerprint: dict, registry=None, root=None) -> int:
+    """Open a fresh version v(N+1): (optionally spine-seeded) registry, EMPTY crosstable, recorded
+    fingerprint; set it current. Returns the new version. Trained agents re-join via ``register`` +
+    tournaments. History (older versions + their games) is retained untouched."""
+    ensure_initialized(env, root, fingerprint=fingerprint, reason=reason)
+    m = load_meta(env, root)
+    n = max(int(k) for k in m["versions"]) + 1
+    vd = version_dir(env, n, root)
+    vd.mkdir(parents=True, exist_ok=True)
+    (vd / "games.jsonl").write_text("")                       # empty crosstable
+    reg = registry or {}
+    _atomic_write(vd / "agents.json", json.dumps(
+        {name: {k: v for k, v in asdict(e).items() if k != "name"} for name, e in reg.items()},
+        indent=2, sort_keys=True) + "\n")
+    m["versions"][str(n)] = {"created": _now_iso(), "reason": reason, "fingerprint": fingerprint}
+    m["current"] = n
+    save_meta(env, m, root)
+    write_ratings(env, root=root, version=n)
+    return n
+
+
+def resolve_version(env: str, version: "int | None" = None, root=None) -> int:
+    """The version an op targets: an explicit ``version`` (must already exist; for read-only history)
+    or the current version (initializing/migrating the env if needed)."""
+    if version is not None:
+        if not version_dir(env, version, root).exists():
+            raise ValueError(f"{env} v{version} does not exist "
+                             f"(versions: {sorted(list_versions(env, root))})")
+        return int(version)
+    return ensure_initialized(env, root)
+
+
+def active_dir(env: str, version: "int | None" = None, root=None) -> Path:
+    """The dir a WRITE targets — initializes/migrates the env if needed (creating side effects)."""
+    return version_dir(env, resolve_version(env, version, root), root)
+
+
+def read_dir(env: str, version: "int | None" = None, root=None) -> Path:
+    """The dir a READ targets — NEVER creates. Explicit version → its dir; else the current version if
+    meta exists; else the legacy flat ``<env>/`` (so a pre-migration or absent pool reads as empty
+    instead of being conjured into existence — keeps fail-soft readers side-effect-free)."""
+    if version is not None:
+        return version_dir(env, version, root)
+    cur = current_version(env, root)
+    return version_dir(env, cur, root) if cur is not None else env_root(env, root)
+
+
+def ratings_file(env: str, version: "int | None" = None, root=None) -> Path:
+    """Path to a version's ``ratings.json`` without creating anything (for fail-soft readers)."""
+    return read_dir(env, version, root) / "ratings.json"
+
+
+# ── fingerprint comparison (pure; the live one is computed by the caller) ───────────────────────────
+def fingerprints_compatible(stored: "dict | None", live: dict) -> bool:
+    """Do two contract fingerprints agree on what makes ratings comparable — the obs shapes and the
+    action dim? (The engine git sha is provenance only, NOT part of the guard.) An empty/absent stored
+    fingerprint is treated as 'unknown' → compatible (the caller backfills it)."""
+    if not stored:
+        return True
+    return (stored.get("obs_spec") == live.get("obs_spec")
+            and stored.get("action_dim") == live.get("action_dim"))
 
 
 # ── registry (agents.json) ───────────────────────────────────────────────────────────────────────
@@ -74,32 +218,34 @@ class AgentEntry:
     notes: str = ""
 
 
-def load_registry(env: str, root=None) -> "dict[str, AgentEntry]":
-    p = env_dir(env, root) / "agents.json"
+def load_registry(env: str, root=None, version: "int | None" = None) -> "dict[str, AgentEntry]":
+    p = read_dir(env, version, root) / "agents.json"     # read: never creates
     if not p.exists():
         return {}
     raw = json.loads(p.read_text())
     return {name: AgentEntry(name=name, **d) for name, d in raw.items()}
 
 
-def save_registry(env: str, registry: "dict[str, AgentEntry]", root=None) -> None:
-    d = env_dir(env, root)
+def save_registry(env: str, registry: "dict[str, AgentEntry]", root=None,
+                  version: "int | None" = None) -> None:
+    d = active_dir(env, version, root)
     d.mkdir(parents=True, exist_ok=True)
     out = {name: {k: v for k, v in asdict(e).items() if k != "name"}
            for name, e in registry.items()}
-    (d / "agents.json").write_text(json.dumps(out, indent=2, sort_keys=True) + "\n")
+    _atomic_write(d / "agents.json", json.dumps(out, indent=2, sort_keys=True) + "\n")
 
 
 def register_agent(env: str, name: str, kind: str, checkpoint: "str | None" = None,
-                   notes: str = "", *, root=None, overwrite: bool = False) -> AgentEntry:
-    """Add (or, with ``overwrite``, replace) an agent in the env registry. Returns the entry."""
-    reg = load_registry(env, root)
+                   notes: str = "", *, root=None, version: "int | None" = None,
+                   overwrite: bool = False) -> AgentEntry:
+    """Add (or, with ``overwrite``, replace) an agent in the (current) env registry."""
+    reg = load_registry(env, root, version)
     if name in reg and not overwrite:
-        raise ValueError(f"agent {name!r} already registered in env {env!r} "
+        raise ValueError(f"agent {name!r} already registered in {env!r} "
                          f"(pass overwrite=True to replace)")
     entry = AgentEntry(name=name, kind=kind, checkpoint=checkpoint, notes=notes)
     reg[name] = entry
-    save_registry(env, reg, root)
+    save_registry(env, reg, root, version)
     return entry
 
 
@@ -118,19 +264,26 @@ class GameRow:
     mode: str = "greedy"
 
 
-def append_games(env: str, rows: "GameRow | list[GameRow]", root=None) -> None:
-    """Append one or more crosstable rows (JSONL, one object per line). Append-only, never rewritten."""
+def append_games(env: str, rows: "GameRow | list[GameRow]", root=None,
+                 version: "int | None" = None) -> None:
+    """Append crosstable rows (JSONL, one object per line) to the CURRENT version. Refuses to write
+    into a historical version — old contracts are read-only (re-fit, never re-played)."""
     if isinstance(rows, GameRow):
         rows = [rows]
-    d = env_dir(env, root)
+    cur = ensure_initialized(env, root)
+    v = resolve_version(env, version, root)
+    if v != cur:
+        raise ValueError(f"refusing to append games into {env} v{v} — only the current version "
+                         f"(v{cur}) accepts new games (bump-env opens a new one)")
+    d = version_dir(env, v, root)
     d.mkdir(parents=True, exist_ok=True)
     with (d / "games.jsonl").open("a") as f:
         for r in rows:
             f.write(json.dumps(asdict(r)) + "\n")
 
 
-def load_games(env: str, root=None) -> "list[GameRow]":
-    p = env_dir(env, root) / "games.jsonl"
+def load_games(env: str, root=None, version: "int | None" = None) -> "list[GameRow]":
+    p = read_dir(env, version, root) / "games.jsonl"      # read: never creates
     if not p.exists():
         return []
     out = []
@@ -192,23 +345,19 @@ def fit_bradley_terry(names, W, N, *, anchor=ANCHOR_NAME, anchor_rating=ANCHOR_R
     for it in range(1, max_iter + 1):
         d = theta[:, None] - theta[None, :]          # d[i,j] = theta_i - theta_j
         P = _sigmoid(d)
-        # gradient of penalized log-lik wrt every theta_i
         g_full = (W - N * P).sum(axis=1) - reg * theta
-        # Hessian of penalized log-lik (negative-definite): weighted graph Laplacian - reg·I
         w = N * P * (1.0 - P)                          # symmetric edge weights
-        H_full = np.diag(w.sum(axis=1)) - w           # this is +Laplacian = -Hessian_LL (PD-ish)
-        H_full = H_full + reg * np.eye(A)             # Fisher (=-Hessian of penalized obj)
+        H_full = np.diag(w.sum(axis=1)) - w           # +Laplacian = Fisher(LL)
+        H_full = H_full + reg * np.eye(A)             # Fisher of the penalized objective
         if not free:
             break
-        Ff = H_full[np.ix_(free, free)]               # Fisher over free params (PD)
+        Ff = H_full[np.ix_(free, free)]
         gf = g_full[free]
         grad_norm = float(np.max(np.abs(gf)))
         if grad_norm < tol:
             break
-        step = np.linalg.solve(Ff, gf)                # Newton: Fisher · delta = grad
-        theta[free] += step
+        theta[free] += np.linalg.solve(Ff, gf)        # Newton: Fisher · delta = grad
 
-    # covariance from the Fisher information at the optimum
     se = np.zeros(A, dtype=np.float64)
     if free:
         d = theta[:, None] - theta[None, :]
@@ -230,9 +379,8 @@ def nontransitivity(names, W, N, theta, *, top=5):
     """Largest gaps between the BT-predicted and observed pairwise winrates.
 
     For each unordered pair with games: ``observed = W[i,j]/N[i,j]``, ``predicted =
-    sigmoid(theta_i - theta_j)``, ``residual = observed - predicted``. A perfectly transitive pool
-    fits with ~0 residuals; a large one flags a rock-paper-scissors edge the single scalar can't
-    capture. Returns ``{max_residual, pairs: [...]}`` sorted by ``abs(residual)`` desc.
+    sigmoid(theta_i - theta_j)``, ``residual = observed - predicted``. Returns ``{max_residual,
+    pairs: [...]}`` sorted by ``abs(residual)`` desc.
     """
     A = len(names)
     pairs = []
@@ -248,66 +396,50 @@ def nontransitivity(names, W, N, theta, *, top=5):
                 "residual": round(obs - pred, 4),
             })
     pairs.sort(key=lambda p: abs(p["residual"]), reverse=True)
-    return {
-        "max_residual": pairs[0]["residual"] if pairs else 0.0,
-        "pairs": pairs[:top],
-    }
+    return {"max_residual": pairs[0]["residual"] if pairs else 0.0, "pairs": pairs[:top]}
 
 
 # ── the top-level: fit and write ratings.json ──────────────────────────────────────────────────────
-def compute_ratings(env: str, *, root=None, reg=1e-3, include_registered=True):
-    """Load the crosstable (and, if present, the registry), fit BT, return the ratings dict.
+def compute_ratings(env: str, *, root=None, version: "int | None" = None, reg=1e-3,
+                    include_registered=True):
+    """Load one version's crosstable (+ registry), fit BT, return the ratings dict (does not write).
 
-    Pure computation — does not write. ``include_registered`` folds registered-but-unplayed agents
-    into the table (they get ``games=0`` and a wide CI). The anchor is always included.
+    Carries the version's ``env_version`` and contract ``fingerprint``. ``include_registered`` folds
+    registered-but-unplayed agents in (``games=0``, wide CI). The anchor is always included.
     """
-    rows = load_games(env, root)
-    extra = []
-    if include_registered:
-        extra = list(load_registry(env, root).keys())
+    ver = version if version is not None else (current_version(env, root) or 1)   # read: no create
+    meta = load_meta(env, root) or {"versions": {}}
+    fingerprint = meta.get("versions", {}).get(str(ver), {}).get("fingerprint", {})
+    rows = load_games(env, root, version)
+    extra = list(load_registry(env, root, version).keys()) if include_registered else []
     extra.append(ANCHOR_NAME)
     names, W, N = aggregate(rows, names=extra)
 
+    head = {"env": env, "env_version": ver, "fingerprint": fingerprint, "anchor": ANCHOR_NAME,
+            "anchor_rating": ANCHOR_RATING, "scale": round(ELO_SCALE, 4), "reg": reg,
+            "n_rows": len(rows)}
     if ANCHOR_NAME not in names:
-        # empty pool with no registry — nothing to anchor against
-        return {"env": env, "anchor": ANCHOR_NAME, "anchor_rating": ANCHOR_RATING,
-                "scale": ELO_SCALE, "reg": reg, "n_rows": len(rows), "n_games_total": 0,
-                "agents": {}, "nontransitivity": {"max_residual": 0.0, "pairs": []}}
+        return {**head, "n_games_total": 0, "agents": {},
+                "nontransitivity": {"max_residual": 0.0, "pairs": []}}
 
     theta, se, info = fit_bradley_terry(names, W, N, anchor=ANCHOR_NAME,
                                         anchor_rating=ANCHOR_RATING, reg=reg)
-
     agents = {}
     for i, name in enumerate(names):
         rating = ANCHOR_RATING + ELO_SCALE * theta[i]
         half = ELO_SCALE * 1.96 * se[i]
-        wins = float(W[i].sum())
-        games = float(N[i].sum())
-        # decompose games into whole wins/losses/draws for reporting (draws are the half-fractions)
-        draws_i = float(sum(_row_draws(rows, name)))
         agents[name] = {
             "rating": round(float(rating), 1),
             "ci_lo": round(float(rating - half), 1),
             "ci_hi": round(float(rating + half), 1),
-            "games": int(round(games)),
-            "wins": round(wins, 1),
-            "draws": int(round(draws_i)),
+            "games": int(round(float(N[i].sum()))),
+            "wins": round(float(W[i].sum()), 1),
+            "draws": int(round(float(sum(_row_draws(rows, name))))),
             "theta": round(float(theta[i]), 4),
             "se": round(float(se[i]), 4),
         }
-
-    return {
-        "env": env,
-        "anchor": ANCHOR_NAME,
-        "anchor_rating": ANCHOR_RATING,
-        "scale": round(ELO_SCALE, 4),
-        "reg": reg,
-        "n_rows": len(rows),
-        "n_games_total": int(round(N.sum() / 2)),
-        "fit": info,
-        "agents": agents,
-        "nontransitivity": nontransitivity(names, W, N, theta),
-    }
+    return {**head, "n_games_total": int(round(N.sum() / 2)), "fit": info,
+            "agents": agents, "nontransitivity": nontransitivity(names, W, N, theta)}
 
 
 def _row_draws(rows, name):
@@ -316,24 +448,26 @@ def _row_draws(rows, name):
             yield r.draws
 
 
-def write_ratings(env: str, *, root=None, reg=1e-3) -> dict:
-    """Recompute ratings from the crosstable and (re)write ``ratings.json``. Returns the dict."""
-    out = compute_ratings(env, root=root, reg=reg)
-    d = env_dir(env, root)
+def write_ratings(env: str, *, root=None, version: "int | None" = None, reg=1e-3) -> dict:
+    """Recompute a version's ratings from its crosstable and (re)write its ``ratings.json``."""
+    ver = resolve_version(env, version, root)
+    out = compute_ratings(env, root=root, version=ver, reg=reg)
+    d = version_dir(env, ver, root)
     d.mkdir(parents=True, exist_ok=True)
-    (d / "ratings.json").write_text(json.dumps(out, indent=2, sort_keys=True) + "\n")
+    _atomic_write(d / "ratings.json", json.dumps(out, indent=2, sort_keys=True) + "\n")
     return out
 
 
 def format_table(ratings: dict) -> str:
     """A compact human-readable ratings table (highest first), with CIs and game counts."""
     agents = ratings.get("agents", {})
+    ver = ratings.get("env_version", "?")
     if not agents:
-        return f"[{ratings.get('env','?')}] no rated agents yet"
+        return f"[{ratings.get('env','?')} v{ver}] no rated agents yet"
     rows = sorted(agents.items(), key=lambda kv: kv[1]["rating"], reverse=True)
     w = max((len(n) for n in agents), default=5)
-    lines = [f"── ratings [{ratings['env']}]  (anchor {ratings['anchor']}={ratings['anchor_rating']:.0f}, "
-             f"{ratings['n_games_total']} games) ──",
+    lines = [f"── ratings [{ratings['env']} v{ver}]  (anchor {ratings['anchor']}="
+             f"{ratings['anchor_rating']:.0f}, {ratings['n_games_total']} games) ──",
              f"  {'agent':<{w}}  {'rating':>7}  {'95% CI':>17}  {'games':>6}"]
     for name, r in rows:
         ci = f"[{r['ci_lo']:.0f}, {r['ci_hi']:.0f}]"
