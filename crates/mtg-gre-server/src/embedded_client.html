@@ -287,8 +287,16 @@
   .badge.dmg { background: #15110c; color: #ff9a8a; right: 3px; left: auto; bottom: 18px; border-color: #15110c; }
   .ctrs { position: absolute; top: 18px; left: 3px; display: flex; flex-direction: column; gap: 1px; }
   .ctr { background: var(--green); color: #fff; font-size: 7px; font-weight: 800; padding: 0 2px; border-radius: 3px; border: 1px solid var(--ink); }
-  .card.sick .c-art::after { content: "˝"; }
-  .card.sick { opacity: .82; }
+  /* Summoning sickness: unmistakable — desaturated art + a bobbing 💤 badge. */
+  .card.sick { opacity: .85; }
+  .card.sick .c-art { filter: saturate(.55); }
+  .card.sick .c-art::after {
+    content: "💤"; position: absolute; top: 2px; right: 3px; font-size: 15px; line-height: 1;
+    text-shadow: 0 1px 3px rgba(0,0,0,.75); animation: sickbob 1.8s ease-in-out infinite; }
+  @keyframes sickbob {
+    0%, 100% { transform: translateY(0) rotate(-6deg); opacity: .95; }
+    50%      { transform: translateY(-3px) rotate(6deg); opacity: .65; } }
+  @media (prefers-reduced-motion: reduce) { .card.sick .c-art::after { animation: none; } }
   .hand .card { width: 104px; height: 146px; }
   .hand .card .c-name { font-size: 10px; } .hand .card .c-type, .hand .card .c-rules { font-size: 8px; }
   /* Hand cards are larger; still art-forward — a few oracle lines, the rest clips to the preview. */
