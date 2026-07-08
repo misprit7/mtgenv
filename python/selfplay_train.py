@@ -280,6 +280,8 @@ def main():
                     help="'fleet' (M3.4, worker-thread parallel stepping, ~2.8x — DEFAULT) or 'batched' "
                          "(single-threaded Python pump, fallback)")
     ap.add_argument("--num-workers", type=int, default=8, help="fleet worker threads (--vecenv fleet)")
+    ap.add_argument("--eval-every", type=int, default=8000, help="steps between the evalkit battery")
+    ap.add_argument("--pool-every", type=int, default=8000, help="steps between self-play pool snapshots")
     ap.add_argument("--p-script", type=float, default=0.0,
                     help="fraction of self-play episodes played vs a punisher heuristic (0 = off)")
     ap.add_argument("--script-mix", default="gang,careful,turtle",
@@ -296,6 +298,7 @@ def main():
         tensorboard_log=args.tensorboard, subproc=args.subproc, shaping_coef=args.shaping_coef,
         notes=args.notes, replay_every=args.replay_every, run_name=run_name,
         vecenv=args.vecenv, num_workers=args.num_workers, verbose=1,
+        eval_every=args.eval_every, pool_every=args.pool_every,
         p_script=args.p_script, script_mix=(args.script_mix.split(",") if args.p_script > 0 else None),
     )
     wr_rand = play_winrate(model, args.deck, "random", 200, 9_000_000)
