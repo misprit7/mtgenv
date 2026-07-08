@@ -210,7 +210,9 @@
   .card { width: 86px; height: 120px; border-radius: 7px 4px 8px 5px; padding: 4px; position: relative;
     background: var(--cColorless); color: #15110c; border: 2.5px solid var(--ink);
     box-shadow: 3px 3px 0 var(--shadowc); display: flex; flex-direction: column; gap: 2px;
-    flex: 0 0 auto; user-select: none; }
+    /* -webkit- prefixes + touch-callout: iOS long-press (the preview gesture) must not start a
+       text selection or the copy callout on card contents. Text OUTSIDE cards stays selectable. */
+    flex: 0 0 auto; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
   /* Card colour identity is the paper face tint + tinted title bar; the border stays chunky ink. */
   .card.w { background: var(--cW); } .card.u { background: var(--cU); } .card.b { background: var(--cB); }
   .card.r { background: var(--cR); } .card.g { background: var(--cG); }
@@ -1777,6 +1779,13 @@
   // Eat the click that follows a long-press so the card's game action doesn't fire.
   document.addEventListener("click", (e) => {
     if (suppressClick) { e.stopPropagation(); e.preventDefault(); suppressClick = false; }
+  }, true);
+  // Long-press on a card must not open the browser context menu / text-selection handles
+  // (Android fires contextmenu on hold; iOS is covered by the .card user-select/touch-callout CSS).
+  // Scoped to previewable cards so text everywhere else stays selectable.
+  document.addEventListener("contextmenu", (e) => {
+    const t = e.target;
+    if (t && t.closest && t.closest("[data-preview]")) e.preventDefault();
   }, true);
 
   // ── stack → target arrows ─────────────────────────────────────────────────

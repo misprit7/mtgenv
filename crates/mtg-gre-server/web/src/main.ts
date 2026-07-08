@@ -1272,6 +1272,13 @@ document.addEventListener("pointercancel", lpClear, true);
 document.addEventListener("click", (e) => {
   if (suppressClick) { e.stopPropagation(); e.preventDefault(); suppressClick = false; }
 }, true);
+// Long-press on a card must not open the browser context menu / text-selection handles
+// (Android fires contextmenu on hold; iOS is covered by the .card user-select/touch-callout CSS).
+// Scoped to previewable cards so text everywhere else stays selectable.
+document.addEventListener("contextmenu", (e) => {
+  const t = e.target as HTMLElement;
+  if (t && t.closest && t.closest("[data-preview]")) e.preventDefault();
+}, true);
 
 // ── stack → target arrows ──────────────────────────────────────────────────────
 const SVGNS = "http://www.w3.org/2000/svg";
