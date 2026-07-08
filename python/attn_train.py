@@ -32,6 +32,10 @@ def main():
     ap.add_argument("--replay-every", type=int, default=25_000)
     ap.add_argument("--eval-every", type=int, default=8000, help="steps between the evalkit battery")
     ap.add_argument("--pool-every", type=int, default=8000, help="steps between self-play pool snapshots")
+    ap.add_argument("--p-script", type=float, default=0.0,
+                    help="fraction of self-play episodes vs a punisher heuristic (0 = off)")
+    ap.add_argument("--script-mix", default="gang,careful,turtle",
+                    help="ScriptedHeuristic variants for --p-script (racer/turtle/gang/careful)")
     ap.add_argument("--run-name", required=True, help="exact TB run name, e.g. 4.7-ppo-attn-swine")
     # PARITY defaults (~138k params ≈ baseline ~142k). d_model=256/ff=512 is the parked size experiment.
     ap.add_argument("--d-model", type=int, default=48)
@@ -48,6 +52,7 @@ def main():
         num_workers=args.num_workers, eval_every=args.eval_every, pool_every=args.pool_every, verbose=1,
         policy=RelationalPointerPolicy,
         policy_kwargs=dict(d_model=args.d_model, ff=args.ff, layers=args.layers),
+        p_script=args.p_script, script_mix=(args.script_mix.split(",") if args.p_script > 0 else None),
     )
     wr_rand = play_winrate(model, args.deck, "random", 200, 9_000_000)
     wr_init = play_winrate(model, args.deck, ModelOpponent(ref), 200, 9_500_000)

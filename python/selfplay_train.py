@@ -41,10 +41,11 @@ def make_env(deck, pool_dir, seed):
 
 
 def make_vecenv(deck, pool_dir, n_envs, seed, subproc=False, batched=True, p_random=0.2, device=None,
-                vecenv="batched", num_workers=8):
+                vecenv="batched", num_workers=8, p_script=0.0, script_mix=None):
     """Self-play vec env. ``vecenv``: ``"batched"`` (#41, single-threaded Python pump) or ``"fleet"``
     (M3.4, ``mtg_py.Fleet`` worker-thread parallel stepping — same self-play regime, stepping in Rust).
-    ``batched=False`` is the legacy ``DummyVecEnv`` per-env path (``subproc`` applies only there)."""
+    ``batched=False`` is the legacy ``DummyVecEnv`` per-env path (``subproc`` applies only there).
+    ``p_script``/``script_mix`` mix punisher heuristics into the opponent pool (fleet + batched only)."""
     if vecenv == "fleet":
         from mtgenv_gym import FleetSelfPlayVecEnv
 
@@ -53,7 +54,7 @@ def make_vecenv(deck, pool_dir, n_envs, seed, subproc=False, batched=True, p_ran
 
             device = "cuda" if torch.cuda.is_available() else "cpu"
         return FleetSelfPlayVecEnv(deck, pool_dir, n_envs, num_workers=num_workers, p_random=p_random,
-                                   seed=seed, device=device)
+                                   seed=seed, device=device, p_script=p_script, script_mix=script_mix)
     if batched:
         from mtgenv_gym import BatchedSelfPlayVecEnv
 
@@ -62,7 +63,7 @@ def make_vecenv(deck, pool_dir, n_envs, seed, subproc=False, batched=True, p_ran
 
             device = "cuda" if torch.cuda.is_available() else "cpu"
         return BatchedSelfPlayVecEnv(deck, pool_dir, n_envs, p_random=p_random, seed=seed,
-                                     device=device)
+                                     device=device, p_script=p_script, script_mix=script_mix)
     factories = [make_env(deck, pool_dir, seed * 100 + i) for i in range(n_envs)]
     if subproc:
         # spawn (not fork) so each worker re-imports torch cleanly — fork + torch is fragile.
@@ -171,7 +172,7 @@ def train_selfplay(deck="demo", timesteps=120_000, n_envs=8, pool_dir=DEFAULT_PO
                    tensorboard_log=None, seed=0, pool_every=8000, eval_every=8000, subproc=False,
                    shaping_coef=0.1, notes=None, replay_every=0, run_name=None,
                    vecenv="batched", num_workers=8, verbose=0,
-                   policy="MultiInputPolicy", policy_kwargs=None):
+                   policy="MultiInputPolicy", policy_kwargs=None, p_script=0.0, script_mix=None):
     # replay_every>0 records one greedy self-play game every that-many steps to data/replays/ (the
     # lobby's "AI Training Replays" learning progression). Default 0 (OFF) as a library call — the
     # CLI turns it on (~25k) so real runs record, but tests / ab_shaping stay clean.
@@ -186,7 +187,8 @@ def train_selfplay(deck="demo", timesteps=120_000, n_envs=8, pool_dir=DEFAULT_PO
     ladder_dir = pool_dir.rstrip("/") + "_ladder"
     _clean(os.path.join(pool_dir, "*.zip"), ref_path, os.path.join(ladder_dir, "*.zip"))  # fresh league
 
-    venv = make_vecenv(deck, pool_dir, n_envs, seed, subproc=subproc, vecenv=vecenv, num_workers=num_workers)
+    venv = make_vecenv(deck, pool_dir, n_envs, seed, subproc=subproc, vecenv=vecenv,
+                       num_workers=num_workers, p_script=p_script, script_mix=script_mix)
     # Default policy = the DeepSets EntityExtractor baseline; a caller (e.g. attn_train) can pass a
     # custom policy class + kwargs (the relational-attention pointer policy) — everything else (vec env,
     # callbacks, evalkit battery, shaping) is identical, so arms differ only in the policy.
@@ -278,6 +280,10 @@ def main():
                     help="'fleet' (M3.4, worker-thread parallel stepping, ~2.8x — DEFAULT) or 'batched' "
                          "(single-threaded Python pump, fallback)")
     ap.add_argument("--num-workers", type=int, default=8, help="fleet worker threads (--vecenv fleet)")
+    ap.add_argument("--p-script", type=float, default=0.0,
+                    help="fraction of self-play episodes played vs a punisher heuristic (0 = off)")
+    ap.add_argument("--script-mix", default="gang,careful,turtle",
+                    help="comma list of ScriptedHeuristic variants for --p-script (racer/turtle/gang/careful)")
     args = ap.parse_args()
 
     # Versioned run name (shared by the TB run dir + the lobby replay tag), unless --run-name overrides.
@@ -290,6 +296,7 @@ def main():
         tensorboard_log=args.tensorboard, subproc=args.subproc, shaping_coef=args.shaping_coef,
         notes=args.notes, replay_every=args.replay_every, run_name=run_name,
         vecenv=args.vecenv, num_workers=args.num_workers, verbose=1,
+        p_script=args.p_script, script_mix=(args.script_mix.split(",") if args.p_script > 0 else None),
     )
     wr_rand = play_winrate(model, args.deck, "random", 200, 9_000_000)
     wr_init = play_winrate(model, args.deck, ModelOpponent(ref), 200, 9_500_000)

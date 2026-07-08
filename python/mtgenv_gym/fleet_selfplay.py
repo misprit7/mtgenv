@@ -64,7 +64,7 @@ class FleetSelfPlayVecEnv(VecEnv):
     games. Same observation/action spaces as `MtgEnv` (built from `PyGame.obs_spec`)."""
 
     def __init__(self, deck, pool_dir, num_envs, num_workers=8, p_random=0.2, seed=0,
-                 shaping_coef=0.0, gamma=0.999, device="cpu"):
+                 shaping_coef=0.0, gamma=0.999, device="cpu", p_script=0.0, script_mix=None):
         self.deck = deck
         self.num_workers = num_workers
         # Reuse MtgEnv's spaces so MaskablePPO/EntityExtractor are unchanged.
@@ -85,7 +85,8 @@ class FleetSelfPlayVecEnv(VecEnv):
         for g, i in self._cardid_index.items():
             self._id2cat[g] = i
         super().__init__(num_envs, observation_space, action_space)
-        self._opp = _PooledBatchedOpponent(pool_dir, p_random=p_random, rng_seed=seed, device=device)
+        self._opp = _PooledBatchedOpponent(pool_dir, p_random=p_random, rng_seed=seed, device=device,
+                                           p_script=p_script, script_mix=script_mix)
         self._seed = (int(seed) * 2862933555777941757 + 3037000493) & _U64
         self._seedctr = 0
         self._actions = np.zeros(num_envs, dtype=np.int64)

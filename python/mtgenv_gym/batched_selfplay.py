@@ -36,6 +36,28 @@ _G_MY_LIFE, _G_MY_HAND, _G_MY_BF = 16, 18, 22
 _G_OPP_LIFE, _G_OPP_HAND, _G_OPP_BF = 29, 31, 35
 
 
+# Punisher-script variants for the training pool (name → ScriptedHeuristic (attack axis, block axis);
+# mirrors rate_agent.SCRIPT_KINDS so a --script-mix name means the same policy in training and rating).
+_SCRIPT_VARIANTS = {
+    "racer": ("all", "never"),          # all-in attack, never block
+    "turtle": ("never", "all"),         # never attack, block everything (the wall)
+    "gang": ("all", "gang"),            # all-in attack, gang the biggest attacker
+    "careful": ("conservative", "gang"),  # only safe attacks, gang blocks (the strongest swine agent)
+}
+
+
+def _build_script_pool(names):
+    """`["gang","careful",...]` → a list of `ScriptedHeuristic` opponents. Unknown names are skipped."""
+    from .evalkit.scripted import ScriptedHeuristic
+
+    pool = []
+    for n in names:
+        axes = _SCRIPT_VARIANTS.get(n.strip())
+        if axes:
+            pool.append(ScriptedHeuristic(attack=axes[0], block=axes[1]))
+    return pool
+
+
 class _PooledBatchedOpponent:
     """Per-episode opponent assignment + batched resolution, mirroring `league.OpponentPool` but
     routing inference through `BatchedPolicy` so decisions for the *same* checkpoint batch together.
@@ -46,13 +68,18 @@ class _PooledBatchedOpponent:
     by assignment so each distinct checkpoint runs a single forward over its whole group.
     """
 
-    def __init__(self, pool_dir, p_random=0.2, rng_seed=0, device="cpu"):
+    def __init__(self, pool_dir, p_random=0.2, rng_seed=0, device="cpu", p_script=0.0, script_mix=None):
         self.pool_dir = pool_dir
         self.p_random = p_random
+        self.p_script = float(p_script)
         self.device = device
         self._rng = np.random.default_rng(rng_seed)
         self._cache = {}     # checkpoint path -> BatchedPolicy
-        self._assign = {}    # env_index -> None | checkpoint path
+        self._assign = {}    # env_index -> None (random) | checkpoint path (str) | ScriptedHeuristic
+        # Punisher scripts mixed into the self-play pool (the leading hypothesis after 4.7: mirror
+        # self-play doesn't punish bad combat; fixed heuristic opponents do). One instance per variant
+        # so same-variant assignments still batch together in resolve().
+        self.script_pool = _build_script_pool(script_mix) if (self.p_script > 0 and script_mix) else []
 
     def _checkpoints(self):
         if not os.path.isdir(self.pool_dir):
@@ -65,6 +92,10 @@ class _PooledBatchedOpponent:
             live = set(ck)
             for stale in [p for p in self._cache if p not in live]:
                 self._cache.pop(stale, None)
+        # p_script: a punisher heuristic (independent of whether the checkpoint pool is warm yet).
+        if self.script_pool and self._rng.random() < self.p_script:
+            self._assign[i] = self.script_pool[int(self._rng.integers(len(self.script_pool)))]
+            return
         if not ck or self._rng.random() < self.p_random:
             self._assign[i] = None
             return
@@ -92,13 +123,21 @@ class _PooledBatchedOpponent:
             groups.setdefault(self._assign.get(i), []).append((i, env))
         out = {}
         for handle, items in groups.items():
-            bp = self._policy(handle) if handle is not None else None
-            if bp is None:  # random opponent (or unreadable checkpoint) — mask only
+            if handle is None:  # random opponent — mask only (skip obs encoding)
                 for (i, env) in items:
                     out[i] = int(rng.choice(np.flatnonzero(env.ext_mask())))
                 continue
-            acts = bp.act([env.ext_obs() for (_, env) in items],
-                          [env.ext_mask() for (_, env) in items], deterministic=False)
+            if isinstance(handle, str):  # checkpoint path → BatchedPolicy (grouped forward)
+                bp = self._policy(handle)
+                if bp is None:  # half-written / unreadable → fall back to random
+                    for (i, env) in items:
+                        out[i] = int(rng.choice(np.flatnonzero(env.ext_mask())))
+                    continue
+                acts = bp.act([env.ext_obs() for (_, env) in items],
+                              [env.ext_mask() for (_, env) in items], deterministic=False)
+            else:  # a ScriptedHeuristic punisher (torch-free, batched, deterministic)
+                acts = handle.act([env.ext_obs() for (_, env) in items],
+                                  [env.ext_mask() for (_, env) in items], mode="greedy")
             for k, (i, _env) in enumerate(items):
                 out[i] = int(acts[k])
         return out
@@ -108,7 +147,7 @@ class BatchedSelfPlayVecEnv(VecEnv):
     """N self-play `MtgEnv` games stepped in lockstep, opponent inference batched across games."""
 
     def __init__(self, deck, pool_dir, num_envs, p_random=0.2, seed=0, max_decisions=3000,
-                 device="cpu", shaping_coef=0.0, gamma=0.999):
+                 device="cpu", shaping_coef=0.0, gamma=0.999, p_script=0.0, script_mix=None):
         self.deck = deck
         self.envs = [
             MtgEnv(deck=deck, opponent="external", max_decisions=max_decisions)
@@ -116,7 +155,8 @@ class BatchedSelfPlayVecEnv(VecEnv):
         ]
         super().__init__(num_envs, self.envs[0].observation_space, self.envs[0].action_space)
         self.action_dim = self.envs[0].action_dim
-        self._opp = _PooledBatchedOpponent(pool_dir, p_random=p_random, rng_seed=seed, device=device)
+        self._opp = _PooledBatchedOpponent(pool_dir, p_random=p_random, rng_seed=seed, device=device,
+                                           p_script=p_script, script_mix=script_mix)
         self._masks = np.zeros((num_envs, self.action_dim), dtype=bool)
         self._actions = np.zeros(num_envs, dtype=np.int64)
         self._seed = (int(seed) * 2862933555777941757 + 3037000493) & _U64
