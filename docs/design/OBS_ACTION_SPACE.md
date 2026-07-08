@@ -25,9 +25,25 @@ Output is a fixed-shape bundle:
 | `globals` | 69 | turn, phase one-hot (12), active/priority flags, per-seat block ×2 (life, poison, hand/library/graveyard/exile/battlefield counts, floating mana WUBRGC), stack depth, **decision-kind one-hot (21 `DecisionRequest` variants)**, request scalars, 2 player-candidate flags |
 | `bf_feat` | 256 × 48 | one row per battlefield object (both players'), in `perm_order` (§2a), see §2 |
 | `bf_ids` / `bf_cardid` | 256 | hashed `grp_id` (embedding lookup) + deck-local exact one-hot |
-| `hand_feat` | 16 × 18 | own hand: base stats, types, colors, castable flag, 2 decision flags |
-| `stack_feat` | 8 × 18 | stack objects: base, types, colors, 2 decision flags — **thin; see gap G1** |
-| `decision_ids` | 1 | `grp_id` of the card *raising the current decision* (fed to the head directly, bypassing any pooling) |
+| `hand_feat` | 16 × 18 | own hand rows, column map in §2b |
+| `hand_ids` / `hand_cardid` | 16 | hashed `grp_id` (embedding lookup) + deck-local exact one-hot — same card-identity channels as the battlefield |
+| `stack_feat` | 8 × 18 | stack rows, column map in §2b — **no target refs; see gap G1** |
+| `stack_ids` / `stack_cardid` | 8 | hashed `grp_id` + deck-local one-hot |
+| `decision_ids` / `decision_cardid` | 1 | `grp_id` of the card *raising the current decision* (fed to the head directly, bypassing any pooling) |
+
+## 2b. Hand & stack rows — full column maps
+
+Every zone has the same *card-identity* channels (`*_ids` + `*_cardid`); what hand/stack rows lack
+is the battlefield's *instance/relation* block (cols 45–47) — see §4/G1.
+
+**`hand_feat` (18 cols):** 0 `present` · 1 `mana_value` · 2 `castable` (legal to cast **right
+now**, from the live decision's enumeration — not a static flag) · 3–10 card types · 11–15 colors
+· 16 `is_decision_source` · 17 `is_decision_candidate` (e.g. a discard/reveal choice).
+
+**`stack_feat` (18 cols):** 0 `present` · 1 `controller_is_me` · 2 `mana_value` · 3–10 card types
+· 11–15 colors · 16 `is_decision_source` (the spell/ability being decided) · 17
+`is_decision_candidate` (this stack object is targetable by the current decision). Note what is
+NOT here: *what this spell targets* — gap G1.
 
 ## 2a. Battlefield row ordering & truncation priority (`layout::perm_order`)
 
