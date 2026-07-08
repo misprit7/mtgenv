@@ -1,15 +1,16 @@
 """Pluggable per-deck judgment analyzers.
 
 Some decks have a *specific* strategic question that a generic win-rate/attack-rate can't see. The
-swine deck's is the user's chump-block concern: does the policy trade a 2/2 into a trampling 3/3 even
-at high life (where you should just take 3)? An analyzer watches the evaluated policy's decisions
-during Arena play and emits deck-specific scalars, logged automatically **when the deck matches** — no
-caller wiring. Adding one is a factory in ``ANALYZERS`` (or ``register_analyzer``).
+swine deck's is the user's combat-judgment concern: bears (2/2) vs a trampling 3/3 Swine. An analyzer
+watches the evaluated policy's decisions during Arena play and emits deck-specific scalars, logged
+automatically **when the deck matches** — no caller wiring. Adding one is a factory in ``ANALYZERS``
+(or ``register_analyzer``).
 
 An analyzer sees, per finalized decision of the evaluated policy, the ``obs`` it acted on (pre-apply)
-and the ``decision_stats`` record that decision produced — the same two things ``swine_blocks.py``
-reads. Output is a flat ``{tag: value}`` dict; tags are logged verbatim under the run and carried in
-``EvalResult.analyzers``.
+and the ``decision_stats`` record that decision produced. It reads the board straight from ``obs``
+(``bf_feat`` power/tapped/attacking/blocked-by/is_pending_combat columns), so it can classify combat
+by creature identity (a 3-power creature is the Swine; a 2-power one is a Bear). Output is a flat
+``{tag: value}`` dict; tags are logged verbatim under the run and carried in ``EvalResult.analyzers``.
 """
 
 from __future__ import annotations
@@ -28,27 +29,40 @@ class Analyzer(Protocol):
     def reset(self) -> None: ...
 
 
-# ── swine: chump-blocking a trampler at high life ────────────────────────────────────────────────
-_MY_LIFE = 16                      # globals index (matches swine_blocks._MY_LIFE / _G_MY_LIFE)
+# ── obs layout (obs.rs; absolute indices, append-stable) ─────────────────────────────────────────
+_G_MY_LIFE = 16                   # globals: my life
+_G_DECISION0 = 43                 # globals: decision-kind one-hot base (obs.rs::encode_globals)
+_R_DECL_ATTACKERS = 9             # request_index(DeclareAttackers)
+_R_DECL_BLOCKERS = 10             # request_index(DeclareBlockers)
+# bf_feat per-permanent columns. 0-43 are append-stable; is_pending_combat is the new last (44).
 _BF_PRESENT, _BF_MINE, _BF_POWER = 0, 1, 2
+_BF_TAPPED = 6
+_BF_ATTACKING, _BF_BLOCKED_BY, _BF_PENDING = 39, 43, 44
+_SWINE_POWER, _BEAR_POWER = 3, 2  # Argothian Swine (3/3 trample) vs Grizzly Bears (2/2)
 
 
-def _swine_attacking(bf: np.ndarray) -> bool:
-    """True if an ENEMY (is_mine=0) power-3 creature is attacking — a trampling Swine (bears are 2/2).
-    ``attacking`` is the width-5 column of ``bf_feat`` (matches ``swine_blocks._swine_attacking``)."""
-    atk = bf.shape[1] - 5
-    m = ((bf[:, _BF_PRESENT] > 0.5) & (bf[:, _BF_MINE] < 0.5)
-         & (bf[:, _BF_POWER] == 3) & (bf[:, atk] > 0.5))
-    return bool(m.any())
+def _decision_is(obs, ridx: int) -> bool:
+    g = np.asarray(obs["globals"]).ravel()
+    return g[_G_DECISION0 + ridx] > 0.5
 
 
 class SwineBlockAnalyzer:
-    """Chump/gang-at-high-life signal (the swine experiment, mirrors ``swine_blocks.py``).
+    """Combat-judgment signals for the swine deck (bears 2/2 vs trampling swine 3/3).
 
-    At each DeclareBlockers decision (``block_eligible > 0``) records the blocker's life, whether it
-    blocked, whether it ganged (≥2 blockers on one attacker — the sophisticated anti-trample play),
-    and whether a Swine was attacking. The concerning signal: high ``block_rate`` in "Swine attacking
-    & life ≥ life_hi" with low ``gang_rate`` = single-blocking a trampler it should just take."""
+    The user's ground truths, encoded exactly:
+      * **chump_block_rate** — it is NEVER correct to chump-block the swine with a lone bear UNLESS not
+        blocking would be lethal. Fraction of (NOT-forced) swine-attacks answered by a lone-bear block.
+        Forced (taking the unblocked total would put you ≤0) chumps are counted in a SEPARATE bucket so
+        they don't pollute it.
+      * **double_block_rate** — double-blocking the swine with two bears IS correct (4 power into 3
+        toughness). Fraction of swine-attacks answered by a 2+ blocker gang on the swine.
+      * **lone_bear_attack_rate** — it is NEVER correct to attack with a single bear into an untapped
+        enemy swine (the bear just dies). Fraction of attack decisions (with an untapped enemy swine
+        able to block) that send exactly one bear.
+
+    Also keeps the legacy high-life block signals (``chump_rate_swine_hi``/``gang_rate_swine_hi``) for
+    dashboard continuity. All classification is off the obs board + the decision-kind one-hot.
+    """
 
     name = "swine"
 
@@ -57,45 +71,97 @@ class SwineBlockAnalyzer:
         self.reset()
 
     def reset(self) -> None:
-        # rows: (life, blocked, gang, attackers_blocked, swine_attacking)
-        self._rows: "list[tuple[float, float, float, float, float]]" = []
+        # one row per swine-attack (DeclareBlockers with a swine attacking):
+        #   (life, blocked, gang_legacy, forced, lone_bear_chump, double_block)
+        self._blk: "list[tuple]" = []
+        # one row per attack decision with an untapped enemy swine present: (lone_bear_attack,)
+        self._atk: "list[float]" = []
 
+    # ── observe ──────────────────────────────────────────────────────────────────────────────────
     def observe(self, obs, record) -> None:
-        if not record or record.get("block_eligible", 0) <= 0:
+        if not record:
             return
-        life = float(np.asarray(obs["globals"]).ravel()[_MY_LIFE])
-        swine = _swine_attacking(np.asarray(obs["bf_feat"]))
-        self._rows.append((
+        bf = np.asarray(obs["bf_feat"])
+        present = bf[:, _BF_PRESENT] > 0.5
+        mine = present & (bf[:, _BF_MINE] > 0.5)
+        enemy = present & (bf[:, _BF_MINE] < 0.5)
+
+        if record.get("block_eligible", 0) > 0 and _decision_is(obs, _R_DECL_BLOCKERS):
+            self._observe_block(obs, record, bf, mine, enemy)
+        elif record.get("attack_eligible", 0) > 0 and _decision_is(obs, _R_DECL_ATTACKERS):
+            self._observe_attack(bf, mine, enemy)
+
+    def _observe_block(self, obs, record, bf, mine, enemy):
+        enemy_attacking = enemy & (bf[:, _BF_ATTACKING] > 0.5)
+        swine = enemy_attacking & (bf[:, _BF_POWER] == _SWINE_POWER)
+        if not swine.any():
+            return  # only score decisions where a Swine is actually attacking
+        life = float(np.asarray(obs["globals"]).ravel()[_G_MY_LIFE])
+        # Forced = taking ALL unblocked incoming would put me to ≤0 (the user's exception to "no chump").
+        total_incoming = float(bf[enemy_attacking, _BF_POWER].sum())
+        forced = total_incoming >= life
+        # My blockers assigned THIS decision (is_pending_combat), by power.
+        my_pending = mine & (bf[:, _BF_PENDING] > 0.5)
+        pending_powers = bf[my_pending, _BF_POWER]
+        n_bears = int((pending_powers == _BEAR_POWER).sum())
+        n_swine = int((pending_powers == _SWINE_POWER).sum())
+        swine_blocked_by = bf[swine, _BF_BLOCKED_BY]
+        double_block = bool((swine_blocked_by >= 2).any())        # a swine ganged by 2+
+        lone_on_swine = bool((swine_blocked_by == 1).any())       # a swine blocked by exactly one
+        # Lone-bear chump: a swine is lone-blocked and the lone blocker is a bear. Unambiguous when the
+        # only pending blockers are bears; if a pending swine-blocker exists the lone blocker's identity
+        # is ambiguous (could be a fair swine-trade), so we don't count it (conservative).
+        lone_bear_chump = lone_on_swine and n_bears >= 1 and n_swine == 0
+        blocked = record.get("block_declared", 0) > 0
+        self._blk.append((
             life,
-            1.0 if record.get("block_declared", 0) > 0 else 0.0,
+            1.0 if blocked else 0.0,
             1.0 if record.get("block_double", 0) > 0 else 0.0,
-            float(record.get("attackers_blocked", 0)),
-            1.0 if swine else 0.0,
+            1.0 if forced else 0.0,
+            1.0 if lone_bear_chump else 0.0,
+            1.0 if double_block else 0.0,
         ))
 
+    def _observe_attack(self, bf, mine, enemy):
+        # "untapped enemy swine could block" — an enemy 3-power creature that is untapped.
+        enemy_swine_untapped = enemy & (bf[:, _BF_POWER] == _SWINE_POWER) & (bf[:, _BF_TAPPED] < 0.5)
+        if not enemy_swine_untapped.any():
+            return  # only score attack decisions where a Swine could block
+        # My declared attackers this decision (is_pending_combat on the attack step).
+        my_attackers = mine & (bf[:, _BF_PENDING] > 0.5)
+        powers = bf[my_attackers, _BF_POWER]
+        lone_bear_attack = (powers.size == 1) and (powers[0] == _BEAR_POWER)
+        self._atk.append(1.0 if lone_bear_attack else 0.0)
+
+    # ── result ──────────────────────────────────────────────────────────────────────────────────
     def result(self) -> "dict[str, float]":
-        r = np.array(self._rows) if self._rows else np.empty((0, 5))
-        out = {"swine/n_block_decisions": float(len(r))}
-        if len(r) == 0:
-            return out
-        life, blocked, gang, _abl, swine = r[:, 0], r[:, 1], r[:, 2], r[:, 3], r[:, 4] > 0.5
-        hi = life >= self.life_hi
-
-        def _blk(mask):
-            return float(blocked[mask].mean()) if mask.any() else float("nan")
-
-        def _gang(mask):  # of decisions where it blocked, fraction that ganged
-            bm = mask & (blocked > 0.5)
-            return float(gang[bm].mean()) if bm.any() else float("nan")
-
-        out.update({
-            "swine/block_rate_hi_life": _blk(hi),
-            "swine/block_rate_lo_life": _blk(~hi),
-            # the user's exact concern: blocking a trampler at high life, and not even ganging it.
-            "swine/chump_rate_swine_hi": _blk(swine & hi),
-            "swine/gang_rate_swine_hi": _gang(swine & hi),
-            "swine/block_rate_no_swine": _blk(~swine),
-        })
+        b = np.array(self._blk) if self._blk else np.empty((0, 6))
+        a = np.array(self._atk) if self._atk else np.empty((0,))
+        out = {
+            "swine/n_swine_attacks": float(len(b)),
+            "swine/n_attack_decisions": float(len(a)),
+        }
+        if len(b):
+            life, blocked, gang, forced, chump, double = (b[:, i] for i in range(6))
+            not_forced = forced < 0.5
+            out["swine/n_forced_swine_attacks"] = float(forced.sum())
+            # The user's headline metric: lone-bear chump of the swine when NOT forced.
+            out["swine/chump_block_rate"] = (float(chump[not_forced].mean())
+                                             if not_forced.any() else float("nan"))
+            # Forced chumps kept separate (defensible — chumping to survive lethal is correct).
+            out["swine/chump_block_rate_forced"] = (float(chump[forced > 0.5].mean())
+                                                    if (forced > 0.5).any() else float("nan"))
+            # Double-blocking the swine (the correct sophisticated line) over all swine-attacks.
+            out["swine/double_block_rate"] = float(double.mean())
+            # Legacy high-life signals (dashboard continuity).
+            hi = life >= self.life_hi
+            swine_hi = hi  # every row here already has a swine attacking
+            out["swine/chump_rate_swine_hi"] = (float(blocked[swine_hi].mean())
+                                                if swine_hi.any() else float("nan"))
+            bm = swine_hi & (blocked > 0.5)
+            out["swine/gang_rate_swine_hi"] = float(gang[bm].mean()) if bm.any() else float("nan")
+        if len(a):
+            out["swine/lone_bear_attack_rate"] = float(a.mean())
         return out
 
 

@@ -56,7 +56,8 @@ def test_swine_analyzer_runs_on_swine_only():
     assert a is not None and a.name == "swine"
     res = Arena("swine", batch_size=8).play(
         RandomPolicy(1), RandomPolicy(2), n_games=16, seed=3_000_000, opponent_label="random")
-    assert "swine/n_block_decisions" in res.analyzers
+    assert "swine/n_swine_attacks" in res.analyzers
+    assert "swine/double_block_rate" in res.analyzers
     # bears deck (no analyzer) → empty analyzers block
     res_b = Arena("bears", batch_size=8).play(
         RandomPolicy(1), RandomPolicy(2), n_games=8, seed=3_000_000, opponent_label="random")

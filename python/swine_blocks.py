@@ -35,7 +35,8 @@ _BF_PRESENT, _BF_MINE, _BF_POWER = 0, 1, 2
 
 def _swine_attacking(bf):
     """True if an ENEMY (is_mine=0) creature with power==3 is currently attacking (a trampling Swine)."""
-    atk = bf.shape[1] - 5
+    atk = 39  # bf_feat 'attacking' column (obs.rs; absolute, append-stable — was width-5 before the
+              # is_pending_combat append shifted the tail)
     m = (bf[:, _BF_PRESENT] > 0.5) & (bf[:, _BF_MINE] < 0.5) & (bf[:, _BF_POWER] == 3) & (bf[:, atk] > 0.5)
     return bool(m.any())
 
