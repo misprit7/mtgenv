@@ -221,3 +221,127 @@ opponent-servicing-loop cost is worth attacking.
    gather deliver the perf independently of any contract bump.)*
 
 Nothing here launches or changes contracts without explicit go (campaign hold in force).
+
+## 7. The concrete v3 contract — full shapes and the migration plan
+
+*Added 2026-07-08 on user request. This is the implementable spec for the one approved contract
+break, designed to extend to the full SOS pool (targeted spells, auras/equipment, modal cards,
+suspend, convoke) with named simplifications — not a toy-pool special case.*
+
+### 7.1 Constants
+
+`MAX_PERM 256 · MAX_HAND 16 · MAX_STACK 8` (unchanged) · **`MAX_CHOICE 16`** (new) ·
+**`MAX_EDGES 128`** (new). Fixed shapes stay permanently (§1 revision); these are caps with
+deterministic truncation priorities, not guesses to outgrow.
+
+### 7.2 Entity index space (edge addressing)
+
+Edges name entities by **row index in this observation**, one flat space shared with the
+attention layout — raw engine ids never enter the network:
+
+```
+0–255    battlefield rows (perm_order)     272–279  stack rows
+256–271  hand rows                         280 you · 281 opponent (player tokens)
+                                           282 the current decision (pseudo-entity)
+```
+
+### 7.3 Observation tensors
+
+| Tensor | dtype | v2 | v3 | Change |
+|---|---|---|---|---|
+| `globals` | f32 | 69 | **69** | unchanged (decision one-hot stays; token unification deferred to OBS2-full) |
+| `bf_feat` | f32 | 256×48 | **256×45** | drop cols 45–47 (`instance_id`/`blocking_id`/`attached_to_id`) — superseded by `edges` |
+| `bf_ids` | i64 | 256 | 256 | kept — hashed `grp_id` → embedding |
+| `bf_cardid` | f32 | 256×D | **—** | **deleted** (deck-local one-hot; D was deck-dependent) |
+| `hand_feat` | f32 | 16×18 | 16×18 | unchanged |
+| `hand_ids` / `hand_cardid` | | 16 / 16×D | 16 / **—** | ids kept / one-hot deleted |
+| `stack_feat` | f32 | 8×18 | 8×18 | unchanged — targeting arrives via `edges` (**G1 closed**) |
+| `stack_ids` / `stack_cardid` | | 8 / 8×D | 8 / **—** | ids kept / one-hot deleted |
+| `decision_ids` / `decision_cardid` | | 1 / 1×D | 1 / **—** | ids kept / one-hot deleted |
+| `edges` | i32 | — | **128×4** | NEW: `(src, dst, type, k)`, pad rows −1 |
+| `choice_feat` | f32 | — | **16×12** | NEW: content tokens for the current decision's abstract options |
+
+Principle for `bf_feat`: **scalar features stay, float match-keys die.** The redundant unary
+flags (attacking 39, blocking 40, decision src/cand 41–42, `blocked_by` count 43, pending 44)
+are kept — they're correct encodings of per-row properties and cost nothing; only the three
+raw-id columns (which required cross-row equality matching to mean anything) are deleted.
+
+### 7.4 Edge types
+
+| `type` | src → dst | Notes |
+|---|---|---|
+| 0 `BLOCKS` | blocker → attacker | replaces `blocking_id` matching |
+| 1 `ATTACKS` | attacker → defending player | says *whom* (planeswalkers/multiplayer later) |
+| 2 `ATTACHED_TO` | aura/equipment → host | replaces `attached_to_id` |
+| 3 `TARGETS` | stack object → entity or player | **G1**; `k` = target slot order |
+| 4 `STACK_SOURCE` | ability on stack → its source permanent | |
+| 5 `PENDING_PICK` | decision (282) → already-picked entity | the §4a commitment prefix; `k` = pick/slot index |
+
+Unary decision context (source/candidate flags) stays in the feature columns — a flag is the
+correct encoding for a per-row property; edges are reserved for *pairings* that need cross-row
+identity. `k` (4th column) carries ordering where it matters (multi-target slots, pick order);
+damage-division *amounts* stay out (G2, still behind engine-default COMMIT). If 128 edges ever
+overflow (never observed; bound analysis: blocks+attachments+targets+pending ≲ 100 on
+degenerate boards), truncation priority is `TARGETS > PENDING_PICK > BLOCKS > ATTACHED_TO >
+ATTACKS > STACK_SOURCE` with a logged counter.
+
+Consumption: per-(type, direction) learned bias on attention logits between src/dst rows — the
+adjacency the 4.7+ arm currently reconstructs from id-equality, handed over directly.
+
+### 7.5 Choice tokens (`choice_feat` 16×12)
+
+Rows = the current decision's abstract options (only one family is live per decision, so 16
+rows cover all buckets): col 0 `present` · 1–4 kind one-hot (mode/color/number/bool) ·
+5 value scalar (number value, mode index) · 6–10 color one-hot · 11 reserved. The action codec
+maps the live `MODE`/`COLOR`/`NUMBER`/`YES`/`NO` bucket onto choice rows positionally. This
+gives every abstract action slot *content* for the pointer head — deleting the
+unnormalized-abstract-embedding family that caused the 4.7 logit-scale bug. (Richer mode
+content — the mode's Effect-IR features — plugs into these rows later under §2.)
+
+### 7.6 Action space
+
+**`Discrete(322)`, layout unchanged.** The verb+pointer change is realized *head-side*: every
+slot's logit is computed from a content token (entity rows for HAND/PERM/PLAYER/STACK — as the
+attn arm already does — plus choice rows for the abstract buckets). No bucket bases move, so
+the contract break comes from the observation side only.
+
+### 7.7 SOS-extendability (and the named simplifications)
+
+- **Graveyard / exile / library are NOT entity tables in v3** — counts in `globals` only. This
+  is a deliberate simplification (flagged, not forgotten): suspend-in-exile and any future
+  recursion play blind until a `gy_feat`/`exile_feat` table is appended — same row schema,
+  same id channels, new zone table, an *additive* change under this design.
+- **Keyword block** (`bf_feat` cols 9–36): audit the SOS pool's keyword needs at
+  implementation time and size the block once, inside this break — don't pay a second break
+  for a keyword column.
+- **Small closed enums stay one/multi-hot** (phase 12, decision-kind 21, types 8, colors 5,
+  keywords ~15): a one-hot into the first linear layer *is* an embedding, mathematically —
+  embeddings only pay for large sparse vocabularies (card identity, thousands of grp_ids). The
+  deck-local one-hot's sins were deck-dependent width and non-transferability, not
+  one-hot-ness. The one future large-vocab case is **subtypes** (~300 creature types) —
+  unencoded today; hash-bucket multi-hot or bag-of-embeddings when tribal matters.
+- `MAX_STACK 8` / `MAX_HAND 16` / `MAX_CHOICE 16` hold for SOS (deep stacks and >16 hands are
+  degenerate; truncation priorities: top-of-stack first, newest-drawn last).
+
+### 7.8 Migration plan (ordered; each step gated)
+
+1. **Rust `crates/mtg-py`** — `obs.rs`/`layout.rs`: delete `*_cardid` + bf cols 45–47; emit
+   `edges` + `choice_feat` (the engine already holds every relation: combat pairs,
+   attachments, stack targets). `codec.rs`: abstract buckets ↔ choice rows; bases unchanged.
+   Regenerate expect snapshots; add the §4a mid-decision expect-tests (scripted sub-step walk
+   asserting `PENDING_PICK` edges + updated scalars at every sub-step).
+2. **Fingerprint bump → v3** — obs_spec change trips the ratings guard by design;
+   `bump-env v3`, re-seed the script spine, no adapters (standing rule).
+3. **Python** — attn extractor: consume `edges` as per-type attention bias (delete the
+   id-equality adjacency builder); pointer logits for abstract slots from `choice_feat`;
+   remove cardid input paths. Hold param-parity with the 4.9 arch for a clean comparison.
+4. **Gates** — obs↔action agreement test extended to edges (edge row indices resolve to the
+   same engine objects the codec maps); real-env smoke (the 4.7 lesson: synthetic tests lie);
+   then a short PPO sanity run — *launch user-gated*.
+5. **v3 reference run** — the 4.9 recipe retrained on v3 becomes the new ladder anchor
+   (user-gated; supersedes menu item (a) if v3 lands first).
+
+Orthogonal and already in flight: the in-extractor present-row gather (no contract impact).
+Explicitly NOT in v3: variable-length contract (rejected), Effect-IR identity (parked),
+graveyard/exile tables, G2 damage-ordering decisions, decision-token/globals unification
+(OBS2-full, at the SOS transition).
