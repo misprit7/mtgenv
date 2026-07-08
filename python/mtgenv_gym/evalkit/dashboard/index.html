@@ -218,7 +218,8 @@ const runColor = (name) => css(PALETTE_VARS[colorOf[name] % PALETTE_VARS.length]
 function tagOrder(t) {
   const exact = {
     "selfplay/winrate_vs_random": 0, "selfplay/winrate_vs_random_sampled": 1,
-    "selfplay/winrate_vs_initial": 2, "selfplay/winrate_vs_initial_sampled": 3,
+    "selfplay/winrate_vs_script": 2, "selfplay/winrate_vs_script_sampled": 3,   // vs the scripted optimal — ~0.5 = learned
+    "selfplay/winrate_vs_initial": 4, "selfplay/winrate_vs_initial_sampled": 5,
     "stats/productive_rate": 20, "stats/attack_rate": 21, "stats/block_rate": 22,
     "stats/cast_rate": 23, "stats/playland_rate": 24, "stats/block_double_rate": 25,
     "game/turns_mean": 30, "train/shaping_coef": 50,
