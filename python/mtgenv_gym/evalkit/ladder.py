@@ -65,9 +65,11 @@ class Ladder:
             pct = self._pct(m)
             tag = f"ladder/winrate_vs_{pct:02d}pct"
             if pct in self._snap:
+                # Rotating seed (tb_logging contract): base + pct (distinct per rung) + step, so each
+                # eval samples fresh games instead of replaying the rung's frozen set.
                 res = arena.play(policy, self._opponent(pct), n_games=n,
-                                 seed=self.seed_base + pct, a_mode="greedy", b_mode="sample",
-                                 opponent_label=f"{pct}pct")
+                                 seed=self.seed_base + pct + (step or 0), a_mode="greedy",
+                                 b_mode="sample", opponent_label=f"{pct}pct")
                 val = res.win_rate
             else:
                 val = float("nan")  # not reached yet → gap in TB

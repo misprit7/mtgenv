@@ -11,6 +11,17 @@ The schema is **backward-compatible** with the live 2.x PPO runs (verified again
     game/turns_mean   game/end_<reason>
     <deck>/<analyzer-scalar>            (e.g. swine/chump_rate_swine_hi)
 
+**Rotating eval seeds (contract from 2026-07-08).** Every eval's game seed ROTATES with the training
+step (``eval_seed(base, step) = base + step``): consecutive evals sample DIFFERENT games instead of
+replaying one frozen test set, so a converged fixed-seed policy no longer draws an exactly flat line
+that invites wrong conclusions. Distinct per-opponent ``base``s (random 5e6 / initial 6e6 / ladder
+7e6+pct / script 8e6) keep opponents on independent shuffles; the step jumps by ``eval_freq`` (≥
+``n_games``) each eval so the ``[seed, seed+n_games)`` ranges never overlap. Rotating the ``Arena`` seed
+moves BOTH the engine shuffle AND the opponent policy's rng in one place (``Arena`` reseeds the opponent
+per game from ``seed+g``). Each eval's resolved ``seed`` is recorded in its JSON, so it stays exactly
+reproducible. (Levels unchanged — both estimate the true win-rate; only the noise is unfrozen. Runs
+before this contract, e.g. 4.4-4.6 and the 3.x/model-based runs, are fixed-seed.)
+
 Two backends behind one ``Recorder`` interface so the same call site serves both a training callback
 and an offline backfill: :class:`SB3Recorder` (wraps SB3's ``logger.record``; SB3 owns the step) and
 :class:`WriterRecorder` (wraps a torch ``SummaryWriter``; step is explicit — for the CLI / any custom
@@ -25,6 +36,11 @@ import os
 from typing import Protocol
 
 from .arena import EvalResult
+
+
+def eval_seed(base: int, step: "int | None") -> int:
+    """Rotating per-eval game seed: ``base + step`` (see module docstring). ``step`` None → ``base``."""
+    return int(base) + int(step or 0)
 
 
 class Recorder(Protocol):

@@ -16,7 +16,7 @@ import os
 from .arena import Arena
 from .policy import RandomPolicy
 from .replay import REPLAY_DIR, record_game
-from .tb_logging import WriterRecorder, log_eval, write_json
+from .tb_logging import WriterRecorder, eval_seed, log_eval, write_json
 
 
 def evaluate_checkpoint(policy, step: int, run_dir: str, *, deck: str, opponents=None,
@@ -45,7 +45,10 @@ def evaluate_checkpoint(policy, step: int, run_dir: str, *, deck: str, opponents
     results: "dict[str, dict]" = {}
     labelled = {}
     for i, (win_tag, opp) in enumerate(opponents.items()):
-        res = arena.evaluate(policy, opp, n_games=games, seed=seed_random + i * 1_000_000,
+        # Rotating seed (tb_logging.eval_seed): base = seed_random + i*1e6 (distinct per opponent),
+        # rotated by `step` so consecutive evals sample fresh games (and the opponent's per-game rng
+        # rotates with the Arena seed). See tb_logging module docstring.
+        res = arena.evaluate(policy, opp, n_games=games, seed=eval_seed(seed_random + i * 1_000_000, step),
                              opponent_label=win_tag, modes=modes)
         behaviour = (win_tag == "selfplay/winrate_vs_random")  # canonical offline behaviour source
         log_eval(recorder, res, win_tag=win_tag, step=step, with_stats=behaviour,

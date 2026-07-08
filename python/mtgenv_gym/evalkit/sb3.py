@@ -25,7 +25,7 @@ from .ladder import Ladder
 from .policy import BasePolicy, RandomPolicy
 from .replay import REPLAY_DIR, record_game
 from .scripted import ScriptedPolicy
-from .tb_logging import SB3Recorder, log_eval, write_json
+from .tb_logging import SB3Recorder, eval_seed, log_eval, write_json
 
 
 class SB3Policy(BasePolicy):
@@ -123,10 +123,17 @@ class EvalkitCallback(BaseCallback):
     def _eval(self) -> None:
         step = self.num_timesteps
         labelled = {}
+        # Rotating per-eval seeds (tb_logging.eval_seed): each opponent's games shift by `step` so
+        # consecutive evals sample fresh games (no frozen test set). Rotating the Arena seed also
+        # rotates the opponent's per-game rng (Arena reseeds it from seed+g); we bump the opponent's
+        # constructor seed too for good measure.
+        s_rand = eval_seed(self.seed_random, step)
+        s_init = eval_seed(self.seed_initial, step)
+        s_scr = eval_seed(self.seed_script, step)
 
         # vs random — winrate (+sampled) + analyzers (eval-derived); stats/game stay with TrackedStats.
-        vr = self._arena.evaluate(self._policy, RandomPolicy(seed=self.seed_random),
-                                  n_games=self.n_games, seed=self.seed_random,
+        vr = self._arena.evaluate(self._policy, RandomPolicy(seed=s_rand),
+                                  n_games=self.n_games, seed=s_rand,
                                   opponent_label="random", modes=self._modes)
         log_eval(self._rec, vr, win_tag="selfplay/winrate_vs_random", step=step,
                  with_stats=False, with_game=False, with_analyzers=True)
@@ -138,7 +145,7 @@ class EvalkitCallback(BaseCallback):
             self._ref = SB3Policy(self.ref_path, device=self.device)
         if self._ref is not None:
             vi = self._arena.evaluate(self._policy, self._ref, n_games=self.n_games,
-                                      seed=self.seed_initial, opponent_label="initial",
+                                      seed=s_init, opponent_label="initial",
                                       modes=self._modes)
             log_eval(self._rec, vi, win_tag="selfplay/winrate_vs_initial", step=step,
                      with_stats=False, with_game=False, with_analyzers=False)
@@ -152,7 +159,7 @@ class EvalkitCallback(BaseCallback):
         # stats/analyzers (those stay with the vs-random source). Same canonical schema as the others.
         if self._script is not None:
             vs = self._arena.evaluate(self._policy, self._script, n_games=self.n_games,
-                                      seed=self.seed_script, opponent_label="script", modes=self._modes)
+                                      seed=s_scr, opponent_label="script", modes=self._modes)
             log_eval(self._rec, vs, win_tag="selfplay/winrate_vs_script", step=step,
                      with_stats=False, with_game=False, with_analyzers=False)
             for m, r in vs.items():
