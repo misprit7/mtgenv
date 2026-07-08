@@ -145,6 +145,32 @@ Combat stays autoregressive exactly as today (declare one attacker per step with
 visibility, two-level blocker assignment) — that decomposition worked and survives unchanged;
 only the *addressing* changes from `PERM[i]` to a pointer at the entity.
 
+### 4a. The partial-decision observability invariant (2026-07-08 user review)
+
+Multi-step decisions (autoregressive combat, multi-target selection, damage division) mean the
+policy is called repeatedly *inside* one resolution. The rule: **at every sub-step, the
+observation alone must carry the full commitment prefix — the action mask must never be the
+only carrier of decision context** (the mask feeds neither the value net nor the features).
+We were burned by exactly this once: `is_pending_combat` (col 44) had to be retrofitted in the
+4.x audit because a policy mid-DeclareAttackers could not see its own partial attacker set.
+
+Mechanism in OBS2 terms:
+
+- the **decision token** carries the request kind plus sub-step scalars ("target 2 of 3",
+  damage remaining to assign);
+- **`PENDING_PLAN` edges** (decision → entity) for every pick already made in the in-flight
+  decision;
+- **relation edges appear immediately as picks are made mid-decision** — the `BLOCKS` edge
+  from a blocker assigned at sub-step 1 is visible in sub-step 2's observation; pendingness is
+  marked by the accompanying `PENDING_PLAN` edge on the same entity rather than by doubling
+  the type vocabulary (`PENDING_BLOCKS` etc.).
+
+Enforcement: for each multi-step `DecisionRequest` kind, an expect-test walks a scripted
+mid-decision sequence and snapshots the observation at each sub-step, asserting the pending
+picks are visible (edges present, scalars updated). General audit rule: any state the legality
+enumerator reads to build the mask that is not derivable from the observation is a bug — that
+check applied from the start would have caught the col-44 gap before it cost a training run.
+
 ## 5. What OBS2 keeps from v1/v2
 
 - **Structural hidden-info safety**: encoder reads only `PlayerView`. A leak stays impossible,
@@ -168,6 +194,15 @@ every realistic board), dynamic batching in Python, and new network heads. Risks
 variable-length batching complicates SB3 integration (custom collation); pointer-only actions
 need careful mask plumbing for multi-step arguments; Effect-IR featurization needs a stable
 opcode vocabulary (version it with the IR).
+
+**Status after user review (2026-07-08):** the in-extractor present-row gather (§1 revision,
+item b) is **greenlit and in implementation** — pure perf, no contract break. The verb+pointer
+action change (§4) is **greenlit in principle**; it requires content for the abstract slots
+(choice/decision tokens in the obs), so it rides the same v3 contract break as the edge export
+and the one-hot removal — one ladder reset, not several. Effect-IR identity (§2) is parked
+behind the user's gate: not until simple envs are played near-optimally. Sparse transport
+(§1 revision, item a) is approved-adjacent but unscheduled — it can land any time the
+opponent-servicing-loop cost is worth attacking.
 
 **Staging — each step is independently useful:**
 
