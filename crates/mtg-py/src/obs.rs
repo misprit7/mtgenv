@@ -8,8 +8,9 @@
 //!   (is each player a legal target of the *current* decision);
 //! - `bf_feat`/`bf_ids` — one row per battlefield object (computed P/T, types/colors/keywords,
 //!   status, counters, combat role, **+ two decision flags: is this object the source / a legal
-//!   candidate of the current decision**) + its `grp_id` (the card-embedding id, separated out for
-//!   an embedding lookup in the policy's features extractor);
+//!   candidate of the current decision**, **+ a per-attacker blocked-by count and an is_pending_combat
+//!   self-flag** for mid-declaration double-block/attack awareness) + its `grp_id` (the card-embedding
+//!   id, separated out for an embedding lookup in the policy's features extractor);
 //! - `hand_feat`/`hand_ids` — own hand rows (+ a castable flag + the same two decision flags);
 //! - `stack_feat`/`stack_ids` — stack rows (+ the same two decision flags);
 //! - `decision_ids` — the resolved *source card* `grp_id` driving the current decision (Tier 1):
@@ -55,8 +56,17 @@ pub const DECISION_FLAGS: usize = 2;
 /// DeclareBlockers decision (pending). This is what makes deliberate double-blocking observable — the
 /// binary `blocking` flag flattens gang (≥2) vs single (1) away (CR 509). Appended, so no index shifts.
 pub const COMBAT_LINK: usize = 1;
+/// Combat linkage (Tier 2b): a per-permanent "is_pending_combat" flag = this creature (mine) is
+/// already assigned in the CURRENT in-flight combat decision — a declared attacker mid-DeclareAttackers
+/// or an assigned blocker mid-DeclareBlockers. `blocked_by` (COMBAT_LINK) gives the *attacker-side*
+/// count of a forming gang; this gives the *blocker-/attacker-side* self-view — which of my own
+/// creatures I've already committed — so the value/feature net (which never sees the action mask) can
+/// tell a double-block is in progress and which of my creatures are in it. Read the decision KIND
+/// (globals decision one-hot) to interpret it as attacker-vs-blocker. Appended, so no index shifts.
+pub const PENDING_COMBAT: usize = 1;
 /// Per-battlefield-row feature width (excludes `grp_id`, which rides in `bf_ids`).
-pub const F_PERM: usize = 9 + N_CARD_TYPES + N_COLORS + N_KEYWORDS + 4 + DECISION_FLAGS + COMBAT_LINK;
+pub const F_PERM: usize =
+    9 + N_CARD_TYPES + N_COLORS + N_KEYWORDS + 4 + DECISION_FLAGS + COMBAT_LINK + PENDING_COMBAT;
 /// Per-hand-row feature width.
 pub const F_HAND: usize = 3 + N_CARD_TYPES + N_COLORS + DECISION_FLAGS;
 /// Per-stack-row feature width.
@@ -107,16 +117,30 @@ pub fn spec() -> Vec<(&'static str, usize, usize, bool)> {
 /// (`pending_block_view`): the `(blocker, attacker)` pairs assigned so far in the current
 /// DeclareBlockers decision and the blocker being assigned. They surface mid-decision gang structure
 /// the frozen `view` snapshot can't; pass `(&[], None)` for any non-block decision.
+///
+/// `pending_attackers` come from [`Interaction::pending_attackers`](crate::codec::Interaction): my
+/// creatures already declared as attackers in the current DeclareAttackers decision. Together with the
+/// pending-block blockers they populate the per-row `is_pending_combat` flag (PENDING_COMBAT); pass
+/// `&[]` for any non-attack decision.
 pub fn encode(view: &PlayerView, req: &DecisionRequest, num_legal: usize,
-              pending_blocks: &[(ObjId, ObjId)], block_source: Option<ObjId>) -> Obs {
+              pending_blocks: &[(ObjId, ObjId)], block_source: Option<ObjId>,
+              pending_attackers: &[ObjId]) -> Obs {
     let mut di = decision_info(view, req);
     if let Some(src) = block_source {
         di.src_objs.insert(src); // (Tier 2c) light is_decision_source on the blocker being assigned
     }
     let blocked_by = blocked_by_counts(view, pending_blocks);
+    // My creatures committed in the current in-flight combat decision: declared attackers (attack
+    // step) or assigned blockers incl. the one being assigned (block step) — the is_pending_combat set.
+    let pending_combat: std::collections::BTreeSet<ObjId> = pending_attackers
+        .iter()
+        .copied()
+        .chain(pending_blocks.iter().map(|(blk, _)| *blk))
+        .chain(block_source)
+        .collect();
     Obs {
         globals: encode_globals(view, req, num_legal, &di),
-        bf_feat: encode_battlefield(view, &di, &blocked_by),
+        bf_feat: encode_battlefield(view, &di, &blocked_by, &pending_combat),
         bf_ids: ids(&view.battlefield, MAX_PERM),
         hand_feat: encode_hand(view, req, &di),
         hand_ids: ids(&view.me.hand, MAX_HAND),
@@ -391,7 +415,8 @@ fn blocked_by_counts(view: &PlayerView, pending_blocks: &[(ObjId, ObjId)])
 }
 
 fn encode_battlefield(view: &PlayerView, di: &DecisionInfo,
-                      blocked_by: &std::collections::BTreeMap<ObjId, u32>) -> Vec<f32> {
+                      blocked_by: &std::collections::BTreeMap<ObjId, u32>,
+                      pending_combat: &std::collections::BTreeSet<ObjId>) -> Vec<f32> {
     let me = view.seat;
     let (attacking, blocking) = combat_sets(view);
     let mut out = Vec::with_capacity(MAX_PERM * F_PERM);
@@ -428,6 +453,9 @@ fn encode_battlefield(view: &PlayerView, di: &DecisionInfo,
                 out.push(di.cand_objs.contains(id) as u8 as f32); // legal candidate of it
                 // (Tier 2) blocked-by count: blockers ganging this attacker (committed + pending).
                 out.push(*blocked_by.get(id).unwrap_or(&0) as f32);
+                // (Tier 2b) is_pending_combat: this creature is mine and already committed in the
+                // current in-flight combat decision (declared attacker / assigned blocker).
+                out.push(pending_combat.contains(id) as u8 as f32);
             }
             ObjView::Hidden { .. } => {
                 // Hidden permanent (e.g. a face-down): present but featureless.
@@ -611,7 +639,7 @@ mod tests {
     #[test]
     fn shapes_match_spec_and_are_finite() {
         let req = DecisionRequest::Priority { actions: vec![], can_pass: true };
-        let o = encode(&view(), &req, 1, &[], None);
+        let o = encode(&view(), &req, 1, &[], None, &[]);
         assert_eq!(o.globals.len(), G);
         assert_eq!(o.bf_feat.len(), MAX_PERM * F_PERM);
         assert_eq!(o.bf_ids.len(), MAX_PERM);
@@ -633,8 +661,9 @@ mod tests {
         }
         // F_PERM / F_HAND / F_STACK pinned so a vocab edit that desyncs obs↔codec is caught.
         // (Each grew by DECISION_FLAGS=2 for the Tier-1 source/candidate per-row flags; F_PERM grew a
-        // further COMBAT_LINK=1 for the Tier-2 per-attacker blocked-by count.)
-        assert_eq!(F_PERM, 44);
+        // further COMBAT_LINK=1 for the Tier-2 per-attacker blocked-by count and PENDING_COMBAT=1 for
+        // the Tier-2b is_pending_combat self-flag.)
+        assert_eq!(F_PERM, 45);
         assert_eq!(F_HAND, 18);
         assert_eq!(F_STACK, 18);
         assert_eq!(G, 69);
@@ -684,15 +713,15 @@ mod tests {
             }],
         };
 
-        let o = encode(&v, &req, 2, &[], None);
+        let o = encode(&v, &req, 2, &[], None, &[]);
         // (a) source card identity = the spell's grp_id.
         assert_eq!(o.decision_ids, vec![555], "decision_ids carries the source spell's grp_id");
         // (b) the stack row (row 0) is flagged is_src (the last-but-one feature of F_STACK).
         assert_eq!(o.stack_feat[F_STACK - 2], 1.0, "source spell's stack row flagged is_src");
-        // (c) the creature row (row 0) is flagged is_cand (now the last-but-one feature of F_PERM —
-        // the Tier-2 blocked-by count is the new last feature).
-        assert_eq!(o.bf_feat[F_PERM - 2], 1.0, "legal-target creature flagged is_cand");
-        assert_eq!(o.bf_feat[F_PERM - 3], 0.0, "the opponent's creature is not the source");
+        // (c) the creature row (row 0) is flagged is_cand. Trailing F_PERM cols are now
+        // [.., is_src(-4), is_cand(-3), blocked_by(-2), is_pending_combat(-1)].
+        assert_eq!(o.bf_feat[F_PERM - 3], 1.0, "legal-target creature flagged is_cand");
+        assert_eq!(o.bf_feat[F_PERM - 4], 0.0, "the opponent's creature is not the source");
         // and the opponent is a player-candidate (last global), self is not (second-last).
         assert_eq!(o.globals[G - 1], 1.0, "opponent is a legal player target");
         assert_eq!(o.globals[G - 2], 0.0, "self is not a legal target here");
@@ -749,12 +778,12 @@ mod tests {
             }],
         };
 
-        let o = encode(&v, &req, 1, &[], None);
+        let o = encode(&v, &req, 1, &[], None, &[]);
         assert_eq!(o.decision_ids, vec![114], "source grp recovered from the off-stack trigger source");
-        // row 0 = the enchantment, flagged is_src (F_PERM-3); row 1 = the creature, flagged is_cand
-        // (F_PERM-2) — both shifted back one by the appended Tier-2 blocked-by count (the new last).
-        assert_eq!(o.bf_feat[F_PERM - 3], 1.0, "triggering permanent flagged is_src");
-        assert_eq!(o.bf_feat[2 * F_PERM - 2], 1.0, "target creature flagged is_cand");
+        // row 0 = the enchantment, flagged is_src (F_PERM-4); row 1 = the creature, flagged is_cand
+        // (F_PERM-3) — both shifted back by the appended blocked-by count + is_pending_combat.
+        assert_eq!(o.bf_feat[F_PERM - 4], 1.0, "triggering permanent flagged is_src");
+        assert_eq!(o.bf_feat[2 * F_PERM - 3], 1.0, "target creature flagged is_cand");
     }
 
     /// Tier 2 — the learnability proof: the per-attacker blocked-by count on an attacker's row
@@ -790,14 +819,58 @@ mod tests {
             ],
             attackers: vec![attacker],
         };
-        let last = F_PERM - 1; // the appended blocked-by count is the last per-permanent feature
+        let bb = F_PERM - 2; // blocked-by count is now second-to-last (is_pending_combat is the last)
 
         // No blocks assigned yet → 0 on the attacker's row.
-        assert_eq!(encode(&v, &req, 3, &[], None).bf_feat[last], 0.0, "unblocked → 0");
+        assert_eq!(encode(&v, &req, 3, &[], None, &[]).bf_feat[bb], 0.0, "unblocked → 0");
         // One blocker → single-block → 1.
-        assert_eq!(encode(&v, &req, 3, &[(blk_a, attacker)], None).bf_feat[last], 1.0, "single → 1");
+        assert_eq!(encode(&v, &req, 3, &[(blk_a, attacker)], None, &[]).bf_feat[bb], 1.0, "single → 1");
         // TWO blockers ganging the SAME attacker (pending) → 2: double-blocking is now observable.
-        let o2 = encode(&v, &req, 3, &[(blk_a, attacker), (blk_b, attacker)], Some(blk_b));
-        assert_eq!(o2.bf_feat[last], 2.0, "pending gang → 2 (the double-block signal)");
+        let o2 = encode(&v, &req, 3, &[(blk_a, attacker), (blk_b, attacker)], Some(blk_b), &[]);
+        assert_eq!(o2.bf_feat[bb], 2.0, "pending gang → 2 (the double-block signal)");
+    }
+
+    /// Tier 2b — the is_pending_combat self-flag: at DeclareBlockers my creatures already assigned as
+    /// blockers (pending) light the flag on their own rows; at DeclareAttackers my declared attackers
+    /// do. This is the mid-declaration self-view the action mask can't give the value/feature net.
+    #[test]
+    fn is_pending_combat_flags_my_committed_combatants() {
+        use mtg_core::agent::{AttackerOption, BlockerOption, CharacteristicsView};
+        use mtg_core::basics::{Status, Target};
+        use mtg_core::ids::ObjId;
+
+        let my_creature = ObjId(10); // mine — the blocker/attacker (row 0)
+        let enemy = ObjId(30); // opponent's attacker (row 1)
+        let mut v = view();
+        let vis = |id, ctrl: u32| ObjView::Visible {
+            id,
+            chars: CharacteristicsView { grp_id: 1, power: Some(2), toughness: Some(2), ..Default::default() },
+            controller: PlayerId(ctrl),
+            owner: PlayerId(ctrl),
+            zone: mtg_core::basics::Zone::Battlefield,
+            status: Status::default(),
+            counters: CounterBag::default(),
+            damage_marked: 0,
+            attachments: vec![],
+            summoning_sick: false,
+        };
+        v.battlefield = vec![vis(my_creature, 0), vis(enemy, 1)];
+        let pc = F_PERM - 1; // is_pending_combat is the last per-permanent feature
+
+        // DeclareBlockers: my_creature pending-assigned to block `enemy` → flagged; enemy is not mine.
+        let blk_req = DecisionRequest::DeclareBlockers {
+            eligible: vec![BlockerOption { creature: my_creature, may_block: vec![enemy], required: false, block_cost: None }],
+            attackers: vec![enemy],
+        };
+        let ob = encode(&v, &blk_req, 3, &[(my_creature, enemy)], None, &[]);
+        assert_eq!(ob.bf_feat[pc], 1.0, "my pending blocker flagged is_pending_combat");
+        assert_eq!(ob.bf_feat[F_PERM + pc], 0.0, "the enemy attacker is not my pending combatant");
+
+        // DeclareAttackers: my_creature declared as an attacker → flagged via pending_attackers.
+        let atk_req = DecisionRequest::DeclareAttackers {
+            eligible: vec![AttackerOption { creature: my_creature, may_attack: vec![Target::Player(PlayerId(1))], required: false, attack_cost: None, may_exert: false, may_enlist: false }],
+        };
+        let oa = encode(&v, &atk_req, 2, &[], None, &[my_creature]);
+        assert_eq!(oa.bf_feat[pc], 1.0, "my declared attacker flagged is_pending_combat");
     }
 }

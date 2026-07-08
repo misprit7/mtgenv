@@ -183,6 +183,29 @@ impl Interaction {
         }
     }
 
+    /// My creatures already declared as attackers in the current in-flight DeclareAttackers decision
+    /// (the `chosen` attacker→defender pairs plus the attacker awaiting its defender pick). Empty for
+    /// every other state. Symmetric to [`Self::pending_block_view`] for the attack side — feeds the
+    /// obs encoder's `is_pending_combat` flag so mid-declaration attacker commitment is observable.
+    pub fn pending_attackers(&self) -> Vec<ObjId> {
+        if let (DecisionRequest::DeclareAttackers { eligible },
+                IState::Attackers { chosen, pending_def, .. }) = (&self.req, &self.state)
+        {
+            let mut v: Vec<ObjId> = chosen
+                .iter()
+                .filter_map(|&(ai, _)| eligible.get(ai as usize).map(|e| e.creature))
+                .collect();
+            if let Some(i) = pending_def {
+                if let Some(e) = eligible.get(*i as usize) {
+                    v.push(e.creature);
+                }
+            }
+            v
+        } else {
+            Vec::new()
+        }
+    }
+
     pub fn mask(&self) -> Vec<bool> {
         let legal = self.legal_slots();
         let set: BTreeSet<usize> = legal.into_iter().collect();

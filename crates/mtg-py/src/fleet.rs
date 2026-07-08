@@ -172,7 +172,7 @@ fn encode_group(slots: &[GameSlot]) -> GroupBatch {
         // obs arrays (encode, or zero rows when terminal)
         let o = slot.interaction.as_ref().map(|i| {
             let (pb, bs) = i.pending_block_view();
-            obs::encode(i.view(), i.req(), i.num_legal(), &pb, bs)
+            obs::encode(i.view(), i.req(), i.num_legal(), &pb, bs, &i.pending_attackers())
         });
         match o {
             Some(o) => {
