@@ -3,6 +3,21 @@
 Short, dated entries for future-agent consumption. Newest first. One line or a few bullets
 per unit of meaningful progress. Keep it terse — detail lives in `docs/` and git history.
 
+## 2026-07-07 (scripted reference policy + vs-random ceiling)
+
+- **`python/mtgenv_gym/evalkit/scripted.py`** — `ScriptedPolicy`, the user's known-good yardstick
+  (torch-free, batched): land > spell > attack-all > never-block > pass, first-slot tie-break.
+  Classifies legal slots from the codec layout (Discrete(98) positional buckets) + the obs
+  decision-kind one-hot (`globals[43:64]`) + the `hand_feat` land flag — not tracked_stats (post-hoc).
+- **New standing metric `selfplay/winrate_vs_script` (+`_sampled`)** — agent vs the script; ≈0.5 = deck
+  learned (sharper than the near-saturated vs-random). Wired into evalkit `EvalkitCallback` (sb3.py,
+  seed 8e6, on by default) and the DMC watcher (dmc.py); schema doc in tb_logging.py. `test_scripted.py`
+  (6 pass). Commits 06383fb + 02ea041.
+- **Measured ceiling** (heralds, /tmp/mtgenv_tb/ref-script-heralds): script vs random 10k = **0.9792**
+  (CI [0.9762, 0.9818]), turns 11.9, 100% lethal; seat split negligible (play 0.980 / draw 0.977);
+  script-vs-script mirror 2k = **0.4875** (≈0.5, no first-player edge). So the vs-random ceiling is
+  ~0.98 not 1.0 → PPO 0.972 ≈ 99% of ceiling, DMC ~0.952 ≈ 97%; vs-random is near-saturated.
+
 ## 2026-07-07 (DMC — model-free Deep Monte-Carlo contrast arm)
 
 - **`python/mtgenv_gym/dmc.py` + `python/dmc_train.py`** — DouZero-style Deep Monte-Carlo: mirror
