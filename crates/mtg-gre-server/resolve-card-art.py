@@ -42,13 +42,15 @@ def load_sets(names):
         return {}
     db = sqlite3.connect(CARDS_DB)
     placeholders = ",".join("?" * len(_NON_PRINTING_SET_TYPES))
+    # Match the exact name, or a double-faced card whose full Scryfall name is "<front> // <back>"
+    # (the engine stores only the front-face name).
     query = (
-        f"SELECT set_code FROM cards WHERE name = ? AND digital = '0' "
+        f"SELECT set_code FROM cards WHERE (name = ? OR name LIKE ?) AND digital = '0' "
         f"AND set_type NOT IN ({placeholders}) ORDER BY released_at ASC LIMIT 1"
     )
     out = {}
     for n in names:
-        row = db.execute(query, (n, *_NON_PRINTING_SET_TYPES)).fetchone()
+        row = db.execute(query, (n, n + " // %", *_NON_PRINTING_SET_TYPES)).fetchone()
         if row:
             out[n] = row[0]
     db.close()
@@ -79,7 +81,11 @@ def fetch_scryfall(names):
             capture_output=True, text=True,
         ).stdout
         resp = json.loads(out)
-        byname.update({c["name"]: c for c in resp.get("data", [])})
+        for c in resp.get("data", []):
+            byname[c["name"]] = c
+            # Double-faced cards come back under their full "Front // Back" name; also index by the
+            # front-face name so lookups by the engine's (front-face-only) card name resolve.
+            byname.setdefault(c["name"].split(" // ")[0], c)
         if resp.get("not_found"):
             print("  not found:", [nf.get("name") for nf in resp["not_found"]])
     return byname
