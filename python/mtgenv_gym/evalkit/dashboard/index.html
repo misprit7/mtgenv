@@ -204,13 +204,13 @@ details.section > summary .count { margin-left: auto; color: var(--muted); font-
       <label><input type="checkbox" id="ratelock" checked> rates 0–1</label>
       <label><input type="checkbox" id="allmetrics"> all metrics</label>
     </div>
-    <div class="chartcol" id="charts"></div>
-    <div class="empty" id="empty" hidden>No runs selected — pick some from the run list.</div>
     <details class="chartsec" id="replaysec" open>
       <summary>replays<span class="n" id="replayCount"></span></summary>
       <div class="rtabs" id="replayTabs"></div>
       <div class="rlist" id="replayList"></div>
     </details>
+    <div class="chartcol" id="charts"></div>
+    <div class="empty" id="empty" hidden>No runs selected — pick some from the run list.</div>
   </main>
 </div>
 <div class="footer">evalkit dashboard · TB events are the source of truth · re-syncs every 90 s</div>
@@ -414,6 +414,7 @@ function selectionChanged() {
   LS.set("sel", selected);
   updateRunsPane();
   renderLegend();
+  renderReplays();   // replay tabs track the selection
   clearTimeout(applyTimer);
   applyTimer = setTimeout(async () => { await loadSelected(); renderCharts(); }, 350);
 }
@@ -525,14 +526,14 @@ function renderGroup(grid, tags, visible, a, lockRates, theme) {
 
 /* ══ replays panel — tabs by run (newest first), rows link straight into the lobby player ══ */
 function renderReplays() {
-  // Latest VERSIONED runs first (4.7 > 4.6 > … > 2.0), non-versioned (smoke/tmp/ref) at the end.
+  // Only the runs SELECTED in the picker; latest versioned first, non-versioned at the end.
   const vkey = (n) => { const m = n.match(/^(\d+)\.(\d+)/); return m ? (+m[1]) * 1000 + (+m[2]) : -1; };
-  const withReplays = index.runs.filter(r => (r.replays || 0) > 0)
+  const withReplays = index.runs.filter(r => selected.includes(r.name) && (r.replays || 0) > 0)
     .sort((a, b) => vkey(b.name) - vkey(a.name) || a.name.localeCompare(b.name));
   $("replayCount").textContent = withReplays.reduce((s, r) => s + r.replays, 0);
   const tabs = $("replayTabs");
   tabs.textContent = "";
-  if (!withReplays.length) { $("replayList").innerHTML = '<div class="rempty">No replays yet.</div>'; return; }
+  if (!withReplays.length) { $("replayList").innerHTML = '<div class="rempty">No replays for the selected runs.</div>'; return; }
   let active = LS.get("replaytab", null);
   if (!withReplays.some(r => r.name === active)) active = withReplays[0].name;
   for (const r of withReplays) {
