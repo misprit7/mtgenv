@@ -68,10 +68,9 @@ a { color: inherit; }
 .iconbtn:active { transform: translate(2px, 2px); box-shadow: none; }
 a.iconbtn { text-decoration: none; display: inline-flex; align-items: center; }
 
-/* ── layout: charts first on phone (legend chips say what's shown; the picker is a
-       scroll away), charts + right-hand runs pane on wide screens ── */
+/* ── layout: run picker on top (phone) / left pane (wide), charts after ── */
 .wrap { display: grid; gap: 12px; padding: 12px; max-width: 1500px; margin: 0 auto; }
-@media (min-width: 1000px) { .wrap { grid-template-columns: minmax(0, 1fr) 320px; align-items: start; } }
+@media (min-width: 1000px) { .wrap { grid-template-columns: 320px minmax(0, 1fr); align-items: start; } }
 @media (max-width: 560px) { .topbar .sub { display: none; } .topbar h1 { font-size: 16px; } }
 
 /* ── runs pane ── */
@@ -91,17 +90,26 @@ details.section > summary::before { content: "▸"; color: var(--magenta); trans
 details.section[open] > summary::before { transform: rotate(90deg); }
 details.section > summary .count { margin-left: auto; color: var(--muted); font-size: 12px; font-family: ui-sans-serif, system-ui, sans-serif; text-transform: none; letter-spacing: 0; }
 .runrow { border-top: 1.5px solid var(--hair); }
-.runrow > label {
-  display: flex; align-items: center; gap: 8px; padding: 8px 12px; cursor: pointer; min-height: 42px;
-}
+.runrow .rowline { display: flex; align-items: center; gap: 8px; padding: 8px 12px; min-height: 42px; }
 .runrow input[type="checkbox"] { width: 17px; height: 17px; accent-color: var(--cyan); flex: none; }
-.runrow .name { font-weight: 600; font-size: 13px; word-break: break-all; }
+.runrow .name { font-weight: 600; font-size: 13px; word-break: break-all; flex: 1; cursor: pointer; }
 .runrow .step { margin-left: auto; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.runrow .replaylink {
+  flex: none; text-decoration: none; color: var(--magenta); font-size: 11.5px; font-weight: 700;
+  padding: 4px 6px; border-radius: 6px; white-space: nowrap;
+}
+.runrow .replaylink:hover { background: var(--surface); }
 .runrow .infobtn {
   flex: none; border: none; background: none; color: var(--muted); cursor: pointer;
   font-size: 15px; min-width: 34px; min-height: 34px; border-radius: 6px;
 }
 .runrow .infobtn:hover, .runrow .infobtn[aria-expanded="true"] { color: var(--ink); background: var(--surface); }
+.grouptoggle {
+  border: 1.5px solid var(--hair); background: none; color: var(--muted); cursor: pointer;
+  font-size: 10.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  padding: 3px 8px; border-radius: 99px; min-height: 26px;
+}
+.grouptoggle:hover { color: var(--ink); border-color: var(--ink); }
 .desc {
   margin: 0 12px 10px; padding: 8px 10px; background: var(--surface);
   border-left: 3px solid var(--yellow); border-radius: 4px; font-size: 12.5px; overflow-x: auto;
@@ -157,6 +165,7 @@ details.section > summary .count { margin-left: auto; color: var(--muted); font-
 </header>
 
 <div class="wrap">
+  <aside class="runs" id="runs"></aside>
   <main class="main">
     <div class="controls">
       <div class="legend" id="legend"></div>
@@ -169,7 +178,6 @@ details.section > summary .count { margin-left: auto; color: var(--muted); font-
     <div class="grid" id="charts"></div>
     <div class="empty" id="empty" hidden>No runs selected — pick some from the run list.</div>
   </main>
-  <aside class="runs" id="runs"></aside>
 </div>
 <div class="footer">evalkit dashboard · TB events are the source of truth · re-syncs every 90 s</div>
 
@@ -190,14 +198,21 @@ const LS = {
   get(k, d) { try { const v = JSON.parse(localStorage.getItem("evaldash." + k)); return v === null ? d : v; } catch { return d; } },
   set(k, v) { localStorage.setItem("evaldash." + k, JSON.stringify(v)); },
 };
-const SECTION_ORDER = ["muzero2", "verification", "ppo-selfplay", "muzero2-train-internals",
-                       "muzero-v1-failed", "smoke-and-probes", "misc"];
+/* Sections = major versions, newest first (numbers carry chronology); then reference, then misc. */
+function sectionRank(exp) {
+  const m = exp.match(/^(\d+)\.x$/);
+  if (m) return 1000 - parseInt(m[1], 10);
+  return exp === "reference" ? 2000 : 3000;
+}
 let index = null;                      // /data/index.json payload
+let entryByName = {};                  // run name -> index entry
 let selected = LS.get("sel", null);    // run names (null until defaulted from index)
 let colorOf = LS.get("colors", {});    // run name -> palette slot (stable while selected)
 let hiddenRuns = new Set();            // legend-toggled off (session only)
 const runData = {};                    // name -> metrics payload
 let charts = [];                       // live Chart.js instances
+let paneSig = "";                      // run-set signature the pane was built for
+const rowByName = {};                  // run name -> {cb, step, replay} for in-place updates
 
 /* ══ helpers ═════════════════════════════════════════════════════════════════════ */
 const $ = (id) => document.getElementById(id);
@@ -271,32 +286,62 @@ function md(text) {
   return out.join("");
 }
 
-/* ══ runs pane ═══════════════════════════════════════════════════════════════════ */
-function renderRuns() {
+/* ══ runs pane — built ONCE per run set; selection/steps update in place so rapid
+      multi-selecting is never interrupted by a rebuild ═══════════════════════════ */
+const lobbyBase = () => `http://${location.hostname}:8080`;
+const replayHref = (e) => e.latest_replay
+  ? `${lobbyBase()}/play?replay=${encodeURIComponent(e.latest_replay)}` : null;
+
+function buildRunsPane() {
   const bySection = {};
   for (const r of index.runs) (bySection[r.experiment] = bySection[r.experiment] || []).push(r);
   const root = $("runs");
   root.textContent = "";
-  const sections = SECTION_ORDER.filter(s => bySection[s]).concat(Object.keys(bySection).filter(s => !SECTION_ORDER.includes(s)));
+  Object.keys(rowByName).forEach(k => delete rowByName[k]);
+  const sections = Object.keys(bySection).sort((a, b) => sectionRank(a) - sectionRank(b));
   for (const sec of sections) {
     const runs = bySection[sec].slice().sort((a, b) => b.name.localeCompare(a.name, undefined, { numeric: true }));
     const det = document.createElement("details");
     det.className = "section";
     det.open = runs.some(r => selected.includes(r.name));
-    const nsel = runs.filter(r => selected.includes(r.name)).length;
-    det.innerHTML = `<summary>${sec}<span class="count">${nsel ? nsel + " of " : ""}${runs.length}</span></summary>`;
+    det.dataset.section = sec;
+    const sum = document.createElement("summary");
+    sum.innerHTML = `${sec}<span class="count"></span>`;
+    const tog = document.createElement("button");
+    tog.className = "grouptoggle";
+    tog.textContent = "all";
+    tog.title = "select / deselect every run in this group";
+    tog.addEventListener("click", (e) => {
+      e.preventDefault(); e.stopPropagation();   // don't collapse the <details>
+      const allOn = runs.every(r => selected.includes(r.name));
+      for (const r of runs) {
+        if (allOn) selected = selected.filter(n => n !== r.name);
+        else if (!selected.includes(r.name)) { selected.push(r.name); assignColor(r.name); }
+        if (rowByName[r.name]) rowByName[r.name].cb.checked = !allOn;
+      }
+      selectionChanged();
+    });
+    sum.insertBefore(tog, sum.querySelector(".count"));
+    det.appendChild(sum);
     for (const r of runs) {
       const row = document.createElement("div");
       row.className = "runrow";
-      const checked = selected.includes(r.name) ? "checked" : "";
+      const cbid = "cb-" + r.name.replace(/[^a-zA-Z0-9_-]/g, "_");
       row.innerHTML =
-        `<label><input type="checkbox" ${checked} data-run="${r.name}">
-           <span class="name">${r.name}</span>
-           <span class="step">${kfmt(r.max_step)}</span>
+        `<div class="rowline">
+           <input type="checkbox" id="${cbid}" ${selected.includes(r.name) ? "checked" : ""}>
+           <label class="name" for="${cbid}">${r.name}</label>
+           <a class="replaylink" target="_blank" rel="noopener" title="watch this run's latest replay" hidden></a>
+           <span class="step"></span>
            ${r.description ? `<button class="infobtn" aria-expanded="false" title="notes">ⓘ</button>` : ""}
-         </label>
+         </div>
          ${r.description ? `<div class="desc" hidden>${md(r.description)}</div>` : ""}`;
-      row.querySelector("input").addEventListener("change", (e) => toggleRun(r.name, e.target.checked));
+      const cb = row.querySelector("input");
+      cb.addEventListener("change", () => {
+        if (cb.checked) { if (!selected.includes(r.name)) { selected.push(r.name); assignColor(r.name); } }
+        else selected = selected.filter(n => n !== r.name);
+        selectionChanged();
+      });
       const info = row.querySelector(".infobtn");
       if (info) info.addEventListener("click", (e) => {
         e.preventDefault();
@@ -304,18 +349,39 @@ function renderRuns() {
         d.hidden = !d.hidden;
         info.setAttribute("aria-expanded", String(!d.hidden));
       });
+      rowByName[r.name] = { cb, step: row.querySelector(".step"), replay: row.querySelector(".replaylink") };
       det.appendChild(row);
     }
     root.appendChild(det);
   }
+  updateRunsPane();
 }
 
-async function toggleRun(name, on) {
-  if (on && !selected.includes(name)) { selected.push(name); assignColor(name); }
-  if (!on) selected = selected.filter(n => n !== name);
+function updateRunsPane() {
+  for (const r of index.runs) {
+    const row = rowByName[r.name];
+    if (!row) continue;
+    row.step.textContent = kfmt(r.max_step);
+    const href = replayHref(r);
+    row.replay.hidden = !href;
+    if (href) { row.replay.href = href; row.replay.textContent = `▶ ${r.replays}`; }
+  }
+  for (const det of document.querySelectorAll("details.section")) {
+    const names = index.runs.filter(r => r.experiment === det.dataset.section).map(r => r.name);
+    const nsel = names.filter(n => selected.includes(n)).length;
+    det.querySelector(".count").textContent = (nsel ? nsel + " of " : "") + names.length;
+  }
+}
+
+/* Selection changes apply instantly to chips/counts; data fetch + chart rebuild is
+   debounced so ticking many boxes in a row costs one rebuild, not one per click. */
+let applyTimer = null;
+function selectionChanged() {
   LS.set("sel", selected);
-  await loadSelected();
-  renderRuns(); renderLegend(); renderCharts();
+  updateRunsPane();
+  renderLegend();
+  clearTimeout(applyTimer);
+  applyTimer = setTimeout(async () => { await loadSelected(); renderCharts(); }, 350);
 }
 
 /* ══ legend ══════════════════════════════════════════════════════════════════════ */
@@ -414,20 +480,27 @@ async function refresh(force) {
   const next = await r.json();
   const changed = !index || next.generated_at !== index.generated_at;
   index = next;
+  entryByName = Object.fromEntries(index.runs.map(x => [x.name, x]));
   $("synced").textContent = "synced " + new Date(index.generated_at * 1000).toLocaleTimeString();
-  if (selected === null) {   // first visit: interesting sections, newest first, no dead stubs
+  if (selected === null) {   // first visit: the newest version era + the reference yardstick
+    const majors = index.runs.map(x => x.experiment.match(/^(\d+)\.x$/)).filter(Boolean).map(m => +m[1]);
+    const top = majors.length ? Math.max(...majors) + ".x" : null;
     selected = index.runs
-      .filter(x => (x.experiment === "muzero2" || x.experiment === "verification") && x.max_step >= 1000)
+      .filter(x => x.experiment === top && x.max_step >= 1000)
       .sort((x, y) => y.name.localeCompare(x.name, undefined, { numeric: true }))
-      .slice(0, 5).map(x => x.name);
+      .slice(0, 6).map(x => x.name)
+      .concat(index.runs.filter(x => x.experiment === "reference").map(x => x.name));
     selected.forEach(assignColor);
     LS.set("sel", selected);
   }
-  selected = selected.filter(n => index.runs.some(x => x.name === n));
+  selected = selected.filter(n => n in entryByName);
+  const sig = index.runs.map(x => x.name).sort().join("|");
+  if (sig !== paneSig) { paneSig = sig; buildRunsPane(); }   // run set changed: full pane build
+  else updateRunsPane();                                     // else: in-place text updates only
   if (changed || force) {
     for (const n of selected) delete runData[n];   // refetch: series may have grown
     await loadSelected();
-    renderRuns(); renderLegend(); renderCharts();
+    renderLegend(); renderCharts();
   }
 }
 

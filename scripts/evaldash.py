@@ -21,19 +21,42 @@ import argparse
 import json
 import math
 import os
+import re
 import sys
 import threading
 import time
+import urllib.request
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import tb2aim  # event_dirs / notes_text / desired_description / experiment_for
+import tb2aim  # event_dirs / notes_text / desired_description
 
 from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 STATIC_DIR = os.path.join(REPO, "python", "mtgenv_gym", "evalkit", "dashboard")
 POINT_CAP = 2500  # per-series decimation cap (display resolution, not storage)
+
+
+def group_for(name: str) -> str:
+    """Sections = MAJOR VERSIONS (user preference: numbers carry chronology). Non-versioned runs
+    split into 'reference' (yardstick measurements) and 'misc' (smokes, superseded one-offs)."""
+    m = re.match(r"^(\d+)\.", name)
+    if m:
+        return f"{m.group(1)}.x"
+    if name.startswith("ref"):
+        return "reference"
+    return "misc"
+
+
+def fetch_replays(lobby: str) -> "list[dict]":
+    """All replay metas from the game server's /api/replays, oldest→newest (fail-soft: empty list
+    when the lobby is down). Matched to runs in sweep(), where the run names are known."""
+    try:
+        with urllib.request.urlopen(f"{lobby}/api/replays", timeout=3) as r:
+            return sorted(json.load(r), key=lambda x: x.get("created_at", 0))
+    except Exception:
+        return []
 
 
 def _atomic_write(path: str, obj) -> None:
@@ -99,7 +122,7 @@ def sync_run(tb_root: str, name: str, out_dir: str) -> "dict | None":
     max_step = max(pts[-1][0] for pts in compact.values())
     return {
         "name": name,
-        "experiment": tb2aim.experiment_for(name),
+        "experiment": group_for(name),
         "description": tb2aim.desired_description(name, path, notes),
         "tags": sorted(compact),
         "max_step": max_step,
@@ -107,7 +130,7 @@ def sync_run(tb_root: str, name: str, out_dir: str) -> "dict | None":
     }
 
 
-def sweep(tb_root: str, out_dir: str, cache: dict) -> None:
+def sweep(tb_root: str, out_dir: str, cache: dict, lobby: str) -> None:
     os.makedirs(os.path.join(out_dir, "runs"), exist_ok=True)
     entries = []
     for name in sorted(os.listdir(tb_root)):
@@ -125,6 +148,12 @@ def sweep(tb_root: str, out_dir: str, cache: dict) -> None:
             cache[name] = {"mtime": mt, "entry": entry}
             entries.append(entry)
             print(f"[evaldash] synced {name} ({entry['points']} pts)")
+    replays = fetch_replays(lobby)  # oldest→newest, so the last match per run is the latest
+    for e in entries:
+        prefix = f"aitrain-{e['name']}-"
+        mine = [r for r in replays if r.get("id", "").startswith(prefix)]
+        e["replays"] = len(mine)
+        e["latest_replay"] = mine[-1]["id"] if mine else None
     _atomic_write(os.path.join(out_dir, "index.json"),
                   {"generated_at": time.time(), "runs": entries})
 
@@ -159,11 +188,13 @@ def main():
     ap.add_argument("--port", type=int, default=8060)
     ap.add_argument("--host", default="0.0.0.0")
     ap.add_argument("--interval", type=int, default=90)
+    ap.add_argument("--lobby", default="http://127.0.0.1:8080",
+                    help="game server base URL for replay counts (fail-soft when down)")
     ap.add_argument("--once", action="store_true", help="one sync, no server")
     args = ap.parse_args()
 
     cache: dict = {}
-    sweep(args.tb_dir, args.out, cache)
+    sweep(args.tb_dir, args.out, cache, args.lobby)
     if args.once:
         return
 
@@ -171,7 +202,7 @@ def main():
         while True:
             time.sleep(args.interval)
             try:
-                sweep(args.tb_dir, args.out, cache)
+                sweep(args.tb_dir, args.out, cache, args.lobby)
             except Exception as e:
                 print(f"[evaldash] sweep error: {e}", file=sys.stderr)
 
