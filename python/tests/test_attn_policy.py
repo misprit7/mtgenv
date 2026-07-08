@@ -24,12 +24,12 @@ from mtgenv_gym.attn_policy import (
 )
 
 _V = 11  # cardid one-hot width
-# Contract v2 table sizes (MAX_PERM 64). The action_dim + all bucket bases are DERIVED from these via
+# Contract v2 table sizes (MAX_PERM 256). The action_dim + all bucket bases are DERIVED from these via
 # `slot_layout` — the test pins the same spec-driven layout the policy builds, so a future contract
 # bump only needs these three numbers.
-_MAX_HAND, _MAX_PERM, _MAX_STACK = 16, 64, 8
+_MAX_HAND, _MAX_PERM, _MAX_STACK = 16, 256, 8
 # action_dim = COMMIT(1) + HAND + PERM + PLAYER(2) + STACK + MODE(16) + COLOR(5) + NUMBER(16) + YES/NO(2)
-_ADIM = 1 + _MAX_HAND + _MAX_PERM + 2 + _MAX_STACK + 16 + 5 + 16 + 2  # = 130 for MAX_PERM 64
+_ADIM = 1 + _MAX_HAND + _MAX_PERM + 2 + _MAX_STACK + 16 + 5 + 16 + 2  # = 322 for MAX_PERM 256
 _SLOTS = _entity_slots(_MAX_HAND, _MAX_PERM, _MAX_STACK, _ADIM)  # {"bf":(base,cnt),"hand":..,"stack":..}
 
 

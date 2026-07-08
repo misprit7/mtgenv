@@ -754,23 +754,38 @@ mod tests {
         }
     }
 
-    // The obs↔codec contract on an OVERFLOWING board (contract v2, MAX_PERM 64): a slot `PERM[k]`
-    // must act on the object the policy saw at obs row `k`, even past the cap. Both sides route
-    // through `layout::perm_order` (nonlands-first, then lands, stable within class, capped), so a
-    // 70-permanent board must (a) put all nonlands ahead of all lands, (b) drop only trailing lands
-    // on overflow, and (c) have codec `PERM[k]` and obs row `k`'s instance_id name the same object.
+    // The obs↔codec contract on an OVERFLOWING board (contract v2): a slot `PERM[k]` must act on the
+    // object the policy saw at obs row `k`, even past the cap. Both sides route through
+    // `layout::perm_order` (nonlands-first, then lands, stable within class, capped at MAX_PERM), so a
+    // board LARGER than MAX_PERM must (a) put all nonlands ahead of any land, (b) drop only trailing
+    // lands on overflow, and (c) have codec `PERM[k]` and obs row `k`'s instance_id name the same
+    // object. Parameterized off MAX_PERM so it always exercises overflow whatever the cap is set to.
     #[test]
-    fn obs_rows_and_codec_perm_slots_agree_on_70_permanent_board() {
+    fn obs_rows_and_codec_perm_slots_agree_on_overflowing_board() {
+        // n_nonland fills all but the last 10 slots; n_land overflows the rest so lands get dropped.
+        let n_nonland = MAX_PERM - 10;
+        let n_land = 30; // > 10, so 10 lands are kept and 20 are dropped as overflow
         let mut view = base_view();
-        // 70 perms interleaved land/nonland so raw battlefield order does NOT match the sorted order.
         let mut nonland_ids = vec![];
         let mut land_ids = vec![];
-        for k in 0..70u64 {
+        // Interleave so raw battlefield order does NOT match the sorted order (lands before some
+        // nonlands in the raw list), forcing the ordering function to actually reorder.
+        for k in 0..(n_nonland + n_land) as u64 {
             let id = 1000 + k;
-            let is_land = k % 2 == 1; // odd = land, even = creature → 35 of each
-            view.battlefield.push(vis_typed(id, is_land));
-            if is_land { land_ids.push(id) } else { nonland_ids.push(id) }
+            let is_land = k % 3 == 0 && (land_ids.len() as usize) < n_land; // sprinkle lands early
+            if is_land {
+                view.battlefield.push(vis_typed(id, true));
+                land_ids.push(id);
+            } else if (nonland_ids.len() as usize) < n_nonland {
+                view.battlefield.push(vis_typed(id, false));
+                nonland_ids.push(id);
+            } else {
+                view.battlefield.push(vis_typed(id, true));
+                land_ids.push(id);
+            }
         }
+        assert_eq!(nonland_ids.len(), n_nonland);
+        assert_eq!(land_ids.len(), n_land);
         let req = DecisionRequest::Priority { actions: vec![], can_pass: true };
 
         // Codec PERM ordering (the ids in slot order), and obs instance_id per row.
@@ -781,16 +796,15 @@ mod tests {
             .map(|r| o.bf_feat[r * crate::obs::F_PERM + crate::obs::BF_INSTANCE_ID] as u64)
             .collect();
 
-        // (c) both capped at 64 and pointing at the same objects, row-for-row.
+        // (c) both capped at MAX_PERM and pointing at the same objects, row-for-row.
         assert_eq!(codec_ids.len(), MAX_PERM, "codec bf capped at MAX_PERM");
         assert_eq!(obs_ids, codec_ids, "obs row k and codec PERM[k] must name the same object");
-        // (a) the 35 nonlands come first (stable ⇒ ascending id), then lands.
-        assert_eq!(&obs_ids[..35], &nonland_ids[..], "all nonlands ahead of any land");
-        // (b) rows 35..64 are the first 29 lands; the last 6 lands are the dropped overflow.
-        assert_eq!(&obs_ids[35..MAX_PERM], &land_ids[..MAX_PERM - 35], "lands fill the rest, in order");
-        assert_eq!(MAX_PERM - 35, 29);
-        // The dropped ids (never in either table) are exactly the trailing 6 lands.
-        for dropped in &land_ids[29..] {
+        // (a) the nonlands come first (stable ⇒ ascending id), then lands.
+        assert_eq!(&obs_ids[..n_nonland], &nonland_ids[..], "all nonlands ahead of any land");
+        // (b) the remaining 10 rows are the first 10 lands; the other 20 lands are the dropped overflow.
+        let kept_lands = MAX_PERM - n_nonland; // = 10
+        assert_eq!(&obs_ids[n_nonland..MAX_PERM], &land_ids[..kept_lands], "lands fill the rest, in order");
+        for dropped in &land_ids[kept_lands..] {
             assert!(!codec_ids.contains(dropped), "overflow drops trailing lands only");
         }
     }
@@ -916,7 +930,7 @@ mod tests {
         // A change to the table sizes shifts every downstream slot — pin the totals so an
         // accidental obs↔codec desync is caught.
         expect![[r#"
-            COMMIT=0 HAND=1 PERM=17 PLAYER=81 STACK=83 MODE=91 COLOR=107 NUMBER=112 YES=128 NO=129 DIM=130
+            COMMIT=0 HAND=1 PERM=17 PLAYER=273 STACK=275 MODE=283 COLOR=299 NUMBER=304 YES=320 NO=321 DIM=322
         "#]]
         .assert_eq(&format!(
             "COMMIT={COMMIT} HAND={HAND_BASE} PERM={PERM_BASE} PLAYER={PLAYER_BASE} STACK={STACK_BASE} MODE={MODE_BASE} COLOR={COLOR_BASE} NUMBER={NUMBER_BASE} YES={YES} NO={NO} DIM={ACTION_DIM}\n"

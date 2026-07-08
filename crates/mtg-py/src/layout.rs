@@ -12,11 +12,12 @@ use mtg_core::basics::Color;
 use mtg_core::ids::ObjId;
 
 // ── padded table sizes (config; grow with the pool) ─────────────────────────────────────────
-// MAX_PERM 32→64 (contract v2, 2026-07-08): late-game SOS boards were observed at ~39 permanents,
+// MAX_PERM 32→256 (contract v2, 2026-07-08): late-game SOS boards were observed at ~39 permanents,
 // past the old 32-row cap — objects beyond it were silently truncated (invisible to the policy AND
-// unmappable to a PERM action slot). 64 covers the observed max with token headroom; the
-// deterministic truncation priority in `perm_order` bounds the residual overflow risk.
-pub const MAX_PERM: usize = 64;
+// unmappable to a PERM action slot). 256 is chosen to never truncate in practice (well past any
+// realistic board, degenerate grinds included); the deterministic truncation priority in
+// `perm_order` remains as the safety net if that bound is ever exceeded.
+pub const MAX_PERM: usize = 256;
 pub const MAX_HAND: usize = 16;
 pub const MAX_STACK: usize = 8;
 

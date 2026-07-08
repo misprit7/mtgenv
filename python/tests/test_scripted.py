@@ -37,7 +37,7 @@ def _obs(ridx, hand_lands=(), hand_spells=()):
 
 
 def _mask(slots):
-    m = np.zeros(ACTION_DIM, dtype=bool)     # live contract width (v1=98, v2=130, …)
+    m = np.zeros(ACTION_DIM, dtype=bool)     # live contract width (v1=98, v2=322, …)
     m[list(slots)] = True
     return m
 
@@ -87,7 +87,7 @@ def test_fallback_prefers_commit_then_decline():
 def test_layout_matches_engine():
     import mtg_py
 
-    assert mtg_py.PyGame.action_dim() == 130   # contract v2 (MAX_PERM 64)
+    assert mtg_py.PyGame.action_dim() == 322   # contract v2 (MAX_PERM 256)
     spec = dict((name, cols) for (name, rows, cols, is_int) in mtg_py.PyGame.obs_spec())
     assert spec["globals"] == 69          # decision one-hot at [43,64) relies on this width
     assert spec["hand_feat"] == 18        # HAND_LAND_COL indexes into this row

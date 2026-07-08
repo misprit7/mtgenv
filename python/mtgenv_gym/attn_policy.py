@@ -46,7 +46,7 @@ from mtgenv_gym.codec_layout import slot_layout  # the canonical Python-side mir
 
 # ── codec Discrete(ACTION_DIM) slot layout ───────────────────────────────────────────────────────
 # The entity-slot bases are DERIVED from the table sizes + engine action_dim (via `slot_layout`), not
-# hard-coded — so the MAX_PERM/ACTION_DIM contract (v1 98/32, v2 130/64, …) flows straight through and
+# hard-coded — so the MAX_PERM/ACTION_DIM contract (v1 98/32, v2 322/256, …) flows straight through and
 # a checkpoint loads under whatever spec it was saved with. obs.rs bf_feat relation-id columns
 # (Tier-3) are absolute F_PERM-tail indices, unchanged across the MAX_PERM bump.
 _BF_INSTANCE_ID, _BF_BLOCKING_ID, _BF_ATTACHED_ID = 45, 46, 47

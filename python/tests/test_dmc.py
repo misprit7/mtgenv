@@ -41,14 +41,14 @@ def test_epsilon_schedule_linear_then_flat():
 
 # ── pure: slot layout tiles [0, action_dim) exactly like codec.rs ────────────────────────────────
 def test_slot_layout_matches_codec():
-    # contract v2 (MAX_PERM 64 → action_dim 130).
-    lay = slot_layout(max_hand=16, max_perm=64, max_stack=8, action_dim=130)
+    # contract v2 (MAX_PERM 256 → action_dim 322).
+    lay = slot_layout(max_hand=16, max_perm=256, max_stack=8, action_dim=322)
     assert lay["hand"] == (1, 16)          # HAND_BASE=1
-    assert lay["perm"] == (17, 64)         # PERM_BASE=17 (64 rows)
-    assert lay["stack"] == (83, 8)         # STACK_BASE=83 (shifted +32 by the wider PERM bucket)
-    assert lay["action_dim"] == 130
+    assert lay["perm"] == (17, 256)        # PERM_BASE=17 (256 rows)
+    assert lay["stack"] == (275, 8)        # STACK_BASE=275 (shifted +224 by the wider PERM bucket)
+    assert lay["action_dim"] == 322
     with pytest.raises(AssertionError):    # a wrong total is caught loudly (obs↔codec desync)
-        slot_layout(16, 64, 8, 131)
+        slot_layout(16, 256, 8, 323)
 
 
 # ── pure: greedy over legal with random tie-break ────────────────────────────────────────────────

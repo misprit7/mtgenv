@@ -6,8 +6,8 @@ bucket base or the total. Both the DMC head (``dmc.py``) and the relational poin
 (``attn_policy.py``) import ``slot_layout`` from here; ``slot_layout`` asserts its computed total
 against ``PyGame.action_dim()`` so an obs↔codec desync (or a stale MAX_PERM) is caught loudly.
 
-Contract history: v1 was ``MAX_PERM=32 → action_dim=98``; v2 (2026-07-08) is ``MAX_PERM=64 →
-action_dim=130`` (late-game truncation fix). Because the bases are derived, both flow through unchanged.
+Contract history: v1 was ``MAX_PERM=32 → action_dim=98``; v2 (2026-07-08) is ``MAX_PERM=256 →
+action_dim=322`` (late-game truncation fix). Because the bases are derived, both flow through unchanged.
 """
 
 from __future__ import annotations
