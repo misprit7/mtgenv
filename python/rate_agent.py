@@ -42,50 +42,38 @@ from mtgenv_gym.evalkit.ratings import (
     load_games,
     load_registry,
     register_agent,
+    save_registry,
     write_ratings,
 )
-from mtgenv_gym.evalkit.scripted import (
-    COMMIT,
-    DECISION_ONEHOT_OFF,
-    NUM_REQUESTS,
-    R_DECLARE_BLOCKERS,
-)
+from mtgenv_gym.evalkit.scripted import ScriptedHeuristic
 
 # Durable checkpoint copies rescued out of the ephemeral /tmp training pools (see PROVENANCE.txt).
 # Absolute (via elo_root) so SB3's load resolves them regardless of the runner's CWD.
 _CKPT = str(elo_root() / "checkpoints")
 
+# The scripted heuristic FAMILY — kind name -> (attack axis, block axis). These + random are the
+# fixed benchmark spine of every env's pool (see ScriptedHeuristic).
+SCRIPT_KINDS = {
+    "script_racer": ("all", "never"),        # attack all-in, never block (== ScriptedPolicy)
+    "script_turtle": ("never", "all"),       # never attack, block everything (the wall)
+    "script_gang": ("all", "gang"),          # attack all-in, gang the biggest attacker
+    "script_careful": ("conservative", "gang"),  # only safe attacks, gang blocks
+}
 
-class ScriptedBlockAllPolicy(ScriptedPolicy):
-    """Probe variant: the scripted reference but blocks with EVERYTHING (chumps included).
+# The benchmark spine, registered in EVERY env: random (the 1000 anchor) + the 4 named scripts.
+_SPINE = [
+    (ANCHOR_NAME, "random", None, "uniform-random-legal — the 1000 anchor"),
+    ("script-racer", "script_racer", None, "all-in attack, never block (the racer)"),
+    ("script-turtle", "script_turtle", None, "never attack, block everything (the wall)"),
+    ("script-gang", "script_gang", None, "all-in attack, gang-priority blocks (2+ on the biggest)"),
+    ("script-careful", "script_careful", None, "conservative attack (skip losing attacks), gang blocks"),
+]
 
-    Identical to ``ScriptedPolicy`` except at declare-blockers, where it keeps toggling blockers
-    instead of committing none — the naive over-blocker, a cheap lower-bound opponent whose chump
-    rate the swine analyzer is designed to expose. Trivial subclass (no change to scripted.py)."""
-
-    def _choose(self, obs, mask) -> int:
-        g = np.asarray(obs["globals"]).reshape(-1)
-        ridx = int(np.argmax(g[DECISION_ONEHOT_OFF:DECISION_ONEHOT_OFF + NUM_REQUESTS]))
-        if ridx == R_DECLARE_BLOCKERS:
-            legal = np.flatnonzero(np.asarray(mask, dtype=bool))
-            noncommit = legal[legal != COMMIT]           # a block-assignment toggle, if any left
-            return int(noncommit[0]) if noncommit.size else COMMIT
-        return super()._choose(obs, mask)
-
-
-# ── default seed pools (per env) ───────────────────────────────────────────────────────────────────
-# (name, kind, checkpoint-or-None, notes). Checkpoints are the durable rescued copies; unloadable
-# ones are skipped at seed time and reported.
+# Per-env default pool = the spine + any loadable trained finals. Unloadable finals are skipped at
+# seed time and reported. (heralds 4.4-ppo/4.3-dmc finals had no recoverable weights.)
 DEFAULT_POOLS = {
-    "heralds": [
-        (ANCHOR_NAME, "random", None, "uniform-random-legal — the 1000 anchor"),
-        ("scripted", "scripted", None, "land>spell>attack-all>never-block reference"),
-        # 4.4-ppo / 4.3-dmc finals had no recoverable weights (overwritten / never saved).
-    ],
-    "swine": [
-        (ANCHOR_NAME, "random", None, "uniform-random-legal — the 1000 anchor"),
-        ("scripted", "scripted", None, "land>spell>attack-all>never-block reference"),
-        ("scripted-blockall", "scripted_blockall", None, "probe: blocks with everything (over-chumps)"),
+    "heralds": list(_SPINE),
+    "swine": _SPINE + [
         ("4.6-ppo", "ppo", f"{_CKPT}/swine/4.6-ppo.zip", "4.6-ppo-swine final (ckpt_496000)"),
         ("4.7-ppo-attn", "attn", f"{_CKPT}/swine/4.7-ppo-attn.zip", "4.7-ppo-attn-swine final (ckpt_1M)"),
         ("2.9-legacy", "ppo", f"{_CKPT}/swine/2.9-legacy.zip", "2.9-swine-500k legacy PPO (ckpt_504000)"),
@@ -101,8 +89,9 @@ def build_policy(entry: AgentEntry, device: str = "cpu"):
         return RandomPolicy(seed=0)
     if kind == "scripted":
         return ScriptedPolicy()
-    if kind in ("scripted_blockall", "scripted_block_all"):
-        return ScriptedBlockAllPolicy()
+    if kind in SCRIPT_KINDS:
+        attack, block = SCRIPT_KINDS[kind]
+        return ScriptedHeuristic(attack=attack, block=block)
     if kind in ("ppo", "sb3", "attn"):
         from mtgenv_gym.evalkit.sb3 import SB3Policy
         import mtgenv_gym.policy  # noqa: F401 — EntityExtractor, for unpickle
@@ -177,15 +166,16 @@ def cmd_seed(args):
     pool = DEFAULT_POOLS.get(args.env)
     if pool is None:
         sys.exit(f"no default pool defined for env {args.env!r} (known: {sorted(DEFAULT_POOLS)})")
-    registered, skipped = [], []
+    registry, registered, skipped = {}, [], []
     for name, kind, ckpt, notes in pool:
         entry = AgentEntry(name=name, kind=kind, checkpoint=ckpt, notes=notes)
         ok, err = _try_build(entry, args.device)
         if ok:
-            register_agent(args.env, name, kind, ckpt, notes, overwrite=True)
+            registry[name] = entry
             registered.append(name)
         else:
             skipped.append((name, err))
+    save_registry(args.env, registry)  # REPLACE the registry with exactly the (loadable) pool
     print(f"[{args.env}] registered {len(registered)}: {', '.join(registered)}")
     for name, err in skipped:
         print(f"  SKIPPED {name}: {err}")

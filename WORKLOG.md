@@ -16,12 +16,20 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
   separation, RPS nontransitivity.
 - **`python/rate_agent.py`:** tournament runner — `seed/list/refit/smoke/tournament/add`. Both
   seatings via batched `Arena`, seeds rotate past all recorded games (stored per row); `add` trims to
-  anchors+top-K+sample when pool >12; `--only-new` skips replayed pairings. Trivial `ScriptedBlockAll`
-  probe (over-chumps) defined in-runner (scripted.py untouched).
-- **Pools seeded:** heralds = {random, scripted} (4.4-ppo/4.3-dmc finals had NO recoverable weights —
-  overwritten/never-saved). swine = {random, scripted, scripted-blockall, 4.6-ppo, 4.7-ppo-attn,
-  2.9-legacy} — all load. **Rescued the 3 swine finals out of ephemeral `/tmp` pools** →
-  `data/elo/checkpoints/swine/` (the next training run's `_clean` would have wiped them).
+  anchors+top-K+sample when pool >12; `--only-new` skips replayed pairings.
+- **Scripted heuristic FAMILY (required benchmark spine)** `evalkit/scripted.py::ScriptedHeuristic`:
+  parameterized attack (all / never / conservative = skip strictly-losing attacks) × block (never /
+  all / gang = 2+ on the biggest attacker), all read off the bf_feat board + the autoregressive combat
+  sub-steps (`mask[COMMIT]` splits top-level pick from defender/which-attacker sub-pick; gang read from
+  the mid-decision `blocked_by` col so it stays stateless). Named permanent members in EVERY env:
+  script-racer (=ScriptedPolicy, pinned), script-turtle, script-gang, script-careful — + random = the
+  spine. `ScriptedPolicy` untouched (its training yardstick is pinned). 11 new tests
+  (`test_scripted_heuristic.py`); 8-game swine smoke already differentiates
+  careful>racer≈gang>random>turtle.
+- **Pools seeded:** heralds = spine (5). swine = spine + {4.6-ppo, 4.7-ppo-attn, 2.9-legacy} (8) — all
+  load. 4.4-ppo/4.3-dmc heralds finals had NO recoverable weights (overwritten/never-saved).
+  **Rescued the 3 swine finals out of ephemeral `/tmp` pools** → `data/elo/checkpoints/swine/` (the
+  next training run's `_clean` would have wiped them).
 - Initial tournaments (thousands of games) NOT yet run — gated on the profiling window.
 
 ## 2026-07-08 (PPO combat-judgment baseline 4.4-4.6 + relational-attention arm 4.7-4.9)

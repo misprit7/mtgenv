@@ -106,3 +106,123 @@ class ScriptedPolicy(BasePolicy):
         if mask[NO]:
             return NO
         return int(legal[0])
+
+
+# ── bf_feat per-permanent columns (obs.rs::encode_battlefield push order; append-stable) ─────────────
+# present(0) mine(1) power(2) toughness(3) mana_value(4) damage(5) tapped(6) … attacking(39) …
+# blocked_by(43) = blockers ganging this attacker (committed + pending, updated mid-decision).
+BF_PRESENT, BF_MINE, BF_POWER, BF_TOUGHNESS = 0, 1, 2, 3
+BF_TAPPED = 6
+BF_ATTACKING, BF_BLOCKED_BY = 39, 43
+
+PLAYER_BASE = PERM_BASE + MAX_PERM                    # 49 — defender player slots at a DeclareAttackers
+GANG_MIN = 2                                          # "prefer 2+ blockers on the biggest attacker"
+
+ATTACK_MODES = ("all", "never", "conservative")
+BLOCK_MODES = ("never", "all", "gang")
+
+
+class ScriptedHeuristic(ScriptedPolicy):
+    """The scripted reference parameterized into a benchmark FAMILY — the fixed yardsticks the ratings
+    ladder hangs off. Two independent axes over the same land>spell priority as ``ScriptedPolicy``:
+
+      * **attack** — ``all`` (attack with everything, the racer) / ``never`` (hold everything back) /
+        ``conservative`` (attack a creature only if no bigger *untapped* enemy would beat it in a
+        block — i.e. skip a creature when some untapped enemy has power ≥ its toughness *and*
+        toughness > its power, a strictly losing attack).
+      * **block** — ``never`` (take it all) / ``all`` (throw a blocker at every attacker, over-chumps)
+        / ``gang`` (prefer 2+ blockers on the biggest attacker: pile blockers onto the largest
+        under-blocked attacker until it has ``GANG_MIN``, then the next largest).
+
+    Named pool members (see ``rate_agent.DEFAULT_POOLS``): script-racer = (all, never) — byte-identical
+    to ``ScriptedPolicy``; script-turtle = (never, all); script-gang = (all, gang); script-careful =
+    (conservative, gang). They anchor the scale AND probe blind spots (a pool that can't punish
+    chump-blocking won't rate it down).
+
+    Combat is the engine's autoregressive sub-step model (codec::Interaction): a DeclareAttackers is
+    (pick attacker → pick defender)*, a DeclareBlockers is (pick blocker → pick which attacker it
+    blocks)*, each ending in COMMIT. ``mask[COMMIT]`` is legal only at the top-level pick, never at a
+    sub-pick, so it cleanly separates "choose an attacker/blocker" from "assign its defender/attacker".
+    Gang structure so far is read from the obs ``blocked_by`` column (updated mid-decision), so the
+    heuristic stays stateless. Non-combat decisions defer to ``ScriptedPolicy`` unchanged."""
+
+    def __init__(self, attack: str = "all", block: str = "never"):
+        if attack not in ATTACK_MODES:
+            raise ValueError(f"attack must be one of {ATTACK_MODES}, got {attack!r}")
+        if block not in BLOCK_MODES:
+            raise ValueError(f"block must be one of {BLOCK_MODES}, got {block!r}")
+        self.attack = attack
+        self.block = block
+
+    def _choose(self, obs, mask) -> int:
+        g = np.asarray(obs["globals"]).reshape(-1)
+        ridx = int(np.argmax(g[DECISION_ONEHOT_OFF:DECISION_ONEHOT_OFF + NUM_REQUESTS]))
+        if ridx == R_DECLARE_ATTACKERS:
+            return self._decide_attack(obs, mask)
+        if ridx == R_DECLARE_BLOCKERS:
+            return self._decide_block(obs, mask)
+        return super()._choose(obs, mask)            # land>spell>pass, fallback — unchanged
+
+    # ── attack ─────────────────────────────────────────────────────────────────────────────────────
+    def _decide_attack(self, obs, mask) -> int:
+        legal = np.flatnonzero(np.asarray(mask, dtype=bool))
+        if not mask[COMMIT]:                          # defender sub-step: assign the pending attacker
+            return int(legal[0])                      # (one defender in the M1 pool) → first legal
+        if self.attack == "never":
+            return COMMIT
+        perm = [s for s in legal if PERM_BASE <= s < PERM_BASE + MAX_PERM]  # eligible attackers
+        if not perm:
+            return COMMIT
+        if self.attack == "all":
+            return int(min(perm))                     # declare next attacker; the loop declares all
+        bf = np.asarray(obs["bf_feat"])               # conservative
+        blockers = self._enemy_untapped(bf)
+        safe = [s for s in perm if self._attack_safe(bf[s - PERM_BASE], blockers)]
+        return int(min(safe)) if safe else COMMIT
+
+    @staticmethod
+    def _enemy_untapped(bf) -> np.ndarray:
+        rows = ((bf[:, BF_PRESENT] > 0.5) & (bf[:, BF_MINE] < 0.5)
+                & (bf[:, BF_TAPPED] < 0.5) & (bf[:, BF_TOUGHNESS] > 0))
+        return bf[rows][:, [BF_POWER, BF_TOUGHNESS]]  # (k, 2)
+
+    @staticmethod
+    def _attack_safe(row, blockers) -> bool:
+        if blockers.size == 0:
+            return True
+        p, t = row[BF_POWER], row[BF_TOUGHNESS]
+        loses = (blockers[:, 0] >= t) & (blockers[:, 1] > p)  # enemy kills me and survives
+        return not bool(np.any(loses))
+
+    # ── block ──────────────────────────────────────────────────────────────────────────────────────
+    def _decide_block(self, obs, mask) -> int:
+        legal = np.flatnonzero(np.asarray(mask, dtype=bool))
+        if self.block == "never":
+            return COMMIT if mask[COMMIT] else int(legal[0])
+        bf = np.asarray(obs["bf_feat"])
+        if not mask[COMMIT]:                          # attacker sub-step: assign THIS blocker
+            enemy = [s for s in legal if PERM_BASE <= s < PERM_BASE + MAX_PERM]
+            if not enemy:
+                return int(legal[0])
+            if self.block == "all":
+                return int(min(enemy))                # block the first available attacker
+            return self._gang_target(bf, enemy)       # biggest under-blocked attacker
+        mine = [s for s in legal if PERM_BASE <= s < PERM_BASE + MAX_PERM]  # blocker-pick step
+        if not mine:
+            return COMMIT
+        if self.block == "all":
+            return int(min(mine))                     # throw a blocker at everything
+        return int(min(mine)) if self._gang_wants_more(bf) else COMMIT     # gang
+
+    @staticmethod
+    def _gang_target(bf, enemy_slots) -> int:
+        rows = [(s, bf[s - PERM_BASE, BF_POWER], bf[s - PERM_BASE, BF_TOUGHNESS],
+                 bf[s - PERM_BASE, BF_BLOCKED_BY]) for s in enemy_slots]
+        under = [r for r in rows if r[3] < GANG_MIN]  # attackers still short of a gang
+        pool = under if under else rows
+        return int(max(pool, key=lambda r: (r[1], r[2]))[0])   # biggest by power, then toughness
+
+    @staticmethod
+    def _gang_wants_more(bf) -> bool:
+        atk = (bf[:, BF_PRESENT] > 0.5) & (bf[:, BF_MINE] < 0.5) & (bf[:, BF_ATTACKING] > 0.5)
+        return bool(atk.any() and (bf[atk, BF_BLOCKED_BY] < GANG_MIN).any())
