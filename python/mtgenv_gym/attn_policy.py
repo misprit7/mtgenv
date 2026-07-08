@@ -97,10 +97,17 @@ class _RelBiasLayer(nn.Module):
 class _RelationalEncoder(nn.Module):
     """Entity + globals tokens → contextualized per-entity embeddings + an attention-pooled state."""
 
-    def __init__(self, obs_space, *, d_model=48, nhead=4, ff=128, layers=2, id_embed=16, vocab=4096):
+    def __init__(self, obs_space, *, d_model=48, nhead=4, ff=128, layers=2, id_embed=16, vocab=4096,
+                 gather_present=True):
         super().__init__()
         self.d_model = d_model
         self.vocab = vocab
+        # Perf: run the attention layers over ONLY the present rows (packed across the batch, block-
+        # diagonal so tokens attend only within their own sample) instead of the full N=1+256+16+8=281
+        # tokens where ~95% are padding. Mathematically identical to the full masked attention for the
+        # PRESENT rows (padded keys are -inf either way); the old full path stays available via this
+        # flag for the equivalence gate. See `_encode_packed` / `_encode_full`.
+        self.gather_present = gather_present
         self.id_embed = nn.Embedding(vocab, id_embed)
         self.proj = nn.ModuleDict()
         self.cardid_dims = {}
@@ -166,22 +173,20 @@ class _RelationalEncoder(nn.Module):
         gtok = self.globals_proj(torch.cat(gin, dim=-1)).unsqueeze(1)  # (B, 1, d)
 
         H = torch.cat([gtok, *tokens], dim=1)                        # (B, N, d); N = 1 + MP + MH + MS
-        N = H.shape[1]
+        B, N, _ = H.shape
         gpres = torch.ones(B, 1, dtype=torch.bool, device=H.device)
         pres = torch.cat([gpres, *present], dim=1)                   # (B, N) True = present
-        kpm = ~pres                                                  # True = padded key (ignore)
-
-        # additive attention mask = relation bias (bf-bf) + padding (-inf on padded keys). The globals
-        # token (col 0) is always present, so no query row is fully -inf (no NaN softmax).
-        bias = torch.zeros(B, N, N, device=H.device, dtype=H.dtype)
         mp = obs["bf_feat"].shape[1]                                 # actual bf row count (MAX_PERM)
         block_adj, att_adj = self._bf_adjacency(obs["bf_feat"])      # (B, MP, MP) each
-        bias[:, 1:1 + mp, 1:1 + mp] = self.w_block * block_adj + self.w_attach * att_adj
-        bias = bias.masked_fill(kpm.unsqueeze(1), float("-inf"))     # -inf on padded key columns
+        rel = self.w_block * block_adj + self.w_attach * att_adj     # (B, MP, MP) additive relation bias
 
-        for layer in self.layers:
-            H = layer(H, bias)
+        # Run the L attention layers. Both paths are numerically identical on the PRESENT rows (the only
+        # rows the pooler + pointer read for present entities); they differ only on padded rows, whose
+        # embeddings feed action logits that are always masked illegal (padded rows are never legal
+        # actions). The pooled state is identical (padded keys are masked in the pool either way).
+        H = (self._encode_packed if self.gather_present else self._encode_full)(H, pres, rel, mp)
 
+        kpm = ~pres                                                  # True = padded key (ignore in pool)
         q = self.query.expand(B, -1, -1)
         pooled, _ = self.pool(q, H, H, key_padding_mask=kpm, need_weights=False)
         state = self.pool_norm(pooled.squeeze(1))                    # (B, d)
@@ -195,6 +200,54 @@ class _RelationalEncoder(nn.Module):
             ctx[name] = Hn[:, off:off + r, :]
             off += r
         return state, ctx["bf"], ctx["hand"], ctx["stack"]
+
+    def _full_bias(self, pres, rel, mp):
+        """The full (B, N, N) additive attention mask: relation bias on the bf-bf block + -inf on padded
+        key columns (the globals token, col 0, is always present so no query row is all -inf)."""
+        B, N = pres.shape
+        bias = torch.zeros(B, N, N, device=pres.device, dtype=rel.dtype)
+        bias[:, 1:1 + mp, 1:1 + mp] = rel
+        return bias.masked_fill((~pres).unsqueeze(1), float("-inf"))
+
+    def _encode_full(self, H, pres, rel, mp):
+        """Baseline path: L attention layers over ALL N tokens with the full (B, N, N) bias. O(B·N²)."""
+        bias = self._full_bias(pres, rel, mp)
+        for layer in self.layers:
+            H = layer(H, bias)
+        return H
+
+    def _encode_packed(self, H, pres, rel, mp):
+        """Fast path (identical on present rows): index-select the present rows across the whole batch
+        into one packed sequence and run the L layers over it with a block-diagonal bias (attend only
+        within the same sample) plus the same bf-bf relation bias in packed coordinates, then scatter
+        the outputs back to their fixed (sample, row) positions. Padded rows keep their pre-layer token
+        (their post-encoder value is never read for a present entity, and their logits are masked).
+        O(B·(mean present)²) ≪ O(B·N²) when ~95% of rows are padding."""
+        B, N, d = H.shape
+        Hflat = H.reshape(B * N, d)
+        idx = pres.reshape(-1).nonzero(as_tuple=False).squeeze(1)      # (T,) present-token indices
+        Hp = Hflat.index_select(0, idx).unsqueeze(0)                   # (1, T, d) packed present tokens
+        sample = torch.div(idx, N, rounding_mode="floor")             # (T,) which sample each came from
+        pos = idx - sample * N                                         # (T,) its position within [0, N)
+        is_bf = (pos >= 1) & (pos < 1 + mp)                            # (T,) is it a battlefield row
+        bf_row = (pos - 1).clamp(min=0, max=mp - 1)                   # (T,) bf-row index (clamped; masked if !bf)
+
+        T = idx.shape[0]
+        same = sample.unsqueeze(0) == sample.unsqueeze(1)             # (T, T) same-sample pairs
+        bias = torch.zeros(T, T, device=H.device, dtype=rel.dtype)
+        bias.masked_fill_(~same, float("-inf"))                      # block-diagonal: no cross-sample attn
+        # add the bf-bf relation bias for same-sample battlefield pairs: rel[sample_i, bf_row_i, bf_row_j].
+        relpack = rel[sample.unsqueeze(1).expand(T, T),
+                      bf_row.unsqueeze(1).expand(T, T),
+                      bf_row.unsqueeze(0).expand(T, T)]               # (T, T) gathered
+        bf_pair = is_bf.unsqueeze(1) & is_bf.unsqueeze(0) & same
+        bias = bias + torch.where(bf_pair, relpack, torch.zeros_like(relpack))
+
+        bias = bias.unsqueeze(0)                                       # (1, T, T) — batch dim for the layer
+        for layer in self.layers:
+            Hp = layer(Hp, bias)
+        Hnew = Hflat.index_copy(0, idx, Hp.squeeze(0))                # scatter present outputs back
+        return Hnew.reshape(B, N, d)
 
 
 class _PackSpec:
