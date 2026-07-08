@@ -35,7 +35,18 @@ from mtgenv_gym.evalkit.scripted import (
     YES,
 )
 
-_BF_W = 48   # obs.rs F_PERM (through BF_ATTACHED_ID=47); the policy only reads ≤ BF_BLOCKED_BY=43
+def _bf_width():
+    """Synthetic bf_feat width = the live engine's (v2=48, v3=45, …); fallback 48. The policy only
+    reads columns ≤ BF_BLOCKED_BY=43, so any width ≥44 is correct — this just matches the contract."""
+    try:
+        import mtg_py
+
+        return {n: c for (n, _r, c, _i) in mtg_py.PyGame.obs_spec()}["bf_feat"]
+    except Exception:
+        return 48
+
+
+_BF_W = _bf_width()
 _G_W = 69
 _VARIANTS = {  # name -> (attack, block); mirrors rate_agent.SCRIPT_KINDS
     "racer": ("all", "never"), "turtle": ("never", "all"),
