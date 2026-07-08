@@ -157,6 +157,13 @@ def sweep(tb_root: str, out_dir: str, cache: dict, lobby: str) -> None:
         mine = [r for r in replays if any(r.get("id", "").startswith(p) for p in prefixes)]
         e["replays"] = len(mine)
         e["latest_replay"] = mine[-1]["id"] if mine else None
+        # Full list for the dashboard's replays panel: id + training step (parsed from the id) + time.
+        e["replay_list"] = [
+            {"id": r["id"],
+             "step": int(m.group(1)) if (m := re.search(r"-step(\d+)-", r["id"])) else None,
+             "t": r.get("created_at", 0)}
+            for r in mine
+        ]
     _atomic_write(os.path.join(out_dir, "index.json"),
                   {"generated_at": time.time(), "runs": entries})
 

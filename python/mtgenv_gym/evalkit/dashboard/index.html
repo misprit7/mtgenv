@@ -153,6 +153,24 @@ details.section > summary .count { margin-left: auto; color: var(--muted); font-
 .chartsec .grid { margin-bottom: 8px; }
 .grid { display: grid; gap: 12px; grid-template-columns: 1fr; }
 @media (min-width: 700px) { .grid { grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); } }
+
+/* ── replays panel: run tabs (newest first) + that run's replay list ── */
+.rtabs { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 0 8px; }
+.rtabs .chip.active { background: var(--cyan); color: #08202a; border-color: var(--ink); }
+.rlist {
+  background: var(--panel); border: 2.5px solid var(--line); border-radius: 7px 5px 8px 6px;
+  box-shadow: 3px 3px 0 var(--shadowc); padding: 4px 0; max-height: 320px; overflow-y: auto;
+}
+.rlist a {
+  display: flex; align-items: center; gap: 10px; padding: 9px 14px; min-height: 42px;
+  text-decoration: none; border-top: 1.5px solid var(--hair); font-size: 13px;
+}
+.rlist a:first-child { border-top: none; }
+.rlist a:hover { background: var(--surface); }
+.rlist .rstep { font-weight: 700; font-variant-numeric: tabular-nums; min-width: 90px; }
+.rlist .rwhen { color: var(--muted); font-size: 11.5px; margin-left: auto; font-variant-numeric: tabular-nums; }
+.rlist .rplay { color: var(--magenta); font-weight: 800; }
+.rlist .rempty { padding: 12px 14px; color: var(--muted); font-size: 12.5px; }
 .card {
   background: var(--panel); border: 2.5px solid var(--line); border-radius: 7px 5px 8px 6px;
   box-shadow: 3px 3px 0 var(--shadowc); padding: 8px 10px 6px; min-width: 0;
@@ -188,6 +206,11 @@ details.section > summary .count { margin-left: auto; color: var(--muted); font-
     </div>
     <div class="chartcol" id="charts"></div>
     <div class="empty" id="empty" hidden>No runs selected — pick some from the run list.</div>
+    <details class="chartsec" id="replaysec" open>
+      <summary>replays<span class="n" id="replayCount"></span></summary>
+      <div class="rtabs" id="replayTabs"></div>
+      <div class="rlist" id="replayList"></div>
+    </details>
   </main>
 </div>
 <div class="footer">evalkit dashboard · TB events are the source of truth · re-syncs every 90 s</div>
@@ -500,6 +523,39 @@ function renderGroup(grid, tags, visible, a, lockRates, theme) {
   }
 }
 
+/* ══ replays panel — tabs by run (newest first), rows link straight into the lobby player ══ */
+function renderReplays() {
+  // Latest VERSIONED runs first (4.7 > 4.6 > … > 2.0), non-versioned (smoke/tmp/ref) at the end.
+  const vkey = (n) => { const m = n.match(/^(\d+)\.(\d+)/); return m ? (+m[1]) * 1000 + (+m[2]) : -1; };
+  const withReplays = index.runs.filter(r => (r.replays || 0) > 0)
+    .sort((a, b) => vkey(b.name) - vkey(a.name) || a.name.localeCompare(b.name));
+  $("replayCount").textContent = withReplays.reduce((s, r) => s + r.replays, 0);
+  const tabs = $("replayTabs");
+  tabs.textContent = "";
+  if (!withReplays.length) { $("replayList").innerHTML = '<div class="rempty">No replays yet.</div>'; return; }
+  let active = LS.get("replaytab", null);
+  if (!withReplays.some(r => r.name === active)) active = withReplays[0].name;
+  for (const r of withReplays) {
+    const chip = document.createElement("span");
+    chip.className = "chip" + (r.name === active ? " active" : "");
+    chip.textContent = `${r.name} (${r.replays})`;
+    chip.addEventListener("click", () => { LS.set("replaytab", r.name); renderReplays(); });
+    tabs.appendChild(chip);
+  }
+  const run = withReplays.find(r => r.name === active);
+  const list = $("replayList");
+  list.textContent = "";
+  for (const rep of (run.replay_list || []).slice().reverse()) {   // newest replay first
+    const a = document.createElement("a");
+    a.href = `${lobbyBase()}/play?replay=${encodeURIComponent(rep.id)}`;
+    a.target = "_blank"; a.rel = "noopener";
+    const when = rep.t ? new Date(rep.t).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
+    a.innerHTML = `<span class="rplay">▶</span><span class="rstep">${rep.step != null ? "step " + kfmt(rep.step) : "game"}</span><span class="rwhen">${when}</span>`;
+    list.appendChild(a);
+  }
+  if (!list.childElementCount) list.innerHTML = '<div class="rempty">No replays for this run.</div>';
+}
+
 /* ══ data flow ═══════════════════════════════════════════════════════════════════ */
 async function loadSelected() {
   await Promise.all(selected.filter(n => !runData[n]).map(async (n) => {
@@ -532,6 +588,7 @@ async function refresh(force) {
   const sig = index.runs.map(x => x.name).sort().join("|");
   if (sig !== paneSig) { paneSig = sig; buildRunsPane(); }   // run set changed: full pane build
   else updateRunsPane();                                     // else: in-place text updates only
+  renderReplays();
   if (changed || force) {
     for (const n of selected) delete runData[n];   // refetch: series may have grown
     await loadSelected();
@@ -559,7 +616,12 @@ $("themebtn").addEventListener("click", () => {
 $("lobbylink").href = `http://${location.hostname}:8080/`;
 
 refresh(true);
-setInterval(() => refresh(false).catch(() => {}), 90_000);
+setInterval(() => refresh(false).catch(() => {}), 45_000);
+// Mobile browsers suspend timers in background tabs — refresh immediately on return so the
+// dashboard is never stale when you look at it.
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") refresh(false).catch(() => {});
+});
 </script>
 </body>
 </html>
