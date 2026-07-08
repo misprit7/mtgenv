@@ -46,6 +46,20 @@ failure modes we actually hit:
 Most future changes become **additive** (a new state column, a new zone tag) instead of
 contract-breaking resizes.
 
+> **Revision (2026-07-08, design review with the user): contract-level variable length is
+> demoted — the fixed-shape contract stays.** The 2.3× cost decomposes into (a) transport
+> (solved by sparse wire format alone: ship only occupied rows, pad into a preallocated zero
+> buffer Python-side — observed tensors byte-identical, no fingerprint bump), (b) forward-pass
+> compute (present-masking hides padding's *contribution*, not its O(N²) attention *cost* —
+> solved by **gathering present rows inside the extractor**: index-select real entities, run
+> segment attention with a block-diagonal batch mask, scatter pointer logits back to fixed
+> slots — mathematically identical to ragged batching but ~40 lines in the network instead of
+> replacing SB3's rollout buffer), and (c) rollout-buffer memory + cap elimination — the only
+> things a truly variable-length contract uniquely buys, and neither currently binds. Verdict:
+> (a)+(b) are pure perf patches with no contract break; the PyG-style custom-buffer rebuild is
+> off the roadmap unless buffer memory someday binds. The rest of this section describes the
+> original (superseded) contract-level design for the record.
+
 Hidden zones get **explicit unknown tokens**: opponent's hand as k face-down tokens (k = the
 public hand count), library as a count in globals. This changes nothing about information
 content today, but gives a future belief/inference head something to attach predictions to —
@@ -163,10 +177,12 @@ opcode vocabulary (version it with the IR).
    §2-lite + §3 without the variable-length rebuild.
 2. **Pointer-argument actions on fixed tables:** swap `Discrete(322)` for verb+pointer while
    obs stays v3. Kills the size-coupled action breaks before SOS forces them.
-3. **Full OBS2 (variable-length entities + IR characteristics):** do this at the swine→SOS
+3. **Full OBS2 (unified entity schema + IR characteristics):** do this at the swine→SOS
    transition — the moment the current design's remaining assumptions (small decks, no
    targeting, homogeneous entities, identity-memorization-is-fine) all break simultaneously
    anyway. Training on real cards then starts on the right substrate instead of retrofitting
-   under a live ladder.
+   under a live ladder. *(Per the §1 revision, this stage no longer includes a variable-length
+   contract or buffer rebuild — the contract stays fixed-shape; sparse transport + in-extractor
+   gather deliver the perf independently of any contract bump.)*
 
 Nothing here launches or changes contracts without explicit go (campaign hold in force).
