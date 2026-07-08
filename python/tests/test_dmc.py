@@ -60,6 +60,9 @@ def test_greedy_respects_mask_and_argmax():
     mask2 = np.array([True, True, False, True])
     picks = {greedy_from_q(q2, mask2, np.random.default_rng(i)) for i in range(20)}
     assert picks.issubset({0, 1})            # slot 2 illegal, slot 3 lower → only the tied {0,1}
+    # the tie-break must ALSO accept the np.random *module* (the eval path evalkit seeds globally),
+    # not just a Generator — regression for the .integers-vs-module crash.
+    assert greedy_from_q(q2, mask2, np.random) in {0, 1}
 
 
 # ── pure: replay buffer ring ─────────────────────────────────────────────────────────────────────

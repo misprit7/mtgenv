@@ -182,7 +182,9 @@ def greedy_from_q(q_row, mask_row, rng):
     legal = np.flatnonzero(mask_row)
     qv = q_row[legal]
     best = legal[qv >= qv.max() - 1e-8]
-    return int(best[rng.integers(len(best))]) if len(best) > 1 else int(best[0])
+    # rng.choice works for both a np.random.Generator (collector) and the np.random module (eval, which
+    # evalkit seeds globally); the single-best fast path avoids an RNG draw on the common case.
+    return int(rng.choice(best)) if len(best) > 1 else int(best[0])
 
 
 def select_actions(net, obs_list, mask_list, device, *, epsilon, rng):
