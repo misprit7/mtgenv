@@ -1,29 +1,27 @@
-"""muzero2 — LightZero MuZero / Gumbel-MuZero on the mtgenv gym, done right (Track A).
+"""muzero2 — LightZero model-based tree-search training on the mtgenv gym (Track A + the 4.x arms).
 
-The prior workstream (experiments/stochastic_muzero/, READ-ONLY) root-caused the collapse: a FLAT value
-net (td_steps=5 too short for 30-60-sub-decision episodes) + a legal PASS at action index 0 (the
-argmax/visit-count "passive" attractor) + sparse terminal reward + over-training the tiny early buffer,
-with NO exploration floor. Its combined recipe (shaping 0.5 + td 40 + up 20) made PLAIN MuZero learn
-trivial heralds (0 -> ~0.9) at only 60k steps but stalled on swine. This retry keeps that recipe and
-adds every lever the prior run never tried (see mtg_config.build_configs docstring / README):
+Track A root-caused the prior collapse and proved plain MuZero learns heralds (0 -> 0.93) with the
+"3.5 recipe" (latent 256, sims 50, td 40, unroll 5, up 20, reanalyze 0.25, random_collect 32, constant
+PBRS shaping 0.5, lr 3e-3, game_segment_length 2000). The 4.x arms compare *other* model-based
+tree-search families on the SAME heralds env / recipe:
 
-  * ALGO: Gumbel-MuZero (--algo gumbel) — policy improvement guaranteed even at low sims; root action
-    selection is Gumbel-top-k + sequential halving (NOT argmax visit counts), dissolving the low-index/
-    PASS passive-collapse attractor. (--algo muzero = plain MuZero A/B control.)
-  * REANALYZE 0.5, EXPLORATION FLOOR (random_collect 32), CONSTANT PBRS shaping 0.5 (eval raw ±1),
-    td 50 / unroll 10, latent 512, budget >=500k, game_segment_length 2000.
+  * --algo efficientzero       (4.0) — SSL consistency + value-prefix LSTM.            train_muzero
+  * --algo stochastic_muzero   (4.1) — chance-node world model (MTG draw stochasticity). train_muzero
+  * --algo unizero             (4.2) — transformer latent world model.                  train_unizero
+  * --algo muzero / gumbel            — the Track-A A/B pair (kept for reference).
 
-Run:
-  PYTHONPATH=../../python .venv/bin/python train.py --algo gumbel --deck heralds \
-      --exp /tmp/mtgenv_tb/3.4-gumbel-heralds --max-steps 500000
+Run (real arm, 3.5 recipe applied via flags):
+  PYTHONPATH=../../python .venv/bin/python train.py --algo efficientzero --deck heralds \
+      --exp tb/4.0-ez-heralds --latent 256 --td 40 --unroll 5 --reanalyze 0.25 \
+      --max-steps 500000 --notes "..."
 """
 from __future__ import annotations
 
 import os
 import sys
 
-import lz_patches  # noqa: F401  (enables the Gumbel random-collect exploration floor)
-from mtg_config import build_configs
+import lz_patches  # noqa: F401  (Gumbel + Stochastic-MuZero random-collect exploration floor)
+from mtg_config import build_configs, UNIZERO_ALGOS
 
 
 def _argval(flag, cast, default):
@@ -52,7 +50,9 @@ if SMOKE:
               random_collect_episode_num=2, update_per_collect=2, td_steps=5, num_unroll_steps=5,
               collector_env_num=2, evaluator_env_num=2, n_episode=2, batch_size=32,
               replay_buffer_size=int(1e5), eval_freq=100, save_ckpt_after_iter=50,
-              game_segment_length=800)   # > heralds game length so no split (avoids the :737 boundary bug)
+              game_segment_length=800,   # > heralds game length so no split (avoids the :737 boundary bug)
+              lstm_hidden_size=64, chance_space_size=4,     # EZ / Stochastic-MuZero smoke sizes
+              embed_dim=64, num_layers=2, num_heads=2, infer_context_length=4)  # UniZero smoke sizes
 else:
     kw.update(
         latent_state_dim=_argval("--latent", int, 512),
@@ -67,17 +67,25 @@ else:
         game_segment_length=_argval("--seg", int, 2000),
         save_ckpt_after_iter=_argval("--save-iter", int, 1000),
         max_num_considered_actions=_argval("--gumbel-actions", int, 16),
+        lstm_hidden_size=_argval("--lstm", int, 256),
+        chance_space_size=_argval("--chance", int, 32),
+        embed_dim=_argval("--embed-dim", int, 256),
+        num_layers=_argval("--layers", int, 4),
+        num_heads=_argval("--heads", int, 4),
+        infer_context_length=_argval("--infer-ctx", int, 4),
     )
 
 main_config, create_config = build_configs(**kw)
 
 
 if __name__ == "__main__":
-    from lzero.entry import train_muzero
     p = main_config.policy
-    recipe = (f"algo={ALGO} deck={DECK} obs={p.model.observation_shape} act={p.model.action_space_size} "
-              f"latent={p.model.latent_state_dim} reanalyze={p.reanalyze_ratio} rand_collect={p.random_collect_episode_num} "
-              f"td={p.td_steps} unroll={p.num_unroll_steps} up={p.update_per_collect} "
+    m = p.model
+    cap = (f"latent={m.latent_state_dim}" if 'latent_state_dim' in m
+           else f"embed={m.world_model_cfg.embed_dim}x{m.world_model_cfg.num_layers}L")
+    recipe = (f"algo={ALGO} deck={DECK} obs={m.observation_shape} act={m.action_space_size} {cap} "
+              f"reanalyze={p.reanalyze_ratio} rand_collect={p.get('random_collect_episode_num', 0)} "
+              f"td={p.td_steps} unroll={p.num_unroll_steps} up={p.update_per_collect} lr={p.learning_rate} "
               f"max_steps={max_env_step} exp={exp_name}")
     print(f"[muzero2] {recipe}", flush=True)
     if NOTES:
@@ -85,4 +93,9 @@ if __name__ == "__main__":
         os.makedirs(run_dir, exist_ok=True)
         with open(os.path.join(run_dir, "description.md"), "w") as f:
             f.write(f"{NOTES}\n\nRecipe: {recipe}\n")
-    train_muzero([main_config, create_config], seed=_argval("--seed", int, 0), max_env_step=max_env_step)
+
+    if ALGO in UNIZERO_ALGOS:
+        from lzero.entry import train_unizero as train_entry
+    else:
+        from lzero.entry import train_muzero as train_entry
+    train_entry([main_config, create_config], seed=_argval("--seed", int, 0), max_env_step=max_env_step)

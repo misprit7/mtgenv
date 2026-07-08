@@ -28,6 +28,7 @@ import time
 import numpy as np
 import torch
 
+import lz_patches  # noqa: F401  (Stochastic-MuZero timestep-strip; harmless for other algos)
 from mtgenv_gym.evalkit import BasePolicy
 
 
@@ -35,8 +36,14 @@ from mtgenv_gym.evalkit import BasePolicy
 # Policy construction
 # ──────────────────────────────────────────────────────────────────────────────────────────────
 def build_policy(algo: str, deck: str, ckpt_path: str, device: str = "cuda",
-                 latent: int = 512, sims: "int | None" = None, head_hidden=(64,)):
-    """Build a LightZero policy matching the trained config and load ``ckpt_path`` into it."""
+                 latent: int = 512, sims: "int | None" = None, head_hidden=(64,),
+                 cfg_overrides: "dict | None" = None):
+    """Build a LightZero policy matching the trained config and load ``ckpt_path`` into it.
+
+    For the real arms the trained model uses ``build_configs`` defaults for the shape-determining knobs
+    (lstm_hidden_size / chance_space_size / embed_dim / num_unroll_steps), so matching them here needs no
+    extra args. ``cfg_overrides`` lets a smoke harness pass the shrunk values so the eval model matches a
+    ``--smoke`` checkpoint's shape."""
     from ding.config import compile_config
     from ding.policy import create_policy
     from mtg_config import build_configs
@@ -45,6 +52,12 @@ def build_policy(algo: str, deck: str, ckpt_path: str, device: str = "cuda",
               head_hidden=tuple(head_hidden), cuda=(device == "cuda"))
     if sims is not None:
         kw["num_simulations"] = int(sims)
+    if algo == "unizero":
+        # UniZero eval is recurrent (per-episode kv-cache + last_batch context). We drive it one game at
+        # a time (Arena batch_size=1), so size the eval-mode runtime buffers for a single env.
+        kw.update(collector_env_num=1, evaluator_env_num=1)
+    if cfg_overrides:
+        kw.update(cfg_overrides)
     main_config, create_config = build_configs(**kw)
     cfg = compile_config(main_config, seed=0, env=None, auto=True, create_cfg=create_config,
                          save_cfg=False)
@@ -66,16 +79,42 @@ class MuZeroLzPolicy(BasePolicy):
     when collection wins. So:
       * ``gumbel``: greedy = the framework's ``action``; sample = softmax(policy-head logits) — the head
         is trained toward the improved policy, so it is the honest stochastic learning-signal curve.
-      * ``muzero``: greedy = fair-greedy (argmax visits, ties broken by the network prior, not lowest
-        index); sample = visits^(1/temp). (Plain MuZero's visit counts DO reflect its policy.)"""
+      * ``muzero`` / ``efficientzero`` / ``stochastic_muzero``: greedy = fair-greedy (argmax visits, ties
+        broken by the network prior, not lowest index); sample = visits^(1/temp). (These three emit the
+        same visit-count ``_forward_eval`` output; their MCTS visit counts DO reflect the policy.)
+      * ``unizero``: recurrent transformer world model — its ``_forward_eval`` maintains a per-episode
+        kv-cache + ``last_batch_obs``/``last_batch_action`` context and takes a ``timestep``. It cannot be
+        driven by the shrinking, reordering batched Arena, so we run it one game at a time (Arena
+        batch_size=1): ``reset`` clears the context at each new game and restarts the timestep counter.
+        greedy = the framework's ``action`` (MCTS argmax over legal); sample = softmax(predicted policy
+        logits over legal)."""
+
+    _VISIT_ALGOS = ("muzero", "efficientzero", "stochastic_muzero")
 
     def __init__(self, policy, device: str = "cuda", temp: float = 0.25, algo: str = "gumbel"):
+        self._policy = policy
         self._eval = policy.eval_mode
-        self._model = getattr(policy, "_eval_model", None) or getattr(policy, "_learn_model")
+        # NOTE: use `is None` — never truthiness. UniZero's model is a torch.compile OptimizedModule
+        # whose __bool__ falls through to __len__ and raises. (Unused by the unizero act path anyway.)
+        self._model = getattr(policy, "_eval_model", None)
+        if self._model is None:
+            self._model = getattr(policy, "_learn_model", None)
         self._device = device
         self._temp = float(temp)
         self._algo = algo
         self._keys = None  # obs concat order, captured from the first obs (stable across the run)
+        self._ts = 0       # UniZero per-episode timestep counter (reset each game)
+
+    def reset(self, env_indices=None, rng=None, game_seeds=None):
+        """UniZero only: clear the recurrent eval context (kv-cache + last_batch buffers) and restart the
+        per-episode timestep at each new game. Stateless algos need no reset (the Arena calls this per
+        wave; with batch_size=1 that is once per game)."""
+        if self._algo == "unizero":
+            self._ts = 0
+            try:
+                self._policy._reset_eval(reset_init_data=True)
+            except Exception:
+                getattr(self._eval, "reset", lambda: None)()
 
     def _flatten_batch(self, obs_batch):
         if self._keys is None:
@@ -88,6 +127,9 @@ class MuZeroLzPolicy(BasePolicy):
         B = len(obs_batch)
         data = self._flatten_batch(obs_batch)
         masks_i = [np.asarray(m, dtype=np.int64) for m in mask_batch]
+        if self._algo == "unizero":
+            return self._act_unizero(data, masks_i, mode, B)
+
         out = self._eval.forward(data, masks_i, [-1] * B)
 
         # network policy-head prior over the full action space — one batched forward (used for the muzero
@@ -115,6 +157,24 @@ class MuZeroLzPolicy(BasePolicy):
                     p = np.power(np.maximum(dist, 0.0), 1.0 / self._temp)
                     p = np.ones_like(p) if p.sum() <= 0 else p / p.sum()
                     acts[i] = int(legal[int(np.random.choice(len(legal), p=p))])
+        return acts
+
+    def _act_unizero(self, data, masks_i, mode, B):
+        """UniZero recurrent eval. Driven at batch_size=1 so ``last_batch_obs``/``last_batch_action`` and
+        the world-model kv-cache stay consistent across a single game's decisions. ``timestep`` is the
+        per-episode decision index (reset in ``reset``)."""
+        ts = [self._ts] * B
+        out = self._eval.forward(data, masks_i, [-1] * B, timestep=ts)
+        self._ts += 1
+        acts = np.empty(B, dtype=np.int64)
+        for i in range(B):
+            legal = np.flatnonzero(masks_i[i])
+            if mode == "greedy":
+                acts[i] = int(out[i]['action'])              # framework MCTS argmax over legal actions
+            else:
+                lg = np.asarray(out[i]['predicted_policy_logits'], dtype=np.float64)[legal]
+                p = np.exp((lg - lg.max()) / max(self._temp, 1e-6)); p /= p.sum()
+                acts[i] = int(legal[int(np.random.choice(len(legal), p=p))])
         return acts
 
 
@@ -148,8 +208,12 @@ def eval_one(algo, deck, ckpt, step, run_dir, run_name, device, games, latent, s
     from mtgenv_gym.evalkit import evaluate_checkpoint
     policy = build_policy(algo, deck, ckpt, device=device, latent=latent, sims=sims, head_hidden=head)
     adapter = MuZeroLzPolicy(policy, device=device, temp=temp, algo=algo)
+    # UniZero's recurrent eval requires one game at a time (batch_size=1) and cannot be driven by the
+    # reset-less replay recorder, so skip the replay for it (the comparison contract is the TB tags).
+    is_uz = (algo == "unizero")
     res = evaluate_checkpoint(adapter, step=int(step), run_dir=run_dir, deck=deck, games=games,
-                              run_name=run_name, algo=f"{algo}-mz", writer=writer)
+                              run_name=run_name, algo=f"{algo}-mz", writer=writer,
+                              batch_size=(1 if is_uz else 64), record_replay=not is_uz)
     r = res["selfplay/winrate_vs_random"]
     g, s = r["greedy"], r["sample"]
     extra = ""
@@ -163,7 +227,8 @@ def eval_one(algo, deck, ckpt, step, run_dir, run_name, device, games, latent, s
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--algo", required=True, choices=["gumbel", "muzero"])
+    ap.add_argument("--algo", required=True,
+                    choices=["gumbel", "muzero", "efficientzero", "stochastic_muzero", "unizero"])
     ap.add_argument("--deck", required=True)
     ap.add_argument("--run-dir", required=True, help="shared-board TB run dir (also where JSON/replay go)")
     ap.add_argument("--run-name", default=None)
