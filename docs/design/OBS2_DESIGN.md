@@ -234,10 +234,31 @@ suspend, convoke) with named simplifications — not a toy-pool special case.*
 **`MAX_EDGES 128`** (new). Fixed shapes stay permanently (§1 revision); these are caps with
 deterministic truncation priorities, not guesses to outgrow.
 
-### 7.2 Entity index space (edge addressing)
+### 7.1a Naming: exactly two id spaces (user decision, 2026-07-08)
 
-Edges name entities by **row index in this observation**, one flat space shared with the
-attention layout — raw engine ids never enter the network:
+- **`grpid`** — *which Magic card this is* (oracle/printing identity; Arena GRE's GrpId).
+  The only id that appears in observation tensors: the `*_ids` channels are renamed
+  **`bf_grpid` / `hand_grpid` / `stack_grpid` / `decision_grpid`** at the v3 break (they're
+  obs-spec keys, so the rename rides the same fingerprint bump). Hashed → shared embedding.
+- **`entityid`** — *a particular object instance in a game* (a permanent, a card in a zone, a
+  spell on the stack — and abilities on the stack, which today live in a **separate stack-id
+  space**: that space is abolished and folded into the one `entityid` allocator; CR-wise
+  they're all objects, and Arena's GRE likewise gives stack abilities plain instanceIds).
+  Replaces every `instance_id`/object-id/stack-id notion in the engine, protocol, client and
+  replays. **Never appears in a tensor** — `obs.rs` resolves entityid → row at encode time.
+- **Nothing else is an id.** Players are seat numbers (0/1), not ids. Edge endpoints are
+  **row positions** in the current observation — the fields are named `src_row`/`dst_row`
+  precisely so "id" never labels a positional value. Deck-local one-hots are deleted (§7.3).
+
+Implementation timing: the obs-key renames land inside the v3 break; the engine-side
+`instance_id` → `entityid` rename + stack-id unification is a pure refactor that can land as
+its own commit any time before it (protocol note: the target enum's `Object`/`Stack` variants
+collapse into one `Entity` variant when the spaces merge).
+
+### 7.2 Row space (edge addressing)
+
+Edges name entities by **row position in this observation** (`src_row`/`dst_row`), one flat
+space shared with the attention layout — entityids never enter the network:
 
 ```
 0–255    battlefield rows (perm_order)     272–279  stack rows
