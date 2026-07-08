@@ -284,6 +284,14 @@ impl CardDb {
     pub fn iter(&self) -> impl Iterator<Item = (u32, &CardDef)> {
         self.defs.iter().map(|(&id, def)| (id, def))
     }
+    /// Resolve an exact (case-sensitive) card name to its `grp_id`, choosing the lowest `grp_id` on
+    /// the rare shared-name collision (e.g. a base card plus a token/reprint of the same name). This
+    /// is a **generic name index for deck construction/import** — not a behaviour switch; the core
+    /// still never matches on names to decide *what a card does*. `BTreeMap` iteration is ascending,
+    /// so `find` yields the lowest id deterministically.
+    pub fn grp_by_name(&self, name: &str) -> Option<u32> {
+        self.defs.iter().find(|(_, d)| d.chars.name == name).map(|(&g, _)| g)
+    }
     pub fn len(&self) -> usize {
         self.defs.len()
     }
@@ -810,8 +818,355 @@ pub fn selesnya_landfall_deck() -> Vec<u32> {
     deck
 }
 
+/// Cached exact-name → `grp_id` index over the whole starter pool, built once. Backs the real
+/// `(card name, copies)` SOS decklists so they read as decklists rather than opaque id tables.
+/// Prefers the lowest `grp_id` on a shared-name collision (via [`CardDb::grp_by_name`] semantics).
+fn pool_name_index() -> &'static std::collections::HashMap<String, u32> {
+    use std::sync::OnceLock;
+    static IDX: OnceLock<std::collections::HashMap<String, u32>> = OnceLock::new();
+    IDX.get_or_init(|| {
+        let db = starter_db();
+        let mut m = std::collections::HashMap::new();
+        for (g, def) in db.iter() {
+            // `iter()` is ascending `grp_id`; `or_insert` keeps the first (lowest) on a name clash.
+            m.entry(def.chars.name.clone()).or_insert(g);
+        }
+        m
+    })
+}
+
+/// Expand a real `(card name, copies)` decklist to a `grp_id` deck, resolving names through
+/// [`pool_name_index`]. Names that don't resolve are dropped (matching [`build_game`]'s filter-map
+/// tolerance) — the deck tests assert every card resolves and each list totals 40, so a typo in a
+/// table is caught at test time, not silently shipped.
+fn deck_from_names(entries: &[(&str, usize)]) -> Vec<u32> {
+    let idx = pool_name_index();
+    let mut deck = Vec::with_capacity(40);
+    for &(name, copies) in entries {
+        if let Some(&g) = idx.get(name) {
+            deck.extend(std::iter::repeat(g).take(copies));
+        }
+    }
+    deck
+}
+
+// ── Real 7-0 (trophy) SOS Premier Draft decks (17lands public data) ───────────────────────────
+// Ten actual trophy decklists reconstructed from 17lands' SOS Premier Draft game data (the final
+// build of drafts that went 7-0), one per color identity, kept exactly as drafted (40 cards). The
+// `(card name, copies)` tables are resolved to grp_ids through the pool's name index; the deck test
+// asserts every name resolves and each list is 40. Preset names: `sos-<colors>-<archetype>`.
+
+/// `sos-wr-aggro` — Lorehold (WR) aggro — cheap creatures + burn, Colossus top-end. 17lands record 7-0. Draft 3dd35f2ed2c547b9b4be3c55336f282a.
+const SOS_WR_AGGRO: &[(&str, usize)] = &[
+    ("Colossus of the Blood Age", 2),
+    ("Lorehold, the Historian", 1),
+    ("Garrison Excavator", 1),
+    ("Startled Relic Sloth", 1),
+    ("Charging Strifeknight", 1),
+    ("Owlin Historian", 1),
+    ("Practiced Scrollsmith", 1),
+    ("Rubble Rouser", 1),
+    ("Unsubtle Mockery", 2),
+    ("Expressive Firedancer", 1),
+    ("Living History", 1),
+    ("Lorehold Charm", 2),
+    ("Mage Tower Referee", 1),
+    ("Molten-Core Maestro", 1),
+    ("Pursue the Past", 3),
+    ("Tome Blast", 1),
+    ("Duel Tactics", 1),
+    ("Erode", 1),
+    ("Fields of Strife", 2),
+    ("Mountain", 8),
+    ("Plains", 7),
+];
+pub fn sos_wr_aggro_deck() -> Vec<u32> {
+    deck_from_names(SOS_WR_AGGRO)
+}
+
+/// `sos-wb-tempo` — Silverquill (WB) removal-tempo — low curve + efficient removal. 17lands record 7-0. Draft c0f16a7ca98149acbe57cc9eeac550c1.
+const SOS_WB_TEMPO: &[(&str, usize)] = &[
+    ("Forum Necroscribe", 1),
+    ("Ajani's Response", 1),
+    ("Stirring Honormancer", 1),
+    ("Conciliator's Duelist", 1),
+    ("Render Speechless", 2),
+    ("Antiquities on the Loose", 1),
+    ("Cost of Brilliance", 1),
+    ("Imperious Inkmage", 1),
+    ("Rehearsed Debater", 1),
+    ("Snooping Page", 1),
+    ("Bitter Triumph", 1),
+    ("Last Gasp", 1),
+    ("Rabid Attack", 1),
+    ("Shattered Acolyte", 2),
+    ("Stone Docent", 1),
+    ("Burrog Banemaker", 2),
+    ("Dig Site Inventory", 1),
+    ("Lecturing Scornmage", 2),
+    ("Masterful Flourish", 1),
+    ("Forum of Amity", 2),
+    ("Plains", 7),
+    ("Swamp", 8),
+];
+pub fn sos_wb_tempo_deck() -> Vec<u32> {
+    deck_from_names(SOS_WB_TEMPO)
+}
+
+/// `sos-ur-spells` — Prismari (UR) spellslinger — instants/sorceries + burn & card draw. 17lands record 7-0. Draft 11937fb24f154983a68683e2fa14a3f4.
+const SOS_UR_SPELLS: &[(&str, usize)] = &[
+    ("Wisdom of Ages", 1),
+    ("Rapturous Moment", 1),
+    ("Heated Argument", 2),
+    ("Muse's Encouragement", 2),
+    ("Resonating Lute", 1),
+    ("Spectacular Skywhale", 1),
+    ("Colorstorm Stallion", 2),
+    ("Quick Study", 1),
+    ("Stock Up", 1),
+    ("Unsubtle Mockery", 1),
+    ("Abrade", 1),
+    ("Banishing Betrayal", 1),
+    ("Goblin Glasswright", 1),
+    ("Hydro-Channeler", 1),
+    ("Landscape Painter", 1),
+    ("Muse Seeker", 1),
+    ("Thunderdrum Soloist", 1),
+    ("Harmonized Trio", 1),
+    ("Procrastinate", 2),
+    ("Island", 9),
+    ("Mountain", 8),
+];
+pub fn sos_ur_spells_deck() -> Vec<u32> {
+    deck_from_names(SOS_UR_SPELLS)
+}
+
+/// `sos-bg-sacrifice` — Witherbloom (BG) pests/sacrifice midrange. 17lands record 7-0. Draft 36f27927b0684b23af8195329d47c930.
+const SOS_BG_SACRIFICE: &[(&str, usize)] = &[
+    ("Additive Evolution", 1),
+    ("Scathing Shadelock", 1),
+    ("Cheerful Osteomancer", 1),
+    ("Old-Growth Educator", 2),
+    ("Wander Off", 1),
+    ("Blech, Loafing Pest", 1),
+    ("Cost of Brilliance", 1),
+    ("Essenceknit Scholar", 1),
+    ("Grave Researcher", 1),
+    ("Poisoner's Apprentice", 1),
+    ("Ulna Alley Shopkeep", 1),
+    ("Withering Curse", 1),
+    ("Bogwater Lumaret", 4),
+    ("Burrog Barrage", 1),
+    ("End of the Hunt", 1),
+    ("Last Gasp", 1),
+    ("Leech Collector", 1),
+    ("Send in the Pest", 2),
+    ("Forest", 8),
+    ("Swamp", 8),
+    ("Titan's Grave", 1),
+];
+pub fn sos_bg_sacrifice_deck() -> Vec<u32> {
+    deck_from_names(SOS_BG_SACRIFICE)
+}
+
+/// `sos-ug-counters` — Quandrix (UG) +1/+1 counters / fractals. 17lands record 7-0. Draft 704ee47c97c54d31807d3e17e7473c24.
+const SOS_UG_COUNTERS: &[(&str, usize)] = &[
+    ("Fractal Mascot", 1),
+    ("Homesickness", 1),
+    ("Fractal Tender", 1),
+    ("Applied Geometry", 1),
+    ("Campus Composer", 1),
+    ("Run Behind", 1),
+    ("Spellbook Seeker", 1),
+    ("Tam, Observant Sequencer", 1),
+    ("Deluge Virtuoso", 1),
+    ("Matterbending Mage", 2),
+    ("Paradox Surveyor", 1),
+    ("Stock Up", 1),
+    ("Banishing Betrayal", 1),
+    ("Deduce", 1),
+    ("Landscape Painter", 1),
+    ("Mindful Biomancer", 1),
+    ("Pterafractyl", 2),
+    ("Shared Roots", 1),
+    ("Ambitious Augmenter", 1),
+    ("Procrastinate", 1),
+    ("Royal Treatment", 1),
+    ("Dreamroot Cascade", 1),
+    ("Forest", 6),
+    ("Island", 9),
+    ("Paradox Gardens", 1),
+];
+pub fn sos_ug_counters_deck() -> Vec<u32> {
+    deck_from_names(SOS_UG_COUNTERS)
+}
+
+/// `sos-urg-ramp` — Prismari-splash (URG) big-spell ramp into 6-7 drops. 17lands record 7-0. Draft 60bf9af25a2f4ddabb7df72c7fcfc2b8.
+const SOS_URG_RAMP: &[(&str, usize)] = &[
+    ("Moment of Reckoning", 1),
+    ("Zaffai and the Tempests", 1),
+    ("Homesickness", 1),
+    ("Zealous Lorecaster", 2),
+    ("Arcane Omens", 1),
+    ("Archaic's Agony", 1),
+    ("Artistic Process", 1),
+    ("Splatter Technique", 1),
+    ("Stress Dream", 2),
+    ("Proctor's Gaze", 2),
+    ("Resonating Lute", 1),
+    ("Potioner's Trove", 1),
+    ("Banishing Betrayal", 1),
+    ("Cuboid Colony", 1),
+    ("Environmental Scientist", 1),
+    ("Hydro-Channeler", 1),
+    ("Mage Tower Referee", 2),
+    ("Prismari Charm", 1),
+    ("Procrastinate", 1),
+    ("Forest", 4),
+    ("Island", 5),
+    ("Mountain", 1),
+    ("Plains", 1),
+    ("Spectacle Summit", 2),
+    ("Swamp", 1),
+    ("Terramorphic Expanse", 1),
+    ("Titan's Grave", 2),
+];
+pub fn sos_urg_ramp_deck() -> Vec<u32> {
+    deck_from_names(SOS_URG_RAMP)
+}
+
+/// `sos-ubg-midrange` — Sultai (UBG) value midrange + counters. 17lands record 7-0. Draft 07e925f349f44293b0d1e59a8f55c60d.
+const SOS_UBG_MIDRANGE: &[(&str, usize)] = &[
+    ("Fractal Mascot", 1),
+    ("Arcane Omens", 1),
+    ("Sneering Shadewriter", 1),
+    ("Berta, Wise Extrapolator", 1),
+    ("Lluwen, Exchange Student", 1),
+    ("Pestbrood Sloth", 1),
+    ("Proctor's Gaze", 1),
+    ("Wander Off", 1),
+    ("Grapple with Death", 2),
+    ("Mana Sculpt", 1),
+    ("Mind Roots", 1),
+    ("Pensive Professor", 1),
+    ("Potioner's Trove", 1),
+    ("Skycoach Conductor", 1),
+    ("Stock Up", 1),
+    ("Daze", 1),
+    ("End of the Hunt", 1),
+    ("Hydro-Channeler", 1),
+    ("Landscape Painter", 1),
+    ("Last Gasp", 1),
+    ("Noxious Newt", 1),
+    ("Exhibition Tidecaller", 1),
+    ("Forest", 5),
+    ("Forum of Amity", 1),
+    ("Island", 5),
+    ("Paradox Gardens", 1),
+    ("Swamp", 5),
+];
+pub fn sos_ubg_midrange_deck() -> Vec<u32> {
+    deck_from_names(SOS_UBG_MIDRANGE)
+}
+
+/// `sos-wur-control` — Jeskai (WUR) control — removal + card draw + finishers. 17lands record 7-0. Draft 54c993a44e6042f893e73bd142622e53.
+const SOS_WUR_CONTROL: &[(&str, usize)] = &[
+    ("Transcendent Archaic", 1),
+    ("Zealous Lorecaster", 2),
+    ("Stress Dream", 1),
+    ("Ark of Hunger", 1),
+    ("Stadium Tidalmage", 2),
+    ("Wilt in the Heat", 2),
+    ("Potioner's Trove", 1),
+    ("Pull from the Grave", 1),
+    ("Strixhaven Skycoach", 1),
+    ("Deduce", 2),
+    ("Hydro-Channeler", 1),
+    ("Prismari Charm", 1),
+    ("Pursue the Past", 3),
+    ("Sanar, Unfinished Genius", 1),
+    ("Sheoldred's Edict", 1),
+    ("Vibrant Outburst", 1),
+    ("Impractical Joke", 1),
+    ("Forum of Amity", 1),
+    ("Great Hall of the Biblioplex", 1),
+    ("Island", 5),
+    ("Mountain", 5),
+    ("Plains", 2),
+    ("Sundown Pass", 1),
+    ("Swamp", 1),
+    ("Terramorphic Expanse", 1),
+];
+pub fn sos_wur_control_deck() -> Vec<u32> {
+    deck_from_names(SOS_WUR_CONTROL)
+}
+
+/// `sos-wbr-midrange` — Mardu (WBR) removal midrange. 17lands record 7-0. Draft dd4e0d88f2514c4ba1177f39dab77006.
+const SOS_WBR_MIDRANGE: &[(&str, usize)] = &[
+    ("Ascendant Dustspeaker", 1),
+    ("Stirring Honormancer", 2),
+    ("Ark of Hunger", 2),
+    ("Render Speechless", 2),
+    ("Wander Off", 1),
+    ("Charging Strifeknight", 1),
+    ("Imperious Inkmage", 1),
+    ("Practiced Scrollsmith", 1),
+    ("Snooping Page", 1),
+    ("Stand Up for Yourself", 1),
+    ("Unsubtle Mockery", 1),
+    ("Bitter Triumph", 1),
+    ("Feed the Swarm", 1),
+    ("Mage Tower Referee", 1),
+    ("Postmortem Professor", 1),
+    ("Pursue the Past", 1),
+    ("Stone Docent", 2),
+    ("Burst Lightning", 1),
+    ("Elite Interceptor", 1),
+    ("Fields of Strife", 2),
+    ("Mountain", 1),
+    ("Plains", 5),
+    ("Swamp", 6),
+    ("Terramorphic Expanse", 3),
+];
+pub fn sos_wbr_midrange_deck() -> Vec<u32> {
+    deck_from_names(SOS_WBR_MIDRANGE)
+}
+
+/// `sos-wbg-midrange` — Abzan (WBG) graveyard midrange. 17lands record 7-0. Draft 4c2d6a029a7a44ed8effca6c646bb629.
+const SOS_WBG_MIDRANGE: &[(&str, usize)] = &[
+    ("Moment of Reckoning", 1),
+    ("Scathing Shadelock", 1),
+    ("Sneering Shadewriter", 1),
+    ("Inkshape Demonstrator", 1),
+    ("Tragedy Feaster", 1),
+    ("Wildgrowth Archaic", 1),
+    ("Abigale, Poet Laureate", 1),
+    ("Adventurous Eater", 1),
+    ("Cauldron of Essence", 1),
+    ("Grapple with Death", 2),
+    ("Moseo, Vein's New Dean", 1),
+    ("Potioner's Trove", 1),
+    ("Pull from the Grave", 1),
+    ("Snooping Page", 1),
+    ("End of the Hunt", 1),
+    ("Inkling Mascot", 1),
+    ("Last Gasp", 3),
+    ("Leech Collector", 1),
+    ("Melancholic Poet", 1),
+    ("Scheming Silvertongue", 1),
+    ("Forest", 1),
+    ("Forum of Amity", 1),
+    ("Plains", 4),
+    ("Swamp", 9),
+    ("Titan's Grave", 2),
+];
+pub fn sos_wbg_midrange_deck() -> Vec<u32> {
+    deck_from_names(SOS_WBG_MIDRANGE)
+}
+
 /// A preset deck by name (`"burn"`, `"bears"`, `"demo"`, `"heralds"`, `"swine"`,
-/// `"selesnya"`/`"landfall"`), case-insensitive. For the harness/CLI/web.
+/// `"selesnya"`/`"landfall"`, and the ten real 7-0 `sos-<colors>-<archetype>` trophy decks),
+/// case-insensitive. For the harness/CLI/web.
 pub fn preset_deck(name: &str) -> Option<Vec<u32>> {
     match name.to_ascii_lowercase().as_str() {
         "burn" => Some(burn_deck()),
@@ -820,6 +1175,16 @@ pub fn preset_deck(name: &str) -> Option<Vec<u32>> {
         "heralds" => Some(heralds_deck()),
         "swine" => Some(swine_deck()),
         "selesnya" | "landfall" => Some(selesnya_landfall_deck()),
+        "sos-wr-aggro" => Some(sos_wr_aggro_deck()),
+        "sos-wb-tempo" => Some(sos_wb_tempo_deck()),
+        "sos-ur-spells" => Some(sos_ur_spells_deck()),
+        "sos-bg-sacrifice" => Some(sos_bg_sacrifice_deck()),
+        "sos-ug-counters" => Some(sos_ug_counters_deck()),
+        "sos-urg-ramp" => Some(sos_urg_ramp_deck()),
+        "sos-ubg-midrange" => Some(sos_ubg_midrange_deck()),
+        "sos-wur-control" => Some(sos_wur_control_deck()),
+        "sos-wbr-midrange" => Some(sos_wbr_midrange_deck()),
+        "sos-wbg-midrange" => Some(sos_wbg_midrange_deck()),
         _ => None,
     }
 }
@@ -949,5 +1314,31 @@ mod tests {
         assert!(swine.iter().all(|&g| db.get(g).is_some()), "every Swine card resolves in the starter DB");
         assert_eq!(preset_deck("swine").unwrap().len(), 60);
         assert_eq!(preset_deck("SWINE").unwrap().len(), 60);
+        // Real 7-0 SOS trophy decks (17lands): each resolves fully from the pool and is exactly 40,
+        // and is reachable through `preset_deck` (case-insensitive).
+        for (name, deck) in [
+            ("sos-wr-aggro", sos_wr_aggro_deck()),
+            ("sos-wb-tempo", sos_wb_tempo_deck()),
+            ("sos-ur-spells", sos_ur_spells_deck()),
+            ("sos-bg-sacrifice", sos_bg_sacrifice_deck()),
+            ("sos-ug-counters", sos_ug_counters_deck()),
+            ("sos-urg-ramp", sos_urg_ramp_deck()),
+            ("sos-ubg-midrange", sos_ubg_midrange_deck()),
+            ("sos-wur-control", sos_wur_control_deck()),
+            ("sos-wbr-midrange", sos_wbr_midrange_deck()),
+            ("sos-wbg-midrange", sos_wbg_midrange_deck()),
+        ] {
+            assert_eq!(deck.len(), 40, "{name} is 40 cards");
+            assert!(
+                deck.iter().all(|&g| db.get(g).is_some()),
+                "every {name} card resolves in the starter DB"
+            );
+            assert_eq!(preset_deck(name).unwrap().len(), 40, "{name} via preset_deck");
+            assert_eq!(
+                preset_deck(&name.to_uppercase()).unwrap().len(),
+                40,
+                "{name} preset lookup is case-insensitive"
+            );
+        }
     }
 }

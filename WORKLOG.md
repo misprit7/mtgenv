@@ -3,6 +3,29 @@
 Short, dated entries for future-agent consumption. Newest first. One line or a few bullets
 per unit of meaningful progress. Keep it terse — detail lives in `docs/` and git history.
 
+## 2026-07-08 (10 real 7-0 SOS trophy decks as server prebuilts)
+
+- **Ten real 7-0 SOS Premier Draft decks** added as presets from 17lands public data
+  (`experiments/winprob17l/data/game_SOS_PremierDraft.csv.gz`): reconstructed 1,059 exact 7-0
+  drafts' final builds, picked one medoid deck per color identity — `sos-wr-aggro`, `sos-wb-tempo`,
+  `sos-ur-spells`, `sos-bg-sacrifice`, `sos-ug-counters`, `sos-urg-ramp`, `sos-ubg-midrange`,
+  `sos-wur-control`, `sos-wbr-midrange`, `sos-wbg-midrange`. Kept exactly 40 as drafted.
+- Decklists live as readable `(card name, copies)` tables in `mtg-core::cards` resolved through a new
+  generic `CardDb::grp_by_name` name index (`deck_from_names`); wired into `preset_deck` + server
+  `DECK_NAMES`. Tests: all 10 build to 40 with every card resolving (mtg-core), and all 10 are
+  engine-playable end-to-end via RandomAgents (`sos_trophy_decks_are_engine_playable`, mtg-gre-server).
+- **Card-name finding:** every SOS-limited card resolves. 8 cards from the real draft pool are *not*
+  implemented (Grim Haruspex, Library of Alexandria, Murmuring Mystic, Archaeomancer, Codie Vociferous
+  Codex, Dualcaster Mage, Archmage Emeritus, Adrix and Nev Twincasters); the 30/1059 decks using them
+  were skipped, none selected.
+- **Art pipeline fix:** `resolve-card-art.py` now indexes Scryfall results by front-face name and
+  matches DFC set codes, so double-faced fronts (Cheerful Osteomancer, etc.) get art. Regenerated
+  `card-art.json` 363→399 entries; `every_deck_card_has_baked_in_art` passes.
+- Rebuilt `mtg-serve` (release) and restarted the live :8080 server: `/api/decks` now lists 19
+  (7 presets + 10 SOS + 2 customs), 285 replays preserved, no art warning. Smoke: created an
+  agent-vs-agent game (sos-wr-aggro vs sos-ur-spells) → finished 28 turns, winner by ZeroLife,
+  replay recorded (#286).
+
 ## 2026-07-07 (scripted reference policy + vs-random ceiling)
 
 - **`python/mtgenv_gym/evalkit/scripted.py`** — `ScriptedPolicy`, the user's known-good yardstick

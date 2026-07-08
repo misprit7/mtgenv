@@ -229,9 +229,28 @@ pub fn run_demo_game(agents: Vec<Box<dyn Agent>>, seed: u64) -> Outcome {
 /// The deck names this server offers, in picker order. `"counters"` is the richer server-local
 /// deck built by [`counters_deck`]; the rest resolve to engine presets via
 /// [`mtg_core::cards::preset_deck`] (`"selesnya"` landfall, the trivial `demo`/`burn`/`bears`
-/// piles, and the `"heralds"` RL-sanity deck — 20 Island + 40 Mist-Cloaked Herald). Shared source
-/// of truth for the lobby/CLI pickers.
-pub const DECK_NAMES: &[&str] = &["selesnya", "counters", "demo", "burn", "bears", "heralds", "swine"];
+/// piles, the `"heralds"` RL-sanity deck — 20 Island + 40 Mist-Cloaked Herald, and the ten real
+/// 7-0 `sos-<colors>-<archetype>` trophy decks reconstructed from 17lands SOS Premier Draft data).
+/// Shared source of truth for the lobby/CLI pickers.
+pub const DECK_NAMES: &[&str] = &[
+    "selesnya",
+    "counters",
+    "demo",
+    "burn",
+    "bears",
+    "heralds",
+    "swine",
+    "sos-wr-aggro",
+    "sos-wb-tempo",
+    "sos-ur-spells",
+    "sos-bg-sacrifice",
+    "sos-ug-counters",
+    "sos-urg-ramp",
+    "sos-ubg-midrange",
+    "sos-wur-control",
+    "sos-wbr-midrange",
+    "sos-wbg-midrange",
+];
 
 /// Every `(grp_id, exact card name)` in the built-in **preset** decks ([`DECK_NAMES`]), resolved
 /// against the engine's [`starter_db`]. Sorted, unique.
@@ -439,6 +458,28 @@ mod tests {
         let state = state_for_deck_names(42, &["counters", "counters"]);
         let outcome = run_state(state, agents);
         assert!(outcome.winner.is_some(), "counters mirror should produce a winner");
+    }
+
+    #[test]
+    fn sos_trophy_decks_are_engine_playable() {
+        // The ten real 7-0 SOS decks must actually shuffle up and play, not just be legal 40-card
+        // piles: two RandomAgents drive each matchup to a result through the same Agent boundary the
+        // server uses. Paired so all ten decks are exercised (a panic anywhere fails the test).
+        let matchups = [
+            ("sos-wr-aggro", "sos-wb-tempo"),
+            ("sos-ur-spells", "sos-bg-sacrifice"),
+            ("sos-ug-counters", "sos-urg-ramp"),
+            ("sos-ubg-midrange", "sos-wur-control"),
+            ("sos-wbr-midrange", "sos-wbg-midrange"),
+        ];
+        for (i, (a, b)) in matchups.iter().enumerate() {
+            let seed = 100 + i as u64;
+            let agents: Vec<Box<dyn Agent>> =
+                vec![Box::new(RandomAgent::new(seed)), Box::new(RandomAgent::new(seed + 1))];
+            let state = state_for_deck_names(seed, &[a, b]);
+            let outcome = run_state(state, agents);
+            assert!(outcome.winner.is_some(), "{a} vs {b} should produce a winner");
+        }
     }
 
     /// The compact (delta) replay format on a REAL recorded game: reconstructs losslessly (what
