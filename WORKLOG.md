@@ -35,6 +35,28 @@ per unit of meaningful progress. Keep it terse — detail lives in `docs/` and g
   Single-point series (verification runs) get visible dots (`pointRadius` fallback).
 - TB (:6006) and Aim (:43800) both still up; TB event files remain the sole write format.
 
+## 2026-07-07 (muzero2 — three model-based tree-search arms: EZ / StochMZ / UniZero)
+
+- **`experiments/muzero2/` extended to 5 algos** so the user can compare model-based tree-search
+  families on **heralds** (HERALDS ONLY per directive). `mtg_config.build_configs` now emits
+  EfficientZero / Stochastic-MuZero (MuZero-family, `train_muzero`) and UniZero (transformer world
+  model, `train_unizero`); `train.py` routes the entry; `mz_policy.py` eval adapter is algo-aware.
+- **4.0 `tb/4.0-ez-heralds`** — EfficientZero (SSL consistency + value-prefix LSTM). Native
+  random-collect. **4.1 `tb/4.1-stochmz-heralds`** — Stochastic MuZero, `chance_space_size=32`
+  (models MTG-draw/folded-opponent stochasticity), `use_true_chance_label=False`; needed
+  `lz_patches` (random-collect alias + `timestep`-kwarg strip). **4.2 `tb/4.2-unizero-heralds`** —
+  UniZero, transformer WM (embed 256 / 4L / 4H); deviations recorded: AdamW lr 1e-4, reanalyze 0,
+  no random-collect floor (LightZeroRandomPolicy has no unizero pipeline), num_unroll 10 = WM token
+  budget. UniZero eval is recurrent (per-episode kv-cache) so the adapter drives it at **Arena
+  batch_size=1** with a per-game `_reset_eval`; replay disabled (recorder is reset-less).
+- All three share the proven **3.5 recipe** where it maps (latent 256, sims 50, td 40, unroll 5,
+  up 20, reanalyze 0.25, random_collect 32, constant PBRS shaping 0.5 train-only, game_segment
+  2000, 500k env-steps) and log the **same evalkit schema** (`selfplay/winrate_vs_random(_sampled)`
+  + `stats/*` + `game/*`) into `/tmp/mtgenv_tb/<run>/`. Smoke-tested each end-to-end (train + eval);
+  launched detached with per-run evalkit watchers (poll 420s), staggered on the shared 4090.
+  iteration_0 evals confirm the pipeline for all three (EZ greedy 0.00/sampled 0.45, StochMZ
+  0.00/0.50, UniZero 0.00/0.60 — untrained baselines). Metric = **final** checkpoint (no peak-pick).
+
 ## 2026-07-07 (experiment tracking: TensorBoard → Aim)
 
 - **Aim is now the main experiment view** (user request — TB's smoothing/clipping defaults, no

@@ -199,3 +199,31 @@ run swine until satisfied heralds is properly won. The original run died at 32k 
 kill — no code error; before death it showed greedy 0.60 + active blocking at 20k). NOT relaunching swine
 until the user explicitly clears it. When cleared: same recipe, evalkit `SwineBlockAnalyzer` auto-runs
 (chump/gang at life ≥15 — the PPO failure: PPO chump-blocks the 3/3 trampler 94–97%).
+
+### 2026-07-07 — 4.x: three more model-based tree-search families (heralds A/B/C)
+
+Comparison arms so the user can see which model-based tree-search family best learns heralds under the
+proven 3.5 recipe. **HERALDS ONLY** (swine forbidden). All log the same evalkit schema; metric = FINAL
+checkpoint (no peak-pick). Config builder (`mtg_config.build_configs`) now covers 5 algos; `train.py`
+routes `train_muzero` vs `train_unizero`; `mz_policy.py` is algo-aware.
+
+| arm | run | algo | key knobs / deviations |
+|---|---|---|---|
+| 4.0 | `tb/4.0-ez-heralds` | EfficientZero | SSL consistency + value-prefix LSTM (`lstm_hidden_size=256`); native random-collect; 3.5 recipe as-is |
+| 4.1 | `tb/4.1-stochmz-heralds` | Stochastic MuZero | `chance_space_size=32` (MTG-draw stochasticity), `use_true_chance_label=False`; `lz_patches` adds its random-collect alias + `timestep`-strip |
+| 4.2 | `tb/4.2-unizero-heralds` | UniZero | transformer WM (embed 256/4L/4H); **AdamW lr 1e-4**, **reanalyze 0**, **no random-collect** (LZ has no unizero random pipeline), num_unroll 10 = WM token budget |
+
+- **UniZero eval is recurrent** (per-episode kv-cache + `last_batch` context; `_forward_eval` takes a
+  `timestep`). The shrinking/reordering batched Arena can't drive that, so the adapter runs UniZero at
+  **Arena batch_size=1**, calls `_reset_eval` per game (via `Policy.reset`), and increments a per-episode
+  timestep. Replay disabled for UniZero (the replay recorder never calls `reset`). EZ/StochMZ reuse the
+  MuZero visit-count eval path unchanged.
+- **Gotcha:** UniZero's model is a `torch.compile` `OptimizedModule` whose `__bool__`→`__len__` raises —
+  the adapter's `_eval_model or _learn_model` truthiness had to become an explicit `is None` check.
+- Patches (`lz_patches.py`): the random-collect alias generalized to `{gumbel_muzero, stochastic_muzero}`
+  (both → MuZero MCTS/model for the seed phase; only gumbel synthesizes `improved_policy_probs`);
+  `StochasticMuZeroPolicy._forward_collect/_eval` get the `timestep` kwarg stripped.
+- All three smoke-tested (train + eval adapter, EXIT 0) and reanalyze-0.25 crash-checked for EZ/StochMZ;
+  launched detached with evalkit watchers (40 games, sims 25, poll 420s), staggered on the shared 4090
+  (~3.4 GB used at launch — ample headroom). iteration_0 (untrained) evals confirm the pipeline:
+  EZ 0.00/0.45, StochMZ 0.00/0.50, UniZero 0.00/0.60 (greedy/sampled).
