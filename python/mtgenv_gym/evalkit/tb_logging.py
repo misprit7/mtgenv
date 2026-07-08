@@ -5,6 +5,7 @@ The schema is **backward-compatible** with the live 2.x PPO runs (verified again
 
     selfplay/winrate_vs_random          selfplay/winrate_vs_random_sampled   (sampled variant)
     selfplay/winrate_vs_initial         selfplay/winrate_vs_initial_sampled
+    selfplay/winrate_vs_script          selfplay/winrate_vs_script_sampled   (vs the scripted yardstick)
     ladder/winrate_vs_10pct  … _75pct   (+ _100pct if the milestone is used)
     stats/<attack_rate|productive_rate|block_rate|cast_rate|playland_rate|block_double_rate>
     game/turns_mean   game/end_<reason>

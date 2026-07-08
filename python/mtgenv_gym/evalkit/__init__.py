@@ -8,7 +8,7 @@ TensorBoard tags, the JSON artifacts, the deck analyzers, the replays — is wri
 
 Public API (one canonical import path — ``from mtgenv_gym.evalkit import X``):
 
-    Policy, BasePolicy, RandomPolicy, SearchPolicy      # the integration point + baselines/stub
+    Policy, BasePolicy, RandomPolicy, ScriptedPolicy, SearchPolicy   # integration point + baselines/stub
     Arena, EvalResult                                   # play N seeded games → structured result
     Ladder                                              # %-trained self-relative progress curve
     wilson_ci                                           # binomial CI used for win-rate bars
@@ -32,10 +32,11 @@ from .ladder import Ladder
 from .metrics import wilson_ci
 from .policy import BasePolicy, Policy, RandomPolicy, SearchPolicy
 from .replay import record_game
+from .scripted import ScriptedPolicy
 from .tb_logging import SB3Recorder, WriterRecorder, log_eval, write_json
 
 __all__ = [
-    "Policy", "BasePolicy", "RandomPolicy", "SearchPolicy",
+    "Policy", "BasePolicy", "RandomPolicy", "ScriptedPolicy", "SearchPolicy",
     "Arena", "EvalResult", "Ladder", "wilson_ci",
     "Analyzer", "get_analyzer", "register_analyzer",
     "log_eval", "write_json", "SB3Recorder", "WriterRecorder", "record_game",

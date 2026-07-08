@@ -24,6 +24,7 @@ from .arena import Arena
 from .ladder import Ladder
 from .policy import BasePolicy, RandomPolicy
 from .replay import REPLAY_DIR, record_game
+from .scripted import ScriptedPolicy
 from .tb_logging import SB3Recorder, log_eval, write_json
 
 
@@ -58,6 +59,7 @@ class EvalkitCallback(BaseCallback):
                  ladder_dir, n_games=40, milestones=(0.10, 0.25, 0.50, 0.75),
                  replay_every=0, replay_dir=REPLAY_DIR, run_name=None, device="cpu",
                  batch_size=64, seed_random=5_000_000, seed_initial=6_000_000,
+                 seed_script=8_000_000, eval_script=True,
                  json_dir=None, log_sampled=True, verbose=0):
         super().__init__(verbose)
         self.deck = deck
@@ -74,6 +76,8 @@ class EvalkitCallback(BaseCallback):
         self.batch_size = batch_size
         self.seed_random = seed_random
         self.seed_initial = seed_initial
+        self.seed_script = seed_script
+        self.eval_script = eval_script
         self.json_dir = json_dir
         self.log_sampled = log_sampled
         self._modes = ("greedy", "sample") if log_sampled else ("greedy",)
@@ -82,11 +86,13 @@ class EvalkitCallback(BaseCallback):
         self._rec = None
         self._ladder = None
         self._ref = None
+        self._script = None
 
     # ── lifecycle ──────────────────────────────────────────────────────────────────────────────
     def _on_training_start(self) -> None:
         self._arena = Arena(self.deck, batch_size=self.batch_size)
         self._policy = SB3Policy(self.model, device=self.device)
+        self._script = ScriptedPolicy() if self.eval_script else None
         self._rec = SB3Recorder(self.logger)
         self._ladder = Ladder(self.ladder_dir, self._snapshot_fn, self._load_snapshot,
                               milestones=self.milestones, n_games=self.n_games)
@@ -140,6 +146,17 @@ class EvalkitCallback(BaseCallback):
                 labelled[f"initial_{m}"] = r
         else:
             self._rec.record("selfplay/winrate_vs_initial", float("nan"), step)
+
+        # vs the scripted reference (land>spell>attack-all, never block) — the standing yardstick.
+        # ≈0.5 means the agent has learned the deck. Winrate (+sampled) only; a fixed opponent so no
+        # stats/analyzers (those stay with the vs-random source). Same canonical schema as the others.
+        if self._script is not None:
+            vs = self._arena.evaluate(self._policy, self._script, n_games=self.n_games,
+                                      seed=self.seed_script, opponent_label="script", modes=self._modes)
+            log_eval(self._rec, vs, win_tag="selfplay/winrate_vs_script", step=step,
+                     with_stats=False, with_game=False, with_analyzers=False)
+            for m, r in vs.items():
+                labelled[f"script_{m}"] = r
 
         # %-trained ladder (framework-managed snapshots).
         self._ladder.maybe_snapshot(self.num_timesteps / self.total)
