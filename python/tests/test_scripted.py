@@ -8,6 +8,7 @@ import numpy as np
 
 from mtgenv_gym.evalkit import ScriptedPolicy
 from mtgenv_gym.evalkit.scripted import (
+    ACTION_DIM,
     COMMIT,
     DECISION_ONEHOT_OFF,
     HAND_BASE,
@@ -36,7 +37,7 @@ def _obs(ridx, hand_lands=(), hand_spells=()):
 
 
 def _mask(slots):
-    m = np.zeros(98, dtype=bool)
+    m = np.zeros(ACTION_DIM, dtype=bool)     # live contract width (v1=98, v2=130, …)
     m[list(slots)] = True
     return m
 
