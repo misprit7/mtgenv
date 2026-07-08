@@ -173,7 +173,7 @@ def train_selfplay(deck="demo", timesteps=120_000, n_envs=8, pool_dir=DEFAULT_PO
                    shaping_coef=0.1, notes=None, replay_every=0, run_name=None,
                    vecenv="batched", num_workers=8, verbose=0,
                    policy="MultiInputPolicy", policy_kwargs=None, p_script=0.0, script_mix=None,
-                   eval_ladder=True):
+                   eval_ladder=True, ent_coef=0.01, learning_rate=3e-4, n_epochs=10, batch_size=256):
     # replay_every>0 records one greedy self-play game every that-many steps to data/replays/ (the
     # lobby's "AI Training Replays" learning progression). Default 0 (OFF) as a library call — the
     # CLI turns it on (~25k) so real runs record, but tests / ab_shaping stay clean.
@@ -199,9 +199,11 @@ def train_selfplay(deck="demo", timesteps=120_000, n_envs=8, pool_dir=DEFAULT_PO
         venv,
         policy_kwargs=pk,
         n_steps=256,
-        batch_size=256,
+        batch_size=batch_size,
+        n_epochs=n_epochs,
+        learning_rate=learning_rate,
         gamma=0.999,
-        ent_coef=0.01,
+        ent_coef=ent_coef,
         seed=seed,
         tensorboard_log=tensorboard_log,
         verbose=verbose,
@@ -290,6 +292,14 @@ def main():
                     help="fraction of self-play episodes played vs a punisher heuristic (0 = off)")
     ap.add_argument("--script-mix", default="gang,careful,turtle",
                     help="comma list of ScriptedHeuristic variants for --p-script (racer/turtle/gang/careful)")
+    # capacity + optimizer knobs for the campaign (bigger nets + hyperparameter perturbations).
+    ap.add_argument("--ent-coef", type=float, default=0.01, help="PPO entropy coefficient (exploration)")
+    ap.add_argument("--lr", type=float, default=3e-4, help="PPO learning rate")
+    ap.add_argument("--n-epochs", type=int, default=10, help="PPO epochs per rollout")
+    ap.add_argument("--batch-size", type=int, default=256, help="PPO minibatch size")
+    ap.add_argument("--fe-hidden", type=int, default=64, help="EntityExtractor row-MLP hidden (widen for capacity)")
+    ap.add_argument("--fe-features", type=int, default=128, help="EntityExtractor features_dim")
+    ap.add_argument("--net-arch", default="64,64", help="actor/critic MLP widths, comma list (e.g. 256,256)")
     args = ap.parse_args()
 
     # Versioned run name (shared by the TB run dir + the lobby replay tag), unless --run-name overrides.
@@ -297,11 +307,20 @@ def main():
     run_name = versioned_run_name(args.tensorboard, f"{args.deck}-{args.timesteps // 1000}k",
                                   major=args.run_major, override=args.run_name)
 
+    # Build policy_kwargs only when a capacity knob differs from the baseline default (else None →
+    # train_selfplay's default EntityExtractor + SB3 default net_arch, preserving 4.4-4.6 behaviour).
+    pk = None
+    if (args.fe_hidden, args.fe_features, args.net_arch) != (64, 128, "64,64"):
+        pk = dict(features_extractor_class=EntityExtractor,
+                  features_extractor_kwargs=dict(hidden=args.fe_hidden, features_dim=args.fe_features),
+                  net_arch=[int(x) for x in args.net_arch.split(",")])
+
     model, ref = train_selfplay(
         deck=args.deck, timesteps=args.timesteps, n_envs=args.n_envs, pool_dir=args.pool_dir,
         tensorboard_log=args.tensorboard, subproc=args.subproc, shaping_coef=args.shaping_coef,
         notes=args.notes, replay_every=args.replay_every, run_name=run_name,
-        vecenv=args.vecenv, num_workers=args.num_workers, verbose=1,
+        vecenv=args.vecenv, num_workers=args.num_workers, verbose=1, policy_kwargs=pk,
+        ent_coef=args.ent_coef, learning_rate=args.lr, n_epochs=args.n_epochs, batch_size=args.batch_size,
         eval_every=args.eval_every, pool_every=args.pool_every, eval_ladder=not args.no_ladder,
         p_script=args.p_script, script_mix=(args.script_mix.split(",") if args.p_script > 0 else None),
     )
