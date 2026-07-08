@@ -165,26 +165,48 @@ def sweep(tb_root: str, out_dir: str, cache: dict, lobby: str) -> None:
             for r in mine
         ]
     # Elo/BT rating tables (written by python/rate_agent.py) — fail-soft when absent.
-    # Registry notes (agents.json) are merged per agent so the dashboard can describe each
-    # strategy; trained agents additionally match their run's description client-side.
+    # VERSIONED layout (data/elo/<env>/meta.json + v<N>/{ratings,agents}.json): payload per env is
+    # {current: N, versions: {N: <ratings.json + merged registry notes>}} — the shape the frontend
+    # renders (defaults to current, older versions marked historical). Flat pre-versioning layout
+    # still supported as a fallback.
+    def _load_table(d):
+        p = os.path.join(d, "ratings.json")
+        if not os.path.isfile(p):
+            return None
+        with open(p) as f:
+            table = json.load(f)
+        reg_p = os.path.join(d, "agents.json")
+        if os.path.isfile(reg_p):
+            with open(reg_p) as f:
+                reg = json.load(f)
+            for name, a in table.get("agents", {}).items():
+                a["notes"] = reg.get(name, {}).get("notes")
+                a["kind"] = reg.get(name, {}).get("kind")
+        return table
+
     elo = {}
     elo_root = os.path.join(REPO, "data", "elo")
     if os.path.isdir(elo_root):
         for env in sorted(os.listdir(elo_root)):
-            p = os.path.join(elo_root, env, "ratings.json")
-            if os.path.isfile(p):
-                try:
-                    with open(p) as f:
-                        elo[env] = json.load(f)
-                    reg_p = os.path.join(elo_root, env, "agents.json")
-                    if os.path.isfile(reg_p):
-                        with open(reg_p) as f:
-                            reg = json.load(f)
-                        for name, a in elo[env].get("agents", {}).items():
-                            a["notes"] = reg.get(name, {}).get("notes")
-                            a["kind"] = reg.get(name, {}).get("kind")
-                except Exception:
-                    pass
+            env_dir = os.path.join(elo_root, env)
+            try:
+                meta_p = os.path.join(env_dir, "meta.json")
+                if os.path.isfile(meta_p):
+                    with open(meta_p) as f:
+                        meta = json.load(f)
+                    versions = {}
+                    for v in meta.get("versions", {}):
+                        t = _load_table(os.path.join(env_dir, f"v{v}"))
+                        if t:
+                            versions[str(v)] = t
+                    if versions:
+                        elo[env] = {"current": str(meta.get("current")), "versions": versions}
+                else:  # legacy flat layout
+                    t = _load_table(env_dir)
+                    if t:
+                        elo[env] = t
+            except Exception:
+                pass
     _atomic_write(os.path.join(out_dir, "index.json"),
                   {"generated_at": time.time(), "runs": entries, "elo": elo})
 
