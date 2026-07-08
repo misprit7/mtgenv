@@ -15,15 +15,11 @@ torch = pytest.importorskip("torch")
 from sb3_contrib import MaskablePPO  # noqa: E402
 
 from mtgenv_gym import BatchedPolicy, BatchedSelfPlayVecEnv, MtgEnv  # noqa: E402
-from mtgenv_gym.policy import EntityExtractor  # noqa: E402
+from mtgenv_gym.attn_policy import RelationalPointerPolicy  # noqa: E402 — mean-pool retired; attn is default
 
 
 def _model(venv):
-    return MaskablePPO(
-        "MultiInputPolicy", venv,
-        policy_kwargs=dict(features_extractor_class=EntityExtractor),
-        n_steps=64, batch_size=64, verbose=0,
-    )
+    return MaskablePPO(RelationalPointerPolicy, venv, n_steps=64, batch_size=64, verbose=0)
 
 
 def test_batched_policy_matches_per_sample_and_masks():

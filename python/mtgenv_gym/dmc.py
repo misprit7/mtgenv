@@ -70,6 +70,9 @@ class DMCNet(nn.Module):
         self.action_dim = int(action_dim)
         self.vocab = int(vocab)
         self.id_embed = nn.Embedding(vocab, id_embed)
+        # v2 `*_ids` were renamed `*_grpid` at the v3 contract break; read whichever the space has. The
+        # deck-local `*_cardid` one-hots were deleted in v3 — `cardid_dims` already handles their absence.
+        self._ids_suffix = "_grpid" if "bf_grpid" in obs_space.spaces else "_ids"
 
         self.row_mlps = nn.ModuleDict()
         self.cardid_dims = {}
@@ -93,15 +96,16 @@ class DMCNet(nn.Module):
                                    nn.Linear(q_hidden, 1))
 
         # Table widths → action-slot layout (asserts it tiles [0, action_dim) like codec.rs).
-        self.layout = slot_layout(obs_space["hand_ids"].shape[-1], obs_space["bf_ids"].shape[-1],
-                                  obs_space["stack_ids"].shape[-1], action_dim)
+        s = self._ids_suffix
+        self.layout = slot_layout(obs_space[f"hand{s}"].shape[-1], obs_space[f"bf{s}"].shape[-1],
+                                  obs_space[f"stack{s}"].shape[-1], action_dim)
 
     def _encode_rows(self, obs):
         """Per-table row vectors ``{name: (B, R, H)}`` + present masks ``{name: (B, R, 1)}``."""
         rows, present = {}, {}
         for name in _TABLES:
             feat = obs[f"{name}_feat"]                                   # (B, R, F)
-            ids = (obs[f"{name}_ids"].long() % self.vocab)               # (B, R)
+            ids = (obs[f"{name}{self._ids_suffix}"].long() % self.vocab)  # (B, R) grp-id → embedding
             parts = [feat, self.id_embed(ids)]
             if self.cardid_dims[name]:
                 parts.append(obs[f"{name}_cardid"])
@@ -142,11 +146,13 @@ def stack_obs(obs_list):
 
 
 def obs_to_tensors(stacked, device):
-    """Batched-numpy obs dict → torch tensors on ``device`` (int64 for ``*_ids``/``decision_ids``)."""
+    """Batched-numpy obs dict → torch tensors on ``device`` (int64 for the id / edge channels:
+    ``*_ids``/``*_grpid``/``decision_ids``/``edges``)."""
     out = {}
     for k, v in stacked.items():
         t = torch.as_tensor(v)
-        out[k] = t.long().to(device) if k.endswith("_ids") else t.float().to(device)
+        is_int = k.endswith("_ids") or k.endswith("_grpid") or k == "edges"
+        out[k] = t.long().to(device) if is_int else t.float().to(device)
     return out
 
 

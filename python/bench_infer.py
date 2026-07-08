@@ -15,7 +15,7 @@ from sb3_contrib import MaskablePPO
 from stable_baselines3.common.vec_env import DummyVecEnv
 
 from mtgenv_gym import MtgEnv
-from mtgenv_gym.policy import EntityExtractor
+from mtgenv_gym.attn_policy import RelationalPointerPolicy
 
 
 def _stack(obs, n):
@@ -24,11 +24,7 @@ def _stack(obs, n):
 
 def main():
     venv = DummyVecEnv([lambda: MtgEnv(deck="demo")])
-    model = MaskablePPO(
-        "MultiInputPolicy", venv,
-        policy_kwargs=dict(features_extractor_class=EntityExtractor),
-        n_steps=64, batch_size=64, verbose=0,
-    )
+    model = MaskablePPO(RelationalPointerPolicy, venv, n_steps=64, batch_size=64, verbose=0)
     policy = model.policy
     dev = policy.device
     print(f"device: {dev}")

@@ -97,12 +97,10 @@ def _tiny_model(deck, pool):
     from sb3_contrib import MaskablePPO
 
     from mtgenv_gym import BatchedSelfPlayVecEnv
-    from mtgenv_gym.policy import EntityExtractor
+    from mtgenv_gym.attn_policy import RelationalPointerPolicy  # mean-pool retired; attn is the default arch
 
     ve = BatchedSelfPlayVecEnv(deck, pool, 4, p_random=1.0, seed=0)
-    model = MaskablePPO("MultiInputPolicy", ve,
-                        policy_kwargs=dict(features_extractor_class=EntityExtractor),
-                        n_steps=64, batch_size=64, verbose=0)
+    model = MaskablePPO(RelationalPointerPolicy, ve, n_steps=64, batch_size=64, verbose=0)
     return model, ve
 
 

@@ -23,7 +23,7 @@ from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv
 
 from mtgenv_gym import MtgEnv
-from mtgenv_gym.policy import EntityExtractor
+from mtgenv_gym.attn_policy import RelationalPointerPolicy
 
 
 def _mask_fn(env):
@@ -45,13 +45,12 @@ def _make_env(deck, auto_pass, seed):
 def make_model(deck="demo", auto_pass=True, n_envs=8, seed=0, tensorboard_log=None, verbose=0,
                **ppo_kwargs):
     venv = DummyVecEnv([_make_env(deck, auto_pass, seed + i) for i in range(n_envs)])
-    policy_kwargs = dict(features_extractor_class=EntityExtractor)
     defaults = dict(n_steps=256, batch_size=256, gamma=0.999, ent_coef=0.01, seed=seed)
     defaults.update(ppo_kwargs)
+    # attn relational-pointer policy (mean-pool EntityExtractor retired — null arch on the v3 contract).
     return MaskablePPO(
-        "MultiInputPolicy",
+        RelationalPointerPolicy,
         venv,
-        policy_kwargs=policy_kwargs,
         tensorboard_log=tensorboard_log,
         verbose=verbose,
         **defaults,

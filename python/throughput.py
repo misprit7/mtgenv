@@ -43,7 +43,7 @@ def raw_engine_games_per_sec(seconds=4.0):
 def selfplay_steps_per_sec(subproc, steps=12000, n_envs=8, warmup=4096):
     from sb3_contrib import MaskablePPO
 
-    from mtgenv_gym.policy import EntityExtractor
+    from mtgenv_gym.attn_policy import RelationalPointerPolicy
     from selfplay_train import make_vecenv
 
     pool = f"/tmp/mtgenv_pool_tp_{int(subproc)}"
@@ -51,11 +51,7 @@ def selfplay_steps_per_sec(subproc, steps=12000, n_envs=8, warmup=4096):
     for f in glob.glob(pool + "/*.zip"):
         os.remove(f)
     venv = make_vecenv(DECK, pool, n_envs, 0, subproc=subproc, batched=False)  # legacy paths here
-    m = MaskablePPO(
-        "MultiInputPolicy", venv,
-        policy_kwargs=dict(features_extractor_class=EntityExtractor),
-        n_steps=256, batch_size=256, verbose=0,
-    )
+    m = MaskablePPO(RelationalPointerPolicy, venv, n_steps=256, batch_size=256, verbose=0)
     m.save(pool + "/ckpt_000000000")  # seed the pool so the opponent NN is exercised
     m.learn(total_timesteps=warmup, progress_bar=False, reset_num_timesteps=False)  # absorb startup
     t0 = time.time()

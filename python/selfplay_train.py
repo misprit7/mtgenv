@@ -22,6 +22,7 @@ from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 
 from mtgenv_gym import MtgEnv
 from mtgenv_gym.league import ModelOpponent, OpponentPool, PoolCheckpoint
+from mtgenv_gym.attn_policy import RelationalPointerPolicy
 from mtgenv_gym.policy import EntityExtractor
 
 DEFAULT_POOL = "/tmp/mtgenv_pool"
@@ -172,7 +173,7 @@ def train_selfplay(deck="demo", timesteps=120_000, n_envs=8, pool_dir=DEFAULT_PO
                    tensorboard_log=None, seed=0, pool_every=8000, eval_every=8000, subproc=False,
                    shaping_coef=0.1, notes=None, replay_every=0, run_name=None,
                    vecenv="batched", num_workers=8, verbose=0,
-                   policy="MultiInputPolicy", policy_kwargs=None, p_script=0.0, script_mix=None,
+                   policy=RelationalPointerPolicy, policy_kwargs=None, p_script=0.0, script_mix=None,
                    eval_ladder=True, ent_coef=0.01, learning_rate=3e-4, n_epochs=10, batch_size=256):
     # replay_every>0 records one greedy self-play game every that-many steps to data/replays/ (the
     # lobby's "AI Training Replays" learning progression). Default 0 (OFF) as a library call — the
@@ -190,10 +191,11 @@ def train_selfplay(deck="demo", timesteps=120_000, n_envs=8, pool_dir=DEFAULT_PO
 
     venv = make_vecenv(deck, pool_dir, n_envs, seed, subproc=subproc, vecenv=vecenv,
                        num_workers=num_workers, p_script=p_script, script_mix=script_mix)
-    # Default policy = the DeepSets EntityExtractor baseline; a caller (e.g. attn_train) can pass a
-    # custom policy class + kwargs (the relational-attention pointer policy) — everything else (vec env,
-    # callbacks, evalkit battery, shaping) is identical, so arms differ only in the policy.
-    pk = policy_kwargs if policy_kwargs is not None else dict(features_extractor_class=EntityExtractor)
+    # Default policy = the relational-attention pointer policy (mean-pool EntityExtractor is RETIRED;
+    # it can't learn the v3 contract and is a null arch per the user). A caller can still opt into the
+    # retired baseline by passing policy="MultiInputPolicy" + features_extractor_class=EntityExtractor.
+    # RelationalPointerPolicy builds its own extractor, so no default policy_kwargs are needed.
+    pk = policy_kwargs
     model = MaskablePPO(
         policy,
         venv,
@@ -319,6 +321,8 @@ def main():
         deck=args.deck, timesteps=args.timesteps, n_envs=args.n_envs, pool_dir=args.pool_dir,
         tensorboard_log=args.tensorboard, subproc=args.subproc, shaping_coef=args.shaping_coef,
         notes=args.notes, replay_every=args.replay_every, run_name=run_name,
+        # attn default; the EntityExtractor capacity knobs (--fe-*) opt into the retired mean-pool baseline.
+        policy=("MultiInputPolicy" if pk else RelationalPointerPolicy),
         vecenv=args.vecenv, num_workers=args.num_workers, verbose=1, policy_kwargs=pk,
         ent_coef=args.ent_coef, learning_rate=args.lr, n_epochs=args.n_epochs, batch_size=args.batch_size,
         eval_every=args.eval_every, pool_every=args.pool_every, eval_ladder=not args.no_ladder,
