@@ -99,16 +99,27 @@ def test_pointer_slot_scores_matching_entity():
 
 
 # ── forward shapes + no NaN, and param budget ─────────────────────────────────────────────────────
+_BASELINE_PARAMS = 142_307  # MaskableActorCriticPolicy + EntityExtractor (net_arch pi/vf=[64,64])
+
+
 def test_extractor_forward_and_param_budget():
-    ext = RelationalAttnExtractor(_obs_space())  # run defaults: d_model=256, ff=512, 2 layers
+    ext = RelationalAttnExtractor(_obs_space())  # PARITY defaults: d_model=48, ff=128, 2 layers
     feats = ext(_obs_batch(3))
     assert feats.shape == (3, ext.pack.total)
     assert torch.isfinite(feats).all()
     head = PointerHead(ext.pack)
     logits = head(feats)
     assert logits.shape == (3, 98) and torch.isfinite(logits).all()
-    n = sum(p.numel() for p in ext.parameters()) + sum(p.numel() for p in head.parameters())
-    assert 1_000_000 <= n <= 3_000_000, f"param count {n:,} outside the 1-3M budget"
+    # Parity: total attn-policy params within ±20% of the baseline (architecture isolated from size).
+    from mtgenv_gym.attn_policy import RelationalPointerPolicy, ValueHead
+    from gymnasium import spaces
+    pol = RelationalPointerPolicy(_obs_space(), spaces.Discrete(98), lambda _: 3e-4)
+    n = sum(p.numel() for p in pol.parameters())
+    assert 0.8 * _BASELINE_PARAMS <= n <= 1.2 * _BASELINE_PARAMS, \
+        f"parity attn {n:,} not within ±20% of baseline {_BASELINE_PARAMS:,}"
+    # the wider config is the parked SIZE experiment (~1.5M), deliberately out of the parity band.
+    big = RelationalPointerPolicy(_obs_space(), spaces.Discrete(98), lambda _: 3e-4, d_model=256, ff=512)
+    assert sum(p.numel() for p in big.parameters()) > 1_000_000
 
 
 def test_full_maskable_policy_builds():

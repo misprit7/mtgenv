@@ -24,6 +24,14 @@ Three pieces:
 
 The extractor packs ``[state, bf_emb, hand_emb, stack_emb]`` into the flat features tensor SB3 expects;
 the heads slice it back apart (offsets in ``_PackSpec``).
+
+**Parameter parity (default config).** To isolate ARCHITECTURE from SIZE, the default width
+(``d_model=48``, ``ff=128``, 2 layers) is tuned so the TOTAL trainable params (~138k) match the
+baseline ``EntityExtractor``+MLP policy (~142k) within ~3% — the runs differ in *kind* of computation,
+not budget. Both spend ~65.5k on the shared 4096×16 grp-id embedding; the remaining ~72k goes to
+2 relation-biased attention layers + attention pooling + the pointer head here, vs DeepSets row-MLPs +
+a fixed [64,64] actor/critic MLP + an indexed action head in the baseline. The wider ``d_model=256``
+config (~1.56M) is the deliberate SIZE-scaling experiment, run only after the parity comparison lands.
 """
 
 from __future__ import annotations
@@ -86,7 +94,7 @@ class _RelBiasLayer(nn.Module):
 class _RelationalEncoder(nn.Module):
     """Entity + globals tokens → contextualized per-entity embeddings + an attention-pooled state."""
 
-    def __init__(self, obs_space, *, d_model=256, nhead=4, ff=512, layers=2, id_embed=16, vocab=4096):
+    def __init__(self, obs_space, *, d_model=48, nhead=4, ff=128, layers=2, id_embed=16, vocab=4096):
         super().__init__()
         self.d_model = d_model
         self.vocab = vocab
@@ -195,7 +203,7 @@ class _PackSpec:
 class RelationalAttnExtractor(BaseFeaturesExtractor):
     """SB3 features extractor wrapping ``_RelationalEncoder``; packs its outputs into one flat tensor."""
 
-    def __init__(self, observation_space, d_model=256, nhead=4, ff=512, layers=2):
+    def __init__(self, observation_space, d_model=48, nhead=4, ff=128, layers=2):
         sizes = {name: observation_space[f"{name}_feat"].shape[0] for name in _TABLES}
         pack = _PackSpec(d_model, sizes)
         super().__init__(observation_space, features_dim=pack.total)
@@ -245,11 +253,13 @@ class PointerHead(nn.Module):
 
 
 class ValueHead(nn.Module):
-    """Flat features → scalar value, from the pooled state slice only."""
+    """Flat features → scalar value, from the pooled state slice only. Hidden scales with the model
+    width (``state_dim``) so the head stays a fixed fraction of the budget as the arch is narrowed."""
 
-    def __init__(self, pack: _PackSpec, hidden=128):
+    def __init__(self, pack: _PackSpec, hidden=None):
         super().__init__()
         self.pack = pack
+        hidden = hidden or pack.state_dim
         self.net = nn.Sequential(nn.Linear(pack.state_dim, hidden), nn.GELU(), nn.Linear(hidden, 1))
 
     def forward(self, feats):
@@ -259,7 +269,7 @@ class ValueHead(nn.Module):
 class RelationalPointerPolicy(MaskableActorCriticPolicy):
     """MaskablePPO policy: ``RelationalAttnExtractor`` + pointer/value heads, SB3 masking/PPO unchanged."""
 
-    def __init__(self, *args, d_model=256, nhead=4, ff=512, layers=2, **kwargs):
+    def __init__(self, *args, d_model=48, nhead=4, ff=128, layers=2, **kwargs):
         kwargs["features_extractor_class"] = RelationalAttnExtractor
         kwargs["features_extractor_kwargs"] = dict(d_model=d_model, nhead=nhead, ff=ff, layers=layers)
         kwargs["net_arch"] = []                       # identity mlp_extractor: latent = features
