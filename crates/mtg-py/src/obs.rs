@@ -64,9 +64,30 @@ pub const COMBAT_LINK: usize = 1;
 /// tell a double-block is in progress and which of my creatures are in it. Read the decision KIND
 /// (globals decision one-hot) to interpret it as attacker-vs-blocker. Appended, so no index shifts.
 pub const PENDING_COMBAT: usize = 1;
+/// Relational ids (Tier 3): three per-permanent object-id columns for the relational attention encoder
+/// — `instance_id` (this object's stable-within-game id), `blocking_id` (the attacker this creature is
+/// blocking; committed + pending — the GENERAL form of the `blocked_by` count, which stays for
+/// back-compat), and `attached_to_id` (the host this aura/equipment is attached to). Per-game ObjIds
+/// are small sequential integers (exact in f32). These are NOT features to embed — they are MATCH KEYS:
+/// the encoder builds a hard adjacency/attention-bias from `blocking_id[i] == instance_id[j]` etc. and
+/// slices them out of the content projection. 0 = none. Appended, so no existing index shifts.
+pub const RELATION_IDS: usize = 3;
 /// Per-battlefield-row feature width (excludes `grp_id`, which rides in `bf_ids`).
-pub const F_PERM: usize =
-    9 + N_CARD_TYPES + N_COLORS + N_KEYWORDS + 4 + DECISION_FLAGS + COMBAT_LINK + PENDING_COMBAT;
+pub const F_PERM: usize = 9 + N_CARD_TYPES + N_COLORS + N_KEYWORDS + 4 + DECISION_FLAGS + COMBAT_LINK
+    + PENDING_COMBAT + RELATION_IDS;
+
+// Absolute bf_feat column indices of the combat/decision/relation tail (append-stable — everything
+// through BF_ATTACHED_ID keeps its index when new columns are appended). Mirror of the push order in
+// `encode_battlefield`; the Python encoder mirrors these too.
+pub const BF_ATTACKING: usize = 9 + N_CARD_TYPES + N_COLORS + N_KEYWORDS + 2; // 39
+pub const BF_BLOCKING: usize = BF_ATTACKING + 1; // 40
+pub const BF_IS_SRC: usize = BF_ATTACKING + 2; // 41
+pub const BF_IS_CAND: usize = BF_ATTACKING + 3; // 42
+pub const BF_BLOCKED_BY: usize = BF_ATTACKING + 4; // 43
+pub const BF_PENDING_COMBAT: usize = BF_ATTACKING + 5; // 44
+pub const BF_INSTANCE_ID: usize = BF_ATTACKING + 6; // 45
+pub const BF_BLOCKING_ID: usize = BF_ATTACKING + 7; // 46
+pub const BF_ATTACHED_ID: usize = BF_ATTACKING + 8; // 47
 /// Per-hand-row feature width.
 pub const F_HAND: usize = 3 + N_CARD_TYPES + N_COLORS + DECISION_FLAGS;
 /// Per-stack-row feature width.
@@ -138,9 +159,10 @@ pub fn encode(view: &PlayerView, req: &DecisionRequest, num_legal: usize,
         .chain(pending_blocks.iter().map(|(blk, _)| *blk))
         .chain(block_source)
         .collect();
+    let relations = RelationMaps::build(view, pending_blocks);
     Obs {
         globals: encode_globals(view, req, num_legal, &di),
-        bf_feat: encode_battlefield(view, &di, &blocked_by, &pending_combat),
+        bf_feat: encode_battlefield(view, &di, &blocked_by, &pending_combat, &relations),
         bf_ids: ids(&view.battlefield, MAX_PERM),
         hand_feat: encode_hand(view, req, &di),
         hand_ids: ids(&view.me.hand, MAX_HAND),
@@ -414,9 +436,40 @@ fn blocked_by_counts(view: &PlayerView, pending_blocks: &[(ObjId, ObjId)])
     m
 }
 
+/// Relation maps for the Tier-3 id columns: for each blocker, the attacker it blocks (committed +
+/// pending); for each attachment, its host permanent. Object ids only — data-only, no characteristics.
+struct RelationMaps {
+    blocking_of: std::collections::BTreeMap<ObjId, ObjId>,   // blocker  -> attacker it blocks
+    attached_of: std::collections::BTreeMap<ObjId, ObjId>,   // attachment -> host permanent
+}
+
+impl RelationMaps {
+    fn build(view: &PlayerView, pending_blocks: &[(ObjId, ObjId)]) -> RelationMaps {
+        let mut blocking_of = std::collections::BTreeMap::new();
+        if let Some(c) = &view.combat {
+            for (blk, atk) in &c.blockers {
+                blocking_of.insert(*blk, *atk);
+            }
+        }
+        for (blk, atk) in pending_blocks {
+            blocking_of.insert(*blk, *atk); // pending assignment overrides/adds the same as committed
+        }
+        let mut attached_of = std::collections::BTreeMap::new();
+        for o in &view.battlefield {
+            if let ObjView::Visible { id, attachments, .. } = o {
+                for att in attachments {
+                    attached_of.insert(*att, *id);
+                }
+            }
+        }
+        RelationMaps { blocking_of, attached_of }
+    }
+}
+
 fn encode_battlefield(view: &PlayerView, di: &DecisionInfo,
                       blocked_by: &std::collections::BTreeMap<ObjId, u32>,
-                      pending_combat: &std::collections::BTreeSet<ObjId>) -> Vec<f32> {
+                      pending_combat: &std::collections::BTreeSet<ObjId>,
+                      relations: &RelationMaps) -> Vec<f32> {
     let me = view.seat;
     let (attacking, blocking) = combat_sets(view);
     let mut out = Vec::with_capacity(MAX_PERM * F_PERM);
@@ -456,6 +509,10 @@ fn encode_battlefield(view: &PlayerView, di: &DecisionInfo,
                 // (Tier 2b) is_pending_combat: this creature is mine and already committed in the
                 // current in-flight combat decision (declared attacker / assigned blocker).
                 out.push(pending_combat.contains(id) as u8 as f32);
+                // (Tier 3) relational match-keys: this object's id, the attacker it blocks, its host.
+                out.push(id.0 as f32);
+                out.push(relations.blocking_of.get(id).map(|a| a.0).unwrap_or(0) as f32);
+                out.push(relations.attached_of.get(id).map(|h| h.0).unwrap_or(0) as f32);
             }
             ObjView::Hidden { .. } => {
                 // Hidden permanent (e.g. a face-down): present but featureless.
@@ -660,10 +717,10 @@ mod tests {
             assert!(rows * cols > 0);
         }
         // F_PERM / F_HAND / F_STACK pinned so a vocab edit that desyncs obs↔codec is caught.
-        // (Each grew by DECISION_FLAGS=2 for the Tier-1 source/candidate per-row flags; F_PERM grew a
-        // further COMBAT_LINK=1 for the Tier-2 per-attacker blocked-by count and PENDING_COMBAT=1 for
-        // the Tier-2b is_pending_combat self-flag.)
-        assert_eq!(F_PERM, 45);
+        // (DECISION_FLAGS=2 Tier-1 flags; COMBAT_LINK=1 blocked-by count; PENDING_COMBAT=1 self-flag;
+        // RELATION_IDS=3 Tier-3 instance/blocking/attached match-keys.)
+        assert_eq!(F_PERM, 48);
+        assert_eq!(BF_ATTACHED_ID, F_PERM - 1); // the relation tail is the last block of columns
         assert_eq!(F_HAND, 18);
         assert_eq!(F_STACK, 18);
         assert_eq!(G, 69);
@@ -718,10 +775,9 @@ mod tests {
         assert_eq!(o.decision_ids, vec![555], "decision_ids carries the source spell's grp_id");
         // (b) the stack row (row 0) is flagged is_src (the last-but-one feature of F_STACK).
         assert_eq!(o.stack_feat[F_STACK - 2], 1.0, "source spell's stack row flagged is_src");
-        // (c) the creature row (row 0) is flagged is_cand. Trailing F_PERM cols are now
-        // [.., is_src(-4), is_cand(-3), blocked_by(-2), is_pending_combat(-1)].
-        assert_eq!(o.bf_feat[F_PERM - 3], 1.0, "legal-target creature flagged is_cand");
-        assert_eq!(o.bf_feat[F_PERM - 4], 0.0, "the opponent's creature is not the source");
+        // (c) the creature row (row 0) is flagged is_cand (absolute column, append-stable).
+        assert_eq!(o.bf_feat[BF_IS_CAND], 1.0, "legal-target creature flagged is_cand");
+        assert_eq!(o.bf_feat[BF_IS_SRC], 0.0, "the opponent's creature is not the source");
         // and the opponent is a player-candidate (last global), self is not (second-last).
         assert_eq!(o.globals[G - 1], 1.0, "opponent is a legal player target");
         assert_eq!(o.globals[G - 2], 0.0, "self is not a legal target here");
@@ -780,10 +836,9 @@ mod tests {
 
         let o = encode(&v, &req, 1, &[], None, &[]);
         assert_eq!(o.decision_ids, vec![114], "source grp recovered from the off-stack trigger source");
-        // row 0 = the enchantment, flagged is_src (F_PERM-4); row 1 = the creature, flagged is_cand
-        // (F_PERM-3) — both shifted back by the appended blocked-by count + is_pending_combat.
-        assert_eq!(o.bf_feat[F_PERM - 4], 1.0, "triggering permanent flagged is_src");
-        assert_eq!(o.bf_feat[2 * F_PERM - 3], 1.0, "target creature flagged is_cand");
+        // row 0 = the enchantment, flagged is_src; row 1 = the creature, flagged is_cand (absolute).
+        assert_eq!(o.bf_feat[BF_IS_SRC], 1.0, "triggering permanent flagged is_src");
+        assert_eq!(o.bf_feat[F_PERM + BF_IS_CAND], 1.0, "target creature flagged is_cand");
     }
 
     /// Tier 2 — the learnability proof: the per-attacker blocked-by count on an attacker's row
@@ -819,15 +874,13 @@ mod tests {
             ],
             attackers: vec![attacker],
         };
-        let bb = F_PERM - 2; // blocked-by count is now second-to-last (is_pending_combat is the last)
-
         // No blocks assigned yet → 0 on the attacker's row.
-        assert_eq!(encode(&v, &req, 3, &[], None, &[]).bf_feat[bb], 0.0, "unblocked → 0");
+        assert_eq!(encode(&v, &req, 3, &[], None, &[]).bf_feat[BF_BLOCKED_BY], 0.0, "unblocked → 0");
         // One blocker → single-block → 1.
-        assert_eq!(encode(&v, &req, 3, &[(blk_a, attacker)], None, &[]).bf_feat[bb], 1.0, "single → 1");
+        assert_eq!(encode(&v, &req, 3, &[(blk_a, attacker)], None, &[]).bf_feat[BF_BLOCKED_BY], 1.0, "single → 1");
         // TWO blockers ganging the SAME attacker (pending) → 2: double-blocking is now observable.
         let o2 = encode(&v, &req, 3, &[(blk_a, attacker), (blk_b, attacker)], Some(blk_b), &[]);
-        assert_eq!(o2.bf_feat[bb], 2.0, "pending gang → 2 (the double-block signal)");
+        assert_eq!(o2.bf_feat[BF_BLOCKED_BY], 2.0, "pending gang → 2 (the double-block signal)");
     }
 
     /// Tier 2b — the is_pending_combat self-flag: at DeclareBlockers my creatures already assigned as
@@ -855,7 +908,7 @@ mod tests {
             summoning_sick: false,
         };
         v.battlefield = vec![vis(my_creature, 0), vis(enemy, 1)];
-        let pc = F_PERM - 1; // is_pending_combat is the last per-permanent feature
+        let pc = BF_PENDING_COMBAT;
 
         // DeclareBlockers: my_creature pending-assigned to block `enemy` → flagged; enemy is not mine.
         let blk_req = DecisionRequest::DeclareBlockers {
@@ -872,5 +925,51 @@ mod tests {
         };
         let oa = encode(&v, &atk_req, 2, &[], None, &[my_creature]);
         assert_eq!(oa.bf_feat[pc], 1.0, "my declared attacker flagged is_pending_combat");
+    }
+
+    /// Tier 3 — the relational match-keys: instance_id carries each object's id; blocking_id points a
+    /// blocker at the attacker it blocks (committed + pending); attached_to_id points an aura/equipment
+    /// at its host. The encoder builds adjacency by matching blocking_id/attached_to_id to instance_id.
+    #[test]
+    fn relation_ids_link_blocker_to_attacker_and_aura_to_host() {
+        use mtg_core::agent::{BlockerOption, CharacteristicsView};
+        use mtg_core::basics::Status;
+        use mtg_core::ids::ObjId;
+
+        let blocker = ObjId(10);
+        let attacker = ObjId(30);
+        let aura = ObjId(40);
+        let host = ObjId(41);
+        let mut v = view();
+        let vis = |id: ObjId, ctrl: u32, atts: Vec<ObjId>| ObjView::Visible {
+            id,
+            chars: CharacteristicsView { grp_id: 1, power: Some(2), toughness: Some(2), ..Default::default() },
+            controller: PlayerId(ctrl),
+            owner: PlayerId(ctrl),
+            zone: mtg_core::basics::Zone::Battlefield,
+            status: Status::default(),
+            counters: CounterBag::default(),
+            damage_marked: 0,
+            attachments: atts,
+            summoning_sick: false,
+        };
+        // rows: 0=blocker, 1=attacker, 2=aura, 3=host (host lists the aura as an attachment).
+        v.battlefield = vec![vis(blocker, 0, vec![]), vis(attacker, 1, vec![]),
+                             vis(aura, 0, vec![]), vis(host, 0, vec![aura])];
+        let req = DecisionRequest::DeclareBlockers {
+            eligible: vec![BlockerOption { creature: blocker, may_block: vec![attacker], required: false, block_cost: None }],
+            attackers: vec![attacker],
+        };
+        let o = encode(&v, &req, 3, &[(blocker, attacker)], None, &[]);
+        let row = |r: usize, c: usize| o.bf_feat[r * F_PERM + c];
+        // instance_id == the object's own id on every row.
+        assert_eq!(row(0, BF_INSTANCE_ID), 10.0);
+        assert_eq!(row(1, BF_INSTANCE_ID), 30.0);
+        // blocker's blocking_id == the attacker's instance_id (the pending block).
+        assert_eq!(row(0, BF_BLOCKING_ID), 30.0, "blocker points at the attacker it blocks");
+        assert_eq!(row(1, BF_BLOCKING_ID), 0.0, "the attacker blocks nothing");
+        // aura's attached_to_id == the host's instance_id.
+        assert_eq!(row(2, BF_ATTACHED_ID), 41.0, "aura points at its host");
+        assert_eq!(row(3, BF_ATTACHED_ID), 0.0, "the host is attached to nothing");
     }
 }
