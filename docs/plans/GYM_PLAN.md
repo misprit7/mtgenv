@@ -431,12 +431,13 @@ already exist — these are the L3/L4/L5 build.
    — already partly present). **Exit:** stable self-play improvement; ≥10² games/s/core.
 3. **Resumable step API (engine, coordinated) — throughput only.** Land approach §2.2-B with
    `engine` (re-entrant `resume`/`submit`), swap `PyAgent` internals to it (no Python API change).
-   RE-SCOPED 2026-07-03 (user directive): engine-backed tree search is permanently out of scope
-   (MuZero-style *learned* search needs no engine support), so clone/snapshot-for-search is CUT as
-   a deliverable — `PyGame.snapshot/restore/clone` stay stubbed. Design: RESUMABLE_ENGINE.md
-   (stackful-coroutine session; fiber is deliberately not cloneable). **Exit:** per-game
-   threads/channels removed; GIL-free Rust fleet stepping with one PyO3 crossing per micro-tick;
-   measured training-throughput win vs the n_envs-scaling baseline.
+   ~~RE-SCOPED 2026-07-03 (user directive): engine-backed tree search is permanently out of scope~~
+   **RE-REVERSED 2026-07-09 (user directive: "implement explicit search and use it"):
+   engine-backed search is BACK IN SCOPE** — clone-for-search returns as a deliverable
+   (`PyGame.fork()` via decision-log replay, since the fiber itself is not cloneable), design in
+   `docs/design/SEARCH_PLAN.md`. The M3 throughput port itself SHIPPED 2026-07-03 (fleet vec env,
+   2.8×; see RESUMABLE_ENGINE.md). **Exit (original, met):** per-game threads/channels removed;
+   GIL-free Rust fleet stepping; measured training-throughput win.
 4. **Scale the card pool.** The `grp_id` embedding table grows; load a larger pool / a real limited
    format (ties to `../magician` 17lands card priors). Consider the pointer-network action head
    (§4-B). **Exit:** competent agent on a real format vs the Rust scripted baseline and prior

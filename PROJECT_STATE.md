@@ -3,7 +3,7 @@
 Single source of truth for goals + where things stand. Update this (without being asked)
 whenever meaningful progress changes the picture. Companion: `WORKLOG.md` (chronological).
 
-_Last updated: 2026-07-06_
+_Last updated: 2026-07-09 (overnight)_
 
 ## Vision (one sentence)
 
@@ -50,6 +50,49 @@ MTGA client.
 
 ## Current state
 
+- **▶ ACTIVE (2026-07-09 overnight): explicit ENGINE SEARCH greenlit + 5.x campaign running.**
+  The user REVERSED the no-real-state-search stance ("Okay lets implement explicit search and
+  use it"): search over the rules engine (fork at decision points, Gumbel-lite with policy-net
+  opponent moves + batched value-net leaves; determinize hidden zones — NEVER search the true
+  hidden state for training targets) is now the main strength bet; design =
+  `docs/design/SEARCH_PLAN.md`. In flight overnight: 5.2 exploiter league (AlphaStar-lite:
+  main + per-cycle exploiters trained vs the frozen main, exploiters join the opponent pool),
+  hyperparam sanity arms (lr ×3/÷3, ent 0.03), racer-in-mix + 5×-steps falsification arms,
+  search v0 (`PyGame.fork()` + a `SearchPolicy` ladder agent).
+- **✅ CONTRACT v3 SHIPPED END-TO-END (2026-07-08/09, OBS2_DESIGN.md §7).** Observation:
+  `bf_feat` 256×45 (float id match-key cols DELETED), `*_ids`→`*_grpid` (grpid + entityid are
+  the only two id spaces; entityids resolve to row positions at encode, never enter tensors),
+  NEW `edges` 128×4 (BLOCKS/ATTACKS/ATTACHED_TO/TARGETS — gap G1 closed — STACK_SOURCE/
+  PENDING_PICK over a flat row space bf 0-255 | hand 256-271 | stack 272-279 | players 280/281 |
+  decision 282; consumed as per-type attention bias), NEW `choice_feat` 16×12 (codec-authored
+  content tokens for abstract options — the `abstract_q` scale-bug family deleted). Action space
+  `Discrete(322)` layout UNCHANGED (break is obs-side only). §4a invariant: the obs carries the
+  full mid-decision commitment prefix at every sub-step (walk-test-pinned). Python attn
+  extractor migrated (v2 path preserved for old ckpts); **present-row gather** (packed attention,
+  exact, 3.4–6× forward / 3.6× rollout inference) default-on; all consumers migrated (104/0);
+  fixed-shape contract is PERMANENT (variable-length rejected — perf via gather + sparse wire).
+- **✅ ELO LADDER = THE hill-climbing metric (data/elo/, per-env BT pools, versioned by contract
+  fingerprint, no cross-version adapters — clean-slate per bump).** v3 swine (post 5.1):
+  careful 1325 > **5.0 1284 (v3 reference)** > 5.1 1259 > gang 1243 > racer 1182 > random 1000
+  > turtle 879. Spine ratings carried v2→v3 byte-identically (scripts read only preserved cols).
+  evaldash (:8060) = the view: versioned tables, live tournament progress bar, per-run
+  runtime+sps, `perf/*` chart group (trainer instrumentation landing).
+- **▶ 5.x CAMPAIGN — passivity is THE open behavior problem (diagnosed, not solved).**
+  5.0 (= 4.9 recipe on v3, half budget): combat judgment reproduced (chump .09/double .68/
+  lone .04) → v3 healthy; BUT free-attack declines ~38% greedy (passivity = learned equilibrium,
+  confidently negative attack logits, NOT a rep/wiring bug) and loses to racer .45. 5.1
+  (coef 0.5 constant — user verdict FAIL): fixed racer (.59) via creature-aversion, collapsed
+  double-block (.68→.49), −25 Elo — scalar shaping can't encode conditional combat judgment.
+  Root cause synthesis: sparse near-zero-counterfactual signal vs a passive pool; principled
+  fixes = exploiter league (running), search-as-teacher (building), learned Φ=P̂(win) (queued
+  idea, winprob17l). Full diagnosis + numbers: memory `campaign-hold-2026-07-08`.
+- **✅ Tonight's tooling (2026-07-08/09):** replay **frame kinds** (Event/Priority/Decision
+  tagged at the single ask seam; web replay bar filters ⚔ dec / ⏸ prio; back-compat serde);
+  web **RL reward lens** (Φ RL toggle — live potential + per-decision shaping, mirrors
+  `_phi_batch`); **LLM ladder bot** (`python/llm_agent.py`: v3 obs → faithful plaintext →
+  claude CLI/API → action; single-legal auto-take; budget estimator — ~50 calls/20k tok/game,
+  100 games ≈ $6.65 sonnet API or $0 via CLI); `winrate_vs_initial` metric REMOVED (user);
+  game-server restart gotcha: MUST set `MTG_ADDR=0.0.0.0:8080`.
 - **✅ M3 RESUMABLE ENGINE (2026-07-03): engine side complete, port live at 1.5–1.67×.**
   `Session { resume/submit/replay }` (corosensei fiber yields at the single `ask` seam; game logic
   byte-identical; ~390 tests green). mtg-py drives games through it — per-game threads/channels/
@@ -437,6 +480,14 @@ MTGA client.
 
 ## Key decisions
 
+- **Explicit search over the rules engine** (2026-07-09, reversing 2026-07-06): search is the
+  policy-improvement teacher; learned-model (MuZero-family) search rejected for now — we own a
+  fast deterministic clonable sim, and a learned model is least faithful exactly on the rare
+  pivotal combat states. Hidden info via determinization; never oracle targets.
+- **Obs/action contract is fingerprint-versioned with clean-slate ladders per bump** (no
+  cross-version adapters, ever); the contract is FIXED-SHAPE permanently (v3: relations as
+  `edges`, identities as `grpid` only — `OBS_ACTION_SPACE.md` is the current-state reference,
+  `OBS2_DESIGN.md` the design record).
 - **Whiteboard model** as the engine architecture (see WHITEBOARD_MODEL.md).
 - **Core is card-agnostic**; card behavior is data (Effect IR) + `Native` escape hatch.
 - **Single `Agent`/`DecisionRequest` boundary** with engine-provided legal-action masking;

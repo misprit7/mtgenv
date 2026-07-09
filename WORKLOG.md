@@ -3,6 +3,28 @@
 Short, dated entries for future-agent consumption. Newest first. One line or a few bullets
 per unit of meaningful progress. Keep it terse — detail lives in `docs/` and git history.
 
+## 2026-07-09 (5.x campaign night: 5.0/5.1 results, search greenlit, overnight batch)
+
+- **5.0-attn-v3 (v3 reference, 250k = half 4.9's budget): v3 HEALTHY, recipe holds** — v3 Elo
+  1248→1284 (refits), 2nd behind script-careful (same slot as 4.9 on v1 — careful was ALWAYS
+  above 4.9; don't compare absolute Elo across ladder versions); combat reproduces 4.9 (chump
+  .09/double .68/lone .04). **Passivity diagnosed** (learned equilibrium, NOT a v3 defect):
+  free-damage attack rate .62 greedy/.78 sampled, attack logits confidently negative, loses to
+  racer .45.
+- **5.1 (coef 0.5 constant, no anneal — user verdict FAIL):** racer FLIPPED to .59 win but
+  creature-aversion collapsed double_block .68→.49; −25 Elo vs 5.0. Lesson: scalar shaping
+  moves a global aggression dial, can't encode conditional combat judgment. Defaults back to
+  coef 0.1 + anneal.
+- **EXPLICIT ENGINE SEARCH GREENLIT** (user, reversing 2026-07-06): SEARCH_PLAN.md + fork-based
+  search v0 + exploiter league (5.2) + hyperparam arms running overnight (memory:
+  overnight-directive-2026-07-09).
+- **Tooling:** replay frame kinds (Event/Priority/Decision at the ask seam + web ⚔/⏸ filters,
+  958c1d3); web RL reward lens (Φ panel mirroring _phi_batch, 0411502); LLM ladder bot
+  (python/llm_agent.py — v3 obs→plaintext→claude CLI/API, budget ~$0.07/game sonnet, 669f362);
+  dashboard per-run runtime+sps + live tournament progress bar; winrate_vs_initial REMOVED;
+  double-launch postmortems → trainer launch guard (dmc4) + monitor doctrine (completions don't
+  wake idle agents — block in-turn or stay active).
+
 ## 2026-07-08 (Contract v3 Python side — attn extractor migrated, v2-key consumers → suite green)
 
 - **attn v3 extractor + full v2-key migration (dmc4; 99f8f1f / 9a9cad1 / a608376 + export_replays delete).**
