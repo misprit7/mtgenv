@@ -171,7 +171,7 @@ def _clean(*paths):
 
 def train_selfplay(deck="demo", timesteps=120_000, n_envs=8, pool_dir=DEFAULT_POOL,
                    tensorboard_log=None, seed=0, pool_every=8000, eval_every=8000, subproc=False,
-                   shaping_coef=0.1, notes=None, replay_every=0, run_name=None,
+                   shaping_coef=0.1, shape_anneal=True, notes=None, replay_every=0, run_name=None,
                    vecenv="batched", num_workers=8, verbose=0,
                    policy=RelationalPointerPolicy, policy_kwargs=None, p_script=0.0, script_mix=None,
                    eval_ladder=True, ent_coef=0.01, learning_rate=3e-4, n_epochs=10, batch_size=256):
@@ -220,7 +220,8 @@ def train_selfplay(deck="demo", timesteps=120_000, n_envs=8, pool_dir=DEFAULT_PO
     from mtgenv_gym.evalkit import EvalkitCallback
 
     config = dict(deck=deck, timesteps=timesteps, n_envs=n_envs, seed=seed,
-                  shaping_coef0=shaping_coef, shaping_anneal_frac=(0.6 if shaping_coef > 0 else None),
+                  shaping_coef0=shaping_coef,
+                  shaping_anneal_frac=(0.6 if (shaping_coef > 0 and shape_anneal) else None),
                   learning_rate="3e-4 (SB3 default)", n_steps=256, batch_size=256, gamma=0.999,
                   ent_coef=0.01, pool_every=pool_every, eval_every=eval_every, max_pool=12,
                   p_random=0.2, vec_env="BatchedSelfPlayVecEnv")
@@ -244,7 +245,12 @@ def train_selfplay(deck="demo", timesteps=120_000, n_envs=8, pool_dir=DEFAULT_PO
     if shaping_coef > 0:
         from mtgenv_gym.batched_selfplay import ShapingAnneal
 
-        callbacks.append(ShapingAnneal(timesteps, coef0=shaping_coef))  # full to 50%, decay 50->80%
+        if shape_anneal:
+            callbacks.append(ShapingAnneal(timesteps, coef0=shaping_coef))  # full to 50%, decay 50->80%
+        else:
+            # Constant coefficient, no anneal: anneal_start=1.0 holds coef0 for the whole run (the
+            # callback still SETS the vec env's shaping_coef=coef0, which make_vecenv leaves at 0).
+            callbacks.append(ShapingAnneal(timesteps, coef0=shaping_coef, anneal_start=1.0, anneal_end=1.0))
     # run_name (a versioned `<major>.<minor>-<slug>`, set by main()) names the TB run dir too, so the
     # TB run and the lobby replay tag match. tensorboard_log is the ROOT; SB3 makes <root>/<run_name>_N.
     model.learn(total_timesteps=timesteps, callback=callbacks, progress_bar=False,
@@ -273,6 +279,8 @@ def main():
     ap.add_argument("--subproc", action="store_true", help="SubprocVecEnv (parallel workers)")
     ap.add_argument("--shaping-coef", type=float, default=0.1,
                     help="potential-based reward-shaping coef0 (annealed to 0); 0 disables. On by default.")
+    ap.add_argument("--no-shape-anneal", action="store_true",
+                    help="hold --shaping-coef CONSTANT the whole run (default: full to 50%%, decay to 0 by 80%%)")
     ap.add_argument("--notes", required=True,
                     help="REQUIRED: what this run tests → TB 'run/notes' (TEXT tab) + the Aim run "
                          "description (lifted by scripts/tb2aim.py)")
@@ -320,6 +328,7 @@ def main():
     model, ref = train_selfplay(
         deck=args.deck, timesteps=args.timesteps, n_envs=args.n_envs, pool_dir=args.pool_dir,
         tensorboard_log=args.tensorboard, subproc=args.subproc, shaping_coef=args.shaping_coef,
+        shape_anneal=not args.no_shape_anneal,
         notes=args.notes, replay_every=args.replay_every, run_name=run_name,
         # attn default; the EntityExtractor capacity knobs (--fe-*) opt into the retired mean-pool baseline.
         policy=("MultiInputPolicy" if pk else RelationalPointerPolicy),

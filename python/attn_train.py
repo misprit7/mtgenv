@@ -27,6 +27,8 @@ def main():
     ap.add_argument("--pool-dir", default="/tmp/mtgenv_pool_attn")
     ap.add_argument("--tensorboard", default="/home/xander/dev/p-mtg/mtgenv/data/tb")
     ap.add_argument("--shaping-coef", type=float, default=0.1)
+    ap.add_argument("--no-shape-anneal", action="store_true",
+                    help="hold --shaping-coef CONSTANT the whole run (default: full to 50%%, decay to 0 by 80%%)")
     ap.add_argument("--vecenv", default="fleet", choices=["fleet", "batched"])
     ap.add_argument("--num-workers", type=int, default=8)
     ap.add_argument("--replay-every", type=int, default=25_000)
@@ -49,7 +51,8 @@ def main():
 
     model, ref = train_selfplay(
         deck=args.deck, timesteps=args.timesteps, n_envs=args.n_envs, pool_dir=args.pool_dir,
-        tensorboard_log=args.tensorboard, shaping_coef=args.shaping_coef, notes=args.notes,
+        tensorboard_log=args.tensorboard, shaping_coef=args.shaping_coef,
+        shape_anneal=not args.no_shape_anneal, notes=args.notes,
         replay_every=args.replay_every, run_name=args.run_name, vecenv=args.vecenv,
         num_workers=args.num_workers, eval_every=args.eval_every, pool_every=args.pool_every, verbose=1,
         policy=RelationalPointerPolicy,
