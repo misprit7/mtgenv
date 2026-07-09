@@ -99,6 +99,9 @@ def sync_run(tb_root: str, name: str, out_dir: str) -> "dict | None":
     path = os.path.join(tb_root, name)
     metrics: "dict[str, dict[int, float]]" = {}
     notes = None
+    # Wall-clock span of the run, from the event timestamps already in the TB files — total runtime
+    # (and overall steps/sec) for EVERY run, past ones included, with zero training-side overhead.
+    wall_min, wall_max = math.inf, -math.inf
     for d in tb2aim.event_dirs(path):
         acc = EventAccumulator(d, size_guidance={"scalars": 0})
         try:
@@ -110,6 +113,10 @@ def sync_run(tb_root: str, name: str, out_dir: str) -> "dict | None":
         for tag in acc.Tags().get("scalars", []):
             dst = metrics.setdefault(tag, {})
             for e in acc.Scalars(tag):
+                if e.wall_time < wall_min:
+                    wall_min = e.wall_time
+                if e.wall_time > wall_max:
+                    wall_max = e.wall_time
                 v = float(e.value)
                 if math.isfinite(v):  # NaN/inf points (e.g. block_double_rate with 0 blocks) are "no data"
                     dst[int(e.step)] = v  # later event files win on step collisions
@@ -120,6 +127,7 @@ def sync_run(tb_root: str, name: str, out_dir: str) -> "dict | None":
                for tag, pts in metrics.items()}
     _atomic_write(os.path.join(out_dir, "runs", f"{name}.json"), {"name": name, "metrics": compact})
     max_step = max(pts[-1][0] for pts in compact.values())
+    runtime_s = (wall_max - wall_min) if wall_max > wall_min else None
     return {
         "name": name,
         "experiment": group_for(name),
@@ -127,6 +135,8 @@ def sync_run(tb_root: str, name: str, out_dir: str) -> "dict | None":
         "tags": sorted(compact),
         "max_step": max_step,
         "points": sum(len(p) for p in compact.values()),
+        "runtime_s": round(runtime_s, 1) if runtime_s else None,
+        "sps": round(max_step / runtime_s, 1) if runtime_s and max_step else None,
     }
 
 
@@ -208,7 +218,34 @@ def sweep(tb_root: str, out_dir: str, cache: dict, lobby: str) -> None:
                         # A crosstable appended to in the last 3 minutes = tournament in progress.
                         gj = os.path.join(env_dir, f"v{cur}", "games.jsonl")
                         active = os.path.isfile(gj) and (time.time() - os.path.getmtime(gj)) < 180
-                        elo[env] = {"current": cur, "versions": versions, "active": active}
+                        # Tournament progress bar: game rows naming an agent that ISN'T in the
+                        # current ratings table yet = a `rate_agent add` in flight (the table is
+                        # only refit at the end). played = that agent's games so far; expected
+                        # total = 100 games/seat × 2 seats vs every rated member. No backend
+                        # cooperation needed, so it works for a tournament already running.
+                        progress = None
+                        if active:
+                            try:
+                                cur_agents = set(versions.get(cur, {}).get("agents", {}))
+                                played = {}
+                                with open(gj) as f:
+                                    for line in f:
+                                        try:
+                                            g = json.loads(line)
+                                        except ValueError:
+                                            continue
+                                        for nm in (g.get("a"), g.get("b")):
+                                            if nm and nm not in cur_agents:
+                                                played[nm] = played.get(nm, 0) + int(g.get("n", 0))
+                                if played:
+                                    nm, n = max(played.items(), key=lambda kv: kv[1])
+                                    progress = {"agent": nm, "played": n,
+                                                "total": max(len(cur_agents), 1) * 200,
+                                                "updated": os.path.getmtime(gj)}
+                            except Exception:
+                                progress = None
+                        elo[env] = {"current": cur, "versions": versions, "active": active,
+                                    "progress": progress}
                 else:  # legacy flat layout
                     t = _load_table(env_dir)
                     if t:

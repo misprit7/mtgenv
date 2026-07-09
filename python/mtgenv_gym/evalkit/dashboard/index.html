@@ -195,6 +195,12 @@ details.section > summary .count { margin-left: auto; color: var(--muted); font-
 .elotable .eci { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; min-width: 92px; text-align: right; }
 .elotable .egames { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; min-width: 46px; text-align: right; }
 .elotable .eempty { padding: 12px 14px; color: var(--muted); font-size: 12.5px; }
+/* In-flight tournament progress bar (top of the current version's table). */
+.eloprog { padding: 10px 14px 8px; }
+.eloprog .ep-label { display: flex; align-items: center; gap: 7px; font-size: 12.5px; margin-bottom: 6px; }
+.eloprog .ep-label b { overflow-wrap: anywhere; }
+.eloprog .ep-track { height: 10px; border: 2px solid var(--ink); border-radius: 6px; overflow: hidden; }
+.eloprog .ep-fill { height: 100%; background: var(--magenta); transition: width .6s ease; }
 
 /* ── replays panel: run tabs (newest first) + that run's replay list ── */
 .rtabs { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 0 8px; }
@@ -444,11 +450,22 @@ function buildRunsPane() {
   updateRunsPane();
 }
 
+function fmtDur(s) {
+  if (s == null) return "";
+  if (s < 90) return Math.round(s) + "s";
+  if (s < 5400) return Math.round(s / 60) + "m";
+  return (s / 3600).toFixed(1) + "h";
+}
+
 function updateRunsPane() {
   for (const r of index.runs) {
     const row = rowByName[r.name];
     if (!row) continue;
-    row.step.textContent = kfmt(r.max_step);
+    // steps + wall runtime + overall steps/sec (runtime derived from TB event timestamps —
+    // zero training-side cost; finer perf/* breakdowns are their own chart group when present).
+    row.step.textContent = kfmt(r.max_step) +
+      (r.runtime_s ? ` · ${fmtDur(r.runtime_s)}` : "") +
+      (r.sps ? ` · ${Math.round(r.sps)}sps` : "");
     row.live.hidden = !r.live;
     const href = replayHref(r);
     row.replay.hidden = !href;
@@ -630,7 +647,7 @@ function renderElo() {
     chip.addEventListener("click", () => { LS.set("elover." + activeEnv, v); renderElo(); });
     tabs.appendChild(chip);
   }
-  if (elo[activeEnv].active) {
+  if (elo[activeEnv].active && !elo[activeEnv].progress) {
     const t = document.createElement("span");
     t.className = "livetag";
     t.innerHTML = '<span class="livedot"></span> tournament in progress — table updating';
@@ -640,6 +657,19 @@ function renderElo() {
   const tab = versions[activeV] || { agents: {} };
   const box = $("eloTable");
   box.textContent = "";
+  // In-flight `rate_agent add` progress: games played by the not-yet-rated agent vs the expected
+  // pairing total (an estimate — 100 games/seat × 2 seats vs each rated member).
+  const prog = elo[activeEnv].progress;
+  if (prog && elo[activeEnv].active && activeV === current) {
+    const pct = Math.min(100, Math.round(100 * prog.played / Math.max(prog.total, 1)));
+    const p = document.createElement("div");
+    p.className = "eloprog";
+    p.innerHTML =
+      `<div class="ep-label"><span class="livedot"></span> rating <b>${prog.agent}</b> — ` +
+      `${prog.played} / ~${prog.total} games (${pct}%)</div>` +
+      `<div class="ep-track"><div class="ep-fill" style="width:${pct}%"></div></div>`;
+    box.appendChild(p);
+  }
   if (activeV !== current) {
     const warn = document.createElement("div");
     warn.className = "eempty";
