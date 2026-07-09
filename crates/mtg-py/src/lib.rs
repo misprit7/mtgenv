@@ -69,6 +69,11 @@ pub struct PyGame {
     /// (tracked-stats telemetry, #68). `take_decision_stats` drains it; empty between finalizations
     /// (a mid-autoregression sub-step records nothing).
     last_stats: Vec<(String, f64)>,
+    /// The seed of the running game (set by `reset`) — with `deck` it makes the game replayable.
+    seed: Option<u64>,
+    /// Every factored action fed through [`apply`](PyGame::apply), in order (both seats — the
+    /// deterministic recipe for [`fork`](PyGame::fork)'s clone-by-replay, SEARCH_PLAN.md §1).
+    actions_log: Vec<usize>,
 }
 
 #[pymethods]
@@ -95,6 +100,8 @@ impl PyGame {
             summary: None,
             replay: None,
             last_stats: Vec::new(),
+            seed: None,
+            actions_log: Vec::new(),
         })
     }
 
@@ -114,6 +121,8 @@ impl PyGame {
         self.summary = None;
         self.replay = None;
         self.last_stats.clear();
+        self.seed = Some(seed);
+        self.actions_log.clear();
 
         let (session, initial_object_count) =
             start_session(self.deck, seed, self.auto_pass, self.record_replay, self.replay_step);
@@ -150,6 +159,7 @@ impl PyGame {
             }
             self.interaction = None;
         }
+        self.actions_log.push(action); // the deterministic fork recipe records every apply
         Ok(())
     }
 
@@ -242,21 +252,71 @@ impl PyGame {
             .map_err(|e| PyRuntimeError::new_err(format!("replay serialize: {e}")))
     }
 
-    // ── milestone-3 stubs (need the resumable step API; not in approach-A) ──────────────────
+    /// Clone-by-replay (SEARCH_PLAN.md §1): a fresh session with the same `(deck, seed)` re-applies
+    /// this game's recorded factored actions, landing at the SAME decision sub-step (the engine is
+    /// deterministic — the M3 fingerprint gate proved byte-identical trajectories). The fork is
+    /// fully independent (its own fiber), skips ALL observation encoding during replay, and never
+    /// records a replay stream. Cost: O(actions so far) engine steps.
+    ///
+    /// ⚠ ORACLE CAVEAT: the fork replays the same seed, so it contains the TRUE hidden state
+    /// (opponent hand, library order). Fine for eval-time search in the current pools; NEVER use
+    /// oracle search to generate training targets (SEARCH_PLAN.md §3 — determinized fork is S2).
+    fn fork(&self) -> PyResult<PyGame> {
+        let seed = self
+            .seed
+            .ok_or_else(|| PyRuntimeError::new_err("fork() before reset()"))?;
+        let (session, initial_object_count) =
+            game::start_session(self.deck, seed, self.auto_pass, false, 0);
+        let mut g = PyGame {
+            deck: self.deck,
+            auto_pass: self.auto_pass,
+            record_replay: false,
+            replay_step: 0,
+            session: Some(session),
+            initial_object_count,
+            interaction: None,
+            seat: -1,
+            terminal: false,
+            summary: None,
+            replay: None,
+            last_stats: Vec::new(),
+            seed: Some(seed),
+            actions_log: Vec::new(),
+        };
+        // Replay the parent's action log: advance to each decision, feed actions in order. Ends
+        // either caught-up (same pending sub-step as the parent) or terminal.
+        let mut idx = 0;
+        while idx < self.actions_log.len() {
+            if g.interaction.is_none() {
+                g.advance_lite()?;
+                if g.terminal {
+                    break; // parent's tail actions were no-ops past game end (defensive)
+                }
+            }
+            g.apply(self.actions_log[idx])?;
+            idx += 1;
+        }
+        // Land on the same observable point as the parent: if the last replayed action committed a
+        // decision, the parent has already advanced past it (MtgEnv always applies then advances).
+        if g.interaction.is_none() && !g.terminal {
+            g.advance_lite()?;
+        }
+        Ok(g)
+    }
+
+    // ── milestone-3 stubs (superseded for search by `fork`; kept for API compat) ─────────────
     fn snapshot(&self) -> PyResult<Vec<u8>> {
         Err(PyNotImplementedError::new_err(
-            "snapshot/restore/clone require the resumable step API (GYM_PLAN milestone 3)",
+            "snapshot/restore are unimplemented — use fork() (clone-by-replay, SEARCH_PLAN.md)",
         ))
     }
     fn restore(&mut self, _data: Vec<u8>) -> PyResult<()> {
         Err(PyNotImplementedError::new_err(
-            "restore requires the resumable step API (GYM_PLAN milestone 3)",
+            "snapshot/restore are unimplemented — use fork() (clone-by-replay, SEARCH_PLAN.md)",
         ))
     }
     fn clone_game(&self) -> PyResult<PyGame> {
-        Err(PyNotImplementedError::new_err(
-            "clone requires the resumable step API (GYM_PLAN milestone 3)",
-        ))
+        self.fork()
     }
 }
 
@@ -268,7 +328,19 @@ impl PyGame {
         if self.interaction.is_some() {
             return Ok(self.decision_tuple(py));
         }
+        self.advance_lite()?;
+        if self.terminal {
+            Ok(self.terminal_tuple(py, "GameOver"))
+        } else {
+            Ok(self.decision_tuple(py))
+        }
+    }
 
+    /// The engine round-trip of [`advance`] WITHOUT any observation encoding: resume the session to
+    /// the next decision (installing its [`Interaction`]) or to game-over (installing the summary).
+    /// Used by `advance` (which then encodes) and by [`fork`](PyGame::fork)'s replay (which never
+    /// encodes — the whole point of the cheap clone).
+    fn advance_lite(&mut self) -> PyResult<()> {
         let step = self
             .session
             .as_mut()
@@ -279,7 +351,6 @@ impl PyGame {
             Step::Decision { seat, view, request } => {
                 self.seat = seat.0 as i64;
                 self.interaction = Some(Interaction::new(&view, &request));
-                Ok(self.decision_tuple(py))
             }
             Step::GameOver { outcome } => {
                 self.terminal = true;
@@ -296,9 +367,9 @@ impl PyGame {
                 self.summary = Some(summary);
                 self.replay = replay;
                 self.interaction = None;
-                Ok(self.terminal_tuple(py, "GameOver"))
             }
         }
+        Ok(())
     }
 
     /// Build the `StepTuple` for the current interaction's sub-step.
