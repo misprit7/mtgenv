@@ -154,10 +154,11 @@ def test_evalkit_callback_trains_and_emits_canonical_tags():
     # win-rate battery (evalkit) + behaviour stats (TrackedStats) + game length (GameLength)
     assert "selfplay/winrate_vs_random" in tags
     assert "selfplay/winrate_vs_random_sampled" in tags        # the MuZero-lesson addition
-    assert "selfplay/winrate_vs_initial" in tags
+    assert not any(t.startswith("selfplay/winrate_vs_initial") for t in tags)  # removed 2026-07-09
     assert {f"ladder/winrate_vs_{p:02d}pct" for p in (10, 25, 50, 75)} <= tags
     assert {f"stats/{k}" for k in _STAT_KEYS} <= tags
     assert "game/turns_mean" in tags
+    assert "perf/eval_s" in tags  # EvalkitCallback-owned perf timer (PerfCallback's tags verified by smoke)
 
 
 # ── tiny TB helpers ──────────────────────────────────────────────────────────────────────────────

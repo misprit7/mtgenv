@@ -102,17 +102,9 @@ class SelfPlayEval(BaseCallback):
     def _on_step(self) -> bool:
         if self.n_calls % self.every == 0:
             wr_rand = play_winrate(self.model, self.deck, "random", self.n_games, 5_000_000)
-            if self._ref is None and os.path.exists(self.ref_path):
-                self._ref = ModelOpponent(self.ref_path)
-            wr_init = (
-                play_winrate(self.model, self.deck, self._ref, self.n_games, 6_000_000)
-                if self._ref is not None
-                else float("nan")
-            )
-            self.logger.record("selfplay/winrate_vs_random", wr_rand)
-            self.logger.record("selfplay/winrate_vs_initial", wr_init)
+            self.logger.record("selfplay/winrate_vs_random", wr_rand)  # vs-initial dropped 2026-07-09
             if self.verbose:
-                print(f"  [{self.num_timesteps}] vs_random={wr_rand:.2f} vs_initial={wr_init:.2f}")
+                print(f"  [{self.num_timesteps}] vs_random={wr_rand:.2f}")
         return True
 
 
@@ -218,6 +210,7 @@ def train_selfplay(deck="demo", timesteps=120_000, n_envs=8, pool_dir=DEFAULT_PO
     from mtgenv_gym.tracked_stats import TrackedStatsCallback
     from mtgenv_gym.tb_meta import GameLengthCallback, RunMetadataCallback
     from mtgenv_gym.evalkit import EvalkitCallback
+    from mtgenv_gym.perf import PerfCallback
 
     config = dict(deck=deck, timesteps=timesteps, n_envs=n_envs, seed=seed,
                   shaping_coef0=shaping_coef,
@@ -241,6 +234,7 @@ def train_selfplay(deck="demo", timesteps=120_000, n_envs=8, pool_dir=DEFAULT_PO
         TrackedStatsCallback(),  # action-rate summary stats → stats/* (#68)
         GameLengthCallback(),    # game/turns_mean + end-reason mix (batched env bypasses Monitor)
         RunMetadataCallback(config, notes=notes),  # run/notes text + Custom Scalars dashboard
+        PerfCallback(),          # perf/* boundary timers (rollout/train/env-step/eval/mem) → own TB section
     ]
     if shaping_coef > 0:
         from mtgenv_gym.batched_selfplay import ShapingAnneal
@@ -338,8 +332,7 @@ def main():
         p_script=args.p_script, script_mix=(args.script_mix.split(",") if args.p_script > 0 else None),
     )
     wr_rand = play_winrate(model, args.deck, "random", 200, 9_000_000)
-    wr_init = play_winrate(model, args.deck, ModelOpponent(ref), 200, 9_500_000)
-    print(f"\nfinal: win-rate vs random {wr_rand:.3f} | vs initial self {wr_init:.3f}")
+    print(f"\nfinal: win-rate vs random {wr_rand:.3f}")  # vs-initial dropped 2026-07-09
     print(f"pool: {len(glob.glob(os.path.join(args.pool_dir, 'ckpt_*.zip')))} checkpoints")
 
 

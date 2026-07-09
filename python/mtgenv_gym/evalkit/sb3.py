@@ -16,6 +16,7 @@ Two things live here (both isolated so importing the rest of evalkit stays torch
 from __future__ import annotations
 
 import os
+import time as _perf
 
 from stable_baselines3.common.callbacks import BaseCallback
 
@@ -129,6 +130,8 @@ class EvalkitCallback(BaseCallback):
 
     # ── lifecycle ──────────────────────────────────────────────────────────────────────────────
     def _on_training_start(self) -> None:
+        self._t0 = _perf.perf_counter()          # perf/eval_cum_pct denominator
+        self._eval_cum = 0.0
         self._arena = Arena(self.deck, batch_size=self.batch_size)
         self._policy = SB3Policy(self.model, device=self.device)
         self._script = ScriptedPolicy() if self.eval_script else None
@@ -164,11 +167,21 @@ class EvalkitCallback(BaseCallback):
 
     # ── the periodic eval ──────────────────────────────────────────────────────────────────────
     def _on_step(self) -> bool:
+        # perf/* boundary timers for the eval + replay this callback owns (see mtgenv_gym.perf).
         if self.replay_every and self.n_calls % self.replay_every == 0:
+            _t = _perf.perf_counter()
             record_game(self._policy, self.deck, self.num_timesteps, self_play=True,
                         out_dir=self.replay_dir, run_name=self.run_name, algo="PPO")
+            self.logger.record("perf/replay_s", _perf.perf_counter() - _t)
         if self.n_calls % self.every == 0:
+            _t = _perf.perf_counter()
             self._eval()
+            dt = _perf.perf_counter() - _t
+            self._eval_cum = getattr(self, "_eval_cum", 0.0) + dt
+            self.logger.record("perf/eval_s", dt)
+            elapsed = _perf.perf_counter() - getattr(self, "_t0", _perf.perf_counter())
+            if elapsed > 0:
+                self.logger.record("perf/eval_cum_pct", 100.0 * self._eval_cum / elapsed)
         return True
 
     def _eval(self) -> None:
@@ -179,7 +192,6 @@ class EvalkitCallback(BaseCallback):
         # rotates the opponent's per-game rng (Arena reseeds it from seed+g); we bump the opponent's
         # constructor seed too for good measure.
         s_rand = eval_seed(self.seed_random, step)
-        s_init = eval_seed(self.seed_initial, step)
         s_scr = eval_seed(self.seed_script, step)
 
         # vs random — winrate (+sampled) + analyzers (eval-derived); stats/game stay with TrackedStats.
@@ -191,19 +203,8 @@ class EvalkitCallback(BaseCallback):
         for m, r in vr.items():
             labelled[f"random_{m}"] = r
 
-        # vs initial (random-init reference) — winrate only, NaN until the ref exists (legacy).
-        if self._ref is None and os.path.exists(self.ref_path):
-            self._ref = SB3Policy(self.ref_path, device=self.device)
-        if self._ref is not None:
-            vi = self._arena.evaluate(self._policy, self._ref, n_games=self.n_games,
-                                      seed=s_init, opponent_label="initial",
-                                      modes=self._modes)
-            log_eval(self._rec, vi, win_tag="selfplay/winrate_vs_initial", step=step,
-                     with_stats=False, with_game=False, with_analyzers=False)
-            for m, r in vi.items():
-                labelled[f"initial_{m}"] = r
-        else:
-            self._rec.record("selfplay/winrate_vs_initial", float("nan"), step)
+        # vs-initial (beat-your-own-random-init) removed 2026-07-09 (user: "not very interesting") —
+        # tag + eval games both dropped, freeing that eval time. vs_random is the retained baseline.
 
         # vs the scripted reference (land>spell>attack-all, never block) — the standing yardstick.
         # ≈0.5 means the agent has learned the deck. Winrate (+sampled) only; a fixed opponent so no

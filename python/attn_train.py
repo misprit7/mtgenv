@@ -61,8 +61,7 @@ def main():
         eval_ladder=not args.no_ladder,
     )
     wr_rand = play_winrate(model, args.deck, "random", 200, 9_000_000)
-    wr_init = play_winrate(model, args.deck, ModelOpponent(ref), 200, 9_500_000)
-    print(f"\nfinal: win-rate vs random {wr_rand:.3f} | vs initial self {wr_init:.3f}")
+    print(f"\nfinal: win-rate vs random {wr_rand:.3f}")  # vs-initial dropped 2026-07-09
 
 
 if __name__ == "__main__":

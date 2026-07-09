@@ -29,6 +29,8 @@ pools / longer runs):
 
 from __future__ import annotations
 
+import time
+
 import numpy as np
 from stable_baselines3.common.vec_env.base_vec_env import VecEnv
 
@@ -202,6 +204,7 @@ class FleetSelfPlayVecEnv(VecEnv):
         self._actions = np.asarray(actions, dtype=np.int64).reshape(-1)
 
     def step_wait(self):
+        _t0 = time.perf_counter()                    # perf/env_step_ms: 2 clock reads per vec-step
         rewards = np.zeros(self.num_envs, dtype=np.float32)
         dones = np.zeros(self.num_envs, dtype=bool)
         infos = [{} for _ in range(self.num_envs)]
@@ -218,6 +221,8 @@ class FleetSelfPlayVecEnv(VecEnv):
         obs, mask, _seat, _term = self._decode()
         self._masks = mask
         rewards = self._apply_shaping(obs, rewards, dones)
+        self._perf_env_s = getattr(self, "_perf_env_s", 0.0) + (time.perf_counter() - _t0)
+        self._perf_env_n = getattr(self, "_perf_env_n", 0) + 1
         return self._learner_obs(obs), rewards, dones, infos
 
     def close(self):
