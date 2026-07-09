@@ -120,7 +120,10 @@ def sync_run(tb_root: str, name: str, out_dir: str) -> "dict | None":
                 v = float(e.value)
                 if math.isfinite(v):  # NaN/inf points (e.g. block_double_rate with 0 blocks) are "no data"
                     dst[int(e.step)] = v  # later event files win on step collisions
-    metrics = {t: pts for t, pts in metrics.items() if pts}
+    # winrate_vs_initial (beat-your-own-random-init) judged uninteresting by the user (2026-07-09)
+    # — dropped from the dashboard for ALL runs, past ones included; trainers stop emitting it too.
+    metrics = {t: pts for t, pts in metrics.items()
+               if pts and not t.startswith("selfplay/winrate_vs_initial")}
     if not metrics:
         return None
     compact = {tag: _decimate([[s, round(v, 6)] for s, v in sorted(pts.items())])
