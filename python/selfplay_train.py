@@ -23,6 +23,7 @@ from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 from mtgenv_gym import MtgEnv
 from mtgenv_gym.league import ModelOpponent, OpponentPool, PoolCheckpoint
 from mtgenv_gym.attn_policy import RelationalPointerPolicy
+from mtgenv_gym.launch_guard import acquire_launch
 from mtgenv_gym.policy import EntityExtractor
 
 DEFAULT_POOL = "/tmp/mtgenv_pool"
@@ -304,12 +305,16 @@ def main():
     ap.add_argument("--fe-hidden", type=int, default=64, help="EntityExtractor row-MLP hidden (widen for capacity)")
     ap.add_argument("--fe-features", type=int, default=128, help="EntityExtractor features_dim")
     ap.add_argument("--net-arch", default="64,64", help="actor/critic MLP widths, comma list (e.g. 256,256)")
+    ap.add_argument("--force-launch", action="store_true",
+                    help="skip the launch guard (same-run-name / live-pool-pidfile collision check)")
     args = ap.parse_args()
 
     # Versioned run name (shared by the TB run dir + the lobby replay tag), unless --run-name overrides.
     from mtgenv_gym.tb_meta import versioned_run_name
     run_name = versioned_run_name(args.tensorboard, f"{args.deck}-{args.timesteps // 1000}k",
                                   major=args.run_major, override=args.run_name)
+
+    acquire_launch(run_name, args.pool_dir, force=args.force_launch)
 
     # Build policy_kwargs only when a capacity knob differs from the baseline default (else None →
     # train_selfplay's default EntityExtractor + SB3 default net_arch, preserving 4.4-4.6 behaviour).

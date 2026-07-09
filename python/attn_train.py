@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 
 from mtgenv_gym.attn_policy import RelationalPointerPolicy
+from mtgenv_gym.launch_guard import acquire_launch
 from selfplay_train import play_winrate, train_selfplay
 from mtgenv_gym.league import ModelOpponent
 
@@ -47,7 +48,11 @@ def main():
     ap.add_argument("--layers", type=int, default=2)
     ap.add_argument("--notes", required=True,
                     help="REQUIRED: what this run tests → TB 'run/notes'. State the relational hypothesis.")
+    ap.add_argument("--force-launch", action="store_true",
+                    help="skip the launch guard (same-run-name / live-pool-pidfile collision check)")
     args = ap.parse_args()
+
+    acquire_launch(args.run_name, args.pool_dir, force=args.force_launch)
 
     model, ref = train_selfplay(
         deck=args.deck, timesteps=args.timesteps, n_envs=args.n_envs, pool_dir=args.pool_dir,
