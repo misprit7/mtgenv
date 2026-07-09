@@ -690,7 +690,7 @@ fn encode_battlefield(view: &PlayerView, di: &DecisionInfo,
     out
 }
 
-/// Battlefield `grp_id`s in the shared `perm_order` (so `bf_ids[k]` matches obs row `k` / codec
+/// Battlefield `grp_id`s in the shared `perm_order` (so `bf_grpid[k]` matches obs row `k` / codec
 /// `PERM[k]`), padded to MAX_PERM with 0. Distinct from the generic `ids` (used for the natural-order
 /// hand table), which does NOT reorder.
 fn bf_ids_ordered(battlefield: &[ObjView], perm_order: &[usize]) -> Vec<i64> {
